@@ -175,6 +175,10 @@ line options still override it.
 - The launcher stages the purchased world and debugger from your archive, but
   uses the public historical Linux VLM runtime from `snap4.tar.gz` because the
   purchased archive only includes the original Alpha/Digital Unix executable.
+- The launcher also builds a tiny local preload shim to ignore the historical
+  `SIOCSARP` ioctl that `snap4` still tries to issue on startup; on modern
+  unprivileged Linux this call fails even when the TAP device itself is
+  prepared correctly.
 - This setup does not currently provision NFS exports, `inetd` time/daytime, or
   `/etc/hosts` entries for you. It focuses on launching the VLM cleanly inside
   Guix without checking any proprietary payload into git.

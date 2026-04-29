@@ -25,6 +25,8 @@ OFFICIAL_PAYLOAD_DIR="$OFFICIAL_DIR/VLMBASE200"
 REFERENCE_DIR="$WORK_DIR/reference"
 RUNTIME_DIR="$WORK_DIR/runtime"
 VLM_FILE="$RUNTIME_DIR/.VLM"
+ARP_BYPASS_SOURCE="$ROOT_DIR/scripts/opengenera-arp-bypass.c"
+ARP_BYPASS_SO="$WORK_DIR/arp-bypass.so"
 SNAP4_URL=${OPENGENERA_SNAP4_URL:-http://www.unlambda.com/download/genera/snap4.tar.gz}
 SNAP4_TARBALL="$DOWNLOAD_DIR/snap4.tar.gz"
 SNAP4_DIR="$EXTRACT_DIR/snap4"
@@ -190,6 +192,17 @@ ensure_runtime_tree() {
   write_vlm_file
 }
 
+ensure_arp_bypass_shim() {
+  if [[ ! -f "$ARP_BYPASS_SOURCE" ]]; then
+    printf 'Missing Open Genera ARP compatibility source: %s\n' "$ARP_BYPASS_SOURCE" >&2
+    exit 1
+  fi
+
+  if [[ ! -f "$ARP_BYPASS_SO" || "$ARP_BYPASS_SOURCE" -nt "$ARP_BYPASS_SO" ]]; then
+    gcc -shared -fPIC -O2 -ldl -o "$ARP_BYPASS_SO" "$ARP_BYPASS_SOURCE"
+  fi
+}
+
 print_verify_status() {
   printf 'bash: %s\n' "$(command -v bash)"
   printf 'curl: %s\n' "$(command -v curl)"
@@ -247,6 +260,7 @@ launch_genera() {
   local loader
   local library_path
   local profile_dir
+  local preload_value
 
   loader=$(resolve_loader)
   if [[ -z "$loader" || ! -x "$loader" ]]; then
@@ -254,10 +268,16 @@ launch_genera() {
     exit 1
   fi
 
+  ensure_arp_bypass_shim
   profile_dir=$(cd -- "$(dirname -- "$(command -v bash)")/.." && pwd)
   library_path="$(dirname "$loader"):$profile_dir/lib"
+  preload_value="$ARP_BYPASS_SO"
+  if [[ -n "${LD_PRELOAD:-}" ]]; then
+    preload_value="$preload_value:${LD_PRELOAD}"
+  fi
 
-  exec "$loader" --library-path "$library_path" "$RUNTIME_DIR/genera" "${pass_args[@]}"
+  exec env LD_PRELOAD="$preload_value" \
+    "$loader" --library-path "$library_path" "$RUNTIME_DIR/genera" "${pass_args[@]}"
 }
 
 case "$mode" in

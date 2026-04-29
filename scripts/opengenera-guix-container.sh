@@ -68,9 +68,12 @@ has_arg() {
 }
 
 prepare_sbin_overlay() {
+  local container_bash
+
+  container_bash=$(guix shell -m "$MANIFEST_FILE" -- bash -lc 'readlink -f "$(command -v bash)"')
   mkdir -p "$SBIN_OVERLAY_DIR"
-  cat >"$SBIN_OVERLAY_DIR/ifconfig" <<'EOF'
-#!/usr/bin/env bash
+  printf '#!%s\n' "$container_bash" >"$SBIN_OVERLAY_DIR/ifconfig"
+  cat >>"$SBIN_OVERLAY_DIR/ifconfig" <<'EOF'
 set -euo pipefail
 
 netmask_to_prefix() {
@@ -125,9 +128,15 @@ fi
 
 case "$1" in
   up)
+    if ((device_is_tap)); then
+      exit 0
+    fi
     exec ip link set dev "$device" up
     ;;
   down)
+    if ((device_is_tap)); then
+      exit 0
+    fi
     exec ip link set dev "$device" down
     ;;
 esac
@@ -158,7 +167,11 @@ done
 
 prefix=$(netmask_to_prefix "$netmask")
 if ((device_is_tap)); then
-  ip addr replace "$local_address/$prefix" dev "$device"
+  if ip -o -4 addr show dev "$device" | grep -q " $local_address/$prefix "; then
+    exit 0
+  fi
+  printf 'tap device %s must be preconfigured as %s/%s on the host\n' "$device" "$local_address" "$prefix" >&2
+  exit 1
 elif [[ -n "$peer_address" ]]; then
   ip addr replace "$local_address/$prefix" peer "$peer_address" dev "$device"
 else
