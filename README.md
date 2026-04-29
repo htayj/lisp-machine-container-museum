@@ -1,10 +1,15 @@
 # genera-emu
 
-This repo now bootstraps the LM-3 Lisp Machine working directory inside a Guix
-container and starts it the way upstream documents it: `fossil open
-https://tumbleweed.nu/r/l`, then `./m -s`.
+This repo provides two Guix-based launchers:
 
-## Quick start
+- `scripts/cadr-guix-container.sh` for the public LM-3 CADR emulator stack
+- `scripts/opengenera-guix-container.sh` for Open Genera, using a
+  user-supplied `opengenera2.tar.bz2`
+
+The CADR path bootstraps the LM-3 Lisp Machine working directory the way
+upstream documents it: `fossil open https://tumbleweed.nu/r/l`, then `./m -s`.
+
+## CADR quick start
 
 Run:
 
@@ -22,7 +27,7 @@ On the first run this will:
    container starts do not need network access for nested checkouts
 4. launch the upstream Lisp Machine bootstrap command from that checkout
 
-## Other commands
+## CADR other commands
 
 Validate the container toolchain without starting the emulator:
 
@@ -96,3 +101,80 @@ after `--`, for example:
 ```bash
 xhost +SI:localuser:$USER
 ```
+
+## Open Genera
+
+The Open Genera launcher does not include or redistribute Symbolics software.
+You must provide your own purchased archive, for example:
+
+```bash
+~/opengenera2.tar.bz2
+```
+
+The first run stages the proprietary files under `./.lm-home/opengenera/`,
+which is already gitignored. Nothing extracted from that archive is checked in.
+
+### Open Genera quick start
+
+Create the host-side `tun0` device once:
+
+```bash
+sudo ./scripts/opengenera-host-net.sh up --user "$USER"
+```
+
+Then launch Open Genera:
+
+```bash
+./scripts/opengenera-guix-container.sh --mode run --archive ~/opengenera2.tar.bz2
+```
+
+On the first run this will:
+
+1. start a Guix container with the legacy runtime dependencies Open Genera
+   expects
+2. download the public `snap4.tar.gz` Linux VLM runtime into
+   `./.lm-home/opengenera/downloads/`
+3. extract the official `Genera-8-5.vlod`, `VLM_debugger`, and `sys.sct` tree
+   from your `opengenera2.tar.bz2` into `./.lm-home/opengenera/`
+4. write a local `.VLM` file and launch the Linux VLM
+
+### Open Genera commands
+
+Validate the Open Genera container without launching the GUI:
+
+```bash
+./scripts/opengenera-guix-container.sh --mode run --verify --archive ~/opengenera2.tar.bz2
+```
+
+Stage the runtime without starting it:
+
+```bash
+./scripts/opengenera-guix-container.sh --mode run --prepare-only --archive ~/opengenera2.tar.bz2
+```
+
+Open a shell in the prepared runtime:
+
+```bash
+./scripts/opengenera-guix-container.sh --mode shell --archive ~/opengenera2.tar.bz2
+```
+
+Extra arguments after `--` are passed through to `genera`. The public Open
+Genera User's Guide documents options such as `-world`, `-debugger`,
+`-network`, and `-vm`; the launcher's `.VLM` file is the default, and command
+line options still override it.
+
+### Open Genera notes
+
+- The default VLM network is `10.0.0.2` with a host interface named `tun0`.
+- Despite the name, the Linux VLM wants `tun0` to be a TAP device
+  (`IFF_TAP | IFF_NO_PI`), not a TUN device. The helper script now creates it
+  that way and assigns `10.0.0.1/24`.
+- If launch stops with `Can't TUNSETIFF for VLM network interface #0` and
+  `Operation not permitted`, create `tun0` first with
+  `sudo ./scripts/opengenera-host-net.sh up --user "$USER"`.
+- The launcher stages the purchased world and debugger from your archive, but
+  uses the public historical Linux VLM runtime from `snap4.tar.gz` because the
+  purchased archive only includes the original Alpha/Digital Unix executable.
+- This setup does not currently provision NFS exports, `inetd` time/daytime, or
+  `/etc/hosts` entries for you. It focuses on launching the VLM cleanly inside
+  Guix without checking any proprietary payload into git.

@@ -1,5 +1,6 @@
 (specifications->manifest
  (list "bash"
+       "bzip2"
        "coreutils"
        "curl"
        "findutils"
@@ -8,8 +9,10 @@
        "gcc-toolchain"
        "grep"
        "gzip"
+       "iproute2"
        "libx11"
        "make"
+       "net-tools"
        "nss-certs"
        "pkg-config"
        "sed"
