@@ -1,0 +1,30 @@
+# Symbolics Genera and Open Genera
+
+This collection covers Genera as a Lisp-machine operating environment and Open Genera
+as its Virtual Lisp Machine implementation hosted on Unix.
+
+## Articles
+
+- [World loads and the VLOD format](world-loads-and-vlod.md) - How a VLM world stores
+  Genera's tagged virtual memory and what can be recovered from it.
+- [Recovering code and assets from a world](recovering-code-and-assets-from-worlds.md)
+  - The boundary between original source, decompiled executable representations, and
+  effect-preserving recovery of resident fonts and other assets.
+- [Extracting resident fonts from a Genera world](extracting-resident-fonts.md) - The
+  reproducible local-only workflow for decoding licensed world-resident fonts into
+  BDF, normalized records, and specimen sheets.
+- [Genera 8.5 resident font catalog](font-catalog.md) - Evidence-graded styles,
+  character-set roles, application uses, and explicit unknowns for all 89 distinct
+  font objects in the inspected base world.
+
+## Planned areas
+
+- the Ivory architecture and the Virtual Lisp Machine;
+- cold boot, world building, and incremental disk save;
+- Genera's object, package, system, and file models;
+- Dynamic Windows, presentations, and the development environment;
+- networking and the relationship between the VLM and its Unix host;
+- release-media provenance and responsible preservation of licensed artifacts.
+
+For launch and host-integration instructions, see the root
+[Open Genera guide](../../README.md#open-genera).

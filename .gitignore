@@ -4,3 +4,6 @@
 /*.img
 /*.state
 /opengenera*.tar.bz2
+/build/fonts/genera/
+/build/fonts/cadr/
+__pycache__/

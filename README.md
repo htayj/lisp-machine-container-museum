@@ -7,6 +7,10 @@ This repo launches two Lisp Machine environments in Guix containers:
 
 If you only want one system to start exploring, use the CADR path first.
 
+Historical, architectural, and artifact research lives in the
+[museum knowledge base](docs/index.md). It includes the current analysis of
+[Open Genera VLOD world files](docs/genera/world-loads-and-vlod.md).
+
 ## What you need
 
 - Guix installed and working on the host
@@ -227,6 +231,38 @@ you override the default `.VLM` configuration if needed.
 - The launcher includes a small compatibility preload because the historical
   runtime still tries to use legacy Linux networking behavior that modern
   unprivileged setups reject.
+
+## Font recovery
+
+Recover the public CADR font sources from a checkout of
+`mietek/mit-cadr-system-software`:
+
+```bash
+python3 scripts/extract-cadr-fonts.py \
+  /path/to/mit-cadr-system-software/src/lmfont \
+  --output build/fonts/cadr \
+  --clean \
+  --strict
+```
+
+This reads the historical source representations under `src/lmfont`; it does not
+inspect a CADR load band or heap. The curated public outputs and full format notes are
+in [the CADR font recovery article](docs/mit-cadr/font-sources-and-recovery.md).
+
+Recover the fonts resident in your own licensed Genera world:
+
+```bash
+python3 scripts/extract-genera-fonts.py \
+  .lm-home/opengenera/runtime/Genera-8-5.vlod \
+  --output build/fonts/genera \
+  --clean
+```
+
+That command writes BDF files, normalized JSON, and PNG font sheets. All Genera
+outputs are derived from licensed media and remain in the ignored local build tree;
+do not commit or redistribute them. See the
+[Genera extraction procedure](docs/genera/extracting-resident-fonts.md) and
+[evidence-graded font catalog](docs/genera/font-catalog.md).
 
 ## Day-to-day use
 
