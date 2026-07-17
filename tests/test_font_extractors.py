@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import importlib.util
 import io
 import json
@@ -29,6 +30,7 @@ def load_script(module_name: str, filename: str):
 
 
 cadr = load_script("extract_cadr_fonts", "extract-cadr-fonts.py")
+qfasl = load_script("extract_cadr_qfasl_fonts", "extract-cadr-qfasl-fonts.py")
 genera = load_script("extract_genera_fonts", "extract-genera-fonts.py")
 
 
@@ -75,6 +77,105 @@ def simple_al_words(*, corrupt_code: int | None = None) -> list[int]:
     return pack_al_values([1, 0x0108, *pointers, 17, 0])
 
 
+def pack_8bit_array(values: list[int]) -> list[int]:
+    return [
+        values[index] | (values[index + 1] << 8)
+        for index in range(0, len(values), 2)
+    ]
+
+
+def pack_1bit_array(values: list[int]) -> list[int]:
+    return [
+        sum(value << bit for bit, value in enumerate(values[index : index + 16]))
+        for index in range(0, len(values), 16)
+    ]
+
+
+def synthetic_font_binding(
+    *,
+    indexed: bool = False,
+    index_origin: int = 0,
+    next_plane: object | None = None,
+    baseline: int = 1,
+) -> dict[object, object]:
+    code = 0o101
+    raster_width = 8
+    raster_height = 2
+    rasters_per_word = 4
+    words_per_character = 1
+
+    indexes = None
+    if indexed:
+        index_values = [index_origin if index <= code else index_origin + 2 for index in range(129)]
+        indexes = qfasl.SerializedArray(
+            "ART-16B", (129,), initialization=index_values
+        )
+        storage_characters = index_values[-1]
+    else:
+        storage_characters = 128
+
+    raster_bit_count = 32 * words_per_character * storage_characters
+    raster_halfwords = [0] * ((raster_bit_count + 15) // 16)
+
+    def set_pixel(storage_code: int, row: int, column: int) -> None:
+        bit = (
+            32 * (words_per_character * storage_code + row // rasters_per_word)
+            + raster_width * (row % rasters_per_word)
+            + column
+        )
+        raster_halfwords[bit // 16] |= 1 << (bit % 16)
+
+    if indexed:
+        set_pixel(index_origin, 0, 0)
+        set_pixel(index_origin + 1, 1, 7)
+    else:
+        set_pixel(code, 0, 0)
+        set_pixel(code, 1, 7)
+
+    widths = [8] * 128
+    widths[code] = 6
+    width_array = qfasl.SerializedArray(
+        "ART-8B", (128,), initialization=pack_8bit_array(widths)
+    )
+    kern_halfwords = [value for _ in range(128) for value in (0, 0xC500)]
+    kern_halfwords[2 * code] = 0xFFFE
+    kern_halfwords[2 * code + 1] = 0xC5FF
+    kern_array = qfasl.SerializedArray(
+        "ART-32B", (128,), initialization=kern_halfwords
+    )
+    existence = [0] * 128
+    existence[code] = 1
+    existence_array = qfasl.SerializedArray(
+        "ART-1B", (128,), initialization=pack_1bit_array(existence)
+    )
+
+    leader = {
+        0o1: qfasl.Symbol("FONT"),
+        0o2: qfasl.Symbol("TEST", ("FONTS",)),
+        0o3: 2,
+        0o4: 8,
+        0o5: raster_height,
+        0o6: raster_width,
+        0o7: rasters_per_word,
+        0o10: words_per_character,
+        0o11: baseline,
+        0o12: width_array,
+        0o13: kern_array,
+        0o14: indexes,
+        0o15: next_plane,
+        0o16: 8,
+        0o17: 2,
+        0o20: existence_array,
+    }
+    raster = qfasl.SerializedArray(
+        "ART-1B",
+        (raster_bit_count,),
+        leader=leader,
+        initialization=raster_halfwords,
+    )
+    return {qfasl.Symbol("TEST", ("FONTS",)): raster}
+
+
 class EvacuatedSourceTests(unittest.TestCase):
     def test_plain_text_is_reassembled_into_pdp10_words(self) -> None:
         expected = sum(
@@ -94,6 +195,208 @@ class EvacuatedSourceTests(unittest.TestCase):
     def test_binary_quote_inside_text_word_is_rejected(self) -> None:
         with self.assertRaisesRegex(cadr.SourceError, "inside a text word"):
             cadr.evacuated_words(b"A" + quote_binary_word(0))
+
+
+class CadrQfaslTests(unittest.TestCase):
+    def test_pdp10_words_split_into_ordered_qfasl_nibbles(self) -> None:
+        word = ((0o143150 << 16) | 0o71660) << 4
+        self.assertEqual(qfasl.qfasl_nibbles([word]), [0o143150, 0o71660])
+
+    def test_minimal_inert_qfasl_reaches_eof(self) -> None:
+        eof = 0o100000 | 0o26
+        parser = qfasl.FontQfaslParser([0o143150, 0o71660, eof, 0])
+        self.assertEqual(parser.parse(), {})
+        self.assertEqual(parser.position, 3)
+
+    def test_executable_qfasl_opcode_is_rejected(self) -> None:
+        eval_opcode = 0o100000 | 0o11
+        parser = qfasl.FontQfaslParser(
+            [0o143150, 0o71660, eval_opcode, 0]
+        )
+        with self.assertRaisesRegex(qfasl.QfaslError, "unsupported opcode"):
+            parser.parse()
+
+    def test_packed_auxiliary_array_element_order_and_signed_kern(self) -> None:
+        bytes_array = qfasl.SerializedArray(
+            "ART-8B", (4,), initialization=[0x0201, 0x0403]
+        )
+        kern_array = qfasl.SerializedArray(
+            "ART-32B", (2,), initialization=[0xFFFD, 0xC5FF, 2, 0xC500]
+        )
+        self.assertEqual(bytes_array.values(), [1, 2, 3, 4])
+        self.assertEqual(kern_array.values(), [-3, 2])
+
+    def test_packed_arrays_reject_extra_storage_and_invalid_q_tags(self) -> None:
+        with self.assertRaisesRegex(qfasl.QfaslError, "expected exactly"):
+            qfasl.SerializedArray(
+                "ART-8B", (2,), initialization=[0, 0]
+            ).values()
+        for initialization in ([1, 0], [0, 0xAA00]):
+            with self.subTest(initialization=initialization):
+                with self.assertRaisesRegex(qfasl.QfaslError, "unsupported Q tag"):
+                    qfasl.SerializedArray(
+                        "ART-32B", (1,), initialization=list(initialization)
+                    ).values()
+
+    def test_runtime_font_reconstruction_uses_tables_and_bit_order(self) -> None:
+        font = qfasl.font_from_binding(
+            "TEST", "TEST", "synthetic", synthetic_font_binding()
+        )
+        self.assertEqual(len(font.glyphs), 1)
+        glyph = font.glyphs[0]
+        self.assertEqual(glyph.code, 0o101)
+        self.assertEqual(glyph.bitmap_width, 8)
+        self.assertEqual(glyph.advance, 6)
+        self.assertEqual(glyph.x_offset, 2)
+        self.assertEqual(glyph.y_offset, -1)
+        self.assertEqual(glyph.rows, (0b10000000, 0b00000001))
+        self.assertFalse(font.metadata["next_plane_present"])
+
+    def test_indexed_font_reconstruction_joins_physical_stripes(self) -> None:
+        font = qfasl.font_from_binding(
+            "TEST", "TEST", "synthetic-indexed", synthetic_font_binding(indexed=True)
+        )
+        glyph = font.glyphs[0]
+        self.assertEqual(glyph.bitmap_width, 16)
+        self.assertEqual(glyph.rows, (0b1000000000000000, 0b0000000000000001))
+
+    def test_font_reconstruction_rejects_unexported_or_incoherent_state(self) -> None:
+        cases = (
+            (synthetic_font_binding(next_plane=qfasl.Symbol("PLANE-1")), "next-plane"),
+            (synthetic_font_binding(baseline=3), "baseline"),
+            (synthetic_font_binding(indexed=True, index_origin=1), "start at zero"),
+        )
+        for bindings, message in cases:
+            with self.subTest(message=message):
+                with self.assertRaisesRegex(qfasl.QfaslError, message):
+                    qfasl.font_from_binding(
+                        "TEST", "TEST", "synthetic-invalid", bindings
+                    )
+
+    def test_tracked_compiled_corpus_and_cross_checks(self) -> None:
+        catalog_path = (
+            REPOSITORY
+            / "docs"
+            / "assets"
+            / "mit-cadr-qfasl-fonts"
+            / "catalog.json"
+        )
+        asset_root = catalog_path.parent
+        catalog = json.loads(catalog_path.read_text(encoding="utf-8"))
+        self.assertEqual(catalog["source_revision"], qfasl.SOURCE_REVISION)
+        self.assertEqual(catalog["artifact_count"], 19)
+        self.assertEqual(catalog["compiled_only_runtime_logical_name_count"], 17)
+        self.assertEqual(catalog["legacy_compiled_version_count"], 2)
+        self.assertEqual(
+            {record["artifact_name"] for record in catalog["font_artifacts"]},
+            {spec.artifact_name for spec in qfasl.ARTIFACTS},
+        )
+        records = {
+            record["artifact_name"]: record
+            for record in catalog["font_artifacts"]
+        }
+        for spec in qfasl.ARTIFACTS:
+            record = records[spec.artifact_name]
+            self.assertEqual(record["source_byte_size"], spec.byte_size)
+            self.assertEqual(record["source_sha256"], spec.sha256)
+            for output in record["outputs"].values():
+                self.assertTrue((asset_root / output).is_file())
+            self.assertFalse(record["observations"]["next_plane_present"])
+        observed_operations = {
+            operation
+            for record in records.values()
+            for operation in record["opcode_counts"]
+        }
+        self.assertEqual(observed_operations, set(qfasl.OPCODE_NAMES.values()))
+        self.assertEqual(len(list((asset_root / "bdf").glob("*.bdf"))), 19)
+        self.assertEqual(len(list((asset_root / "json").glob("*.json"))), 19)
+        self.assertEqual(len(list((asset_root / "sheets").glob("*.png"))), 19)
+        self.assertEqual(
+            hashlib.sha256((asset_root / "LICENSE.source").read_bytes()).hexdigest(),
+            qfasl.SOURCE_LICENSE_SHA256,
+        )
+
+        comparisons = {
+            record["qfasl_file"]: record
+            for record in catalog["semantic_cross_checks"]
+        }
+        self.assertEqual(
+            set(comparisons),
+            {spec.source_file for spec in qfasl.CROSS_CHECKS},
+        )
+        for spec in qfasl.CROSS_CHECKS:
+            comparison = comparisons[spec.source_file]
+            self.assertEqual(comparison["qfasl_source_sha256"], spec.source_sha256)
+            self.assertEqual(
+                comparison["reference_bdf_sha256"], spec.reference_bdf_sha256
+            )
+        version_comparisons = {
+            record["older_qfasl_file"]: record
+            for record in catalog["compiled_version_cross_checks"]
+        }
+        self.assertEqual(
+            set(version_comparisons),
+            {spec.older_file for spec in qfasl.COMPILED_VERSION_CHECKS},
+        )
+        for spec in qfasl.COMPILED_VERSION_CHECKS:
+            comparison = version_comparisons[spec.older_file]
+            self.assertEqual(comparison["older_qfasl_sha256"], spec.older_sha256)
+            self.assertEqual(comparison["newer_qfasl_sha256"], spec.newer_sha256)
+
+        old_tog = version_comparisons["ntog.qfasl"]
+        self.assertTrue(old_tog["glyph_storage_and_metrics_match"])
+        self.assertTrue(old_tog["raster_q_sha256_match"])
+        self.assertEqual(old_tog["metadata_difference_fields"], ["leader_length"])
+        self.assertEqual(old_tog["newer_only_nil_leader_indices"], [0o20])
+        self.assertTrue(
+            old_tog[
+                "only_reconstructed_font_difference_is_newer_nil_leader_tail"
+            ]
+        )
+        self.assertNotEqual(
+            old_tog["older_qfasl_opcode_counts"],
+            old_tog["newer_qfasl_opcode_counts"],
+        )
+
+        old_xms_version = version_comparisons["n43xms.qfasl"]
+        self.assertFalse(old_xms_version["raster_q_sha256_match"])
+        self.assertEqual(len(old_xms_version["bitmap_width_difference_codes"]), 70)
+        self.assertEqual(len(old_xms_version["set_pixel_difference_codes"]), 69)
+        for control in (
+            "hl10.qfasl",
+            "43vxms.qfasl",
+            "arrow.qfasl",
+            "bigfnt.qfasl",
+            "ntog.qfasl",
+        ):
+            self.assertTrue(
+                comparisons[control]["source_represented_rendering_match"]
+            )
+        expected_width_difference_counts = {
+            "hl10.qfasl": 0,
+            "43vxms.qfasl": 70,
+            "arrow.qfasl": 14,
+            "bigfnt.qfasl": 125,
+            "n43xms.qfasl": 70,
+            "ntog.qfasl": 0,
+        }
+        for filename, expected in expected_width_difference_counts.items():
+            self.assertEqual(
+                len(comparisons[filename]["bitmap_width_difference_codes"]),
+                expected,
+            )
+        self.assertTrue(
+            comparisons["hl10.qfasl"]["source_represented_physical_cell_match"]
+        )
+        self.assertTrue(
+            comparisons["ntog.qfasl"]["source_represented_physical_cell_match"]
+        )
+        old_xms = comparisons["n43xms.qfasl"]
+        self.assertFalse(old_xms["source_represented_rendering_match"])
+        self.assertEqual(old_xms["best_compiled_horizontal_alignment"], -1)
+        self.assertEqual(old_xms["aligned_reference_only_pixel_count"], 429)
+        self.assertEqual(old_xms["aligned_compiled_only_pixel_count"], 0)
+        self.assertEqual(old_xms["aligned_reference_only_columns"], [30])
 
 
 class CadrAstTests(unittest.TestCase):

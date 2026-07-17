@@ -3,7 +3,7 @@ type: Artifact Analysis
 title: MIT CADR font usage audit
 description: Evidence-graded uses and explicit unknowns for every source-backed and compiled-only font in the pinned System 46 snapshot.
 tags: [mit-cadr, fonts, source-analysis, user-interface, preservation]
-timestamp: 2026-07-16T22:51:56-04:00
+timestamp: 2026-07-16T23:46:35-04:00
 ---
 
 # MIT CADR font usage audit
@@ -198,7 +198,11 @@ Each cell means **TODO: recovered source only; no application purpose establishe
 
 These names are not among the 88 source-backed derivatives. They survive only as
 compiled font files in this snapshot and must not be silently merged with a
-similarly named source-backed font.
+similarly named source-backed font. All 19 physical artifacts, comprising these 17
+names plus the two older compiled versions below, are now decoded and rendered in the
+[compiled QFASL font recovery](compiled-qfasl-font-recovery.md) and its
+[machine-readable catalog](../assets/mit-cadr-qfasl-fonts/catalog.json). Recovery
+establishes their runtime font data, not their application purpose.
 
 | Logical name | Classification | Established finding |
 | --- | --- | --- |
@@ -242,8 +246,6 @@ the newer logical names are not automatically claims about those older artifacts
 
 ## Open questions
 
-- Decompile or otherwise inspect the 17 QFASL-only font objects without conflating
-  compiled-artifact recovery with source recovery.
 - Search additional period load bands, user files, source tapes, manuals, and
   application QFASLs for the 68 source-backed and 15 compiled-only names whose
   purpose remains `TODO`.

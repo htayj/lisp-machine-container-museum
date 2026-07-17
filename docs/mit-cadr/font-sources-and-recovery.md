@@ -3,7 +3,7 @@ type: Artifact Analysis
 title: MIT CADR font sources and recovery
 description: Source-first recovery of the public MIT CADR bitmap fonts into inspectable BDF files and font-sheet images.
 tags: [mit-cadr, fonts, source-recovery, preservation]
-timestamp: 2026-07-16T22:51:56-04:00
+timestamp: 2026-07-16T23:46:35-04:00
 ---
 
 # MIT CADR font sources and recovery
@@ -196,14 +196,19 @@ cold-font source representations in this exact snapshot. They are not every comp
 font present in `src/lmfont`, and this page does not claim that every CADR font ever
 used has been recovered.
 
-Nineteen additional `.qfasl` files decode as compiled `FONT` objects but have no
-matching source representation in this snapshot. They represent 17 additional
-runtime logical names: `20VR`, `31VR`, `40VR`, `BIGVG`, `CPT-13FG`, `CPT-HL10`,
+Nineteen additional `.qfasl` files decode as compiled `FONT` objects. Seventeen have
+no matching source representation in this snapshot and add these runtime logical
+names: `20VR`, `31VR`, `40VR`, `BIGVG`, `CPT-13FG`, `CPT-HL10`,
 `CPT-HL10B`, `CPT-TR10I`, `GERM35`, `HL12BI`, `MEDFNB`, `S30CHS`, `S35GER`,
 `SAIL12`, `SEARCH`, `SHIP`, and `TR12B1`. The remaining two compiled files,
 `N43XMS` and `NTOG`, are older compiled versions of the source-backed `43VXMS` and
-`TOG` names. QFASL decoding is a separate compiled-artifact recovery task and is left
-as TODO rather than mixed into this source-first extractor.
+`TOG` names.
+
+They are now recovered by the deliberately separate
+[compiled QFASL font pipeline](compiled-qfasl-font-recovery.md). That extractor emits
+the serialized runtime objects as BDF, normalized JSON, and PNG derivatives while
+preserving their compiled-artifact provenance. It does not claim to reconstruct the
+missing authoring source or add these objects to the 88-name source-backed corpus.
 
 ## Usage audit
 
@@ -227,13 +232,11 @@ a particular AST, KST, or Alto variant.
 
 - Resolve the `10/17/81` versus `101780` source-tape date discrepancy from primary
   media documentation.
-- Recover and cross-check the 19 public QFASL-only compiled font files without
-  conflating that work with source recovery.
 - Locate additional primary evidence for the 68 source-backed and 15 compiled-only
   logical names whose purpose remains `TODO` after the complete literal-reference
   audit.
-- Compare the normalized outputs with fonts loaded by a running System 46 image. That
-  would test the complete historical compilation path, but it is not required to
-  recover the public source glyphs.
+- Compare both the source-derived and compiled-artifact outputs with fonts loaded by
+  a running System 46 image. That would test the complete historical compilation and
+  loading path, but it is not required to recover the public glyph data.
 
 Last verified: 2026-07-16.

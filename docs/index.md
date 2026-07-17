@@ -35,6 +35,9 @@ machine-readable metadata layer while retaining ordinary Markdown as the source.
   catalog of all 89 fonts in the inspected world.
 - [MIT CADR font sources and recovery](mit-cadr/font-sources-and-recovery.md) explains
   the public source-first pipeline and catalogs the trackable BDF and PNG derivatives.
+- [MIT CADR compiled QFASL font recovery](mit-cadr/compiled-qfasl-font-recovery.md)
+  documents the separate non-evaluating extraction of 19 public runtime font objects
+  and the evidence distinguishing them from authoring source.
 - [MIT CADR font usage audit](mit-cadr/font-usage-audit.md) identifies source-backed
   roles where the pinned source supports them and leaves evidence-bounded `TODO`s for
   every unresolved name.
