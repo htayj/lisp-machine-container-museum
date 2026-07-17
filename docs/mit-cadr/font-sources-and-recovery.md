@@ -3,7 +3,7 @@ type: Artifact Analysis
 title: MIT CADR font sources and recovery
 description: Source-first recovery of the public MIT CADR bitmap fonts into inspectable BDF files and font-sheet images.
 tags: [mit-cadr, fonts, source-recovery, preservation]
-timestamp: 2026-07-16T13:36:54-04:00
+timestamp: 2026-07-16T22:51:56-04:00
 ---
 
 # MIT CADR font sources and recovery
@@ -177,6 +177,9 @@ The tracked derivatives are:
 - [`catalog.json`](../assets/mit-cadr-fonts/catalog.json), containing source hashes,
   decoded metrics, archive observations, duplicate decisions, variants, and output
   paths;
+- [`font-usage-catalog.json`](font-usage-catalog.json), the separately maintained
+  evidence audit for every logical name. It is not generated from glyph data because
+  a source filename or glyph shape is not evidence of purpose;
 - [`bdf/`](../assets/mit-cadr-fonts/bdf/), containing 150 portable bitmap fonts;
 - [`sheets/`](../assets/mit-cadr-fonts/sheets/), containing 150 PNG font sheets whose
   glyph labels use octal character codes;
@@ -202,26 +205,23 @@ runtime logical names: `20VR`, `31VR`, `40VR`, `BIGVG`, `CPT-13FG`, `CPT-HL10`,
 `TOG` names. QFASL decoding is a separate compiled-artifact recovery task and is left
 as TODO rather than mixed into this source-first extractor.
 
-## Uses established by source references
+## Usage audit
 
-Font names alone are not evidence of purpose. The following uses are grounded in
-direct references in the same public source snapshot. Application-specific uses for
-the remaining fonts are **TODO** until similarly direct evidence is cataloged.
+Font names and glyph appearance are not evidence of purpose. The complete
+[font usage audit](font-usage-audit.md) searches the pinned source, manuals,
+bug reports, load declarations, editor metadata, and binary document output for
+every logical name.
 
-| Font | Established use | Direct evidence |
-| --- | --- | --- |
-| `CPTFONT` | Default font of the main screen; also the first font QFASL in the cold-load list. | [`tvdefs.181`](https://github.com/mietek/mit-cadr-system-software/blob/8e978d7d1704096a63edd4386a3b8326a2e584af/src/lmwin/tvdefs.181#L166-L193), [`coldut.22`](https://github.com/mietek/mit-cadr-system-software/blob/8e978d7d1704096a63edd4386a3b8326a2e584af/src/lispm/coldut.22#L957-L971) |
-| `MEDFNT` | Screen menu font and questionnaire text. | [`menu.29`](https://github.com/mietek/mit-cadr-system-software/blob/8e978d7d1704096a63edd4386a3b8326a2e584af/src/lmwin/menu.29#L103-L116), [`quest.42`](https://github.com/mietek/mit-cadr-system-software/blob/8e978d7d1704096a63edd4386a3b8326a2e584af/src/lmwin/quest.42#L196-L207) |
-| `HL12I` | Italic font for special choices in multiple-choice menus. | [`menu.29`](https://github.com/mietek/mit-cadr-system-software/blob/8e978d7d1704096a63edd4386a3b8326a2e584af/src/lmwin/menu.29#L778-L804) |
-| `MOUSE` | Character 6 supplies the standard mouse blinker. | [`mouse.149`](https://github.com/mietek/mit-cadr-system-software/blob/8e978d7d1704096a63edd4386a3b8326a2e584af/src/lmwin/mouse.149#L138-L149) |
-| `HL10`, `HL10B` | Unselected and selected choice text, respectively. | [`choice.12`](https://github.com/mietek/mit-cadr-system-software/blob/8e978d7d1704096a63edd4386a3b8326a2e584af/src/lmwin/choice.12#L757-L764) |
-| `TR10I` | Default font for margin-scroll-region messages. | [`choice.12`](https://github.com/mietek/mit-cadr-system-software/blob/8e978d7d1704096a63edd4386a3b8326a2e584af/src/lmwin/choice.12#L201-L211) |
-| `MEDFNB` | System-menu choices including action and abort entries. This font is one of the QFASL-only coverage TODOs, not an emitted source derivative. | [`sysmen.105`](https://github.com/mietek/mit-cadr-system-software/blob/8e978d7d1704096a63edd4386a3b8326a2e584af/src/lmwin/sysmen.105#L204-L216) |
-| `5X5` | Tiny text drawn inside compact boxed screen elements. | [`shwarm.162`](https://github.com/mietek/mit-cadr-system-software/blob/8e978d7d1704096a63edd4386a3b8326a2e584af/src/lmwin/shwarm.162#L864-L881) |
-| `HL12B` | The inspector's `Empty` label. | [`inspct.80`](https://github.com/mietek/mit-cadr-system-software/blob/8e978d7d1704096a63edd4386a3b8326a2e584af/src/lmwin/inspct.80#L30-L41) |
-| `METS`, `BIGFNT` | A questionnaire label and questionnaire text, respectively. | [`quest.42`](https://github.com/mietek/mit-cadr-system-software/blob/8e978d7d1704096a63edd4386a3b8326a2e584af/src/lmwin/quest.42#L77-L86), [`quest.42`](https://github.com/mietek/mit-cadr-system-software/blob/8e978d7d1704096a63edd4386a3b8326a2e584af/src/lmwin/quest.42#L390-L404) |
-| `43VXMS` | Numeric display in the `MUNCH` display hack and text in `LEXIPHAGE`. | [`hacks.189`](https://github.com/mietek/mit-cadr-system-software/blob/8e978d7d1704096a63edd4386a3b8326a2e584af/src/lmio1/hacks.189#L207-L222), [`hacks.189`](https://github.com/mietek/mit-cadr-system-software/blob/8e978d7d1704096a63edd4386a3b8326a2e584af/src/lmio1/hacks.189#L470-L484) |
-| `TOG` | Switch-register glyphs in the display hacks. | [`hacks.189`](https://github.com/mietek/mit-cadr-system-software/blob/8e978d7d1704096a63edd4386a3b8326a2e584af/src/lmio1/hacks.189#L307-L333) |
+It establishes direct executable roles for 15 of the 88 source-backed names,
+qualified printer/document roles for three, and contemporary documented roles for
+two. The other 68 remain explicit `TODO`s because the snapshot establishes only
+reported use without a role, standard loading, source compilation, or source
+survival. The audit also treats all 17 QFASL-only names separately; only `MEDFNB`
+and `SHIP` have source-established application roles.
+
+This separation matters because the tracked 150 files include 62 alternate source
+representations. Usage belongs to a logical name unless primary evidence identifies
+a particular AST, KST, or Alto variant.
 
 ## Open questions
 
@@ -229,7 +229,9 @@ the remaining fonts are **TODO** until similarly direct evidence is cataloged.
   media documentation.
 - Recover and cross-check the 19 public QFASL-only compiled font files without
   conflating that work with source recovery.
-- Catalog source-backed application uses for the fonts not listed above.
+- Locate additional primary evidence for the 68 source-backed and 15 compiled-only
+  logical names whose purpose remains `TODO` after the complete literal-reference
+  audit.
 - Compare the normalized outputs with fonts loaded by a running System 46 image. That
   would test the complete historical compilation path, but it is not required to
   recover the public source glyphs.

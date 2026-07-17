@@ -393,6 +393,112 @@ class TrackedCadrCatalogTests(unittest.TestCase):
         )
         self.assertEqual(ar1["selected_extent_recovery_member_count"], 45)
 
+    def test_usage_catalog_covers_every_logical_font_exactly_once(self) -> None:
+        asset_catalog = json.loads(
+            (
+                REPOSITORY
+                / "docs"
+                / "assets"
+                / "mit-cadr-fonts"
+                / "catalog.json"
+            ).read_text(encoding="utf-8")
+        )
+        usage_catalog = json.loads(
+            (
+                REPOSITORY
+                / "docs"
+                / "mit-cadr"
+                / "font-usage-catalog.json"
+            ).read_text(encoding="utf-8")
+        )
+
+        self.assertEqual(usage_catalog["schema_version"], 1)
+        self.assertEqual(
+            usage_catalog["source_revision"],
+            "8e978d7d1704096a63edd4386a3b8326a2e584af",
+        )
+        source_backed = usage_catalog["source_backed_fonts"]
+        self.assertEqual(
+            set(source_backed),
+            {font["logical_name"] for font in asset_catalog["fonts"]},
+        )
+        self.assertEqual(
+            {
+                status: sum(
+                    record["status"] == status
+                    for record in source_backed.values()
+                )
+                for status in usage_catalog["status_definitions"]
+            },
+            {
+                "direct-runtime": 15,
+                "document-output-name-match": 3,
+                "documented-use": 2,
+                "reported-use-no-purpose": 1,
+                "standard-load-no-purpose": 6,
+                "source-build-only": 46,
+                "source-only": 15,
+                "compiled-inventory-only": 0,
+            },
+        )
+
+        compiled_only = usage_catalog["compiled_only_fonts"]
+        self.assertEqual(
+            set(compiled_only),
+            {
+                "20VR",
+                "31VR",
+                "40VR",
+                "BIGVG",
+                "CPT-13FG",
+                "CPT-HL10",
+                "CPT-HL10B",
+                "CPT-TR10I",
+                "GERM35",
+                "HL12BI",
+                "MEDFNB",
+                "S30CHS",
+                "S35GER",
+                "SAIL12",
+                "SEARCH",
+                "SHIP",
+                "TR12B1",
+            },
+        )
+        self.assertEqual(
+            {
+                status: sum(
+                    record["status"] == status
+                    for record in compiled_only.values()
+                )
+                for status in usage_catalog["status_definitions"]
+            },
+            {
+                "direct-runtime": 2,
+                "document-output-name-match": 0,
+                "documented-use": 0,
+                "reported-use-no-purpose": 2,
+                "standard-load-no-purpose": 2,
+                "source-build-only": 0,
+                "source-only": 0,
+                "compiled-inventory-only": 11,
+            },
+        )
+        for records in (source_backed, compiled_only):
+            for name, record in records.items():
+                self.assertIn(record["status"], usage_catalog["status_definitions"])
+                self.assertIsInstance(record["purpose"], str, name)
+                self.assertTrue(record["purpose"], name)
+                if record["status"] in {
+                    "direct-runtime",
+                    "document-output-name-match",
+                    "documented-use",
+                }:
+                    self.assertNotEqual(record["purpose"], "TODO", name)
+                    self.assertTrue(record.get("evidence"), name)
+                else:
+                    self.assertEqual(record["purpose"], "TODO", name)
+
 
 class OutputTests(unittest.TestCase):
     def setUp(self) -> None:

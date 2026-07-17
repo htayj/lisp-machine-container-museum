@@ -1,0 +1,310 @@
+{
+  "schema_version": 1,
+  "audit_date": "2026-07-16",
+  "source_repository": "https://github.com/mietek/mit-cadr-system-software",
+  "source_revision": "8e978d7d1704096a63edd4386a3b8326a2e584af",
+  "scope": {
+    "source_backed_logical_font_count": 88,
+    "compiled_only_logical_font_count": 17,
+    "variant_policy": "Usage is cataloged by logical name. The 62 retained source variants inherit the logical-name finding unless a source explicitly distinguishes a variant.",
+    "search_boundary": "Complete src tree at the pinned revision, including binary-aware literal-name scans and manual inspection of every surviving context. Dynamically constructed or interactive uses may not leave a literal name."
+  },
+  "status_definitions": {
+    "direct-runtime": "Executable CADR Lisp code selects the font for an identified role.",
+    "document-output-name-match": "A document or formatter selects a resource with the same name, but the snapshot does not prove that the printer resource is the recovered screen-font raster.",
+    "documented-use": "Contemporary documentation or a bug report identifies a role, but no surviving executable selection site was found.",
+    "reported-use-no-purpose": "Contemporary material establishes use or runtime presence without identifying a purpose.",
+    "standard-load-no-purpose": "A system package or loader includes the font, but no consuming role was found.",
+    "source-build-only": "The font occurs in the source archive compilation list, but no consuming role was found.",
+    "source-only": "A recoverable source representation exists, but no build-list, load, or consuming-role reference was found.",
+    "compiled-inventory-only": "A compiled font is inventoried, but no load or consuming-role reference was found."
+  },
+  "source_backed_fonts": {
+    "13FG": {"status": "source-only", "purpose": "TODO"},
+    "13FGB": {"status": "source-only", "purpose": "TODO"},
+    "14FR3": {"status": "source-only", "purpose": "TODO"},
+    "16FG": {"status": "source-only", "purpose": "TODO"},
+    "25FR3": {
+      "status": "document-output-name-match",
+      "purpose": "Configured as an XGP document font, including as font 0 for the Lisp Machine progress report and font 5 in a CADR document. The recovered AST identifies the same 25FR3 KST source, but exact print-time raster identity is unverified.",
+      "evidence": [
+        {"path": "src/lmdoc/paper.105", "lines": "1-19", "url": "https://github.com/mietek/mit-cadr-system-software/blob/8e978d7d1704096a63edd4386a3b8326a2e584af/src/lmdoc/paper.105#L1-L19"},
+        {"path": "src/lmdoc/cadr.164", "lines": "1-10", "url": "https://github.com/mietek/mit-cadr-system-software/blob/8e978d7d1704096a63edd4386a3b8326a2e584af/src/lmdoc/cadr.164#L1-L10"},
+        {"path": "src/lmfont/25fr3.ast", "lines": "1-8", "url": "https://github.com/mietek/mit-cadr-system-software/blob/8e978d7d1704096a63edd4386a3b8326a2e584af/src/lmfont/25fr3.ast#L1-L8"}
+      ]
+    },
+    "40VSHD": {"status": "source-only", "purpose": "TODO"},
+    "43VXMS": {
+      "status": "direct-runtime",
+      "purpose": "Numeric/current-value display in MUNCH and text rendering in LEXIPHAGE.",
+      "evidence": [
+        {"path": "src/lmio1/hacks.188", "lines": "207-222", "url": "https://github.com/mietek/mit-cadr-system-software/blob/8e978d7d1704096a63edd4386a3b8326a2e584af/src/lmio1/hacks.188#L207-L222"},
+        {"path": "src/lmio1/hacks.188", "lines": "470-484", "url": "https://github.com/mietek/mit-cadr-system-software/blob/8e978d7d1704096a63edd4386a3b8326a2e584af/src/lmio1/hacks.188#L470-L484"}
+      ]
+    },
+    "5X5": {
+      "status": "direct-runtime",
+      "purpose": "Tiny text in compact boxed screen elements and labels in the system-menu layout.",
+      "evidence": [
+        {"path": "src/lmwin/shwarm.160", "lines": "864-881", "url": "https://github.com/mietek/mit-cadr-system-software/blob/8e978d7d1704096a63edd4386a3b8326a2e584af/src/lmwin/shwarm.160#L864-L881"},
+        {"path": "src/lmwin/sysmen.104", "lines": "564-572", "url": "https://github.com/mietek/mit-cadr-system-software/blob/8e978d7d1704096a63edd4386a3b8326a2e584af/src/lmwin/sysmen.104#L564-L572"}
+      ]
+    },
+    "APL14": {"status": "source-build-only", "purpose": "TODO"},
+    "ARR10": {"status": "source-build-only", "purpose": "TODO"},
+    "ARROW": {
+      "status": "direct-runtime",
+      "purpose": "Glyphs for otherwise invisible format-effectors and for old-window-system mouse and rectangle-selection blinkers.",
+      "evidence": [
+        {"path": "src/lmio/tv.347", "lines": "140-160", "url": "https://github.com/mietek/mit-cadr-system-software/blob/8e978d7d1704096a63edd4386a3b8326a2e584af/src/lmio/tv.347#L140-L160"},
+        {"path": "src/lispm2/mouse.139", "lines": "168-203", "url": "https://github.com/mietek/mit-cadr-system-software/blob/8e978d7d1704096a63edd4386a3b8326a2e584af/src/lispm2/mouse.139#L168-L203"}
+      ]
+    },
+    "BIGFNT": {
+      "status": "direct-runtime",
+      "purpose": "SUPDUP's conspicuous machine-in-use message, prominent questionnaire buttons, and the PRINT-BIG helper.",
+      "evidence": [
+        {"path": "src/lmio1/supser.66", "lines": "684-710", "url": "https://github.com/mietek/mit-cadr-system-software/blob/8e978d7d1704096a63edd4386a3b8326a2e584af/src/lmio1/supser.66#L684-L710"},
+        {"path": "src/lmwin/quest.42", "lines": "391-401", "url": "https://github.com/mietek/mit-cadr-system-software/blob/8e978d7d1704096a63edd4386a3b8326a2e584af/src/lmwin/quest.42#L391-L401"},
+        {"path": "src/lmio1/hacks.188", "lines": "527-539", "url": "https://github.com/mietek/mit-cadr-system-software/blob/8e978d7d1704096a63edd4386a3b8326a2e584af/src/lmio1/hacks.188#L527-L539"}
+      ]
+    },
+    "BLKF10": {"status": "source-build-only", "purpose": "TODO"},
+    "BUG": {"status": "source-build-only", "purpose": "TODO"},
+    "CHA": {"status": "source-build-only", "purpose": "TODO"},
+    "CHAS": {"status": "source-build-only", "purpose": "TODO"},
+    "CLAR": {"status": "source-build-only", "purpose": "TODO"},
+    "CLAR12": {"status": "source-build-only", "purpose": "TODO"},
+    "CLAR14": {"status": "source-build-only", "purpose": "TODO"},
+    "CLARB": {"status": "source-build-only", "purpose": "TODO"},
+    "CLARGK": {"status": "source-build-only", "purpose": "TODO"},
+    "CLRE14": {"status": "source-build-only", "purpose": "TODO"},
+    "CM10": {"status": "source-only", "purpose": "TODO"},
+    "CM12": {"status": "source-only", "purpose": "TODO"},
+    "CPTFON": {
+      "runtime_object_name": "CPTFONT",
+      "status": "direct-runtime",
+      "purpose": "Default font of the cold-load, CPT, and main screens and their initial text output structures.",
+      "evidence": [
+        {"path": "src/lispm/coldut.22", "lines": "957-965", "url": "https://github.com/mietek/mit-cadr-system-software/blob/8e978d7d1704096a63edd4386a3b8326a2e584af/src/lispm/coldut.22#L957-L965"},
+        {"path": "src/lmio/tv.347", "lines": "487-507", "url": "https://github.com/mietek/mit-cadr-system-software/blob/8e978d7d1704096a63edd4386a3b8326a2e584af/src/lmio/tv.347#L487-L507"},
+        {"path": "src/lmwin/shwarm.160", "lines": "887-900", "url": "https://github.com/mietek/mit-cadr-system-software/blob/8e978d7d1704096a63edd4386a3b8326a2e584af/src/lmwin/shwarm.160#L887-L900"}
+      ]
+    },
+    "CYR12": {"status": "source-only", "purpose": "TODO"},
+    "GACH10": {"status": "source-build-only", "purpose": "TODO"},
+    "GACH12": {"status": "source-build-only", "purpose": "TODO"},
+    "GACHA8": {
+      "status": "document-output-name-match",
+      "purpose": "Normal text while reformatting Interlisp prettyprinter output for Dover; this is not evidence of a CADR screen role or raster identity.",
+      "evidence": [
+        {"path": "src/moon/lunar.:ej", "lines": "492-505", "url": "https://github.com/mietek/mit-cadr-system-software/blob/8e978d7d1704096a63edd4386a3b8326a2e584af/src/moon/lunar.%3Aej#L492-L505"}
+      ]
+    },
+    "GATES3": {"status": "source-build-only", "purpose": "TODO"},
+    "GATS3A": {"status": "source-build-only", "purpose": "TODO"},
+    "GLS7X9": {"status": "source-only", "purpose": "TODO"},
+    "HAFONT": {"status": "source-only", "purpose": "TODO"},
+    "HIP10A": {"status": "source-build-only", "purpose": "TODO"},
+    "HIPO10": {"status": "source-build-only", "purpose": "TODO"},
+    "HL10": {
+      "status": "direct-runtime",
+      "purpose": "Unselected choice text in the choose-variable-values interface.",
+      "evidence": [
+        {"path": "src/lmwin/choice.12", "lines": "751-763", "url": "https://github.com/mietek/mit-cadr-system-software/blob/8e978d7d1704096a63edd4386a3b8326a2e584af/src/lmwin/choice.12#L751-L763"}
+      ]
+    },
+    "HL10B": {
+      "status": "direct-runtime",
+      "purpose": "Selected choice text in the choose-variable-values interface.",
+      "evidence": [
+        {"path": "src/lmwin/choice.12", "lines": "757-763", "url": "https://github.com/mietek/mit-cadr-system-software/blob/8e978d7d1704096a63edd4386a3b8326a2e584af/src/lmwin/choice.12#L757-L763"}
+      ]
+    },
+    "HL12": {
+      "status": "reported-use-no-purpose",
+      "purpose": "TODO",
+      "observation": "A contemporary user reported using HL12 frequently in multi-font files, without identifying its semantic role.",
+      "evidence": [
+        {"path": "src/nzwei/bugs.old", "lines": "2693-2703", "url": "https://github.com/mietek/mit-cadr-system-software/blob/8e978d7d1704096a63edd4386a3b8326a2e584af/src/nzwei/bugs.old#L2693-L2703"}
+      ]
+    },
+    "HL12B": {
+      "status": "direct-runtime",
+      "purpose": "The inspector window's Empty label.",
+      "evidence": [
+        {"path": "src/lmwin/inspct.80", "lines": "26-39", "url": "https://github.com/mietek/mit-cadr-system-software/blob/8e978d7d1704096a63edd4386a3b8326a2e584af/src/lmwin/inspct.80#L26-L39"}
+      ]
+    },
+    "HL12I": {
+      "status": "direct-runtime",
+      "purpose": "Special choices displayed at the top of multiple-choice menus.",
+      "evidence": [
+        {"path": "src/lmwin/menu.29", "lines": "782-802", "url": "https://github.com/mietek/mit-cadr-system-software/blob/8e978d7d1704096a63edd4386a3b8326a2e584af/src/lmwin/menu.29#L782-L802"}
+      ]
+    },
+    "HL14": {"status": "source-build-only", "purpose": "TODO"},
+    "HL18": {"status": "source-build-only", "purpose": "TODO"},
+    "HL6": {"status": "standard-load-no-purpose", "purpose": "TODO"},
+    "HL7": {"status": "standard-load-no-purpose", "purpose": "TODO"},
+    "HL7B": {"status": "source-only", "purpose": "TODO"},
+    "HL7BI": {"status": "source-only", "purpose": "TODO"},
+    "HL7I": {"status": "source-build-only", "purpose": "TODO"},
+    "HL8": {"status": "source-build-only", "purpose": "TODO"},
+    "HL8B": {"status": "source-build-only", "purpose": "TODO"},
+    "MAT10A": {"status": "source-build-only", "purpose": "TODO"},
+    "MATH10": {
+      "status": "document-output-name-match",
+      "purpose": "Generated XGP output selects the MATH10 slot twice for an error-handler right-arrow prompt and once for a greater-than-or-equal relation. The other eight preserved XGP bodies only declare it; exact recovered raster-variant identity is unverified.",
+      "evidence": [
+        {"path": "src/lmwind/operat.xgp", "lines": "9,883,1081", "url": "https://github.com/mietek/mit-cadr-system-software/blob/8e978d7d1704096a63edd4386a3b8326a2e584af/src/lmwind/operat.xgp#L883"},
+        {"path": "src/lmwind/stream.xgp", "lines": "238", "url": "https://github.com/mietek/mit-cadr-system-software/blob/8e978d7d1704096a63edd4386a3b8326a2e584af/src/lmwind/stream.xgp#L238"},
+        {"path": "PDP-10 ITS doc/info/xgp.24", "lines": "427-432", "url": "https://github.com/PDP-10/its/blob/8ea145f42cabccfad054321a35e1493c1c67970c/doc/info/xgp.24#L427-L432"}
+      ]
+    },
+    "MATH16": {"status": "source-build-only", "purpose": "TODO"},
+    "MEDFNT": {
+      "status": "direct-runtime",
+      "purpose": "Default screen-menu font and questionnaire button text.",
+      "evidence": [
+        {"path": "src/lmwin/menu.29", "lines": "101-116", "url": "https://github.com/mietek/mit-cadr-system-software/blob/8e978d7d1704096a63edd4386a3b8326a2e584af/src/lmwin/menu.29#L101-L116"},
+        {"path": "src/lmwin/quest.42", "lines": "198-207", "url": "https://github.com/mietek/mit-cadr-system-software/blob/8e978d7d1704096a63edd4386a3b8326a2e584af/src/lmwin/quest.42#L198-L207"}
+      ]
+    },
+    "METS": {
+      "status": "direct-runtime",
+      "purpose": "Default label font of the questionnaire frame.",
+      "evidence": [
+        {"path": "src/lmwin/quest.42", "lines": "78-84", "url": "https://github.com/mietek/mit-cadr-system-software/blob/8e978d7d1704096a63edd4386a3b8326a2e584af/src/lmwin/quest.42#L78-L84"}
+      ]
+    },
+    "METSI": {"status": "standard-load-no-purpose", "purpose": "TODO"},
+    "MOUSE": {
+      "status": "direct-runtime",
+      "purpose": "Standard mouse, rectangle-selection, and scrolling blinkers; also meter indicator strings.",
+      "evidence": [
+        {"path": "src/lmwin/mouse.149", "lines": "141-148,202-214,851-856", "url": "https://github.com/mietek/mit-cadr-system-software/blob/8e978d7d1704096a63edd4386a3b8326a2e584af/src/lmwin/mouse.149#L141-L148"},
+        {"path": "src/moon/ppk.2", "lines": "100-110", "url": "https://github.com/mietek/mit-cadr-system-software/blob/8e978d7d1704096a63edd4386a3b8326a2e584af/src/moon/ppk.2#L100-L110"}
+      ]
+    },
+    "MUSC10": {"status": "source-build-only", "purpose": "TODO"},
+    "NONM": {"status": "source-build-only", "purpose": "TODO"},
+    "NONS": {"status": "source-build-only", "purpose": "TODO"},
+    "PLNK16": {"status": "source-build-only", "purpose": "TODO"},
+    "PRNT10": {"status": "source-build-only", "purpose": "TODO"},
+    "PRONTO": {"status": "source-only", "purpose": "TODO"},
+    "PRT12B": {
+      "status": "documented-use",
+      "purpose": "Variable-width menu text in a contemporary window-system bug reproduction; no specific application role was identified.",
+      "evidence": [
+        {"path": "src/lmwind/bug.omail", "lines": "2465-2478", "url": "https://github.com/mietek/mit-cadr-system-software/blob/8e978d7d1704096a63edd4386a3b8326a2e584af/src/lmwind/bug.omail#L2465-L2478"}
+      ]
+    },
+    "SAIL10": {"status": "source-only", "purpose": "TODO"},
+    "SMT10": {"status": "source-build-only", "purpose": "TODO"},
+    "SMT10A": {"status": "source-build-only", "purpose": "TODO"},
+    "SMT14": {"status": "source-build-only", "purpose": "TODO"},
+    "SMT14A": {"status": "source-build-only", "purpose": "TODO"},
+    "ST10": {"status": "source-build-only", "purpose": "TODO"},
+    "ST6": {"status": "source-build-only", "purpose": "TODO"},
+    "ST8": {"status": "source-build-only", "purpose": "TODO"},
+    "SWFONT": {"status": "source-only", "purpose": "TODO"},
+    "TNTO14": {"status": "source-build-only", "purpose": "TODO"},
+    "TNTOB": {"status": "source-build-only", "purpose": "TODO"},
+    "TOG": {
+      "status": "direct-runtime",
+      "purpose": "Switch-register state glyphs in the display hacks.",
+      "evidence": [
+        {"path": "src/lmio1/hacks.189", "lines": "307-333", "url": "https://github.com/mietek/mit-cadr-system-software/blob/8e978d7d1704096a63edd4386a3b8326a2e584af/src/lmio1/hacks.189#L307-L333"}
+      ]
+    },
+    "TONTO": {"status": "source-build-only", "purpose": "TODO"},
+    "TR10": {"status": "source-build-only", "purpose": "TODO"},
+    "TR10B": {"status": "source-build-only", "purpose": "TODO"},
+    "TR10I": {
+      "status": "direct-runtime",
+      "purpose": "Default font for new-window-system margin-scroll messages such as More above and More below.",
+      "evidence": [
+        {"path": "src/lmwin/choice.12", "lines": "201-211", "url": "https://github.com/mietek/mit-cadr-system-software/blob/8e978d7d1704096a63edd4386a3b8326a2e584af/src/lmwin/choice.12#L201-L211"}
+      ]
+    },
+    "TR12": {"status": "source-build-only", "purpose": "TODO"},
+    "TR12B": {"status": "source-build-only", "purpose": "TODO"},
+    "TR12I": {
+      "status": "documented-use",
+      "purpose": "Old-window-system option documentation names it as the default for top and bottom margin-scroll legends; the retained new-window implementation instead selects TR10I.",
+      "evidence": [
+        {"path": "src/lmwind/option.info", "lines": "219-225", "url": "https://github.com/mietek/mit-cadr-system-software/blob/8e978d7d1704096a63edd4386a3b8326a2e584af/src/lmwind/option.info#L219-L225"},
+        {"path": "src/lmwin/choice.12", "lines": "201-211", "url": "https://github.com/mietek/mit-cadr-system-software/blob/8e978d7d1704096a63edd4386a3b8326a2e584af/src/lmwin/choice.12#L201-L211"}
+      ]
+    },
+    "TR14": {"status": "source-build-only", "purpose": "TODO"},
+    "TR18": {"status": "source-build-only", "purpose": "TODO"},
+    "TR8": {"status": "standard-load-no-purpose", "purpose": "TODO"},
+    "TR8B": {"status": "standard-load-no-purpose", "purpose": "TODO"},
+    "TR8I": {"status": "standard-load-no-purpose", "purpose": "TODO"},
+    "TVFONT": {
+      "status": "direct-runtime",
+      "purpose": "Formatted numeric tick labels on an SB dial face.",
+      "evidence": [
+        {"path": "src/moon/ppk.2", "lines": "82-96", "url": "https://github.com/mietek/mit-cadr-system-software/blob/8e978d7d1704096a63edd4386a3b8326a2e584af/src/moon/ppk.2#L82-L96"}
+      ]
+    }
+  },
+  "shared_evidence": {
+    "standard_font_load_list": {"path": "src/lispm/pkgdcl.230", "lines": "61-81", "url": "https://github.com/mietek/mit-cadr-system-software/blob/8e978d7d1704096a63edd4386a3b8326a2e584af/src/lispm/pkgdcl.230#L61-L81"},
+    "source_archive_build_list": {"path": "src/lmfont/fcmp.xfile", "lines": "1-92", "url": "https://github.com/mietek/mit-cadr-system-software/blob/8e978d7d1704096a63edd4386a3b8326a2e584af/src/lmfont/fcmp.xfile#L1-L92"},
+    "compiled_media_inventory": {"path": "src/moon/wall.3", "lines": "314-392", "url": "https://github.com/mietek/mit-cadr-system-software/blob/8e978d7d1704096a63edd4386a3b8326a2e584af/src/moon/wall.3#L314-L392"}
+  },
+  "compiled_only_fonts": {
+    "20VR": {"status": "compiled-inventory-only", "purpose": "TODO"},
+    "31VR": {"status": "compiled-inventory-only", "purpose": "TODO"},
+    "40VR": {"status": "compiled-inventory-only", "purpose": "TODO"},
+    "BIGVG": {"status": "compiled-inventory-only", "purpose": "TODO"},
+    "CPT-13FG": {"status": "compiled-inventory-only", "purpose": "TODO", "physical_filename": "3213FG"},
+    "CPT-HL10": {"status": "compiled-inventory-only", "purpose": "TODO", "physical_filename": "32HL10"},
+    "CPT-HL10B": {"status": "compiled-inventory-only", "purpose": "TODO", "physical_filename": "3HL10B"},
+    "CPT-TR10I": {
+      "status": "reported-use-no-purpose",
+      "purpose": "TODO",
+      "physical_filename": "3TR10I",
+      "observation": "A bug report records adjacent CPT-TR10I and CPTFONT runs in a Zwei buffer, but does not identify the intended role.",
+      "evidence": [
+        {"path": "src/lmwind/bug.omail", "lines": "1507-1516", "url": "https://github.com/mietek/mit-cadr-system-software/blob/8e978d7d1704096a63edd4386a3b8326a2e584af/src/lmwind/bug.omail#L1507-L1516"}
+      ]
+    },
+    "GERM35": {"status": "compiled-inventory-only", "purpose": "TODO"},
+    "HL12BI": {"status": "standard-load-no-purpose", "purpose": "TODO"},
+    "MEDFNB": {
+      "status": "direct-runtime",
+      "purpose": "The Any, Do It, and Abort entries in system menus.",
+      "evidence": [
+        {"path": "src/lmwin/sysmen.105", "lines": "121-128,205-213", "url": "https://github.com/mietek/mit-cadr-system-software/blob/8e978d7d1704096a63edd4386a3b8326a2e584af/src/lmwin/sysmen.105#L121-L128"}
+      ]
+    },
+    "S30CHS": {
+      "status": "reported-use-no-purpose",
+      "purpose": "TODO",
+      "observation": "A bug report inspected the runtime font object and found an array-leader-length problem, without identifying the intended role.",
+      "evidence": [
+        {"path": "src/lmdoc/bug.nlispm", "lines": "1621-1625", "url": "https://github.com/mietek/mit-cadr-system-software/blob/8e978d7d1704096a63edd4386a3b8326a2e584af/src/lmdoc/bug.nlispm#L1621-L1625"}
+      ]
+    },
+    "S35GER": {"status": "compiled-inventory-only", "purpose": "TODO"},
+    "SAIL12": {"status": "compiled-inventory-only", "purpose": "TODO"},
+    "SEARCH": {"status": "standard-load-no-purpose", "purpose": "TODO"},
+    "SHIP": {
+      "status": "direct-runtime",
+      "purpose": "Spacewar character blinkers for torpedoes, suns, and differently oriented ship models.",
+      "evidence": [
+        {"path": "src/lmio1/load.swar", "lines": "1-5", "url": "https://github.com/mietek/mit-cadr-system-software/blob/8e978d7d1704096a63edd4386a3b8326a2e584af/src/lmio1/load.swar#L1-L5"},
+        {"path": "src/lmio1/swar.2", "lines": "267-274,389-399,539-551", "url": "https://github.com/mietek/mit-cadr-system-software/blob/8e978d7d1704096a63edd4386a3b8326a2e584af/src/lmio1/swar.2#L267-L274"}
+      ]
+    },
+    "TR12B1": {"status": "compiled-inventory-only", "purpose": "TODO"}
+  },
+  "older_compiled_files": {
+    "N43XMS": {"corresponding_source_backed_name": "43VXMS", "purpose": "TODO: no use of this older compiled artifact was established."},
+    "NTOG": {"corresponding_source_backed_name": "TOG", "purpose": "TODO: no use of this older compiled artifact was established."}
+  }
+}
