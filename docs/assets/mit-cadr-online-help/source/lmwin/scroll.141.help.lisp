@@ -1,0 +1,487 @@
+;;; Inertly recovered online-help source contexts.
+;;; Original System 46 file: lmwin/scroll.141
+;;; Exact source bytes follow each generated provenance comment.
+
+;;; Source bytes 2613:2758; lines 65-67; sha256 f562757e75d3d32b1004f58902c4f7d4fdefe82490ab1c5f980b29ec6de4e6be
+(DEFFLAVOR SCROLL-WINDOW ()
+  (FLASHY-SCROLLING-MIXIN BASIC-SCROLL-WINDOW BORDERS-MIXIN BASIC-SCROLL-BAR WINDOW)
+  (:DOCUMENTATION :COMBINATION))
+
+;;; Source bytes 10553:10844; lines 275-280; sha256 17b70efd1fd86f46baa969cfd9ac71134870e8d7b653db2fdd12296aa20b61f7
+(DEFFLAVOR SCROLL-WINDOW-WITH-TYPEOUT ()
+  (WINDOW-WITH-TYPEOUT-MIXIN SCROLL-WINDOW)
+  (:DEFAULT-INIT-PLIST :TYPEOUT-WINDOW '(TYPEOUT-WINDOW 
+					 :DEEXPOSED-TYPEOUT-ACTION (:EXPOSE-FOR-TYPEOUT)
+					 :IO-BUFFER NIL))
+  (:DOCUMENTATION :COMBINATION "A scroll window with a typeout window"))
+
+;;; Source bytes 10963:11601; lines 285-300; sha256 f6a9e372c105386db721a5b4dc526b8310e2dee685fcb2de6f9f291180b9ce89
+(DEFMETHOD (SCROLL-WINDOW-WITH-TYPEOUT :BEFORE :REDISPLAY) (&REST IGNORE)
+  "If the typeout window is active, deexposed it, and make sure the redisplayer knows how many
+lines were clobbered."
+  (COND ((FUNCALL TYPEOUT-WINDOW ':ACTIVE-P)
+	 (LET ((BR (MIN SCREEN-LINES
+			(1+ (// (FUNCALL TYPEOUT-WINDOW ':BOTTOM-REACHED) LINE-HEIGHT)))))
+	   (DOTIMES (L BR)
+	     ;; Mark lines as clobbered
+	     (ASET NIL SCREEN-IMAGE L 0)
+	     (ASET -1 SCREEN-IMAGE L 1)
+	     (ASET -1 SCREEN-IMAGE L 2))
+	   (FUNCALL TYPEOUT-WINDOW ':DEACTIVATE)
+	   (FUNCALL-SELF ':DRAW-RECTANGLE
+			 (SHEET-INSIDE-WIDTH) (* BR LINE-HEIGHT)
+			 0 0
+			 ALU-ANDCA)))))
+
+;;; Source bytes 11648:24327; lines 303-625; sha256 f7e0e08a3629fc1b1f9243ddd07ccff8c6164dbcd3fdb813c1c110389540b51f
+(DECLARE-FLAVOR-INSTANCE-VARIABLES (BASIC-SCROLL-WINDOW)
+(DEFUN SCROLL-REDISPLAY (&OPTIONAL FULL-REDISPLAY &AUX (SCROLL-NEW-X 0) (SCROLL-NEW-Y 0))
+  (SHEET-FORCE-ACCESS (SELF :NO-PREPARE)
+   (LOCK-SHEET (SELF)
+    (AND (OR FULL-REDISPLAY (NULL TOP-ITEM))
+	 ;; If doing full redisplay then must clear whole screen
+	 ;; :CLEAR-SCREEN will take care of forcing redisplay
+	 (FUNCALL-SELF ':CLEAR-SCREEN))
+    (WITHOUT-INTERRUPTS
+      (COND ((NULL TOP-ITEM)
+	     ;; Nothing on the screen now, will have to do whole thing
+	     (AND (OR (NULL TARGET-TOP-ITEM)
+		      (< TARGET-TOP-ITEM 0))
+		  (SETQ TARGET-TOP-ITEM 0)))
+	    ((OR (NULL TARGET-TOP-ITEM) (< TARGET-TOP-ITEM 0))
+	     ;; No change in top line, just target for where we are
+	     (SETQ TARGET-TOP-ITEM TOP-ITEM))))
+    (*CATCH 'END-OF-PAGE
+      (PROGN
+	(SETQ BOTTOM-ITEM -1)
+	(SCROLL-REDISPLAY-ITEM-LOOP DISPLAY-ITEM 0
+				    #'SCROLL-REDISPLAY-DISPLAY-ITEM NIL 0)
+	(SETQ BOTTOM-ITEM (1+ BOTTOM-ITEM))
+	(AND SCROLL-NEW-X
+	     (FUNCALL-SELF ':SET-CURSORPOS SCROLL-NEW-X SCROLL-NEW-Y))
+	(FUNCALL-SELF ':CLEAR-EOL)
+	(DO ((I (SCROLL-LINE) (1+ I)))
+	    (( I SCREEN-LINES))
+	  (*CATCH 'END-OF-PAGE (FUNCALL-SELF ':TYO #\CR))
+	  (FUNCALL-SELF ':CLEAR-EOL)
+	  (ASET NIL SCREEN-IMAGE I 0)
+	  (ASET -1 SCREEN-IMAGE I 1)
+	  (ASET -1 SCREEN-IMAGE I 2))))
+    (SETQ TOP-ITEM TARGET-TOP-ITEM)
+    (FUNCALL-SELF ':NEW-SCROLL-POSITION TOP-ITEM))))
+
+(DEFUN SCROLL-REDISPLAY-ITEM-LOOP (ITEM CURRENT-COUNT FUNCTION NO-RECOMP &REST POSITION
+				   &AUX FUN)
+  "Loop over an item and it's inferiors until TARGET-TOP-ITEM has been reached,
+then start doing the appropriate things to fix up the screen.  This may require
+inserting and deleting lines, etc...  Returns what the number of the next item is."
+  (COND ((NULL ITEM))
+	((LISTP ITEM)
+	 ;; A list of other items, recurse
+	 (OR NO-RECOMP
+	     (DO ((F (SCROLL-FLAGS ITEM) (CDDR F)))
+		 ((NULL F))
+	       (SELECTQ (CAR F)
+		 (:FUNCTION (SETQ FUN (CADR F)))
+		 (:PRE-PROCESS-FUNCTION (FUNCALL (CADR F) ITEM)))))
+	 (DO ((ITEMS (SCROLL-ITEMS ITEM) (CDR ITEMS)))
+	     ((NULL ITEMS))
+	   (AND FUN
+		(RPLACA ITEMS (FUNCALL FUN (CAR ITEMS) POSITION (LOCF (SCROLL-FLAGS ITEM)))))
+	   (SETQ CURRENT-COUNT
+		 (LEXPR-FUNCALL #'SCROLL-REDISPLAY-ITEM-LOOP
+				(CAR ITEMS) CURRENT-COUNT FUNCTION NO-RECOMP 0 POSITION))
+	   (FUNCALL-SELF ':HANDLE-EXCEPTIONS)
+	   (SETF (FIRST POSITION) (1+ (FIRST POSITION)))))
+	;; An item that really takes up space
+	((> (SETQ CURRENT-COUNT (1+ CURRENT-COUNT)) TARGET-TOP-ITEM)
+	 ;; This item is of interest
+	 (FUNCALL FUNCTION ITEM (1- CURRENT-COUNT))))
+  CURRENT-COUNT)
+
+(DEFVAR SCROLL-SPACES (FORMAT NIL "~2000X"))
+
+(DEFUN SCROLL-REDISPLAY-DISPLAY-ITEM (ITEM CURRENT-COUNT
+					   &AUX CURRENT-LINE CURRENT-ITEM-LINE
+				           FIRST-LINE FORCE-UPDATE OLD-LINE
+					   ENTRY-NEEDS-UPDATING END-OF-ITEM)
+  "Called with an item that might want to be on the screen.  CURSOR-Y set up correctly."
+  (COND (( CURRENT-COUNT TARGET-TOP-ITEM)
+	 ;; We wanna be on the screen
+	 (SETQ FIRST-LINE (IF SCROLL-NEW-X
+			      (// SCROLL-NEW-Y LINE-HEIGHT)
+			      (SCROLL-LINE))
+	       BOTTOM-ITEM CURRENT-COUNT)
+	 (COND ((AND (SETQ OLD-LINE
+			   (DO ((I FIRST-LINE (1+ I)))
+			       (( I SCREEN-LINES) NIL)
+			     (AND (EQ ITEM (AREF SCREEN-IMAGE I 0))
+				  (ZEROP (AREF SCREEN-IMAGE I 1))
+				  ;; If first line of this item on screen anywhere, then
+				  ;; can move it to current line
+				  (RETURN I))))
+		     ( OLD-LINE FIRST-LINE))
+		(AND SCROLL-NEW-X
+		     (FUNCALL-SELF ':SET-CURSORPOS SCROLL-NEW-X SCROLL-NEW-Y))
+		(SETQ SCROLL-NEW-X NIL
+		      SCROLL-NEW-Y NIL)
+		;; On screen but not in same position, move it up
+		(FUNCALL-SELF ':DELETE-LINE (- OLD-LINE FIRST-LINE))))
+
+	 ;; Now redisplay the item.
+	 (SETQ CURRENT-LINE FIRST-LINE
+	       CURRENT-ITEM-LINE 0)
+	 (UNWIND-PROTECT
+	   (PROGN
+	     (DOTIMES (I (SCROLL-ITEM-SIZE ITEM))
+	       (LET ((ENTRY (AREF ITEM I))
+		     (WID) (CHANGED-P))
+		 ;; Loop over all elements of the item
+		 (SETQ ENTRY-NEEDS-UPDATING
+		       (OR FORCE-UPDATE
+			   (NEQ ITEM (AREF SCREEN-IMAGE CURRENT-LINE 0))
+			   ( (AREF SCREEN-IMAGE CURRENT-LINE 1) CURRENT-ITEM-LINE)))
+		 (COND ((NOT (OR (SETQ CHANGED-P (FUNCALL (SCROLL-ENTRY-FUNCTION ENTRY)
+							  ':CHANGED-P ENTRY
+							  (SCROLL-ENTRY-FUNCTION ENTRY)))
+				 ENTRY-NEEDS-UPDATING))
+			;; Entry didn't change, but take into account how many
+			;; lines it takes up
+			(LET ((SEL (SCROLL-ENTRY-LINES ENTRY)))
+			  (IF (AND TRUNCATION (> SEL 0))
+			      ;; Spans more than one line, and truncating -- punt
+			      (SETQ END-OF-ITEM T)
+			      (SETQ CURRENT-ITEM-LINE (+ SEL CURRENT-ITEM-LINE)
+				    CURRENT-LINE (+ SEL CURRENT-LINE))
+			      (SETQ SCROLL-NEW-X (- (SCROLL-ENTRY-FINAL-X ENTRY)
+						    (SHEET-INSIDE-LEFT))
+				    SCROLL-NEW-Y (+ (OR SCROLL-NEW-Y
+							(- CURSOR-Y (SHEET-INSIDE-TOP)))
+						    (* LINE-HEIGHT SEL))))))
+		       ;; Set cursor to correct place, and continue with COND
+		       ((PROG1 NIL
+			       (AND SCROLL-NEW-X
+				    (FUNCALL-SELF ':SET-CURSORPOS SCROLL-NEW-X SCROLL-NEW-Y))
+			       (SETQ SCROLL-NEW-X NIL
+				     SCROLL-NEW-Y NIL)))		       
+		       ;; Entry needs updating, decide whether variable width or not
+		       ((AND CHANGED-P
+			     (SCROLL-ENTRY-VARIABLE-WIDTH-P ENTRY)
+			     ( (SCROLL-ENTRY-WIDTH ENTRY)
+				(SETQ WID (FUNCALL (SCROLL-ENTRY-FUNCTION ENTRY) ':WIDTH
+						   ENTRY (SCROLL-ENTRY-FUNCTION ENTRY)))))
+			;; Variable width entry, and the width changed, force
+			;; complete update of rest of item
+			(SETQ FORCE-UPDATE T)
+			(SETF (SCROLL-ENTRY-WIDTH ENTRY) WID)
+			(FUNCALL-SELF ':CLEAR-EOL)
+			(SCROLL-FLUSH-ITEM-FROM-SCREEN-IMAGE ITEM)
+			(LET ((*SCROLL-CURRENT-ITEM* ITEM)
+			      (*SCROLL-CURRENT-ITEM-LINE* CURRENT-ITEM-LINE))
+			  (SETQ END-OF-ITEM
+				(*CATCH 'END-OF-LINE
+				  (PROGN
+				    (FUNCALL (SCROLL-ENTRY-FUNCTION ENTRY) ':PRINT ENTRY)
+				    NIL))))			      
+			(SETF (SCROLL-ENTRY-FINAL-X ENTRY) CURSOR-X)
+			(SETF (SCROLL-ENTRY-FINAL-PRINTING-X ENTRY) CURSOR-X)
+			(SETF (SCROLL-ENTRY-LINES ENTRY) (- (SCROLL-LINE) CURRENT-LINE))
+			(SETQ CURRENT-LINE (SCROLL-LINE)
+			      CURRENT-ITEM-LINE (+ (SCROLL-ENTRY-LINES ENTRY)
+						   CURRENT-ITEM-LINE)))
+		       (T
+			;; Fixed width entry, or variable width entry and width hasn't changed
+			;; Using the width, figure out the cursor motion and erase area
+			(MULTIPLE-VALUE-BIND (FINAL-X FINAL-Y FINAL-COUNT)
+			    (SHEET-COMPUTE-MOTION SELF NIL NIL SCROLL-SPACES
+						  0 (SCROLL-ENTRY-WIDTH ENTRY)
+						  NIL
+						  (IF TRUNCATION
+						      (- (SHEET-INSIDE-RIGHT) CHAR-WIDTH)
+						      0)
+						  (IF TRUNCATION
+						      (- CURSOR-Y (SHEET-INSIDE-TOP))
+						      NIL))
+			  (SETQ FINAL-X (+ FINAL-X (SHEET-INSIDE-LEFT))
+				FINAL-Y (+ FINAL-Y (SHEET-INSIDE-TOP))
+				END-OF-ITEM (AND (NUMBERP FINAL-COUNT)
+						 ( FINAL-COUNT (SCROLL-ENTRY-WIDTH ENTRY))))
+			  (AND (> FINAL-Y (- (SHEET-INSIDE-BOTTOM) LINE-HEIGHT))
+			       (SETQ FINAL-X (SHEET-INSIDE-RIGHT)
+				     FINAL-Y (- (SHEET-INSIDE-BOTTOM) LINE-HEIGHT)))
+			  (SETF (SCROLL-ENTRY-FINAL-X ENTRY) FINAL-X)
+			  (SETF (SCROLL-ENTRY-LINES ENTRY)
+				(- (SHEET-LINE-NO NIL FINAL-Y) CURRENT-LINE))
+			  ;; Zero the area
+			  (PREPARE-SHEET (SELF)
+			    (DO ((Y CURSOR-Y (+ Y LINE-HEIGHT))
+				 (LINE 0 (1+ LINE))
+				 (X CURSOR-X (SHEET-INSIDE-LEFT))
+				 (LE) (DELTA-ITEMS))
+				((> Y FINAL-Y))
+			      (SETQ LE (AREF SCREEN-IMAGE (+ CURRENT-LINE LINE) 0))
+			      (COND ((OR (AND (EQ LE ITEM)
+					      (= (AREF SCREEN-IMAGE (+ CURRENT-LINE LINE) 1)
+						 (+ CURRENT-ITEM-LINE LINE)))
+					 (NULL LE))
+				     ;; We know about this line so just clear the area
+				     (%DRAW-RECTANGLE (- (IF (= Y FINAL-Y)
+							     FINAL-X
+							     (SHEET-INSIDE-RIGHT))
+							 X)
+						      LINE-HEIGHT X Y ALU-ANDCA SELF))
+				    ((EQ LE ITEM)
+				     ;; We own line, but it is wrong number.  Clear the line
+				     ;; and flush all knowledge
+				     (%DRAW-RECTANGLE (- (SHEET-INSIDE-RIGHT) X) LINE-HEIGHT
+						      X Y ALU-ANDCA SELF)
+				     (SCROLL-FLUSH-ITEM-FROM-SCREEN-IMAGE ITEM))
+				    (T
+				     ;; Make room for remaining number of lines and return
+				     (SETQ DELTA-ITEMS
+					   (- (AREF SCREEN-IMAGE (+ CURRENT-LINE LINE) 2)
+					      CURRENT-COUNT))
+				     ;; DELTA-ITEMS is a guess as to the number of items
+				     ;; in between this and the line it collided with.  
+				     ;; Assuming one line per item, this is a good guess as
+				     ;; to the number of additional lines to insert
+				     (LET-GLOBALLY ((CURSOR-Y Y))
+				       (FUNCALL-SELF ':INSERT-LINE
+					 ;; If we are past the item that's on this line, it
+					 ;; can't possibly appear on the screen -- insert 
+					 ;; enough lines to make it go off the screen
+					 (MAX 1 (MIN (+ (// (- FINAL-Y Y) LINE-HEIGHT)
+							(ABS DELTA-ITEMS))
+						     (- SCREEN-LINES (SCROLL-LINE))))))
+				     (RETURN T)))))
+			  (LET ((*SCROLL-CURRENT-ITEM* ITEM)
+				(*SCROLL-CURRENT-ITEM-LINE* CURRENT-ITEM-LINE))
+			    (COND ((*CATCH 'END-OF-LINE
+				     (PROGN
+				       (FUNCALL (SCROLL-ENTRY-FUNCTION ENTRY) ':PRINT ENTRY)
+				       (SETQ CURRENT-ITEM-LINE (+ (SCROLL-ENTRY-LINES ENTRY)
+								  CURRENT-ITEM-LINE)
+					     CURRENT-LINE (+ (SCROLL-ENTRY-LINES ENTRY)
+							     CURRENT-LINE))
+				       (SETF (SCROLL-ENTRY-FINAL-PRINTING-X ENTRY) CURSOR-X)
+				       (SETQ SCROLL-NEW-X (- FINAL-X (SHEET-INSIDE-LEFT))
+					     SCROLL-NEW-Y (- FINAL-Y (SHEET-INSIDE-TOP)))
+				       (FUNCALL-SELF ':HANDLE-EXCEPTIONS)
+				       NIL))
+				   (SETF (SCROLL-ENTRY-FINAL-PRINTING-X ENTRY) CURSOR-X)
+				   (SETQ END-OF-ITEM T))))))))
+	       (AND END-OF-ITEM (RETURN T)))
+	     (SETQ SCROLL-NEW-X 0
+		   SCROLL-NEW-Y (+ (OR SCROLL-NEW-Y (- CURSOR-Y (SHEET-INSIDE-TOP)))
+				   LINE-HEIGHT))
+	     (AND ( (1+ CURRENT-LINE) SCREEN-LINES)
+		  (*THROW 'END-OF-PAGE T)))
+	   (SETQ CURRENT-LINE (MIN CURRENT-LINE (1- SCREEN-LINES)))
+	   (DO ((L FIRST-LINE (1+ L)))
+	       ((> L CURRENT-LINE))
+	     (ASET ITEM SCREEN-IMAGE L 0)
+	     (ASET (- L FIRST-LINE) SCREEN-IMAGE L 1)
+	     (ASET CURRENT-COUNT SCREEN-IMAGE L 2))))))
+
+(DEFUN SCROLL-FLUSH-ITEM-FROM-SCREEN-IMAGE (ITEM)
+  (DOTIMES (I SCREEN-LINES)
+    (COND ((EQ (AREF SCREEN-IMAGE I 0) ITEM)
+	   (ASET NIL SCREEN-IMAGE I 0)
+	   (ASET -1 SCREEN-IMAGE I 1)
+	   (ASET -1 SCREEN-IMAGE I 2)))))
+
+(DEFUN SCROLL-MAKE-SCREEN-IMAGE ()
+  (SETQ SCREEN-LINES (SHEET-NUMBER-OF-INSIDE-LINES))
+  (SETQ SCREEN-IMAGE (MAKE-ARRAY NIL 'ART-Q `(,SCREEN-LINES 3)))
+  (DOTIMES (I SCREEN-LINES)
+    (ASET NIL SCREEN-IMAGE I 0)
+    (ASET -1 SCREEN-IMAGE I 1)
+    (ASET -1 SCREEN-IMAGE I 2)))
+
+(DEFSELECT SCROLL-ENTRY-CONSTANT-STRING-FUNCTION
+  (:PRINT (ENTRY)
+    (FUNCALL-SELF ':STRING-OUT (SCROLL-ENTRY-DATA ENTRY)))
+  (:RECOMPUTE (IGNORE) NIL)
+  (:CHANGED-P (IGNORE IGNORE) NIL))
+
+(DEFSELECT SCROLL-ENTRY-SYMBOL-VALUE-FUNCTION
+  (:PRINT (ENTRY &AUX (DATA (SCROLL-ENTRY-PRINTED-FORM ENTRY))
+		      (FORMAT (SCROLL-ENTRY-PRINT-FORMAT ENTRY)))
+    (COND (DATA (FUNCALL-SELF ':STRING-OUT DATA))
+	  (T
+	   (LET ((BASE (OR (CADR FORMAT) BASE))
+		 (*NOPOINT (OR (CADDR FORMAT) *NOPOINT)))
+	     (SETQ DATA (SCROLL-ENTRY-DATA ENTRY))
+	     (IF (CAR FORMAT)
+		 (FORMAT SELF (CAR FORMAT) DATA)
+		 (FORMAT SELF "~A" DATA))))))
+  (:CHANGED-P (ENTRY US)
+    (COND ((NOT (EQUAL (SCROLL-ENTRY-DATA ENTRY)
+		       (FUNCALL US ':RECOMPUTE ENTRY)))
+	   (SETF (SCROLL-ENTRY-PRINTED-FORM ENTRY) NIL)
+	   T)
+	  (T NIL)))    
+  (:RECOMPUTE (ENTRY &AUX DATA)
+    (SETQ DATA (SYMEVAL (SCROLL-ENTRY-RECOMPUTE-FUNCTION ENTRY)))
+    (SETF (SCROLL-ENTRY-DATA ENTRY) DATA)
+    DATA)
+  (:WIDTH (ENTRY US &AUX DATA (FORMAT (SCROLL-ENTRY-PRINT-FORMAT ENTRY)))
+    (SETQ DATA (FUNCALL US ':RECOMPUTE ENTRY))
+    ;; Stream to return length
+    (LET ((BASE (OR (CADR FORMAT) BASE))
+	  (*NOPOINT (OR (CADDR FORMAT) *NOPOINT)))
+;	 (SETF (SCROLL-ENTRY-PRINTED-FORM ENTRY)
+;	       (SETQ DATA
+;		     (IF (AND (STRINGP DATA) (NULL (CAR FORMAT)))
+;			 DATA
+;			 (IF (CAR FORMAT)
+;			     (FORMAT NIL (CAR FORMAT) DATA)
+;			     (FORMAT NIL "~A" DATA)))))
+;	 (MULTIPLE-VALUE-BIND (IGNORE WIDTH)
+;	     (SHEET-STRING-LENGTH SELF DATA)
+;	   WIDTH))))
+      (IF (AND (STRINGP DATA) (NULL (CAR FORMAT)))
+	  (MULTIPLE-VALUE-BIND (IGNORE WIDTH)
+	      (SHEET-STRING-LENGTH SELF DATA)
+	    WIDTH)
+	  (LET ((SI:*IOCH 0))
+	    (IF (CAR FORMAT)
+		(FORMAT 'SI:FLATSIZE-STREAM (CAR FORMAT) DATA)
+		(FORMAT 'SI:FLATSIZE-STREAM "~A" DATA))
+	    SI:*IOCH)))))
+
+(DEFSELECT (SCROLL-ENTRY-CALL-FUNCTION-FUNCTION SCROLL-ENTRY-SYMBOL-VALUE-FUNCTION)
+  (:RECOMPUTE (ENTRY &AUX DATA)
+    (SETQ DATA (LEXPR-FUNCALL (SCROLL-ENTRY-RECOMPUTE-FUNCTION ENTRY)
+			      (SCROLL-ENTRY-ARGS ENTRY)))
+    (SETF (SCROLL-ENTRY-DATA ENTRY) DATA)
+    DATA))
+)
+
+;;; Source bytes 24703:24863; lines 635-637; sha256 c595facd4ba977f62bd5ac85b81bd424663741d557a72a203bbe1acfb635139f
+(DEFMETHOD (BASIC-SCROLL-WINDOW :GET-ITEM) (POSITION)
+  "Given a position in the tree, returns the specified item."
+  (CAR (SCROLL-GET-ITEM-LOCATIVE POSITION)))
+
+;;; Source bytes 25015:25406; lines 643-651; sha256 7c30d9be461b152469e65dbab54a15b0cc74f58a071b74bd21576697e0ba5f01
+(DEFMETHOD (BASIC-SCROLL-WINDOW :INSERT-ITEM) (POSITION ITEM &AUX WHERE)
+  "Inserts an item before the specified position."
+  (AND (NUMBERP POSITION) (SETQ POSITION (NCONS POSITION)))
+  (SETQ WHERE (LOCATE-IN-INSTANCE SELF 'DISPLAY-ITEM))
+  (DOLIST (P POSITION)
+    (DOTIMES (I P)
+      (SETQ WHERE (LOCF (CDAR WHERE)))))
+  (RPLACA WHERE (CONS ITEM (CAR WHERE)))
+  (FUNCALL-SELF 'REDISPLAY))
+
+;;; Source bytes 25408:25781; lines 653-661; sha256 54e0dcd3852ae054b706aba3669740e5f4ce86b5a8b684febd531173303e7656
+(DEFMETHOD (BASIC-SCROLL-WINDOW :DELETE-ITEM) (POSITION &AUX WHERE)
+  "Deletes the item at the specified position."
+  (AND (NUMBERP POSITION) (SETQ POSITION (NCONS POSITION)))
+  (SETQ WHERE (LOCATE-IN-INSTANCE SELF 'DISPLAY-ITEM))
+  (DOLIST (P POSITION)
+    (DOTIMES (I P)
+      (SETQ WHERE (LOCF (CDAR WHERE)))))
+  (RPLACA WHERE (CDAR WHERE))
+  (FUNCALL-SELF ':REDISPLAY))
+
+;;; Source bytes 25902:27445; lines 668-702; sha256 babf21eaefd2c865a062c185b38d1b2e8588bcab4e5c8e607ca23b769b100c84
+(DEFUN SCROLL-INTERPRET-ENTRY (ENTRY ITEM &AUX MOUSE)
+  "Given a descriptor (see documentation) returns an entry suitable for inclusion
+in an array-type item."
+  (COND-EVERY
+   ((STRINGP ENTRY) (SETQ ENTRY (LIST ':STRING ENTRY)))
+   ((SYMBOLP ENTRY) (SETQ ENTRY (LIST ':SYMEVAL ENTRY)))
+   ((OR (= (%DATA-TYPE ENTRY) DTP-FEF-POINTER)
+	(AND (LISTP ENTRY) (MEMQ (CAR ENTRY) '(LAMBDA NAMED-LAMBDA))))
+    (SETQ ENTRY (LIST ':FUNCTION ENTRY)))
+   ((LISTP ENTRY)
+    (COND-EVERY ((EQ (FIRST ENTRY) ':MOUSE)
+		 (SETQ MOUSE (SECOND ENTRY)
+		       ENTRY (CDDR ENTRY)))
+		((EQ (FIRST ENTRY) ':MOUSE-ITEM)
+		 (SETQ MOUSE (SUBLIS `((ITEM . ,ITEM)) (CADR ENTRY))
+		       ENTRY (CDDR ENTRY)))
+		((EQ (FIRST ENTRY) ':VALUE)
+		 (SETQ ENTRY `(:FUNCTION ,#'VALUE (,(SECOND ENTRY)) . ,(CDDR ENTRY)))))
+    (SETQ ENTRY
+	  (SELECTQ (FIRST ENTRY)
+	    (:STRING (SCROLL-MAKE-ENTRY 'SCROLL-ENTRY-CONSTANT-STRING-FUNCTION NIL NIL 0 0 0
+					(OR (THIRD ENTRY) (STRING-LENGTH (SECOND ENTRY)))
+					NIL (SECOND ENTRY) NIL NIL NIL))
+	    (:SYMEVAL (SCROLL-MAKE-ENTRY 'SCROLL-ENTRY-SYMBOL-VALUE-FUNCTION
+					 (SECOND ENTRY) NIL
+					 0 0 0 (OR (THIRD ENTRY) 0) (NULL (THIRD ENTRY))
+					 (NCONS NIL) NIL (FOURTH ENTRY) NIL))
+	    (:FUNCTION (SCROLL-MAKE-ENTRY 'SCROLL-ENTRY-CALL-FUNCTION-FUNCTION
+					  (SECOND ENTRY) (THIRD ENTRY)
+					  0 0 0 (OR (FOURTH ENTRY) 0) (NULL (FOURTH ENTRY))
+					  (NCONS NIL) NIL (FIFTH ENTRY) NIL)))))
+   (MOUSE
+     (SETF (SCROLL-ENTRY-MOUSE-INFO ENTRY) MOUSE))
+   (:OTHERWISE (FERROR NIL "Unknown kind of entry: ~S" ENTRY)))
+  ENTRY)
+
+;;; Source bytes 27447:28610; lines 704-730; sha256 f655a334383d70f3a2f3b517c4b2729673231f79ac635ce5c90b234d4b888598
+(DEFUN SCROLL-PARSE-ITEM (&REST ITEM-SPEC &AUX ITEM (EXTRA-LEADER 0) LEADER-FILL
+				               MOUSE MOUSE-SELF)
+  "Given a list of entry descriptors, produce an array-type item."
+  (SETQ ITEM-SPEC (DELQ NIL (COPYLIST ITEM-SPEC)))
+  (DO ((L ITEM-SPEC (CDDR L)))
+      ((NOT (SYMBOLP (CAR L)))
+       (SETQ ITEM-SPEC L))
+    (SELECTQ (CAR L)
+      (:MOUSE (SETQ MOUSE (CADR L)))
+      (:MOUSE-SELF (SETQ MOUSE-SELF T MOUSE (CADR L)))
+      (:LEADER (SETQ EXTRA-LEADER
+		     (IF (NUMBERP (CADR L))
+			 (CADR L)
+			 (SETQ LEADER-FILL (CADR L))
+			 (LENGTH LEADER-FILL))))
+      (OTHERWISE (FERROR NIL "~A is unknown keyword to SCROLL-PARSE-ITEM" (CAR L)))))
+  (SETQ ITEM (MAKE-ARRAY NIL 'ART-Q (LENGTH ITEM-SPEC)
+			 NIL (+ EXTRA-LEADER SCROLL-ITEM-LEADER-OFFSET)))
+  (AND MOUSE-SELF (SETQ MOUSE (SUBLIS `((SELF . ,ITEM)) MOUSE)))
+  (AND LEADER-FILL
+       (DOTIMES (I EXTRA-LEADER)
+	 (SETF (ARRAY-LEADER ITEM (+ SCROLL-ITEM-LEADER-OFFSET I)) (NTH I LEADER-FILL))))
+  (SETF (SCROLL-ITEM-LINE-SENSITIVITY ITEM) MOUSE)
+  (DOTIMES (I (LENGTH ITEM-SPEC))
+    (ASET (SCROLL-INTERPRET-ENTRY (CAR ITEM-SPEC) ITEM) ITEM I)
+    (SETQ ITEM-SPEC (CDR ITEM-SPEC)))
+  ITEM)
+
+;;; Source bytes 29066:29752; lines 744-754; sha256 dd6bdd0845db387290f76edb461f1579e7f0e93e2de30dc6c2e03d4e089be373
+(DEFUN SCROLL-MAINTAIN-LIST-UNORDERED (INIT-FUN ITEM-FUN &OPTIONAL PER-ELT-FUN STEPPER)
+  "Given a function that returns a list, and a function that returns an item spec
+when given an element of that list, maintains one item for each element in the list.
+This is not useful when recursion is necessary.  Returns an item that should be
+inserted somewhere.  The LIST-FUN should return a private copy of the list."
+  (LIST (LIST ':PRE-PROCESS-FUNCTION 'SCROLL-MAINTAIN-LIST-UNORDERED-UPDATE-FUNCTION
+	      ':FUNCTION PER-ELT-FUN
+	      ':INIT-FUNCTION INIT-FUN
+	      ':ITEM-FUNCTION ITEM-FUN
+	      ':OLD-STATE NIL
+	      ':STEPPER-FUNCTION (OR STEPPER #'SCROLL-MAINTAIN-LIST-STEPPER))))
+
+;;; Source bytes 31662:32429; lines 806-820; sha256 653f9c4b42acf5993ab9b4d10270e43ff1666161df4cee5226c42f15de3ecdfd
+(DEFUN SCROLL-MAINTAIN-LIST (INIT-FUN ITEM-FUN
+			     &OPTIONAL PER-ELT-FUN STEPPER COMPACT-P
+				       (PRE-PROC-FUN 'SCROLL-MAINTAIN-LIST-UPDATE-FUNCTION))
+									     
+  "Given a function that returns a list, and a function that returns an item spec
+when given an element of that list, maintains one item for each element in the list.
+This is not useful when recursion is necessary.  Returns an item that should be
+inserted somewhere.  The LIST-FUN should return a private copy of the list."
+  (LIST (LIST ':PRE-PROCESS-FUNCTION PRE-PROC-FUN
+	      ':FUNCTION PER-ELT-FUN
+	      ':INIT-FUNCTION INIT-FUN
+	      ':ITEM-FUNCTION ITEM-FUN
+	      ':OLD-STATE NIL
+	      ':COMPACT-P COMPACT-P
+	      ':STEPPER-FUNCTION (OR STEPPER #'SCROLL-MAINTAIN-LIST-STEPPER))))
+
+;;; Source bytes 35127:35263; lines 890-891; sha256 29bd07f011ec69c8113083e1b2196fb7e284f7e1bc30cb664be87713e0037856
+(DEFFLAVOR SCROLL-MOUSE-MIXIN () (ESSENTIAL-SCROLL-MOUSE-MIXIN MENU-EXECUTE-MIXIN)
+  (:DOCUMENTATION :MIXIN "Menu like scroll windows"))
+

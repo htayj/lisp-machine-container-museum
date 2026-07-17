@@ -43,7 +43,7 @@ MAX_NESTING = 128
 
 
 class QfaslError(ValueError):
-    """The input cannot be decoded under the reviewed font-QFASL grammar."""
+    """The input cannot be decoded under the reviewed inert-QFASL grammar."""
 
 
 @dataclass(frozen=True)
@@ -339,6 +339,7 @@ class SerializedArray:
     leader: dict[int, object] = field(default_factory=dict)
     initialization: list[object] | None = None
     initialization_opcode: str | None = None
+    declared_leader_length: int | None = None
 
     @property
     def length(self) -> int:
@@ -432,12 +433,21 @@ OPCODE_NAMES = {
 
 
 class FontQfaslParser:
-    """A non-evaluating parser for the exact object subset used by fonts."""
+    """A non-evaluating parser for reviewed serialized-object subsets.
 
-    def __init__(self, nibbles: list[int]):
+    The default remains the exact subset used by the recovered font files.
+    ``allow_inert_picture_form`` adds only the object-conversion form emitted
+    by ``LMIO1;CVPTS`` for picture arrays.  The form is recognized and its
+    already-serialized array is returned; no Lisp form is ever executed.
+    """
+
+    def __init__(
+        self, nibbles: list[int], *, allow_inert_picture_form: bool = False
+    ):
         if len(nibbles) > MAX_NIBBLES:
             raise QfaslError(f"QFASL exceeds the {MAX_NIBBLES}-nibble safety limit")
         self.nibbles = nibbles
+        self.allow_inert_picture_form = allow_inert_picture_form
         self.position = 0
         self.table: list[object] = []
         self.bindings: dict[Symbol, object] = {}
@@ -459,10 +469,15 @@ class FontQfaslParser:
         self.position += 1
         return value
 
+    @staticmethod
+    def _operation_name(opcode: int) -> str:
+        return "EVAL" if opcode == 0o11 else OPCODE_NAMES[opcode]
+
     def _direct(self, group: _Group) -> int:
         if group.remaining == 0:
             raise QfaslError(
-                f"opcode {OPCODE_NAMES[group.opcode]} consumed too many direct nibbles"
+                f"opcode {self._operation_name(group.opcode)} "
+                "consumed too many direct nibbles"
             )
         group.remaining -= 1
         return self._raw()
@@ -500,10 +515,17 @@ class FontQfaslParser:
                 f"group at nibble {offset} lacks the QFASL check bit: {header:#o}"
             )
         opcode = header & 0o77
-        if opcode not in OPCODE_NAMES:
+        if opcode == 0o11 and not self.allow_inert_picture_form:
             raise QfaslError(
                 f"unsupported opcode {opcode:#o} at nibble {offset}; "
-                "font QFASLs are never evaluated"
+                "QFASLs are never evaluated"
+            )
+        if opcode not in OPCODE_NAMES and not (
+            opcode == 0o11 and self.allow_inert_picture_form
+        ):
+            raise QfaslError(
+                f"unsupported opcode {opcode:#o} at nibble {offset}; "
+                "QFASLs are never evaluated"
             )
         length = (header & 0o37700) >> 6
         if length == 0o377:
@@ -578,16 +600,48 @@ class FontQfaslParser:
                 element_count *= dimension
                 if element_count > MAX_ARRAY_ELEMENTS:
                     raise QfaslError("array dimensions exceed the safety limit")
-            if leader_value is not None and not isinstance(leader_value, list):
-                raise QfaslError("array leader initializer is not a list")
-            leader = (
-                {}
-                if leader_value is None
-                else dict(enumerate(reversed(leader_value)))
-            )
+            if isinstance(leader_value, int):
+                if not self.allow_inert_picture_form:
+                    raise QfaslError("array leader initializer is not a list")
+                if not 0 <= leader_value <= MAX_INITIALIZATION_VALUES:
+                    raise QfaslError("array leader length exceeds its safety limit")
+                leader = {}
+                declared_leader_length = leader_value
+            elif leader_value is None:
+                leader = {}
+                declared_leader_length = 0
+            elif isinstance(leader_value, list):
+                leader = dict(enumerate(reversed(leader_value)))
+                declared_leader_length = len(leader_value)
+            else:
+                raise QfaslError("array leader initializer is neither a list nor a length")
             result = self._enter(
-                SerializedArray(element_type, tuple(dimensions_value), leader)
+                SerializedArray(
+                    element_type,
+                    tuple(dimensions_value),
+                    leader,
+                    declared_leader_length=declared_leader_length,
+                )
             )
+        elif opcode == 0o11:  # EVAL -- recognized but never executed
+            form = self._lookup(self._direct(group))
+            valid = (
+                not group.flag
+                and isinstance(form, list)
+                and len(form) == 2
+                and form[0] == Symbol("MAKE-ARRAY-INTO-NAMED-STRUCTURE")
+                and isinstance(form[1], Symbol)
+                and isinstance(self.bindings.get(form[1]), SerializedArray)
+            )
+            if not valid:
+                raise QfaslError(
+                    "unsupported EVAL form in picture subset; QFASLs are never evaluated"
+                )
+            # FASL-OP-EVAL stores its result in table parameter 1.  The only
+            # accepted form returns the array already bound to its second
+            # argument, so reproducing that pointer does not require EVAL.
+            self.table[1] = self.bindings[form[1]]
+            result = 1
         elif opcode == 0o16:  # STOREIN-SYMBOL-VALUE
             source_index = self._direct(group)
             destination = self._value(depth)
@@ -627,6 +681,16 @@ class FontQfaslParser:
             array.initialization = initialization
             array.initialization_opcode = operation
             result = array_index
+            # CVPTS asks FASD for a direct group length of one, then emits the
+            # target as a nested INDEX group.  The historical loader does not
+            # require the resulting redundant count to reach zero.  Accept
+            # that exact quirk only in the reviewed picture subset.
+            if (
+                self.allow_inert_picture_form
+                and opcode == 0o56
+                and group.remaining == 1
+            ):
+                group.remaining = 0
         elif opcode == 0o55:  # STOREIN-ARRAY-LEADER
             array = self._lookup(self._direct(group))
             subscript = self._lookup(self._direct(group))
@@ -635,6 +699,11 @@ class FontQfaslParser:
                 raise QfaslError("leader store target is not an array")
             if not isinstance(subscript, int) or subscript < 0:
                 raise QfaslError("leader store subscript is invalid")
+            if (
+                array.declared_leader_length is not None
+                and subscript >= array.declared_leader_length
+            ):
+                raise QfaslError("leader store subscript is outside the declared leader")
             array.leader[subscript] = value
             result = 0
         elif opcode == 0o60:  # PACKAGE-SYMBOL
@@ -654,7 +723,7 @@ class FontQfaslParser:
 
         if group.remaining:
             raise QfaslError(
-                f"opcode {OPCODE_NAMES[opcode]} left {group.remaining} "
+                f"opcode {self._operation_name(opcode)} left {group.remaining} "
                 "direct nibbles unconsumed"
             )
         return result

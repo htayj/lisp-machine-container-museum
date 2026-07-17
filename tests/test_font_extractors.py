@@ -735,11 +735,12 @@ class TrackedCadrCatalogTests(unittest.TestCase):
             },
             {
                 "direct-runtime": 15,
+                "cross-version-direct-runtime": 0,
                 "document-output-name-match": 3,
-                "documented-use": 2,
+                "documented-use": 3,
                 "reported-use-no-purpose": 1,
                 "standard-load-no-purpose": 6,
-                "source-build-only": 46,
+                "source-build-only": 45,
                 "source-only": 15,
                 "compiled-inventory-only": 0,
             },
@@ -778,10 +779,11 @@ class TrackedCadrCatalogTests(unittest.TestCase):
             },
             {
                 "direct-runtime": 2,
+                "cross-version-direct-runtime": 1,
                 "document-output-name-match": 0,
                 "documented-use": 0,
                 "reported-use-no-purpose": 2,
-                "standard-load-no-purpose": 2,
+                "standard-load-no-purpose": 1,
                 "source-build-only": 0,
                 "source-only": 0,
                 "compiled-inventory-only": 11,
@@ -794,6 +796,7 @@ class TrackedCadrCatalogTests(unittest.TestCase):
                 self.assertTrue(record["purpose"], name)
                 if record["status"] in {
                     "direct-runtime",
+                    "cross-version-direct-runtime",
                     "document-output-name-match",
                     "documented-use",
                 }:

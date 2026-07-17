@@ -264,6 +264,37 @@ do not commit or redistribute them. See the
 [Genera extraction procedure](docs/genera/extracting-resident-fonts.md) and
 [evidence-graded font catalog](docs/genera/font-catalog.md).
 
+## On-line help recovery
+
+Recover the source-integrated help from the pinned public MIT CADR System 46 tree:
+
+```bash
+python3 scripts/extract-cadr-help.py \
+  --source /path/to/mit-cadr-system-software/src \
+  --output docs/assets/mit-cadr-online-help \
+  --clean
+```
+
+The checked-in result contains exact public source contexts, four standalone ZWEI
+artifacts, catalogs, and the source license. See the
+[CADR help recovery article](docs/mit-cadr/online-help-and-documentation-recovery.md)
+for the inclusion rule and optional metadata-only LM-3 cross-check.
+
+Recover the installed documentation from your own licensed Genera `sys.sct` tree:
+
+```bash
+python3 scripts/extract-genera-help.py \
+  --sys-sct .lm-home/opengenera/runtime/sys.sct \
+  --output build/help/genera \
+  --clean
+```
+
+This decodes the Document Examiner's Sage Binary databases, copies three reviewed
+standalone help files, and inventories source-level help declarations without
+executing Genera code. Every output derived from Genera remains under the ignored
+`build/help/genera/` tree and must not be committed or redistributed. See the
+[Genera help recovery article](docs/genera/online-help-and-documentation-recovery.md).
+
 ## Day-to-day use
 
 Once either machine finishes booting, the normal place to work is a Lisp

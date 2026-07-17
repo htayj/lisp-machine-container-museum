@@ -24,6 +24,20 @@ machine-readable metadata layer while retaining ordinary Markdown as the source.
 
 ## Start here
 
+- [MIT CADR on-line help and documentation recovery](mit-cadr/online-help-and-documentation-recovery.md)
+  explains the source-integrated ZWEI, Lisp, flavor, keyboard, and application Help
+  mechanisms and links the tracked public System 46 source corpus.
+- [Visual assets in the MIT CADR and LM-3 software](mit-cadr/visual-assets-inventory.md)
+  maps native raster pictures, graphical font atlases, paint patterns, technical
+  drawings, and procedural imagery, with explicit preservation and rights boundaries.
+- [Color inks and raster patterns in the MIT CADR software](mit-cadr/color-inks-and-raster-patterns.md)
+  explains how sixteen indexed solid fills acquire mutable RGB values and how they
+  differ from the monochrome window system's named stipples.
+- [MUNCH and Munching Squares on the MIT CADR](mit-cadr/munch.md) explains how a
+  classic PDP-1 display idea became an interactive Lisp Machine XOR graphics demo.
+- [LEXIPHAGE, the Lisp Machine word eater](mit-cadr/lexiphage.md) explains how its
+  animated jaws erase large raster-font text and distinguishes three preserved
+  implementations.
 - [Open Genera world loads and the VLOD format](genera/world-loads-and-vlod.md) explains
   what a `.vlod` contains, why it is closer to a cold heap snapshot than an archive,
   and what can currently be recovered from one.
@@ -33,6 +47,10 @@ machine-readable metadata layer while retaining ordinary Markdown as the source.
 - [Extracting resident fonts from a Genera world](genera/extracting-resident-fonts.md)
   provides the reproducible local-only VLOD workflow and links the evidence-graded
   catalog of all 89 fonts in the inspected world.
+- [Genera on-line help and documentation recovery](genera/online-help-and-documentation-recovery.md)
+  explains the Document Examiner's 801-file Sage Binary corpus, three reviewed
+  standalone help files, the additional runtime help layers, and the
+  non-redistributing local extraction workflow.
 - [MIT CADR font sources and recovery](mit-cadr/font-sources-and-recovery.md) explains
   the public source-first pipeline and catalogs the trackable BDF and PNG derivatives.
 - [MIT CADR compiled QFASL font recovery](mit-cadr/compiled-qfasl-font-recovery.md)

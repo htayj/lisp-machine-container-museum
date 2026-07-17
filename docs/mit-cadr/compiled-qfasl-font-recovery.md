@@ -3,7 +3,7 @@ type: Artifact Analysis
 title: MIT CADR compiled QFASL font recovery
 description: Non-evaluating recovery of 19 public System 46 compiled font artifacts into inspectable BDF, JSON, and PNG derivatives.
 tags: [mit-cadr, fonts, qfasl, compiled-artifacts, preservation]
-timestamp: 2026-07-16T23:46:35-04:00
+timestamp: 2026-07-17T01:17:24-04:00
 ---
 
 # MIT CADR compiled QFASL font recovery
@@ -299,7 +299,7 @@ the manifest.
 - Establish from period source or release evidence why `N43XMS` has a 31-pixel
   physical stripe and omits the pixels present at source column 30 in the newer
   `43VXMS` representation.
-- Locate additional primary evidence for the 15 compiled-only runtime names whose
+- Locate additional primary evidence for the 14 compiled-only runtime names whose
   application purpose remains `TODO` in the usage audit.
 
-Last verified: 2026-07-16.
+Last verified: 2026-07-17.

@@ -1,0 +1,522 @@
+;;; Inertly recovered online-help source contexts.
+;;; Original System 46 file: lmwin/shwarm.162
+;;; Exact source bytes follow each generated provenance comment.
+
+;;; Source bytes 145:641; lines 5-16; sha256 9e6d6994cebd25c6d2c903c23ac25748783d2bdebd3587a8af39eb5cc1f9dc98
+(DEFUN SCREEN-CLEAR (&OPTIONAL (SCREEN DEFAULT-SCREEN))
+  "This function is obsolete, but may still be called."
+  ;; It isn't really obsolete, the initialization right below calls it
+  (WITHOUT-INTERRUPTS
+    (PREPARE-SHEET (SCREEN)
+      (%DRAW-RECTANGLE (SHEET-WIDTH SCREEN) (SHEET-HEIGHT SCREEN)
+		       0 0
+		       ALU-ANDCA SCREEN))
+    (AND (FBOUNDP 'WHO-LINE-CLOBBERED)
+	 (WHO-LINE-CLOBBERED))
+    (AND (FBOUNDP 'SCREEN-MANAGE-FLUSH-KNOWLEDGE)
+	 (SCREEN-MANAGE-FLUSH-KNOWLEDGE SCREEN))))
+
+;;; Source bytes 1278:1710; lines 30-36; sha256 962502aec31bb65a7b7e5ae4b80f488bfa86601cbc22cd089915c845cbf71334
+(DEFMETHOD (SCREEN :BEEP) (&OPTIONAL BEEP-TYPE)
+  "Beep the beeper."
+  BEEP-TYPE  ;We wanted to make this soo hairy, that we punted until we could do it right
+  (WITHOUT-INTERRUPTS  ;otherwise might quit out and leave screen complemented
+    (AND (MEMQ BEEP '(:FLASH T)) (COMPLEMENT-BOW-MODE SELF))
+    (AND (MEMQ BEEP '(:BEEP T)) (%BEEP BEEP-WAVELENGTH BEEP-DURATION))
+    (AND (MEMQ BEEP '(:FLASH T)) (COMPLEMENT-BOW-MODE SELF))))
+
+;;; Source bytes 2450:3062; lines 56-68; sha256 355ac8a20e54917f4e682d087f92bb6489717a91bb92c2026ca0ee5db0873584
+(DEFUN SHEET-INCREMENT-BITPOS (SHEET DX DY &AUX X Y MORE-VPOS)
+  "Increment cursor X and cursor Y, keeping within sheet.  Sets exception flags
+according to new positions"
+  (SETF (SHEET-CURSOR-X SHEET)
+	(SETQ X (MAX (+ DX (SHEET-CURSOR-X SHEET)) (SHEET-INSIDE-LEFT SHEET))))
+  (SETF (SHEET-CURSOR-Y SHEET)
+	(SETQ Y (MAX (+ DY (SHEET-CURSOR-Y SHEET)) (SHEET-INSIDE-TOP SHEET))))
+  (AND (> (+ Y (SHEET-LINE-HEIGHT SHEET)) (SHEET-INSIDE-BOTTOM SHEET))
+       (SETF (SHEET-END-PAGE-FLAG SHEET) 1))
+  (AND (SETQ MORE-VPOS (SHEET-MORE-VPOS SHEET))
+       ( Y MORE-VPOS)
+       (SETF (SHEET-MORE-FLAG SHEET) 1))
+  NIL)
+
+;;; Source bytes 3064:3423; lines 70-78; sha256 2ee12c82e7570c6d6f2cd2eb56fd93e2c9c6c6bd52d9303ccaed3f1b730958da
+(DEFUN SHEET-TAB (SHEET)
+  "Output a tab to a sheet"
+  (PREPARE-SHEET (SHEET)
+     (OR (ZEROP (SHEET-EXCEPTIONS SHEET)) (SHEET-HANDLE-EXCEPTIONS SHEET))
+     (LET ((TAB-WIDTH (* 8 (SHEET-CHAR-WIDTH SHEET))))
+       (SHEET-INCREMENT-BITPOS SHEET (- TAB-WIDTH (\ (- (SHEET-CURSOR-X SHEET)
+							(SHEET-INSIDE-LEFT SHEET))
+						     TAB-WIDTH))
+			       0))))
+
+;;; Source bytes 3425:3619; lines 80-83; sha256 d7aceda0c973b181b3a9959fa46a493e6978e77f028b9b61f6e7f02580d3e8ea
+(DEFUN SHEET-SET-FONT (SHEET FONT)
+  "Change a sheet's current font"
+  (SETF (SHEET-CURRENT-FONT SHEET) FONT)
+  (SETF (SHEET-BASELINE-ADJ SHEET) (- (SHEET-BASELINE SHEET) (FONT-BASELINE FONT))))
+
+;;; Source bytes 3621:5057; lines 85-114; sha256 00319e0a97ce20cfe9de15597815460bce52d09ee4e2035923830a2b0f206ea6
+(DEFUN SHEET-SET-CURSORPOS (SHEET X Y)
+  "Set 'cursor' position of a sheet in terms of raster units.  Cursorposes are relative
+to the left and top margins.  Cursorpos is `clipped' to stay inside the sheet-inside."
+  (DO ((INHIBIT-SCHEDULING-FLAG T T)  ;Keep trying until we get the lock
+       (LOCK) (BL))
+      ((AND (SETQ LOCK (SHEET-CAN-GET-LOCK SHEET))
+	    (NOT (SHEET-OUTPUT-HELD-P SHEET)))
+       (SETQ X (IF X (MIN (+ (MAX (FIX X) 0) (SHEET-INSIDE-LEFT SHEET))
+			  (SHEET-INSIDE-RIGHT SHEET))
+		   (SHEET-CURSOR-X SHEET)))
+       (SETQ Y (IF Y (MIN (+ (MAX (FIX Y) 0) (SHEET-INSIDE-TOP SHEET))
+			  (SHEET-INSIDE-BOTTOM SHEET))
+		   (SHEET-CURSOR-Y SHEET)))
+       (AND (= (SHEET-CURSOR-X SHEET) X) (= (SHEET-CURSOR-Y SHEET) Y)
+	    (RETURN NIL))			;Not moving, don't open the blinker
+       (AND (SETQ BL (SHEET-FOLLOWING-BLINKER SHEET))
+	    (OPEN-BLINKER BL))
+       (AND (SHEET-MORE-VPOS SHEET)		;If more processing enabled, delay until
+						; bottom of sheet
+	    (SETF (SHEET-MORE-VPOS SHEET) (SHEET-DEDUCE-MORE-VPOS SHEET)))
+       (SETF (SHEET-CURSOR-X SHEET) X)
+       (SETF (SHEET-CURSOR-Y SHEET) Y)
+       (SETF (SHEET-EXCEPTIONS SHEET) 0)
+       (AND (> (+ Y (SHEET-LINE-HEIGHT SHEET)) (SHEET-INSIDE-BOTTOM SHEET))
+	    (SETF (SHEET-END-PAGE-FLAG SHEET) 1))
+       T)
+    (SETQ INHIBIT-SCHEDULING-FLAG NIL)
+    (IF LOCK
+	(FUNCALL SHEET ':OUTPUT-HOLD-EXCEPTION)
+	(PROCESS-WAIT "Lock" #'SHEET-CAN-GET-LOCK SHEET))))
+
+;;; Source bytes 5059:5295; lines 116-120; sha256 e1876a6546ea9cf9b2749c9d9a0546742948f235d58ec4289c9833941d65c9b0
+(DEFUN SHEET-READ-CURSORPOS (SHEET)
+  "Read the cursor position in raster units relative to margins"
+  (PROG ()
+    (RETURN (- (SHEET-CURSOR-X SHEET) (SHEET-INSIDE-LEFT SHEET))
+	    (- (SHEET-CURSOR-Y SHEET) (SHEET-INSIDE-TOP SHEET)))))
+
+;;; Source bytes 5298:5698; lines 122-129; sha256 923ef8c9c1c0f7f88b34c6c7b7467ccaac413f6ae20de3acb19109ae66f76fb9
+(DEFUN SHEET-HOME (SHEET)
+  "Go to upper left edge of sheet (Home up)"
+  (PREPARE-SHEET (SHEET)
+    (AND (SHEET-MORE-VPOS SHEET)		;If MORE processing, put it off 'til last line
+	 (SETF (SHEET-MORE-VPOS SHEET) (SHEET-DEDUCE-MORE-VPOS SHEET)))
+    (SETF (SHEET-CURSOR-X SHEET) (SHEET-INSIDE-LEFT SHEET))
+    (SETF (SHEET-CURSOR-Y SHEET) (SHEET-INSIDE-TOP SHEET))
+    (SETF (SHEET-EXCEPTIONS SHEET) 0)))
+
+;;; Source bytes 5700:6032; lines 131-138; sha256 ed61b3e7857599a2eff342904bcb0578cf0850f8e7df678930ce2d0bd55eaaa9
+(DEFUN SHEET-CRLF (SHEET)
+  "Crlf and clear next line"
+  (PREPARE-SHEET (SHEET)
+    (OR (ZEROP (SHEET-EXCEPTIONS SHEET))	;Handle exceptions first
+	(SHEET-HANDLE-EXCEPTIONS SHEET))
+    (SETF (SHEET-CURSOR-X SHEET) (SHEET-INSIDE-LEFT SHEET))
+    (SHEET-INCREMENT-BITPOS SHEET 0 (SHEET-LINE-HEIGHT SHEET))
+    (SHEET-CLEAR-EOL SHEET)))
+
+;;; Source bytes 6034:6363; lines 140-149; sha256 f0da14dcc60b60d882efecbb9bc2278398fce9865b7b27f7d234695197ff6362
+(DEFUN SHEET-SPACE (SHEET &OPTIONAL CHAR)
+  "Space forward"
+  (PREPARE-SHEET (SHEET)
+    (OR (ZEROP (SHEET-EXCEPTIONS SHEET))
+	(SHEET-HANDLE-EXCEPTIONS SHEET))
+    (SHEET-INCREMENT-BITPOS SHEET
+			    (IF CHAR (SHEET-CHARACTER-WIDTH SHEET CHAR
+							    (SHEET-CURRENT-FONT SHEET))
+				     (SHEET-CHAR-WIDTH SHEET))
+			    0)))
+
+;;; Source bytes 6365:6703; lines 151-160; sha256 1418db8517cc278ee10a3c0c5ebe4b10f8c8b58ba8e31ae94f9e61ec76614349
+(DEFUN SHEET-BACKSPACE (SHEET &OPTIONAL CHAR)
+  "Space backwards"
+  (PREPARE-SHEET (SHEET)
+    (OR (ZEROP (SHEET-EXCEPTIONS SHEET))
+	(SHEET-HANDLE-EXCEPTIONS SHEET))
+    (SHEET-INCREMENT-BITPOS SHEET
+			    (- (IF CHAR (SHEET-CHARACTER-WIDTH SHEET CHAR
+							       (SHEET-CURRENT-FONT SHEET))
+					(SHEET-CHAR-WIDTH SHEET)))
+			    0)))
+
+;;; Source bytes 6705:7153; lines 162-172; sha256 0cab0a0915b8f92f61518a5a5d7114296d1a47d0f3500edd7a5cdd6aedac78c4
+(DEFUN SHEET-CLEAR-CHAR (SHEET &OPTIONAL CHAR)
+  "Clear current character position"
+  (PREPARE-SHEET (SHEET)
+    (OR (ZEROP (SHEET-EXCEPTIONS SHEET))
+	(SHEET-HANDLE-EXCEPTIONS SHEET))
+    (%DRAW-RECTANGLE (IF CHAR (SHEET-CHARACTER-WIDTH SHEET CHAR
+						     (SHEET-CURRENT-FONT SHEET))
+			      (SHEET-CHAR-WIDTH SHEET))
+		     (SHEET-LINE-HEIGHT SHEET)
+		     (SHEET-CURSOR-X SHEET) (SHEET-CURSOR-Y SHEET)
+		     (SHEET-ERASE-ALUF SHEET) SHEET)))
+
+;;; Source bytes 7155:7599; lines 174-184; sha256 7a7b64499d97e7c7f1249dce0535669ffd2b8a65306ce8d748f5d4b333086f35
+(DEFUN SHEET-CLEAR-EOL (SHEET)
+  "Clear to end of current line"
+  (PREPARE-SHEET (SHEET)
+    (OR (ZEROP (SHEET-EXCEPTIONS SHEET))
+	(SHEET-HANDLE-EXCEPTIONS SHEET))
+    (%DRAW-RECTANGLE (MAX (- (SHEET-INSIDE-RIGHT SHEET) (SHEET-CURSOR-X SHEET))
+			  0)
+		     (MIN (- (SHEET-INSIDE-BOTTOM SHEET) (SHEET-CURSOR-Y SHEET))
+			  (SHEET-LINE-HEIGHT SHEET))
+		     (SHEET-CURSOR-X SHEET) (SHEET-CURSOR-Y SHEET)
+		     (SHEET-ERASE-ALUF SHEET) SHEET)))
+
+;;; Source bytes 7601:9330; lines 186-220; sha256 934d5b2a93e30b8a125cde6803c74afe975c2bad36748f3819f3b513aed24efd
+(DEFUN SHEET-CLEAR-BETWEEN-CURSORPOSES (SHEET START-X START-Y END-X END-Y
+					&AUX (ALUF (SHEET-ERASE-ALUF SHEET)) MID-Y)
+  "Erase from starting pos to ending pos
+   Does nothing if start is after end on the same line, but if on different
+   lines, assumes screen wrap-around"
+  (SETQ START-X (MIN (+ START-X (SHEET-INSIDE-LEFT SHEET)) (SHEET-INSIDE-RIGHT SHEET))
+	START-Y (MIN (+ START-Y (SHEET-INSIDE-TOP SHEET)) (SHEET-INSIDE-BOTTOM SHEET))
+	END-X (MIN (+ END-X (SHEET-INSIDE-LEFT SHEET)) (SHEET-INSIDE-RIGHT SHEET))
+	END-Y (MIN (+ END-Y (SHEET-INSIDE-TOP SHEET)) (SHEET-INSIDE-BOTTOM SHEET)))
+  (PREPARE-SHEET (SHEET)
+    (COND ((= START-Y END-Y)
+	   (COND ((< START-X END-X)
+		  (%DRAW-RECTANGLE (- END-X START-X)
+				   (MIN (- (SHEET-INSIDE-BOTTOM SHEET) START-Y)
+					(SHEET-LINE-HEIGHT SHEET))
+				   START-X START-Y ALUF SHEET))))
+	  (T (%DRAW-RECTANGLE (- (SHEET-INSIDE-RIGHT SHEET) START-X) 
+			      (MIN (- (SHEET-INSIDE-BOTTOM SHEET) START-Y)
+				   (SHEET-LINE-HEIGHT SHEET))
+			      START-X START-Y ALUF SHEET)
+	     (SETQ MID-Y (+ START-Y (SHEET-LINE-HEIGHT SHEET)))
+	     (%DRAW-RECTANGLE END-X (MIN (- (SHEET-INSIDE-BOTTOM SHEET) END-Y)
+					 (SHEET-LINE-HEIGHT SHEET))
+			      (SHEET-INSIDE-LEFT SHEET) END-Y ALUF SHEET)
+	     (IF (< START-Y END-Y)
+		 (AND (< MID-Y END-Y)
+		      (%DRAW-RECTANGLE (SHEET-INSIDE-WIDTH SHEET) (- END-Y MID-Y)
+				       (SHEET-INSIDE-LEFT SHEET) MID-Y ALUF SHEET))
+		 (%DRAW-RECTANGLE (SHEET-INSIDE-WIDTH SHEET)
+				  (- (SHEET-INSIDE-BOTTOM SHEET) MID-Y)
+				  (SHEET-INSIDE-LEFT SHEET) MID-Y ALUF SHEET)
+		 (%DRAW-RECTANGLE (SHEET-INSIDE-WIDTH SHEET)
+				  (- END-Y (SHEET-INSIDE-TOP SHEET))
+				  (SHEET-INSIDE-LEFT SHEET) (SHEET-INSIDE-TOP SHEET)
+				  ALUF SHEET))))))
+
+;;; Source bytes 9886:10300; lines 237-245; sha256 0b65c1387c12f56ede5dc79ac8b0ee9b6bb903747625ab821276227b21adf4a7
+(DEFUN SHEET-CLEAR-EOF (SHEET &AUX HT TEM)
+  "Clear from cursor to end of sheet"
+  (PREPARE-SHEET (SHEET)
+    (SHEET-CLEAR-EOL SHEET)			;Will process exceptions
+    (AND (PLUSP (SETQ HT (- (SHEET-INSIDE-BOTTOM SHEET)
+			    (SETQ TEM (+ (SHEET-CURSOR-Y SHEET) (SHEET-LINE-HEIGHT SHEET))))))
+	 (%DRAW-RECTANGLE (SHEET-INSIDE-WIDTH SHEET) HT
+			  (SHEET-INSIDE-LEFT SHEET) TEM
+			  (SHEET-ERASE-ALUF SHEET) SHEET))))
+
+;;; Source bytes 10302:10459; lines 247-249; sha256 eb0375d72554c7b4e4f10bce3d842ca030d9f5537f5f4d27ad9a17484a065b6a
+(DEFUN SHEET-HOME-DOWN (SHEET)
+  "Place cursor at bottom of sheet"
+  (SHEET-SET-CURSORPOS SHEET 0 (- (SHEET-INSIDE-HEIGHT SHEET) (SHEET-LINE-HEIGHT SHEET))))
+
+;;; Source bytes 10461:11388; lines 251-271; sha256 7ffdf9bf283203ca85a0f3819438866e21fbbf59c3688f535d122bdaa2c80bf4
+(DEFUN SHEET-INSERT-LINE (SHEET &OPTIONAL (LINE-COUNT 1))
+  "Make room for a line before the line the cursor is currently on"
+  (PREPARE-SHEET (SHEET)
+    (LET ((ARRAY (SHEET-SCREEN-ARRAY SHEET))
+	  (WIDTH (SHEET-INSIDE-WIDTH SHEET))
+	  (LINE-HEIGHT (SHEET-LINE-HEIGHT SHEET))
+	  HEIGHT
+	  DELTA-HEIGHT)
+      (SETQ HEIGHT (* LINE-COUNT LINE-HEIGHT))
+      ;; Compute minus height of block to BLT
+      (SETQ DELTA-HEIGHT
+	    (- HEIGHT (- (* LINE-HEIGHT (SHEET-NUMBER-OF-INSIDE-LINES SHEET))
+			 (- (SHEET-CURSOR-Y SHEET) (SHEET-INSIDE-TOP SHEET)))))
+      (OR ( DELTA-HEIGHT 0)			;If some bits to move, move them
+	  (BITBLT ALU-SETA
+		  WIDTH DELTA-HEIGHT
+		  ARRAY (SHEET-INSIDE-LEFT SHEET) (SHEET-CURSOR-Y SHEET)
+		  ARRAY (SHEET-INSIDE-LEFT SHEET) (+ (SHEET-CURSOR-Y SHEET) HEIGHT)))
+      (%DRAW-RECTANGLE WIDTH HEIGHT
+		       (SHEET-INSIDE-LEFT SHEET) (SHEET-CURSOR-Y SHEET)
+		       (SHEET-ERASE-ALUF SHEET) SHEET))))
+
+;;; Source bytes 12245:12991; lines 292-306; sha256 39dcd2489a40e738d95dc703849d8e6390192e72c053b7c38c973dac0b04432c
+(DEFUN SHEET-INSERT-CHAR (SHEET &OPTIONAL (CHAR-COUNT 1) (TYPE ':CHARACTER))
+  "Make room for characters after cursor.  Is only correct for fixed width fonts"
+  (PREPARE-SHEET (SHEET)
+    (LET ((ARRAY (SHEET-SCREEN-ARRAY SHEET))
+	  (LINE-HEIGHT (SHEET-LINE-HEIGHT SHEET))
+	  (WIDTH (IF (EQ TYPE ':PIXEL) CHAR-COUNT
+		     (* CHAR-COUNT (SHEET-CHAR-WIDTH SHEET)))))
+      (BITBLT ALU-SETA
+	      (- WIDTH (- (SHEET-INSIDE-RIGHT SHEET) (SHEET-CURSOR-X SHEET)))
+	      LINE-HEIGHT
+	      ARRAY (SHEET-CURSOR-X SHEET) (SHEET-CURSOR-Y SHEET)
+	      ARRAY (+ (SHEET-CURSOR-X SHEET) WIDTH) (SHEET-CURSOR-Y SHEET))
+      (%DRAW-RECTANGLE WIDTH LINE-HEIGHT
+		       (SHEET-CURSOR-X SHEET) (SHEET-CURSOR-Y SHEET)
+		       (SHEET-ERASE-ALUF SHEET) SHEET))))
+
+;;; Source bytes 12993:13751; lines 308-323; sha256 91ef2eb84fdbb4fedd39a19a02ed5c2e9d288d1ff7d2425aa5c3584762d8b718
+(DEFUN SHEET-DELETE-CHAR (SHEET &OPTIONAL (CHAR-COUNT 1) (TYPE ':CHARACTER))
+  "Delete characters after cursor.  Is only correct for fixed width fonts"
+  (PREPARE-SHEET (SHEET)
+    (LET ((ARRAY (SHEET-SCREEN-ARRAY SHEET))
+	  (LINE-HEIGHT (SHEET-LINE-HEIGHT SHEET))
+	  (WIDTH (IF (EQ TYPE ':PIXEL) CHAR-COUNT
+		     (* CHAR-COUNT (SHEET-CHAR-WIDTH SHEET)))))
+      (BITBLT ALU-SETA
+	      (- (SHEET-INSIDE-RIGHT SHEET) (SHEET-CURSOR-X SHEET) WIDTH)
+	      LINE-HEIGHT
+	      ARRAY (+ (SHEET-CURSOR-X SHEET) WIDTH) (SHEET-CURSOR-Y SHEET)
+	      ARRAY (SHEET-CURSOR-X SHEET) (SHEET-CURSOR-Y SHEET))
+      (%DRAW-RECTANGLE WIDTH LINE-HEIGHT
+		       (- (SHEET-INSIDE-RIGHT SHEET) WIDTH)
+		       (SHEET-CURSOR-Y SHEET)
+		       (SHEET-ERASE-ALUF SHEET) SHEET))))
+
+;;; Source bytes 14350:16426; lines 338-389; sha256 fe6e309db0bbd405bcca81254679d95e4f48b488317ab0eb89eaff5847592c0a
+(DEFUN SHEET-TYO (SHEET CHAR)
+  "Draw a printing character in a sheet, or execute a special function"
+  (IF ( CHAR 200)
+      (COND ((= CHAR #\CR)
+             (SHEET-CRLF SHEET))
+            ((= CHAR #\TAB)
+             (SHEET-TAB SHEET))
+            ((AND (= CHAR #\BS) (ZEROP (SHEET-BACKSPACE-NOT-OVERPRINTING-FLAG SHEET)))
+             (SHEET-BACKSPACE SHEET))
+            ((< CHAR 240)			;Invisible format effector
+	     (SHEET-DISPLAY-LOSENGED-STRING SHEET
+	       (IF (= CHAR #\FORM) "PAGE"	;Rather than "CLEAR-SCREEN"
+		   (STRING (CAR (RASSOC CHAR SI:XR-SPECIAL-CHARACTER-NAMES)))))))
+      (PREPARE-SHEET (SHEET)
+        (OR (ZEROP (SHEET-EXCEPTIONS SHEET))
+	    (SHEET-HANDLE-EXCEPTIONS SHEET))
+        (LET* ((FONT (SHEET-CURRENT-FONT SHEET))
+	       (CHAR-WIDTHS (FONT-CHAR-WIDTH-TABLE FONT))
+	       (FIT (FONT-INDEXING-TABLE FONT))
+	       (WIDTH)
+	       (KERN 0)
+	       (KERN-TABLE)
+	       (XPOS (SHEET-CURSOR-X SHEET))
+	       (RIGHT-LIM (SHEET-INSIDE-RIGHT SHEET)))
+	  (OR (ZEROP (SHEET-RIGHT-MARGIN-CHARACTER-FLAG SHEET))
+	      (SETQ RIGHT-LIM (- RIGHT-LIM (SHEET-CHAR-WIDTH SHEET))))
+	  (SETQ WIDTH (IF CHAR-WIDTHS
+			  (AREF CHAR-WIDTHS CHAR)
+			  (FONT-CHAR-WIDTH FONT)))
+	  (COND ((> (+ XPOS WIDTH) RIGHT-LIM)
+		 (FUNCALL SHEET ':END-OF-LINE-EXCEPTION)
+		 (SETQ XPOS (SHEET-CURSOR-X SHEET))))
+	  (AND (SETQ KERN-TABLE (FONT-LEFT-KERN-TABLE FONT))
+	       (SETQ KERN (AREF KERN-TABLE CHAR)))
+	  (COND ((NULL FIT)
+		 (%DRAW-CHAR FONT CHAR (- XPOS KERN)
+			     (+ (SHEET-CURSOR-Y SHEET) (SHEET-BASELINE-ADJ SHEET))
+			     (SHEET-CHAR-ALUF SHEET)
+			     SHEET))
+		;; Wide character, draw several columns
+		(T
+		  (DO ((CH (AREF FIT CHAR) (1+ CH))
+		       (LIM (AREF FIT (1+ CHAR)))
+		       (BPP (SHEET-BITS-PER-PIXEL SHEET))
+		       (XPOS (- XPOS KERN)
+			     (+ XPOS (// (FONT-RASTER-WIDTH FONT) BPP)))
+		       (YPOS (+ (SHEET-CURSOR-Y SHEET) (SHEET-BASELINE-ADJ SHEET)))
+		       (ALUF (SHEET-CHAR-ALUF SHEET)))
+		      ((= CH LIM))
+		    (%DRAW-CHAR FONT CH XPOS YPOS ALUF SHEET))))
+	  (SETF (SHEET-CURSOR-X SHEET) (+ XPOS WIDTH)))))
+  CHAR)
+
+;;; Source bytes 16428:18982; lines 391-454; sha256 becdbd22116e2ad0c6c69da36bbf4c674bf6f68d030aed15d95ee825535efe22
+(DEFUN SHEET-STRING-OUT (SHEET STRING &OPTIONAL (START 0) (END NIL))
+       "Routine to print a string on a sheet. Understands format effectors (special
+keys 200-237).  Optional starting and ending indicies may be supplied.  Default is
+to output the whole string"
+  (PREPARE-SHEET (SHEET)
+    (AND (SYMBOLP STRING)		;Convert symbols to strings for output
+	 (SETQ STRING (GET-PNAME STRING)))
+    (PROG ((I START)
+	   (N (OR END (ARRAY-ACTIVE-LENGTH STRING)))
+	   (FONT (SHEET-CURRENT-FONT SHEET))
+	   XPOS YPOS XLIM ALUF WIDTH CH FWT LKT)
+       TOP
+	  (AND ( I N) (RETURN NIL))		        ;No exception if done anyway
+	  (AND (NULL (FONT-INDEXING-TABLE FONT))
+	       (GO EZ))					;Handle easy case fast
+       HD (SHEET-TYO SHEET (AREF STRING I))
+	  (AND (< (SETQ I (1+ I)) N)
+	       (GO TOP))
+	  (RETURN NIL)
+
+       EZ (OR (ZEROP (SHEET-EXCEPTIONS SHEET))		;End of page, MORE
+	      (SHEET-HANDLE-EXCEPTIONS SHEET))
+	  (SETQ XPOS (SHEET-CURSOR-X SHEET)
+		YPOS (+ (SHEET-CURSOR-Y SHEET) (SHEET-BASELINE-ADJ SHEET))
+	        ALUF (SHEET-CHAR-ALUF SHEET)
+		WIDTH (FONT-CHAR-WIDTH FONT)
+		XLIM (SHEET-INSIDE-RIGHT SHEET))
+	  (OR (ZEROP (SHEET-RIGHT-MARGIN-CHARACTER-FLAG SHEET))
+	      (SETQ XLIM (- XLIM (SHEET-CHAR-WIDTH SHEET))))
+	  (AND (OR (FONT-CHAR-WIDTH-TABLE FONT) (FONT-LEFT-KERN-TABLE FONT))
+	       (GO VW))					;Variable-width is a little slower
+       EZ1						;This is the fast loop
+	  (COND ((< (SETQ CH (AREF STRING I)) 200)	;Printing char
+		 (COND ((> (+ XPOS WIDTH) XLIM)		;Room for it before right margin?
+			(SETF (SHEET-CURSOR-X SHEET) XPOS)
+			(FUNCALL SHEET ':END-OF-LINE-EXCEPTION)
+			(GO TOP)))
+		 (%DRAW-CHAR FONT CH XPOS YPOS ALUF SHEET)
+		 (SETQ XPOS (+ XPOS WIDTH))
+		 (AND (< (SETQ I (1+ I)) N)
+		      (GO EZ1))
+		 (SETF (SHEET-CURSOR-X SHEET) XPOS)
+		 (RETURN NIL))
+		(T					;Format effector
+		 (SETF (SHEET-CURSOR-X SHEET) XPOS)
+		 (GO HD)))
+
+       VW  (SETQ FWT (FONT-CHAR-WIDTH-TABLE FONT)	;This is the medium speed loop 
+		 LKT (FONT-LEFT-KERN-TABLE FONT))
+       VW1 (COND ((< (SETQ CH (AREF STRING I)) 200)	;Printing char
+		  (AND FWT (SETQ WIDTH (AREF FWT CH)))
+		  (COND ((> (+ WIDTH XPOS) XLIM)	;Room before margin?
+			 (SETF (SHEET-CURSOR-X SHEET) XPOS)
+			 (FUNCALL SHEET ':END-OF-LINE-EXCEPTION)
+			 (GO TOP)))
+		  (%DRAW-CHAR FONT CH (IF LKT (- XPOS (AREF LKT CH)) XPOS) YPOS ALUF SHEET)
+		  (SETQ XPOS (+ XPOS WIDTH))
+		  (AND (< (SETQ I (1+ I)) N)
+		       (GO VW1))
+		  (SETF (SHEET-CURSOR-X SHEET) XPOS)
+		  (RETURN NIL))
+		 (T					;Format effector
+		  (SETF (SHEET-CURSOR-X SHEET) XPOS)
+		  (GO HD))))))
+
+;;; Source bytes 30902:31831; lines 704-723; sha256 6ea0a84ab574af188e638624a1fcb65d0d76a05cc4fd5272c3689b42986c33fa
+(DEFUN SHEET-CHARACTER-WIDTH (SHEET CH FONT &AUX TEM)
+  "Returns the width of a character, in raster units.
+For backspace, it can return a negative number.
+For tab, the number returned depends on the current cursor position.
+For return, the result is zero."
+  (COND ((< CH 200)				;Ordinary printing character
+	 (COND ((SETQ TEM (FONT-CHAR-WIDTH-TABLE FONT)) (AREF TEM CH))
+	       (T (FONT-CHAR-WIDTH FONT))))
+	((= CH #\CR) 0)				        ;Return
+	((= CH #\TAB)				        ;Tab
+	 (SETQ TEM (* 8 (SHEET-CHAR-WIDTH SHEET)))
+	 (- (* (// (+ (SHEET-CURSOR-X SHEET) TEM) TEM) TEM)
+	    (SHEET-CURSOR-X SHEET)))
+	((AND (= CH #\BS) (ZEROP (SHEET-BACKSPACE-NOT-OVERPRINTING-FLAG SHEET)))
+	 (MINUS (SHEET-CHAR-WIDTH SHEET)))		;Backspace
+	((= CH #\FORM)					;Displays specially as <PAGE>
+	 34.)
+	((< CH 240)				        ;Misc invisible format effector
+	 (+ (* (STRING-LENGTH (CAR (RASSOC CH SI:XR-SPECIAL-CHARACTER-NAMES))) 6) 10.))
+	(T 0)))
+
+;;; Source bytes 34695:35713; lines 789-815; sha256 a149b4eca12828b82312b3a7e41e2e699cdb4c3e13952e238c21448bd3280795
+(DEFUN SHEET-STRING-OUT-EXPLICIT (SHEET STRING X Y XLIM FONT ALU
+					&OPTIONAL (START 0) (END NIL)
+					&AUX FIT FWT LKT)
+  "Output a special string (like a label) without exceptions or anything like that."
+  (SETQ FIT (FONT-INDEXING-TABLE FONT)
+	FWT (FONT-CHAR-WIDTH-TABLE FONT)
+	LKT (FONT-LEFT-KERN-TABLE FONT))
+  (PREPARE-SHEET (SHEET)
+    (DO ((I START (1+ I))
+	 (N (OR END (ARRAY-ACTIVE-LENGTH STRING)))
+	 (WIDTH (FONT-CHAR-WIDTH FONT))
+	 (X X (+ X WIDTH))
+	 (CH))
+	((OR ( I N) ( (+ X WIDTH) XLIM))
+	 (PROG () (RETURN X I)))
+      (SETQ CH (AREF STRING I))
+      (AND (> CH 200) (FERROR NIL "SHEET-STRING-OUT-EXPICIT cannot handle ~C" CH))
+      (AND LKT (SETQ X (- X (AREF LKT CH))))
+      (IF FIT
+	  (DO ((CH (AREF FIT CH) (1+ CH))
+	       (LIM (AREF FIT (1+ CH)))
+	       (BPP (SHEET-BITS-PER-PIXEL SHEET))
+	       (X X (+ X (// (FONT-RASTER-WIDTH FONT) BPP))))
+	      (( CH LIM))
+	    (%DRAW-CHAR FONT CH X Y ALU SHEET))
+	  (%DRAW-CHAR FONT CH X Y ALU SHEET))
+      (AND FWT (SETQ WIDTH (AREF FWT CH))))))
+
+;;; Source bytes 36482:37289; lines 832-849; sha256 ca6229f4a5803e2673201866fb1cf2b478f596088d1eeef9b170f9d3a4225588
+(DEFUN SHEET-DISPLAY-X-Y-CENTERED-STRING (SHEET STRING
+					  &OPTIONAL (LEFT 0) (TOP 0)
+					            (RIGHT (SHEET-INSIDE-WIDTH SHEET))
+						    (BOTTOM (SHEET-INSIDE-HEIGHT SHEET))
+						    (FNT (SHEET-CURRENT-FONT SHEET)))
+  "Display a string centered in both X and Y.
+  Note that the coordinates of the box in which it is centered are relative to the margins"
+  (LET ((HT (FONT-BASELINE FNT))
+	(WID (- RIGHT LEFT)))
+    (MULTIPLE-VALUE-BIND (SWID SLEN)
+	(SHEET-STRING-LENGTH SHEET STRING 0 NIL WID FNT)
+      (SHEET-STRING-OUT-EXPLICIT SHEET STRING
+				 (+ (SHEET-INSIDE-LEFT SHEET) LEFT
+				    (MAX (// (- WID SWID) 2) 0))
+				 (+ (SHEET-INSIDE-TOP SHEET)
+				    (MAX (- (// (+ TOP BOTTOM) 2) (// HT 2)) TOP))
+				 (+ (SHEET-INSIDE-LEFT SHEET) RIGHT)
+				 FNT (SHEET-CHAR-ALUF SHEET) 0 SLEN))))
+
+;;; Source bytes 46371:49086; lines 1069-1118; sha256 8b908a54401795ff87fe28b2359c62936e5e6bd0c18703d8f7fc587d79604676
+(DEFUN SET-TV-SPEED (FREQUENCY)
+  "Set the TV refresh rate.  The default is 64.69.  Returns the number of display lines."
+  ;; Try not to burn up the monitor
+  (CHECK-ARG FREQUENCY (AND (> FREQUENCY 54.) (< FREQUENCY 76.))
+	     "a number between 55. and 75.")
+  ;; Here each horizontal line is 32. sync clocks, or 16.0 microseconds with a 64 MHz clock.
+  ;; The number of lines per frame is 70. overhead lines plus enough display lines
+  ;; to give the desired rate.
+  (LET ((N-LINES (- (FIX (// 1e6 (* 16. FREQUENCY))) 70.))
+	(OLD-BOTTOM (SHEET-INSIDE-HEIGHT DEFAULT-SCREEN)) NEW-BOTTOM)
+    (SI:SETUP-CPT
+      (APPEND '(1.  (1 33) (5 13) 12 12 (11. 12 12) 212 113)	;VERT SYNC, CLEAR TVMA
+	      '(53. (1 33) (5 13) 12 12 (11. 12 12) 212 13)	;VERT RETRACE
+	      '(8.  (1 31)  (5 11) 11 10 (11. 0 0) 200 21)	;8 LINES OF MARGIN
+	      (DO ((L NIL (APPEND L `(,DN (1 31) (5 11) 11 50 (11. 0 40) 200 21)))
+		   (N N-LINES (- N DN))
+		   (DN))
+		  ((ZEROP N) L)
+		(SETQ DN (MIN 255. N)))
+	      '(7. (1 31) (5 11) 11 10 (11. 0 0) 200 21)
+	      '(1. (1 31) (5 11) 11 10 (11. 0 0) 300 23))
+      (SCREEN-CONTROL-ADDRESS DEFAULT-SCREEN)
+      T)
+    ;; Move the who-line, and change the dimensions of default screen
+    (SETF (SHEET-Y-OFFSET WHO-LINE-WINDOW)
+	  (- N-LINES (FONT-CHAR-HEIGHT (SHEET-CURRENT-FONT WHO-LINE-WINDOW))))
+    (SETF (SHEET-HEIGHT DEFAULT-SCREEN) N-LINES)
+    (%P-STORE-CONTENTS-OFFSET (// (* (SHEET-WIDTH DEFAULT-SCREEN) N-LINES) 16.)
+			      (SYMEVAL-IN-INSTANCE DEFAULT-SCREEN 'BUFFER-HALFWORD-ARRAY)
+			      3)
+    (%P-STORE-CONTENTS-OFFSET (* (SHEET-WIDTH DEFAULT-SCREEN) N-LINES)
+			      (SHEET-SCREEN-ARRAY DEFAULT-SCREEN) 3)
+    (SETQ NEW-BOTTOM (SHEET-INSIDE-HEIGHT DEFAULT-SCREEN))
+    (AND (> NEW-BOTTOM OLD-BOTTOM)
+	 ;; If screen got bigger, erase old who-line and newly-appeared space
+	 (%DRAW-RECTANGLE (SHEET-WIDTH DEFAULT-SCREEN) (- N-LINES OLD-BOTTOM)
+			  0 OLD-BOTTOM ALU-SETZ DEFAULT-SCREEN))
+    ;;*** This doesn't work because it can make the size negative.  The :VERIFY option
+    ;;*** does not detect this, but it blows out later.  This needs to be done over
+    ;;*** to do some hairier hacking of the edges, but I don't want to work on it more now.
+    (DOLIST (W (SHEET-INFERIORS DEFAULT-SCREEN))
+      (LET ((BOTTOM (+ (SHEET-Y-OFFSET W) (SHEET-HEIGHT W))))
+	(AND ( BOTTOM OLD-BOTTOM)
+	     (MEMQ ':SET-SIZE (FUNCALL W ':WHICH-OPERATIONS))
+	     (FUNCALL W ':SET-SIZE (SHEET-WIDTH W) (- NEW-BOTTOM (SHEET-Y-OFFSET W)) ':VERIFY)
+	     (FUNCALL W ':SET-SIZE (SHEET-WIDTH W) (- NEW-BOTTOM (SHEET-Y-OFFSET W))))))
+    (SETQ %DISK-RUN-LIGHT (+ (- (* N-LINES (SHEET-LOCATIONS-PER-LINE DEFAULT-SCREEN)) 15)
+			     (LSH 77 18.)))
+    (WHO-LINE-CLOBBERED)
+    N-LINES))
+

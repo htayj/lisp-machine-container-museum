@@ -1,0 +1,147 @@
+;;; Inertly recovered online-help source contexts.
+;;; Original System 46 file: lmwin/quest.42
+;;; Exact source bytes follow each generated provenance comment.
+
+;;; Source bytes 1657:1843; lines 36-39; sha256 7ae9e993d4379dfa5f4611e142b8d618f61373906ce501a856ca64e8d8e7e8e0
+(DEFFLAVOR QUESTIONNAIRE-FRAME-MIXIN () ()
+  (:INCLUDED-FLAVORS BASIC-CONSTRAINT-FRAME)
+  (:DEFAULT-INIT-PLIST :SAVE-BITS T)
+  (:DOCUMENTATION :MIXIN "Stuff specific to questionnaires"))
+
+;;; Source bytes 3609:3925; lines 80-84; sha256 98c5fee43a4aad4d00a4a54dd80db7dbbdb98a0abcb3916fe09c8b8b6f88aed1
+(DEFFLAVOR QUESTIONNAIRE-FRAME ()
+	   (BORDERS-MIXIN TOP-CENTERED-LABEL-MIXIN DIVIDER-MIXIN QUESTIONNAIRE-FRAME-MIXIN
+	    BASIC-CONSTRAINT-FRAME BASIC-FRAME WINDOW)
+  (:DEFAULT-INIT-PLIST :BORDERS 3 :DIVIDER 3 :LABEL FONTS:METS)
+  (:DOCUMENTATION :COMBINATION "Something like a menu but with more-active elements"))
+
+;;; Source bytes 4009:4147; lines 88-89; sha256 331b79926d1e172e4ad5865a337cce80ff46a7dcf23fd3ef1505e2f86840cab8
+(DEFFLAVOR TOP-CENTERED-LABEL-MIXIN () (TOP-LABEL-MIXIN)
+  (:DOCUMENTATION :MIXIN "Puts the label at the top of the window and centered"))
+
+;;; Source bytes 5181:5432; lines 109-113; sha256 4cd61ba620f98e29ec295e5b1435659277affc7cb1ca0451d42ae8b78f704430
+(DEFFLAVOR DIVIDER-MIXIN ((DIVIDER 1)) (MARGIN-HACKER-MIXIN)
+  (:INCLUDED-FLAVORS ESSENTIAL-WINDOW)
+  (:INITABLE-INSTANCE-VARIABLES DIVIDER)
+  (:DOCUMENTATION :MIXIN
+	       "Provides a line between the top-centered label and the body of the window"))
+
+;;; Source bytes 6508:7188; lines 140-150; sha256 79eabe20bb95523b2aec72a7999c3f599c78fe65ca08a5082c12d2ba36f6578a
+(DEFFLAVOR ESSENTIAL-QUESTIONNAIRE-PANE () (PANE-MIXIN)
+  (:DEFAULT-INIT-PLIST :SAVE-BITS NIL		;The frame takes care of it
+		       :MORE-P NIL		;Normally don't want more-processing
+		       :BLINKER-DESELECTED-VISIBILITY NIL	;nor blinker turd
+		       :BLINKER-P NIL		;nor a blinker at all
+				;You can turn the above back on in your own flavor if you like
+		       :BORDERS 1)
+  (:REQUIRED-METHODS :XOR-ACCENT		;Highlight the window by XOR'ing over it
+		     :QUESTIONNAIRE-RESET)	;Broadcast to all panes for general reset
+  (:METHOD-COMBINATION (:PROGN :BASE-FLAVOR-LAST :QUESTIONNAIRE-RESET))
+  (:DOCUMENTATION :LOWLEVEL-MIXIN "Lowest level of the questionnaire-pane family"))
+
+;;; Source bytes 8124:8327; lines 174-176; sha256 31f6c1db8bc23f0e5c393eb13caa35149e8da8f3f9c7aa3f5c1a96b53364b4af
+(DEFFLAVOR QUESTIONNAIRE-PANE-WITHOUT-LABEL ()
+  (ESSENTIAL-QUESTIONNAIRE-PANE STREAM-MIXIN BORDERS-MIXIN MINIMUM-WINDOW)
+  (:DOCUMENTATION :COMBINATION "Base flavor for unlabelled questionnaire panes"))
+
+;;; Source bytes 8560:8948; lines 184-189; sha256 166f66a9f9b95aa94b6ab1192dcab88b1dfbb132e7773d554feca948affbae1c
+(DEFFLAVOR QUESTIONNAIRE-PANE-WITH-LABEL ()
+  (ESSENTIAL-QUESTIONNAIRE-PANE STREAM-MIXIN BORDERS-MIXIN TOP-CENTERED-LABEL-MIXIN
+   DIVIDER-MIXIN CHANGEABLE-NAME-MIXIN SELECT-MIXIN MINIMUM-WINDOW)
+  (:DEFAULT-INIT-PLIST :INTEGRAL-P T	;Do I want this?
+		       :BORDERS 2)	;I suspect this wants thicker borders
+  (:DOCUMENTATION :COMBINATION "Base flavor for labelled questionnaire panes"))
+
+;;; Source bytes 9500:9722; lines 202-204; sha256 64fbc6c896043fa55a8767ba687de8a6dc6563753cdecc7862a2ab5ab396a91f
+(DEFFLAVOR QUESTIONNAIRE-BUTTON-PANE () (QUESTIONNAIRE-PANE-WITHOUT-LABEL)
+  (:DEFAULT-INIT-PLIST :FONT-MAP (LIST FONTS:MEDFNT))
+  (:DOCUMENTATION :COMBINATION "A questionnaire pane consisting of just a box and its name"))
+
+;;; Source bytes 10289:10585; lines 218-221; sha256 1cc1ef4271610c44c004a08732fd088d17f2c8eaef7647df414d88ec72f93365
+(DEFFLAVOR QUESTIONNAIRE-ACCENT-MIXIN ((ACCENT NIL)) ()
+  (:GETTABLE-INSTANCE-VARIABLES ACCENT) ;Really settable, but auto method would screw me
+  (:INCLUDED-FLAVORS ESSENTIAL-QUESTIONNAIRE-PANE ESSENTIAL-WINDOW)
+  (:DOCUMENTATION :MIXIN "Provides the accenting feature for questionnaire panes"))
+
+;;; Source bytes 12248:12531; lines 258-262; sha256 63726951a571ef141a4e422ea0b70630c89c12f0f9e93a6bc01a423d931ea4b7
+(DEFFLAVOR QUESTIONNAIRE-FUNCTION-MIXIN ((FUNCTION NIL)) ()
+  (:SETTABLE-INSTANCE-VARIABLES FUNCTION)
+  (:INCLUDED-FLAVORS ESSENTIAL-QUESTIONNAIRE-PANE ESSENTIAL-WINDOW)
+  (:DOCUMENTATION :MIXIN
+     "Provides the feature of calling a function when moused, for questionnaire panes"))
+
+;;; Source bytes 13976:14183; lines 288-291; sha256 c674fbd36a24df92a028f3769faf7ed7573b122db78617ed28c44c0ddfeb4a7f
+(DEFFLAVOR QUESTIONNAIRE-MOUSE-MIXIN () ()
+  (:INCLUDED-FLAVORS ESSENTIAL-QUESTIONNAIRE-PANE)
+  (:DOCUMENTATION :MIXIN
+     "Provides xerox-like mouse (active when button released) for questionnaire panes"))
+
+;;; Source bytes 17601:17806; lines 361-364; sha256 2be8d788eb12ae344333f89b685da2ef174238149200dddd457d01e9c0e39e73
+(DEFFLAVOR QUESTIONNAIRE-ONOFF-ELEMENT ()
+	   (QUESTIONNAIRE-ACCENT-MIXIN QUESTIONNAIRE-BUTTON-PANE)
+  (:DOCUMENTATION :COMBINATION
+     "A questionnaire element with T//NIL value, complemented by mouse"))
+
+;;; Source bytes 18921:19208; lines 391-394; sha256 fa27fdd6db44789da66125d4c400d8615b9f53129620ed6626a4c29d666b5a93
+(DEFFLAVOR QUESTIONNAIRE-FUNCTION-BUTTON ()
+	(QUESTIONNAIRE-FUNCTION-MIXIN QUESTIONNAIRE-ACCENT-MIXIN QUESTIONNAIRE-BUTTON-PANE)
+  (:DEFAULT-INIT-PLIST :CHARACTER-HEIGHT 1 :CHARACTER-WIDTH 10.)
+  (:DOCUMENTATION :COMBINATION "A questionnaire element which calls a function when moused"))
+
+;;; Source bytes 19210:19528; lines 396-401; sha256 36eeb87abb24e094942b9b8949e890e8cf2c71f78a9d2745cf623cb3e67a51f6
+(DEFFLAVOR QUESTIONNAIRE-BIG-FUNCTION-BUTTON ()
+	   (QUESTIONNAIRE-FUNCTION-BUTTON)
+  (:DEFAULT-INIT-PLIST :FONT-MAP (LIST FONTS:BIGFNT) :BORDERS 4
+		       :CHARACTER-HEIGHT 2 :CHARACTER-WIDTH 10.)
+  (:DOCUMENTATION :COMBINATION
+      "A questionnaire element, of prominent size, which calls a function when moused"))
+
+;;; Source bytes 19959:20500; lines 411-418; sha256 bb5c7c24de1eeb5ca6c22f20ed5c57fb5bf9eb3151e2ecd7f713193dbdf68fab
+(DEFFLAVOR QUESTIONNAIRE-VALUE-ELEMENT (VALUE (INITIAL-VALUE ""))
+	   (QUESTIONNAIRE-ACCENT-MIXIN QUESTIONNAIRE-PANE-WITH-LABEL)
+  ;(:SETTABLE-INSTANCE-VARIABLES VALUE INITIAL-VALUE)  ;commented due to auto method bug
+  (:SETTABLE-INSTANCE-VARIABLES INITIAL-VALUE)
+  (:GETTABLE-INSTANCE-VARIABLES VALUE)	;Settable but there is an explicit set method
+  (:DEFAULT-INIT-PLIST :BLINKER-P T)	;I need a blinker when asking for input
+  (:DOCUMENTATION :COMBINATION
+      "A questionnaire element containing a displayed value, input from keyboard"))
+
+;;; Source bytes 22685:22852; lines 472-473; sha256 6601df281c6e371d578767bbdc3a2ab0701c7557af0a6e6203f5c11a7e1d449d
+(DEFFLAVOR QUESTIONNAIRE-INTEGER-ELEMENT () (QUESTIONNAIRE-VALUE-ELEMENT)
+  (:DOCUMENTATION :COMBINATION "A questionnaire value element constrained to be an integer"))
+
+;;; Source bytes 23475:23711; lines 490-493; sha256 ea2981fbc407873af6f281379c10e89119e3665d760057243dccb7fecf61ea5a
+(DEFFLAVOR QUESTIONNAIRE-SEXP-ELEMENT ((PACKAGE PACKAGE)) (QUESTIONNAIRE-VALUE-ELEMENT)
+  (:SETTABLE-INSTANCE-VARIABLES PACKAGE)
+  (:DOCUMENTATION :COMBINATION
+		  "A questionnaire element whose displayed value is a Lisp S-expression"))
+
+;;; Source bytes 24037:24244; lines 504-506; sha256 171e101888a88ca753cc0d20c2324a84cb318d40e3532c3a7ab473acc7c8d6c5
+(DEFFLAVOR QUESTIONNAIRE-CHOICES-ELEMENT (CHOICES) (QUESTIONNAIRE-VALUE-ELEMENT)
+  (:SETTABLE-INSTANCE-VARIABLES CHOICES)
+  (:DOCUMENTATION :COMBINATION "A questionnaire element with a fixed set of values"))
+
+;;; Source bytes 24787:25010; lines 520-523; sha256 be56d6f67b9e7268412d357085aa0dde3ced94a08f0b003c0f176a6e16ee53e7
+(DEFFLAVOR QUESTIONNAIRE-VALUE-FUNCTION-ELEMENT ()
+	   (QUESTIONNAIRE-FUNCTION-MIXIN QUESTIONNAIRE-VALUE-ELEMENT)
+  (:DOCUMENTATION :COMBINATION
+		  "A questionnaire value element that calls a function when value changed"))
+
+;;; Source bytes 25012:25241; lines 525-528; sha256 34e1132059f395feeb6c1a1a25374a543276844c1e76a4cb08365705c998802d
+(DEFFLAVOR QUESTIONNAIRE-INTEGER-FUNCTION-ELEMENT ()
+	   (QUESTIONNAIRE-FUNCTION-MIXIN QUESTIONNAIRE-INTEGER-ELEMENT)
+  (:DOCUMENTATION :COMBINATION
+		  "A questionnaire integer element that calls a function when value changed"))
+
+;;; Source bytes 25243:25463; lines 530-533; sha256 2c0c7f3a2c5ffdf790e667dec0c574b4981e132ec14576cb249f154a13a53a46
+(DEFFLAVOR QUESTIONNAIRE-SEXP-FUNCTION-ELEMENT ()
+	   (QUESTIONNAIRE-FUNCTION-MIXIN QUESTIONNAIRE-SEXP-ELEMENT)
+  (:DOCUMENTATION :COMBINATION
+		  "A questionnaire sexp element that calls a function when value changed"))
+
+;;; Source bytes 25465:25694; lines 535-538; sha256 e76954f5d44e178495466060f5e9b7d779a3fad1e09d1be68c0570745dd2e3ff
+(DEFFLAVOR QUESTIONNAIRE-CHOICES-FUNCTION-ELEMENT ()
+	   (QUESTIONNAIRE-FUNCTION-MIXIN QUESTIONNAIRE-CHOICES-ELEMENT)
+  (:DOCUMENTATION :COMBINATION
+		  "A questionnaire choices element that calls a function when value changed"))
+

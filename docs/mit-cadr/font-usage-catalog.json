@@ -1,18 +1,26 @@
 {
   "schema_version": 1,
-  "audit_date": "2026-07-16",
+  "audit_date": "2026-07-17",
   "source_repository": "https://github.com/mietek/mit-cadr-system-software",
   "source_revision": "8e978d7d1704096a63edd4386a3b8326a2e584af",
+  "supplemental_sources": [
+    {
+      "repository": "https://tumbleweed.nu/r/sys",
+      "checkin": "4df393c68d7f083ce42d5c377039d26043cc18a9031ace28258dc97f4137eb91",
+      "role": "Maintained LM-3 System 303 source used only when the primary System 46 snapshot lacks an executable consumer; cross-version claims remain explicit."
+    }
+  ],
   "scope": {
     "source_backed_logical_font_count": 88,
     "compiled_only_logical_font_count": 17,
     "variant_policy": "Usage is cataloged by logical name. The 62 retained source variants inherit the logical-name finding unless a source explicitly distinguishes a variant.",
-    "search_boundary": "Complete src tree at the pinned revision, including binary-aware literal-name scans and manual inspection of every surviving context. Dynamically constructed or interactive uses may not leave a literal name."
+    "search_boundary": "Complete System 46 src tree at the pinned revision, including binary-aware literal-name scans and manual inspection of every surviving context, supplemented by targeted System 303 cross-checks. Dynamically constructed or interactive uses may not leave a literal name."
   },
   "status_definitions": {
     "direct-runtime": "Executable CADR Lisp code selects the font for an identified role.",
+    "cross-version-direct-runtime": "Executable maintained LM-3 source selects the same logical font for an identified role, but the primary System 46 snapshot lacks that selector and compiled byte identity is unproved.",
     "document-output-name-match": "A document or formatter selects a resource with the same name, but the snapshot does not prove that the printer resource is the recovered screen-font raster.",
-    "documented-use": "Contemporary documentation or a bug report identifies a role, but no surviving executable selection site was found.",
+    "documented-use": "Contemporary documentation or a bug report identifies a role, but no executable selector survives in the primary System 46 source snapshot.",
     "reported-use-no-purpose": "Contemporary material establishes use or runtime presence without identifying a purpose.",
     "standard-load-no-purpose": "A system package or loader includes the font, but no consuming role was found.",
     "source-build-only": "The font occurs in the source archive compilation list, but no consuming role was found.",
@@ -70,7 +78,17 @@
       ]
     },
     "BLKF10": {"status": "source-build-only", "purpose": "TODO"},
-    "BUG": {"status": "source-build-only", "purpose": "TODO"},
+    "BUG": {
+      "status": "documented-use",
+      "purpose": "Four insect glyphs A through D used in EINE continuation lines as a redisplay stress case; System 46 evidence does not establish animation.",
+      "evidence": [
+        {"path": "src/nzwei/bugs.old", "lines": "4057-4063", "url": "https://github.com/mietek/mit-cadr-system-software/blob/8e978d7d1704096a63edd4386a3b8326a2e584af/src/nzwei/bugs.old#L4057-L4063"}
+      ],
+      "cross_version_observation": "System 303 TVBGAR animation arrays are bit-for-bit identical to the first 32 rows of System 46 BUG glyphs A through D.",
+      "supplemental_evidence": [
+        {"path": "demo/dlwhak.lisp", "lines": "186-234", "url": "https://tumbleweed.nu/r/sys/file?ci=4df393c68d7f083ce42d5c377039d26043cc18a9&name=demo%2Fdlwhak.lisp&ln=186-234"}
+      ]
+    },
     "CHA": {"status": "source-build-only", "purpose": "TODO"},
     "CHAS": {"status": "source-build-only", "purpose": "TODO"},
     "CLAR": {"status": "source-build-only", "purpose": "TODO"},
@@ -292,7 +310,15 @@
     },
     "S35GER": {"status": "compiled-inventory-only", "purpose": "TODO"},
     "SAIL12": {"status": "compiled-inventory-only", "purpose": "TODO"},
-    "SEARCH": {"status": "standard-load-no-purpose", "purpose": "TODO"},
+    "SEARCH": {
+      "status": "cross-version-direct-runtime",
+      "purpose": "Ten labeled operators used by the extended-search minibuffer: open nesting, close nesting, OR, AND, negate the next character, whitespace, any number of the next character, delimiter, alphabetic character, and any character.",
+      "evidence": [
+        {"path": "zwei/search.lisp", "lines": "870-908", "url": "https://tumbleweed.nu/r/sys/file?ci=4df393c68d7f083ce42d5c377039d26043cc18a9&name=zwei%2Fsearch.lisp&ln=870-908"},
+        {"path": "zwei/screen.lisp", "lines": "884-938", "url": "https://tumbleweed.nu/r/sys/file?ci=4df393c68d7f083ce42d5c377039d26043cc18a9&name=zwei%2Fscreen.lisp&ln=884-938"}
+      ],
+      "evidence_boundary": "System 303 source directly selects FONTS:SEARCH. The System 46 raster has the same ten visible labels but is not byte-identical to the maintained artifact."
+    },
     "SHIP": {
       "status": "direct-runtime",
       "purpose": "Spacewar character blinkers for torpedoes, suns, and differently oriented ship models.",

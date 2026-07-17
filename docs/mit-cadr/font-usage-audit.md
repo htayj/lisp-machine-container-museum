@@ -1,9 +1,9 @@
 ---
 type: Artifact Analysis
 title: MIT CADR font usage audit
-description: Evidence-graded uses and explicit unknowns for every source-backed and compiled-only font in the pinned System 46 snapshot.
+description: Evidence-graded uses and explicit unknowns for every source-backed and compiled-only font in System 46, with bounded LM-3 cross-checks.
 tags: [mit-cadr, fonts, source-analysis, user-interface, preservation]
-timestamp: 2026-07-16T23:46:35-04:00
+timestamp: 2026-07-17T01:17:24-04:00
 ---
 
 # MIT CADR font usage audit
@@ -18,21 +18,24 @@ recovered font. It does, however, support a complete evidence-graded audit:
 - three names are demonstrably selected by XGP or Dover document workflows, but
   the name match does not prove that those printer resources contain the same
   raster data as the recovered CADR screen-font sources;
-- two more have a specific use described by contemporary documentation or a bug
+- three more have a specific use described by contemporary documentation or a bug
   report, without a surviving executable selection site;
 - one was reported as frequently used, but the report gives no purpose;
 - six are loaded by the standard `FONTS` package without an identified consumer;
-- 46 occur only in the source-archive compilation list, and 15 only as recoverable
+- 45 occur only in the source-archive compilation list, and 15 only as recoverable
   source representations.
 
-Thus 20 source-backed names have a specific, evidence-supported role and 68 have
+Thus 21 source-backed names have a specific, evidence-supported role and 67 have
 an explicit **TODO: no application purpose established**. “No purpose established”
 does not mean “never used”: font names could be entered interactively, constructed
 dynamically, or referenced only from compiled programs absent from this tree.
 
 The separate set of 17 compiled-only logical names is less complete. Executable
-source establishes roles for `MEDFNB` and `SHIP`; the other 15 remain qualified
-runtime, load, or inventory observations with purpose `TODO`.
+System 46 source establishes roles for `MEDFNB` and `SHIP`. Maintained LM-3 System
+303 source directly establishes the editor role of `SEARCH`, whose ten visible
+labels agree with the System 46 raster even though the two compiled artifacts are
+not byte-identical. The other 14 remain qualified runtime, load, or inventory
+observations with purpose `TODO`.
 
 The machine-readable companion is the
 [`font-usage-catalog.json`](font-usage-catalog.json). It has one entry for every
@@ -46,7 +49,11 @@ variant rather than another.
 The audit uses the complete `src/` tree of
 [`mietek/mit-cadr-system-software`](https://github.com/mietek/mit-cadr-system-software/tree/8e978d7d1704096a63edd4386a3b8326a2e584af/src)
 at commit `8e978d7d1704096a63edd4386a3b8326a2e584af`, the same revision used by the
-[source recovery](font-sources-and-recovery.md).
+[source recovery](font-sources-and-recovery.md). Targeted cross-checks use the LM-3
+Fossil repository's System 303 check-in
+`4df393c68d7f083ce42d5c377039d26043cc18a9031ace28258dc97f4137eb91` only when
+the primary snapshot lacks an executable consumer. Those cross-version findings are
+identified explicitly and never treated as proof of byte identity.
 
 For each of the 88 logical names in the tracked asset catalog, the audit searched
 case-insensitively for:
@@ -89,12 +96,17 @@ Two shared references define important negative boundaries:
 | --- | ---: | --- |
 | Direct runtime | 15 | Executable Lisp selects the font for the stated role. |
 | Document-output name match | 3 | A printer/document resource with the same name is selected; raster identity is unproved. |
-| Documented use | 2 | Contemporary prose identifies a specific use; no executable selector survives. |
+| Documented use | 3 | Contemporary prose identifies a specific use; no executable selector survives in System 46. |
 | Reported use, no purpose | 1 | Use is reported, but its intended role is unknown. |
 | Standard load, no purpose | 6 | The system loads it, but no consumer was identified. |
-| Source build only | 46 | It is compiled from the font archive, but no consumer was identified. |
+| Source build only | 45 | It is compiled from the font archive, but no consumer was identified. |
 | Source only | 15 | A source representation survives, but no build, load, or consumer reference was identified. |
 | **Total** | **88** | Every source-backed logical name is accounted for exactly once. |
+
+The machine catalog additionally uses `cross-version-direct-runtime` for compiled
+`SEARCH`: executable System 303 source establishes its role, but no selector survives
+in the primary System 46 snapshot and byte identity is unproved. That status does not
+occur in the source-backed table above.
 
 ## Direct runtime uses
 
@@ -134,6 +146,7 @@ glyph-for-glyph identical to the recovered `LMFONT` screen source.
 
 | Logical name | Evidence boundary | Evidence |
 | --- | --- | --- |
+| `BUG` | A contemporary EINE report identifies `LMFONT;BUG` characters A through D as unconventional insect glyphs used to fill continuation lines and reproduce redisplay failures. This establishes a stress-test use, not animation in System 46. | [`bugs.old`](https://github.com/mietek/mit-cadr-system-software/blob/8e978d7d1704096a63edd4386a3b8326a2e584af/src/nzwei/bugs.old#L4057-L4063) |
 | `PRT12B` | A bug report reproduces variable-width wrapping with `PRT12B` menu text. This establishes menu use, but not a specific application's role. | [`bug.omail`](https://github.com/mietek/mit-cadr-system-software/blob/8e978d7d1704096a63edd4386a3b8326a2e584af/src/lmwind/bug.omail#L2465-L2478) |
 | `TR12I` | Old-window-system option documentation names it as the default for top and bottom margin-scroll legends. The retained new-window implementation instead uses `TR10I`. | [`option.info`](https://github.com/mietek/mit-cadr-system-software/blob/8e978d7d1704096a63edd4386a3b8326a2e584af/src/lmwind/option.info#L219-L225), [`choice.12`](https://github.com/mietek/mit-cadr-system-software/blob/8e978d7d1704096a63edd4386a3b8326a2e584af/src/lmwin/choice.12#L201-L211) |
 | `HL12` | A user reported using `HL12`, `HL12I`, and `HL12B` frequently in multi-font files. The report does not say what `HL12` signified, so its purpose remains `TODO`. | [`bugs.old`](https://github.com/mietek/mit-cadr-system-software/blob/8e978d7d1704096a63edd4386a3b8326a2e584af/src/nzwei/bugs.old#L2693-L2703) |
@@ -159,12 +172,12 @@ consumer that establishes a purpose:
 
 ### Present only in the source-build list
 
-These 46 names occur in the AST archive compilation list, but no standard load or
+These 45 names occur in the AST archive compilation list, but no standard load or
 application role was identified:
 
 | Font | Font | Font | Font |
 | --- | --- | --- | --- |
-| `APL14` | `ARR10` | `BLKF10` | `BUG` |
+| `APL14` | `ARR10` | `BLKF10` |  |
 | `CHA` | `CHAS` | `CLAR` | `CLAR12` |
 | `CLAR14` | `CLARB` | `CLARGK` | `CLRE14` |
 | `GACH10` | `GACH12` | `GATES3` | `GATS3A` |
@@ -211,7 +224,7 @@ establishes their runtime font data, not their application purpose.
 | `CPT-TR10I` | Reported use, no purpose | A bug report records it in adjacent Zwei text runs, but gives no intended role. Physical file `3TR10I`. [`bug.omail`](https://github.com/mietek/mit-cadr-system-software/blob/8e978d7d1704096a63edd4386a3b8326a2e584af/src/lmwind/bug.omail#L1507-L1516) |
 | `S30CHS` | Runtime observation, no purpose | A bug report inspects the font object's array leader; no purpose is given. [`bug.nlispm`](https://github.com/mietek/mit-cadr-system-software/blob/8e978d7d1704096a63edd4386a3b8326a2e584af/src/lmdoc/bug.nlispm#L1621-L1625) |
 | `HL12BI` | Standard load, no purpose | Listed by the `FONTS` package; no consumer identified. |
-| `SEARCH` | Standard load, no purpose | Listed as `LMFONT; SEARCH QFASL`; unrelated `NZWEI; SEARCH` code is not font evidence. |
+| `SEARCH` | Cross-version direct runtime | The System 46 font's first ten glyphs are visibly labeled extended-search operators. Maintained System 303 source inserts font-1 codes 0 through 9 for open nesting, close nesting, OR, AND, negation, whitespace, repetition, delimiter, alphabetic, and any-character operators, and assigns `FONTS:SEARCH` to that minibuffer. The two compiled rasters are not asserted to be byte-identical. [`search.lisp`](https://tumbleweed.nu/r/sys/file?ci=4df393c68d7f083ce42d5c377039d26043cc18a9&name=zwei%2Fsearch.lisp&ln=870-908), [`screen.lisp`](https://tumbleweed.nu/r/sys/file?ci=4df393c68d7f083ce42d5c377039d26043cc18a9&name=zwei%2Fscreen.lisp&ln=884-938) |
 | `20VR` | Inventory only | **TODO:** no purpose established. |
 | `31VR` | Inventory only | **TODO:** no purpose established. |
 | `40VR` | Inventory only | **TODO:** no purpose established. |
@@ -247,7 +260,7 @@ the newer logical names are not automatically claims about those older artifacts
 ## Open questions
 
 - Search additional period load bands, user files, source tapes, manuals, and
-  application QFASLs for the 68 source-backed and 15 compiled-only names whose
+  application QFASLs for the 67 source-backed and 14 compiled-only names whose
   purpose remains `TODO`.
 - Compare the running System 46 `FONTS` package and editor font maps with this static
   source audit. That can discover dynamically loaded names, but a single running
@@ -255,4 +268,4 @@ the newer logical names are not automatically claims about those older artifacts
 - Establish whether the `25FR3`, `GACHA8`, and `MATH10` printer resources are derived
   from, or merely share names with, the recovered `LMFONT` raster sources.
 
-Last verified: 2026-07-16.
+Last verified: 2026-07-17.

@@ -1,0 +1,2 @@
+# Recovered source contexts are byte-exact preservation artifacts.
+docs/assets/mit-cadr-online-help/source/** -whitespace

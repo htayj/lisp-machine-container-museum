@@ -3,7 +3,7 @@ type: Artifact Analysis
 title: MIT CADR font sources and recovery
 description: Source-first recovery of the public MIT CADR bitmap fonts into inspectable BDF files and font-sheet images.
 tags: [mit-cadr, fonts, source-recovery, preservation]
-timestamp: 2026-07-16T23:46:35-04:00
+timestamp: 2026-07-17T01:17:24-04:00
 ---
 
 # MIT CADR font sources and recovery
@@ -219,10 +219,11 @@ every logical name.
 
 It establishes direct executable roles for 15 of the 88 source-backed names,
 qualified printer/document roles for three, and contemporary documented roles for
-two. The other 68 remain explicit `TODO`s because the snapshot establishes only
+three. The other 67 remain explicit `TODO`s because the snapshot establishes only
 reported use without a role, standard loading, source compilation, or source
-survival. The audit also treats all 17 QFASL-only names separately; only `MEDFNB`
-and `SHIP` have source-established application roles.
+survival. The audit also treats all 17 QFASL-only names separately: System 46 source
+establishes roles for `MEDFNB` and `SHIP`, while maintained LM-3 System 303 source
+establishes the cross-version role of `SEARCH` with an explicit non-identity caveat.
 
 This separation matters because the tracked 150 files include 62 alternate source
 representations. Usage belongs to a logical name unless primary evidence identifies
@@ -232,11 +233,11 @@ a particular AST, KST, or Alto variant.
 
 - Resolve the `10/17/81` versus `101780` source-tape date discrepancy from primary
   media documentation.
-- Locate additional primary evidence for the 68 source-backed and 15 compiled-only
+- Locate additional primary evidence for the 67 source-backed and 14 compiled-only
   logical names whose purpose remains `TODO` after the complete literal-reference
   audit.
 - Compare both the source-derived and compiled-artifact outputs with fonts loaded by
   a running System 46 image. That would test the complete historical compilation and
   loading path, but it is not required to recover the public glyph data.
 
-Last verified: 2026-07-16.
+Last verified: 2026-07-17.

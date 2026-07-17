@@ -6,4 +6,7 @@
 /opengenera*.tar.bz2
 /build/fonts/genera/
 /build/fonts/cadr/
+/build/visual-assets/mit-cadr/
+/build/help/genera/
+/build/help/mit-cadr/
 __pycache__/

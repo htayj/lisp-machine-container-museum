@@ -16,6 +16,10 @@ as its Virtual Lisp Machine implementation hosted on Unix.
 - [Genera 8.5 resident font catalog](font-catalog.md) - Evidence-graded styles,
   character-set roles, application uses, and explicit unknowns for all 89 distinct
   font objects in the inspected base world.
+- [Genera on-line help and documentation recovery](online-help-and-documentation-recovery.md)
+  - The indexed Sage Binary corpus, Document Examiner and runtime help layers, and a
+  complete local-only decode of all 801 licensed documentation databases plus three
+  consumer-audited standalone help files.
 
 ## Planned areas
 

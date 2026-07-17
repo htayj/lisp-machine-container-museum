@@ -1,0 +1,29 @@
+;;; Inertly recovered online-help source contexts.
+;;; Original System 46 file: lmio1/tablet.22
+;;; Exact source bytes follow each generated provenance comment.
+
+;;; Source bytes 796:1741; lines 27-49; sha256 122588dc97ed4ca9f5d573c5a09df6b08b721e8d6f6c35756ac939e745ff770b
+(DEFUNP MOUSE-INPUT-TABLET (&OPTIONAL (WAIT-FLAG T) &AUX CHANGED-BUTTONS DX DY)
+  "This function can be used in place of mouse input to make the tablet behave like the
+mouse."
+  (%UNIBUS-WRITE TABLET-CSR 2)
+  (COND (WAIT-FLAG
+	  (PROCESS-WAIT "Tablet"
+			#'(LAMBDA ()
+			    (TABLET-UPDATE)
+			    (NOT (AND (= TABLET-X TABLET-OLD-X)
+				      (= TABLET-Y TABLET-OLD-Y)
+				      (= TABLET-OLD-BUTTONS TABLET-BUTTONS)))))))
+  (WITHOUT-INTERRUPTS
+    (COND ((NULL WAIT-FLAG) (TABLET-UPDATE)))
+    (SETQ CHANGED-BUTTONS (LOGXOR TABLET-BUTTONS TABLET-OLD-BUTTONS)
+	  TABLET-OLD-BUTTONS TABLET-BUTTONS
+	  MOUSE-LAST-BUTTONS TABLET-BUTTONS)
+    (SETQ DX (- TABLET-X TABLET-OLD-X) DY (- TABLET-Y TABLET-OLD-Y))
+    (SETQ TABLET-OLD-X TABLET-X TABLET-OLD-Y TABLET-Y)
+    (SETQ MOUSE-LAST-X (+ MOUSE-LAST-X DX)
+	  MOUSE-LAST-Y (+ MOUSE-LAST-Y DY)))
+  (RETURN DX DY
+	  (LOGAND TABLET-BUTTONS CHANGED-BUTTONS)
+	  (BOOLE 2 TABLET-BUTTONS CHANGED-BUTTONS)))
+
