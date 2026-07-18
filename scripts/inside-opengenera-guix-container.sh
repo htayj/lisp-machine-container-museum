@@ -29,6 +29,7 @@ ARP_BYPASS_SOURCE="$ROOT_DIR/scripts/opengenera-arp-bypass.c"
 ARP_BYPASS_SO="$WORK_DIR/arp-bypass.so"
 SNAP4_URL=${OPENGENERA_SNAP4_URL:-http://www.unlambda.com/download/genera/snap4.tar.gz}
 SNAP4_TARBALL="$DOWNLOAD_DIR/snap4.tar.gz"
+SNAP4_SHA256=e03dd3f2f75a55445aa762dbd2e98ba654d9bda135b54353877f136d2fe34be8
 SNAP4_DIR="$EXTRACT_DIR/snap4"
 ARCHIVE_PATH=${OPENGENERA_ARCHIVE:-}
 TUN_DEVICE=${OPENGENERA_TUN_DEVICE:-tun0}
@@ -75,7 +76,7 @@ while (($#)); do
 done
 
 archive_fingerprint() {
-  stat -c '%n|%s|%Y' "$1"
+  printf '%s|%s\n' "$(stat -c '%n|%s|%Y' "$1")" "$(sha256sum "$1" | awk '{print $1}')"
 }
 
 stale_name() {
@@ -133,8 +134,17 @@ ensure_official_payload() {
 }
 
 ensure_snap4_payload() {
+  local actual_sha256
+
   if [[ ! -f "$SNAP4_TARBALL" ]]; then
     curl -L --fail --output "$SNAP4_TARBALL" "$SNAP4_URL"
+  fi
+
+  actual_sha256=$(sha256sum "$SNAP4_TARBALL" | awk '{print $1}')
+  if [[ "$actual_sha256" != "$SNAP4_SHA256" ]]; then
+    printf 'snap4 archive SHA-256 mismatch: expected %s, got %s\n' \
+      "$SNAP4_SHA256" "$actual_sha256" >&2
+    exit 1
   fi
 
   if [[ -x "$SNAP4_DIR/snap4/genera" ]]; then
@@ -165,7 +175,7 @@ ensure_runtime_tree() {
   ensure_official_payload
   ensure_snap4_payload
 
-  source_stamp="$(archive_fingerprint "$ARCHIVE_PATH")|$(stat -c '%n|%s|%Y' "$SNAP4_TARBALL")"
+  source_stamp="$(archive_fingerprint "$ARCHIVE_PATH")|$(archive_fingerprint "$SNAP4_TARBALL")"
   if [[ -f "$RUNTIME_DIR/.sources-stamp" ]]; then
     current_stamp=$(<"$RUNTIME_DIR/.sources-stamp")
   fi

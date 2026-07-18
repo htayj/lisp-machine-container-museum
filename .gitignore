@@ -9,4 +9,12 @@
 /build/visual-assets/mit-cadr/
 /build/help/genera/
 /build/help/mit-cadr/
+/build/research/
+/build/cadr-computer-use/
+/build/.cadr-computer-use-runtime.lock
+/build/.cadr-computer-use-display.lock
+/build/genera-computer-use/
+/build/.genera-computer-use-runtime.lock
+/build/.genera-computer-use-vlm.lock
+/build/genera-probe-*/
 __pycache__/

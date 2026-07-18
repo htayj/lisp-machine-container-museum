@@ -1,5 +1,6 @@
 (specifications->manifest
  (list "bash"
+       "bubblewrap"
        "bzip2"
        "coreutils"
        "curl"
@@ -15,8 +16,16 @@
        "net-tools"
        "nss-certs"
        "pkg-config"
+       "python"
        "sed"
        "sdl3"
        "tar"
+       "util-linux"
        "which"
+       "xauth"
+       "xdpyinfo"
+       "xdotool"
+       "xmodmap"
+       "imagemagick"
+       "xorg-server"
        "xz"))

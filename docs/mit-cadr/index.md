@@ -5,6 +5,19 @@ the public LM-3 software and the `usim` emulator.
 
 ## Articles
 
+- [EINE, the first Lisp Machine editor](eine.md) studies the exact late-1977
+  recipe-derived source corpus, definition-oriented file model, graphical
+  interaction, and source-visible incomplete behavior; its
+  [binding companion](eine-keybindings.md) inventories every initial keyboard,
+  prefix, named-command, and mouse entry.
+- [ZWEI and Zmacs on the MIT CADR and LM-3](zwei-and-zmacs.md) documents the
+  reusable editing substrate, Zmacs application, public System 46 source gap,
+  maintained System 303 implementation, and verified runtime behavior; its
+  [binding companion](zwei-zmacs-keybindings.md) gives release-bounded tables.
+- [Operating CADR through the Xvfb computer-use harness](cadr-computer-use-harness.md)
+  documents the sentinel-owned private-session architecture, hardened screenshot
+  provenance, shared-executable verification, observed System 303 interactions, and
+  the current warm-resume limitation.
 - [MIT CADR on-line help and documentation recovery](online-help-and-documentation-recovery.md)
   explains ZWEI self-documentation, Lisp and flavor metadata, key and application
   Help handlers, the tracked 949-declaration System 46 recovery, and the
@@ -34,6 +47,10 @@ the public LM-3 software and the `usim` emulator.
 
 ## Generated assets and local outputs
 
+- [Curated MIT CADR runtime screenshots](../assets/mit-cadr-screenshots/) contain
+  four exact System 303 Zmacs framebuffer captures with session provenance and an
+  asset-specific fair-use review; the PNGs are excluded from any project-wide
+  license.
 - [MIT CADR System 46 on-line help assets](../assets/mit-cadr-online-help/)
   contain four standalone files, 89 exact source-context files, the public source
   license, and machine-readable and readable catalogs.

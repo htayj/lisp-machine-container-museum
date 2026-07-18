@@ -84,6 +84,7 @@ has_arg() {
 
 bootstrap_on_host() {
   guix shell -m "$MANIFEST_FILE" -- env \
+    CADR_RUNTIME_LOCK_HELD="${CADR_RUNTIME_LOCK_HELD:-0}" \
     HOME="$LM_HOME_DIR" \
     TERM="${TERM:-xterm-256color}" \
     bash "$HOST_INNER_SCRIPT" --mode bootstrap
@@ -91,6 +92,7 @@ bootstrap_on_host() {
 
 update_on_host() {
   guix shell -m "$MANIFEST_FILE" -- env \
+    CADR_RUNTIME_LOCK_HELD="${CADR_RUNTIME_LOCK_HELD:-0}" \
     HOME="$LM_HOME_DIR" \
     TERM="${TERM:-xterm-256color}" \
     bash "$HOST_INNER_SCRIPT" --mode update
@@ -149,6 +151,7 @@ if [[ "$mode" == "run" ]] && ! has_arg --verify && ! has_arg --bootstrap-only &&
 fi
 
 exec guix "${container_args[@]}" -- env \
+  CADR_RUNTIME_LOCK_HELD="${CADR_RUNTIME_LOCK_HELD:-0}" \
   HOME="$CONTAINER_ROOT/.lm-home" \
   TERM="${TERM:-xterm-256color}" \
   CC="${CC:-gcc}" \

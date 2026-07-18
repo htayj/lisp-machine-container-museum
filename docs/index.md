@@ -24,6 +24,20 @@ machine-readable metadata layer while retaining ordinary Markdown as the source.
 
 ## Start here
 
+- [Publishing runtime screenshots for museum documentation](screenshot-publication-rights-review.md)
+  records the capture-specific U.S. fair-use review, publication limits, license
+  boundary, and reassessment process for curated CADR and Genera runtime images.
+- [From EINE to ZWEI and Zmacs](lisp-machine-text-editors.md) explains the
+  editor lineage, separates reusable ZWEI machinery from the Zmacs application,
+  and links the code- and runtime-grounded feature and keybinding references for
+  both preserved systems.
+- [Operating Genera through the Xvfb computer-use harness](genera/genera-computer-use-harness.md)
+  explains authenticated, network-isolated operation of a licensed world, exact-window
+  evidence capture, and why an accepted shutdown confirmation currently ends in
+  bounded forced cleanup without saving guest state.
+- [Operating CADR through the Xvfb computer-use harness](mit-cadr/cadr-computer-use-harness.md)
+  explains how isolated private sessions, current-versus-copy-time fingerprints, and
+  execution-time verification turn computer-use observations into museum evidence.
 - [MIT CADR on-line help and documentation recovery](mit-cadr/online-help-and-documentation-recovery.md)
   explains the source-integrated ZWEI, Lisp, flavor, keyboard, and application Help
   mechanisms and links the tracked public System 46 source corpus.

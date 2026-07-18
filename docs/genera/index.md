@@ -5,6 +5,18 @@ as its Virtual Lisp Machine implementation hosted on Unix.
 
 ## Articles
 
+- [Zmacs in Symbolics Genera](zmacs.md) documents the ZWEI substrate, object
+  model, Zmacs application, development features, modes, source/manual
+  discrepancies, and isolated Genera 8.5 observations; its
+  [binding companion](zmacs-keybindings.md) enumerates the inspected configured
+  tables, while the [named-command audit](zmacs-named-commands.md) records the
+  counts, categories, and installation semantics of 277 source candidates
+  without publishing the exact licensed-source inventory.
+- [Operating Genera through the Xvfb computer-use harness](genera-computer-use-harness.md) -
+  How authenticated, network-isolated private sessions turn real VLM keyboard,
+  pointer, and screenshot observations into evidence without distributing licensed
+  artifacts, and distinguish accepted shutdown confirmation from the current forced
+  cleanup stall and from in-guest Save World.
 - [World loads and the VLOD format](world-loads-and-vlod.md) - How a VLM world stores
   Genera's tagged virtual memory and what can be recovered from it.
 - [Recovering code and assets from a world](recovering-code-and-assets-from-worlds.md)
@@ -20,6 +32,13 @@ as its Virtual Lisp Machine implementation hosted on Unix.
   - The indexed Sage Binary corpus, Document Examiner and runtime help layers, and a
   complete local-only decode of all 801 licensed documentation databases plus three
   consumer-audited standalone help files.
+
+## Assets
+
+- [Curated Genera runtime screenshots](../assets/genera-screenshots/) - Six
+  capture-specific-reviewed Zmacs states with exact raw mappings, action-prefix
+  provenance, image hashes, shutdown evidence, fair-use scope, and project-license
+  exclusion.
 
 ## Planned areas
 

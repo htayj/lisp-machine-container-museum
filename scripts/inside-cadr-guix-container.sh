@@ -25,12 +25,32 @@ LM_CHECKOUT_DIR=${LM_CHECKOUT_DIR:-"$ROOT_DIR/l"}
 LM_REPO_PATH=${LM_REPO_PATH:-"$ROOT_DIR/l.fossil"}
 LM_REPOS=${LM_REPOS:-"usim chaos sys usite"}
 LM_VERSION=${LM_VERSION:-303-0}
+RUNTIME_LOCK_FILE="$ROOT_DIR/build/.cadr-computer-use-runtime.lock"
+runtime_lock_owned=0
 
 mode=run
 verify=0
 bootstrap_only=0
 prepare_only=0
 pass_args=()
+
+acquire_runtime_lock() {
+  if [[ "${CADR_RUNTIME_LOCK_HELD:-0}" == "1" ]]; then
+    return 0
+  fi
+  mkdir -p "$(dirname -- "$RUNTIME_LOCK_FILE")"
+  exec 9>"$RUNTIME_LOCK_FILE"
+  flock 9
+  runtime_lock_owned=1
+}
+
+release_runtime_lock() {
+  if ((runtime_lock_owned)); then
+    flock -u 9
+    exec 9>&-
+    runtime_lock_owned=0
+  fi
+}
 
 while (($#)); do
   case "$1" in
@@ -169,12 +189,27 @@ runtime_artifacts_ready() {
     [[ -f "$LM_CHECKOUT_DIR/chaos/.fslckout" ]] &&
     [[ -f "$LM_CHECKOUT_DIR/sys/.fslckout" ]] &&
     [[ -f "$LM_CHECKOUT_DIR/usite/.fslckout" ]] &&
-    [[ -x "$LM_CHECKOUT_DIR/usim/usim" ]] &&
+    usim_binary_usable &&
     [[ -f "$LM_CHECKOUT_DIR/usim/disk-sys-$LM_VERSION.img" ]] &&
     ([[ -f "$LM_CHECKOUT_DIR/usim/usim.ini" ]] || [[ -f "$LM_CHECKOUT_DIR/usim/usim-$LM_VERSION.ini" ]])
 }
 
+usim_binary_usable() {
+  local usim_binary="$LM_CHECKOUT_DIR/usim/usim"
+
+  [[ -x "$usim_binary" ]] && "$usim_binary" -h >/dev/null 2>&1
+}
+
 prepare_runtime() {
+  # Guix may garbage-collect the ELF interpreter embedded in an older build.
+  # Upstream ./m only rebuilds when the pathname is absent, so remove this
+  # generated binary and its compiler-specific objects when it can no longer
+  # execute in the current profile.  This narrowly scoped clean does not remove
+  # load-band disks, saved states, or framebuffer captures.
+  if ! usim_binary_usable; then
+    make -C "$LM_CHECKOUT_DIR/usim" -f Makefile.usim clean
+  fi
+
   cd "$LM_CHECKOUT_DIR"
   ./m -M "$ROOT_DIR" "${pass_args[@]}"
   ensure_usim_override_config
@@ -206,13 +241,16 @@ fi
 
 case "$mode" in
   run)
+    acquire_runtime_lock
     bootstrap_checkout
     if ((bootstrap_only)); then
+      release_runtime_lock
       exit 0
     fi
     quarantine_partial_nested_dirs
     if ((prepare_only)); then
       prepare_runtime
+      release_runtime_lock
       exit 0
     fi
     if ! runtime_artifacts_ready; then
@@ -221,13 +259,19 @@ case "$mode" in
       ensure_usim_override_config
     fi
     cd "$LM_CHECKOUT_DIR"
+    # A direct run uses the shared public disk, so retain fd 9 across exec. This
+    # prevents a computer-use session from snapshotting that base mid-write.
     exec ./m -M "$ROOT_DIR" -s "${pass_args[@]}"
     ;;
   bootstrap)
+    acquire_runtime_lock
     bootstrap_checkout
+    release_runtime_lock
     ;;
   shell)
+    acquire_runtime_lock
     bootstrap_checkout
+    release_runtime_lock
     cd "$LM_CHECKOUT_DIR"
     exec bash -i
     ;;
@@ -240,10 +284,12 @@ case "$mode" in
     exec "${pass_args[@]}"
     ;;
   update)
+    acquire_runtime_lock
     bootstrap_checkout
     cd "$LM_CHECKOUT_DIR"
     fossil pull
     fossil update trunk
+    release_runtime_lock
     ;;
   *)
     printf 'Unknown mode: %s\n' "$mode" >&2

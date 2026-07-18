@@ -3,7 +3,7 @@ type: Editorial Guide
 title: Writing and research guide
 description: Conventions for evidence-based, preservation-conscious museum documentation in the repository's OKF bundle.
 tags: [documentation, okf, preservation, research]
-timestamp: 2026-07-16T10:43:25-04:00
+timestamp: 2026-07-18T02:21:36-04:00
 ---
 
 # Writing and research guide
@@ -86,6 +86,14 @@ external project.
 Do not copy long passages from copyrighted manuals or source files. Paraphrase and use
 the shortest quotation that establishes a point.
 
+Manuals describe intended and supported behavior, but do not exhaust the Lisp
+Machine's implementation or every shipped interaction. An application study must
+also inspect its code and, when the artifact is runnable, exercise it through the
+appropriate harness. Actively record meaningful behavior, defaults, incomplete
+features, and source/manual/runtime contradictions that are not evident from the
+manual. Keep those evidence classes separate instead of choosing the most convenient
+one as automatically authoritative.
+
 ## Local artifact notes
 
 Do not put private absolute paths into publishable pages. Identify an artifact with a
@@ -99,6 +107,60 @@ portable record such as:
 
 Never check purchased Open Genera archives, extracted proprietary trees, world images,
 credentials, host inventories, or other private machine state into the documentation.
+
+## Runtime screenshots and behavioral verification
+
+When a page documents a visible CADR or Genera application, subsystem, or
+interaction, use that system's Xvfb computer-use harness. Do not rely on recollection
+for uncertain window titles, menu entries, commands, interaction order, or displayed
+results. Reproduce the behavior, record the input sequence, and capture the relevant
+state. If the behavior cannot be reached with confidence, label it as an open
+question or `TODO` instead of guessing.
+
+Provide a representative screenshot for each distinct visible state discussed by the
+page. Use descriptive alt text and a nearby caption that identifies the image as a
+runtime observation and states the application, relevant action, load band, and
+verification date. Screenshots support a behavioral claim; they do not replace source
+or manual evidence for historical intent, lineage, or behavior on other releases.
+
+For both systems, every raw PNG, JSON sidecar, log, disk, world, configuration,
+framebuffer dump, and session state remains in the appropriate ignored computer-use
+tree. A screenshot selected for publication requires an image- and use-specific
+copyright review. Permission is one possible basis, but a documented application of
+U.S. fair use may also support publication. Do not infer either a blanket ban from a
+licensed runtime or blanket permission from public source availability.
+
+The canonical review and selection rules are in
+[Publishing runtime screenshots for museum documentation](screenshot-publication-rights-review.md).
+In short, publish only images needed as evidence beside substantive criticism,
+scholarship, research, or historical analysis. Record the four-factor basis, use only
+the number and extent needed, and do not publish bulk sequences, decorative galleries,
+substantial Help or manual prose, artwork or third-party media, private data, or
+material subject to an unreviewed known contract restriction.
+
+Place a reviewed CADR image in `docs/assets/mit-cadr-screenshots/` and a reviewed
+Genera image in `docs/assets/genera-screenshots/`. Retain portable provenance in the
+article or asset catalog: session and generation, action sequence, release and
+artifact identities, dimensions, PNG and pixel hashes, and clean or forced shutdown
+status. Use a caption that identifies the runtime observation, underlying
+rightsholder interest, fair-use purpose, and lack of endorsement. Curated screenshot
+files are excluded from any repository-wide software or content license unless an
+asset-specific notice expressly says otherwise.
+
+Do not publish machine-specific paths or link documentation to ignored build output.
+If a capture has not passed review, retain it locally and add an explicit screenshot
+TODO that identifies the unresolved issue instead of using a generic permission-only
+placeholder.
+
+For Genera, an orderly VLM host exit does not establish that the guest saved or
+checkpointed memory. Likewise, a shutdown confirmation accepted by the VLM does not
+by itself establish orderly process exit. Record prompt, confirmation, cleanup
+progress, and any bounded forced termination as separate observations.
+
+The system-specific provenance and execution boundaries are documented in
+[Operating CADR through the Xvfb computer-use harness](mit-cadr/cadr-computer-use-harness.md)
+and
+[Operating Genera through the Xvfb computer-use harness](genera/genera-computer-use-harness.md).
 
 ## Markdown conventions
 
