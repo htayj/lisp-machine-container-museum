@@ -62,6 +62,15 @@ under applicable law.
   not prove target-window, registry, callback, destructive-operation, or saved-layout
   state; the startup notice remains incidental context, and the image is not a generic
   Genera illustration.
+- [`screen-editor-menu.png`](screen-editor-menu.png) and
+  [`frame-up-split-layout.png`](frame-up-split-layout.png) are also embedded in the
+  [Screen Editor and Frame-Up layout design reimplementation
+  specification](../../screen-editor-and-frame-up-layout-design-reimplementation-specification.md).
+  Their use there is limited respectively to the visible Genera 8.5 operation menu
+  and the researcher-created two-display-pane Frame-Up model, command transcript,
+  and four-region application layout reviewed on 2026-07-19. They do not establish
+  hidden handler contents, mutation, Undo, generated code, Preview, or general pixel
+  identity; startup/debugger text remains incidental context.
 
 ## Source sessions
 
@@ -584,10 +593,12 @@ for the capture and isolation model.
 The core-session captures support [the Dynamic Lisp Listener](../../genera/dynamic-lisp-listener.md),
 the [D01 Listener specification](../../lisp-listeners-reimplementation-specification.md),
 [activities and the System Menu](../../genera/activities-and-system-menu.md),
-the [D02 program-selection specification](../../program-selection-activities-and-window-management-reimplementation-specification.md), and
-[Inspector and Peek](../../genera/inspector-and-peek.md).
+the [D02 program-selection specification](../../program-selection-activities-and-window-management-reimplementation-specification.md),
+and [Inspector and Peek](../../genera/inspector-and-peek.md).
 
-The Frame-Up capture supports [Screen Editor and Frame-Up](../../screen-editor-and-frame-up.md).
+The Frame-Up and Screen Editor captures support
+[Screen Editor and Frame-Up](../../screen-editor-and-frame-up.md) and
+[the D03 Screen Editor and Frame-Up specification](../../screen-editor-and-frame-up-layout-design-reimplementation-specification.md).
 
 The later captures support
 [the Genera Debugger and Display Debugger](../../genera/debugger-and-display-debugger.md),

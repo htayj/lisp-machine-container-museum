@@ -42,6 +42,11 @@ machine-readable metadata layer while retaining ordinary Markdown as the source.
   defines the release-specific registries, reuse/create selection order, System and
   Select keys, System Menu transactions, Select Key Selector, Split Screen, live
   layouts, failure behavior, visual references, and conformance tests.
+- [Screen Editor and Frame-Up layout design reimplementation specification](screen-editor-and-frame-up-layout-design-reimplementation-specification.md)
+  defines four release-selectable live-window and program-layout profiles, complete
+  staged pointer and command binding trees, geometry and pane algorithms, Undo and
+  partial effects, code generation, Zmacs integration, screenshots, and conformance
+  tests.
 - [How CLIM was used across the software catalogs](clim-use-across-lisp-machine-software.md)
   audits all sixty dossiers, separating true CLIM applications, ports, consumers,
   and compatibility hooks from Dynamic Windows and the earlier TV/EINE/ZWEI stack.

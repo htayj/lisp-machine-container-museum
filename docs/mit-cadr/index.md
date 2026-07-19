@@ -31,6 +31,10 @@ the public LM-3 software and the `usim` emulator.
   gives the release-selectable System 46 and System 303 contract for System-key and
   pointer selection, dynamic menu registries, Split Screen, live layouts, errors,
   visible states, and objective conformance tests.
+- [Screen Editor and Frame-Up layout design reimplementation specification](../screen-editor-and-frame-up-layout-design-reimplementation-specification.md)
+  gives the System 46 and maintained System 303 live Screen Editor contract,
+  including complete staged pointer and typed-input trees, snapshots, Undo, geometry, attributes,
+  partial failures, screenshots, and release-discriminating tests.
 - [Screen Editor and Frame-Up](../screen-editor-and-frame-up.md) traces the
   live-window Screen Editor from System 46 through System 303 and Genera, inventories
   its complete pointer command surface, and distinguishes it from Frame-Up.

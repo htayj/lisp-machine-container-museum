@@ -3,7 +3,7 @@ type: Coverage Index
 title: Reimplementation specification coverage
 description: The finite D01-D60 worklist for release-bounded, implementation-ready specifications of the CADR, LM-3, and Genera software areas documented by this museum.
 tags: [lisp-machine, mit-cadr, lm-3, genera, reimplementation, specification, coverage]
-timestamp: 2026-07-19T04:36:35-04:00
+timestamp: 2026-07-19T05:20:04-04:00
 ---
 
 # Reimplementation specification coverage
@@ -54,7 +54,7 @@ application-level contract. The Dynamic Windows specification is D28.
 | --- | --- | --- | --- |
 | D01 | Lisp Listeners and editable input | Specified | [Lisp Listeners and editable input](lisp-listeners-reimplementation-specification.md) |
 | D02 | Program selection, activities, and window management | Specified | [Program selection, activities, and window management](program-selection-activities-and-window-management-reimplementation-specification.md) |
-| D03 | Screen Editor and Frame-Up layout design | Planned | — |
+| D03 | Screen Editor and Frame-Up layout design | Specified | [Screen Editor and Frame-Up layout design](screen-editor-and-frame-up-layout-design-reimplementation-specification.md) |
 | D04 | Emergency Break and degraded interaction paths | Planned | — |
 | D05 | EINE, ZWEI, and Zmacs editor family | Planned | — |
 | D06 | Directory, difference, and buffer editors | Planned | — |

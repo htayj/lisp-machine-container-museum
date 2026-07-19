@@ -34,6 +34,10 @@ as its Virtual Lisp Machine implementation hosted on Unix.
   gives the Genera 8.5 contract for activities, Select-key dispatch and firewall,
   the Select Key Selector, System Menu transactions, Split Screen, live layouts,
   failure behavior, and conformance tests.
+- [Screen Editor and Frame-Up layout design reimplementation specification](../screen-editor-and-frame-up-layout-design-reimplementation-specification.md)
+  gives separate Genera 8.5 contracts for the inherited live Screen Editor and the
+  Dynamic Windows Frame-Up designer, including complete input trees, geometry and
+  pane transactions, generated frameworks, Zmacs handoff, screenshots, and tests.
 - [SUPDUP, Telnet, and the Genera Terminal program](../network-terminal-applications.md)
   inventories Terminal's commands, connection controls, Dynamic Windows gestures,
   login protocols, simulators, and CADR lineage.

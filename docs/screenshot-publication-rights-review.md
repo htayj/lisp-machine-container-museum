@@ -3,7 +3,7 @@ type: Rights Review
 title: Publishing runtime screenshots for museum documentation
 description: Capture-specific U.S. copyright review and publication policy for CADR and Genera runtime screenshots used as historical evidence.
 tags: [screenshots, copyright, fair-use, preservation, cadr, genera]
-timestamp: 2026-07-19T04:36:35-04:00
+timestamp: 2026-07-19T05:20:04-04:00
 ---
 
 # Publishing runtime screenshots for museum documentation
@@ -151,6 +151,27 @@ layout identity and persistence; those claims remain action-log-, source-, or
 runtime-trace-grounded. These two exact frames are the minimum reviewed images needed
 to make the release-specific visual contract checkable. This paragraph approves no
 other screenshot for specification reuse.
+
+### D03 Screen Editor and Frame-Up specification reuse reviewed 2026-07-19
+
+The exact CADR `screen-editor-menu.png`, Genera `screen-editor-menu.png`, and Genera
+`frame-up-split-layout.png` files were separately reassessed for the
+[Screen Editor and Frame-Up layout design reimplementation
+specification](screen-editor-and-frame-up-layout-design-reimplementation-specification.md).
+That page uses the two menu frames only to constrain the visible release-specific
+operation inventories, ordering, label/styling, current item, short pointer
+documentation, and surrounding-screen relationship. It uses the Frame-Up frame only
+to constrain the researcher-created two-display-pane model, pane labels, horizontal
+divider, short typed command transcript, and title/display/interactor/menu regions.
+
+The reuse adds no pixels, source listing, extracted Help, or decorative gallery use.
+The images do not establish input dispatch, raw button precedence, object identity,
+snapshot freshness, geometry algorithms, mutation, Undo, cleanup, presentation-menu
+contents, generated forms, Preview, or source-to-world/build identity; those claims
+remain source-, action-log-, trace-, or explicit-oracle-grounded. These three exact
+frames are the minimum reviewed images needed to make the D03 cross-release visual
+contract checkable. This paragraph approves no other screenshot for specification
+reuse.
 
 ## U.S. fair-use analysis
 

@@ -3,7 +3,7 @@ type: Reimplementation Specification
 title: Symbolics Genera Dynamic Windows reimplementation specification
 description: A reconstruction-grade D0-D4 semantic and behavioral specification of Genera's presentation substrate, typed input and output, handlers, commands, formatted output, redisplay, graphics, program frameworks, and reusable clients, with D5 reserved for exact historical source compatibility.
 tags: [genera, dynamic-windows, presentations, command-processor, reimplementation, specification, preservation]
-timestamp: 2026-07-19T00:35:29-04:00
+timestamp: 2026-07-19T07:40:32-04:00
 ---
 
 # Symbolics Genera Dynamic Windows reimplementation specification
@@ -143,16 +143,17 @@ into the running world.
 | Layer graph | `patch/system-452/system-452.component-dir.~10~:370-457` | The five named systems and their clients are resident; full cold-load tracing remains `TODO-RUNTIME` | `G8-MAN` overview separates presentation, CP, Dynamic Windows, graphics, and frameworks |
 | Type and data model | `dynamic-windows/substrate-definitions.lisp.~44~:148-481`; `type-descriptor.lisp.~12~:81-316`; `type-walk.lisp.~17~:58-887`; standard types in `core-types.lisp.~34~:137-1957`, `number-types.lisp.~5~:148-781`, `sequence-types.lisp.~28~:55-1893`, `presentation-types.lisp.~722~:58-1775`, and `sys2/character-style-presentations.lisp.~64~:371-671` | Presentation Inspector displayed live integer/symbol types and methods, but lattice edge cases and conditional live-name population remain `TODO-RUNTIME` | `G8-MAN`; `UIST89` type-lattice model |
 | Typed output/history | `accept-substrate.lisp.~19~:217-249`; `displayed-presentation.lisp.~47~:64-720`; `dynamic-window.lisp.~625~:225-848,1214-3844` | Live Inspector and Presentation Inspector outputs retain sensitive objects | `G8-MAN` presentations and Dynamic Windows chapters; `UIST89` |
-| Typed input/editor/completion | `accept-substrate.lisp.~19~:397-1339`; `io/input-editor.lisp.~332~:120-2309`; `completion.lisp.~206~:743-1923` | GC Boolean correction and pointer Abort are `G85-RUN`; full key/completion matrices are `TODO-RUNTIME` | `G8-MAN` input-editor, Accept, and completion chapters |
-| Handlers/gestures | `define-handler.lisp.~12~:65-587`; `mouse-handler-lookup.lisp.~33~:1452-2220`; `dynamic-input.lisp.~498~:57-1313` | Presentation Inspector handler report is `G85-RUN`; synthetic tie tests are `TODO-RUNTIME` | `G8-MAN`; `UIST89` translator-selection section |
-| Commands | `cp/comtab.lisp.~103~:55-423`; `cp/command-processor.lisp.~318~:532-2596`; `cp/read-accelerated-command.lisp.~142~:55-831` | Resident listeners/frameworks exercise commands; inheritance conflicts and every prefix path are `TODO-RUNTIME` | `G8-MAN` Command Processor chapters; `UIST89` application construction |
+| Typed input/editor/completion | `accept-substrate.lisp.~19~:397-1339`; `io/input-editor.lisp.~332~:120-2309`; `io/readers.lisp.~251~:62-71`; `completion.lisp.~206~:743-1923` | GC Boolean correction and pointer Abort are `G85-RUN`; the complete source map is specified below, while exhaustive loaded-world execution remains `TODO-RUNTIME` | `G8-MAN` input-editor, Accept, and completion chapters |
+| Handlers/gestures | `define-handler.lisp.~12~:65-587`; `mouse-handler-lookup.lisp.~33~:1452-2220`; `dynamic-input.lisp.~498~:57-1313`; `dynamic-window-mixins.lisp.~204~:708-743`; `basic-handlers.lisp.~30~:127-1169`; `handler-debug.lisp.~33~:294-304`; `presentation-inspector.lisp.~4053~:1068-1077`; `io/format.lisp.~369~:1006-1036`; `window/mouse.lisp.~472~:631-700,1153-1163,1862-1867` | Presentation Inspector handler report is `G85-RUN`; synthetic tie tests, physical click matrix, selected-window routing, and the mutable 96-cell live map are `TODO-RUNTIME` | `G8-MAN`; `UIST89` translator-selection section |
+| Commands | `cp/comtab.lisp.~103~:55-423`; `cp/command-processor.lisp.~318~:532-2596`; `cp/read-accelerated-command.lisp.~142~:55-831`; `cp/substrate-commands.lisp.~6~:99-299` | Resident listeners/frameworks exercise commands; the selected prefix and argument grammar is source-grounded, while loaded-table conflicts and prefix-Help presentation remain `TODO-RUNTIME` | `G8-MAN` Command Processor chapters; `UIST89` application construction |
 | Formatted output/redisplay | `formatted-output.lisp.~397~:76-2681`; `redisplay.lisp.~185~:57-2590` | Visible framework redisplay is `G85-RUN`; two-pass counters and pixel-copy ordering are `TODO-RUNTIME` | `G8-MAN` output, replay, and incremental-redisplay chapters |
 | Graphics | `graphics-flavors.lisp.~21~:59-192`; `graphics-generics.lisp.~246~:123-4005`; `raster-graphics-mixin.lisp.~157~:57-2393`; `define-viewport-graphics-operation.lisp.~62~:57-1459` | Live clients draw and highlight; primitive edge/raster cases are `TODO-RUNTIME` | `G8-MAN` graphics overview/dictionary; the later source exceeds `UIST89`'s paper-era account |
 | Frameworks/panes/activities | `program-framework-panes.lisp.~32~:58-459`; `define-program-framework.lisp.~332~:55-340,1106-1233,1343-1426,1726-1789`; `window/activities.lisp.~35~:65-554` | Frame-Up split-pane session is `G85-RUN`; exhaustive pane/lifecycle behavior is `TODO-RUNTIME` | `G8-MAN` framework and pane chapters |
-| Accepting Values/FQUERY/clients | `accept-values.lisp.~244~:105-1706`; `io1/fquery.lisp.~104~:55-327`; selected client modules | GC options is `G85-RUN`; generic menu/reorder/alter clients are `TODO-RUNTIME` | `G8-MAN` Accepting Values and query facilities |
+| Accepting Values/FQUERY/clients | `accept-values.lisp.~244~:105-1797`; `io1/fquery.lisp.~104~:55-327`; selected client modules | GC options is `G85-RUN`; the complete standalone and optional pane binding maps are source-grounded, while their exhaustive loaded-world exercise and generic menu/reorder/alter clients are `TODO-RUNTIME` | `G8-MAN` Accepting Values and query facilities |
 
 The manual corroborates the public model but omits several source-visible rules: the
-four-state internal subtype result, handler name/package tie-break, semantic blips in
+four-state internal subtype result, attempted handler name/package tie-break and its
+apparent source typo, semantic blips in
 the input buffer, redisplay's collection/display identity check, the seventh standard
 `TREE-BROWSER` pane, and several failure-recovery paths. Conversely, a source-only
 branch remains labeled `TODO-RUNTIME` until a harmless synthetic oracle reaches it.
@@ -769,41 +770,146 @@ The selected source limits insertion to one million characters. A replacement SH
 enforce a documented resource bound and signal a correctable condition rather than
 truncate, wrap an index, or split a semantic blip.
 
-### Input-editor command map
+### Input-editor dispatch and complete base command map
 
-Legacy logical chords SHOULD remain available even when a port also supplies modern
-bindings. Numeric modified digits build an argument; modified minus makes it
-negative; `C-U` starts at four and multiplies by four on repetition.
+This subsection is the complete selected `System 452.22` initialization of the base
+Input Editor character map. It is normative at `DW-G85/D0`; it is not a claim that a
+site has not changed the mutable map. A site-specific profile MUST dump the effective
+map after all `ADD-IE-COMMAND` and `DELETE-IE-COMMANDS` calls and record each
+replacement. A per-call `:EDITOR-COMMAND` entry shadows a base entry with the same
+character.
 
-| Binding or family | Required operation |
-| --- | --- |
-| Refresh; Page | Repaint editable input; erase/clear typeout according to stream policy |
-| `M-<`/Home; `M->`/End | Beginning/end of complete input buffer |
-| Clear Input | Delete the complete editable input through full-rubout protocol |
-| `C-F`/Right; `C-B`/Left | Forward/backward one atomic buffer element |
-| `C-D`; Rubout; `C-T` | Delete after point; delete before point; transpose adjacent elements |
-| `C-A`/`M-Left`; `C-E`/`M-Right` | Beginning/end of line |
-| `C-P`/Up; `C-N`/Down | Previous/next input or display line |
-| `C-K`; `C-O`; Line | Kill to line end; open line; insert nonactivating newline where allowed |
-| `M-F`; `M-B`; `M-D`; `M-Rubout`; `M-T` | Move, kill, or transpose words |
-| `M-U`; `M-L`; `M-C` | Uppercase, lowercase, or capitalize word/region |
-| `C-M-F`; `C-M-B`; `C-M-K`; `C-M-Rubout` | Move/kill over balanced Lisp expressions |
-| `M-\`; `M-\|` | Delete horizontal whitespace; normalize it to one space |
-| `C-Q`; `C-M-J` | Quote next character; invoke text-style input |
-| Help; `C-Help` | Describe expected input; list editor commands/bindings |
-| Escape; `C-Escape` | Browse per-stream input history; browse shared kill history |
-| `C-Y`; `M-Y`; `C-M-Y` | Yank and rotate compatible kill/history entries |
-| `C-W`; `M-W`; Super-W | Kill/copy marked regions under their region conventions |
-| `C-Space`; `C-<`; `C->` | Set or move mark/region boundaries |
-| Shift-yank; Cut/Copy/Paste | Integrate kill/selection sources with TV selection protocol |
-| Search and scroll families | Search input/history or scroll typeout without losing point |
+Dispatch precedes the command map in this exact order:
+
+```text
+input-editor event
+├─ list event
+│  ├─ recognized nonpresentation redisplay special -> ignore it
+│  ├─ other nonpresentation list -> beep and discard it
+│  ├─ once-only presentation blip -> return it immediately
+│  ├─ window-wakeup presentation blip -> run its configured callback/refresh path
+│  ├─ input-editor presentation blip -> insert its history payload
+│  ├─ other presentation blip -> insert one atomic semantic element
+│  └─ presentation blip with activate option -> activate after the applicable path above
+├─ NIL event (a discarded blip) -> perform no dispatch action
+├─ rescan predicate accepts while reader/editor state differs -> save event and rescan
+├─ configured do-not-echo character or EOF -> activate without normal insertion
+├─ configured blip-character predicate -> return a blip with current numeric argument
+├─ configured activation predicate -> return an activation blip
+├─ configured command predicate -> return a command blip and rescan
+├─ configured unmodified pass-through character -> insert without style conversion
+├─ per-call :EDITOR-COMMAND map -> invoke its handler
+├─ mutable base command map below -> invoke its handler
+├─ Abort, M-Abort, Suspend, or M-Suspend -> standard keyboard interceptor
+├─ any still-unhandled modified decimal digit -> extend numeric argument
+├─ any still-unhandled modified minus -> set negative-sign argument state
+├─ C-U -> start at four or multiply the current argument by four
+├─ other nongraphic or format character -> beep, discard it, and clear numeric state
+└─ graphic, Return, Tab, Backspace, or diacritic -> self-insert
+```
+
+The activation, command, rescan, and blip predicates are dynamic context options.
+They therefore override apparent base meanings. For example, a completion reader can
+consume Tab, Return, End, Help, `C-?`, or `C-/` before the base map. Conversely, End
+is **not** a base end-of-buffer alias: without a context that activates on End, it
+reaches the nongraphic/unbound branch.
+
+| Exact base binding | Command and source-defined effect | Numeric-argument behavior |
+| --- | --- | --- |
+| Refresh; `C-L` | Repaint the editable input; preserve prompt/buffer state | Ignored |
+| Page | Erase current typeout when one exists | Ignored |
+| `M-<`; `M-Up`; Home | Move to beginning of complete input buffer | Ignored |
+| `M->`; `M-Down` | Move to end of complete input buffer and request visible cursor | Ignored; End is not an alias |
+| Clear Input | Delete the complete buffer and force rescan/full-rubout handling | Ignored |
+| `C-F`; Right | Move forward by atomic buffer elements | Signed count |
+| `C-B`; Left; Overstrike | Move backward by atomic buffer elements | Signed count |
+| `C-D` | Delete after point | Signed count; explicit argument affects kill-history policy |
+| Rubout | Delete before point | Signed count; explicit argument affects kill-history policy |
+| `C-T` | Exchange the adjacent pair selected by beginning/middle/end rules | Ignored |
+| `C-A`; `M-Left` | Move to beginning of current line | Ignored |
+| `C-E`; `M-Right` | Move to end of current line | Ignored |
+| `C-P`; Up | Move to previous line while retaining the current column when possible | Count |
+| `C-N`; Down | Move to next line while retaining the current column when possible | Count |
+| `C-K` | Without an argument, kill to line end or kill the newline when already there; with one, kill that many lines | Count changes the operation |
+| `M-F`; `M-B` | Move forward/backward by words under the current syntax table | Signed count |
+| `M-D`; `M-Rubout` | Delete forward/backward by words | Signed count |
+| `M-T` | Exchange the two words surrounding the source-selected boundaries | Ignored |
+| `M-U`; `M-L`; `M-C` | Uppercase, lowercase, or capitalize the selected forward word span | Signed word count |
+| `C-M-F`; `C-M-B` | Move over one balanced expression | Ignored |
+| `C-M-K`; `C-M-Rubout` | Delete one balanced expression forward/backward | Ignored |
+| `M-Backslash` | Delete horizontal Space/Tab around point | Default inserts zero spaces; explicit argument inserts that many |
+| M-\| | Normalize horizontal Space/Tab around point | Default inserts one space; explicit argument inserts that many |
+| Line | Insert a nonactivating newline followed by two Space characters | Ignored |
+| `C-O` | Insert one newline, then move point backward by the numeric count | Default count one; it does not insert the count's number of newlines |
+| `C-Q` | Enter the quote-next-character stage described below | Ignored |
+| `C-M-J` | Enter nested typed acceptance for a new input character style | Ignored |
+| Help | Display context-sensitive input documentation | Argument selects the source's alternate display policy |
+| `C-Help` | Display the effective Input Editor command/binding list | Ignored |
+| Escape | Display entries from the current stream/type input history | Argument limits entries; zero means all |
+| `C-Escape` | Display shared kill-history entries | Argument limits entries; zero means all |
+| `C-Y` | Yank from shared kill history | Argument selects entry; zero displays history; `C-U` preserves the source's mark/point orientation rule |
+| `M-Y` | Replace the preceding compatible yank with another entry | Requires a prior yank; argument rotates; zero displays history |
+| `C-M-Y` | Yank from input history | Same selection/zero/`C-U` rules as `C-Y` |
+| `C-W` | Kill marked input region | Ignored; no mark beeps/barfs |
+| `M-W` | Copy marked text, preferring marked TV text and otherwise the input region | Ignored |
+| `Super-W` | Push marked TV-region strings only | Ignored; no marked text beeps/barfs |
+| `C-Space`; `C-<`; `C->` | Set mark at point, buffer beginning, or buffer end | Ignored |
+| `C-Shift-Y` | Prompt for a match and yank matching shared kill history | Argument selects match; zero displays matching history |
+| `M-Shift-Y` | Rotate the preceding matching yank | Requires prior matching-yank state; argument rotates; zero displays matches |
+| `C-M-Shift-Y` | Prompt for a match and yank matching input history | Argument selects match; zero displays matching history |
+| Scroll; `C-V` | Scroll vertically forward | No argument means a screen; argument means that many lines |
+| `M-Scroll`; `M-V`; Back-Scroll | Scroll vertically backward | No argument means a screen; argument means that many lines |
+| `Super-Scroll` | Scroll horizontally forward | No argument means a screen; argument means that many columns |
+| `M-Super-Scroll`; `Super-Back-Scroll` | Scroll horizontally backward | No argument means a screen; argument means that many columns |
+| `C-Scroll` | Scroll typeout vertically forward | No argument means a screen; argument means that many lines |
+| `C-M-Scroll`; `C-Back-Scroll` | Scroll typeout vertically backward | No argument means a screen; argument means that many lines |
+| `C-M-S` | Read one character register, save the selected window and viewport position, then restore that position immediately | Prefix argument ignored |
+| `C-M-R` | Read one character register and restore only if it names the same scrolling window | Prefix argument ignored; missing/mismatched register beeps/barfs |
+| `Super-G` | Clear marked-region strings through the TV marking protocol | Ignored; no marked text beeps/barfs |
+| `C-S`; `Super-S`; Find | Search displayed strings forward | Ignored |
+| `C-R`; `Super-R`; `M-Find` | Search displayed strings backward | Ignored |
+| Cut | Delete all marked TV text and push the concatenation to shared and console kill histories | Ignored |
+| Copy | Copy all marked TV text to shared and console kill histories | Ignored |
+| Paste | Yank from console kill history | Same argument/zero behavior as `C-Y` |
+| `M-Paste` | Rotate the preceding console paste | Requires mark/prior paste; argument rotates; zero displays history |
+
+The base multi-stage and repeat grammar is therefore:
+
+```text
+numeric argument
+├─ modified digit -> decimal digit state
+├─ modified minus -> sign state
+├─ repeated modified digits -> signed decimal accumulation
+├─ C-U -> 4, then 16, then 64, ...
+└─ next editing command -> consume or ignore as stated above; reset argument state
+
+C-Q
+├─ unmodified character -> insert it literally without returning control to parser
+├─ modified character -> editor barf/beep path; insert nothing
+└─ noncharacter event -> keep reading for a character
+
+C-M-S or C-M-R
+└─ nested character ACCEPT -> use that semantic character as the viewport register
+```
+
+"Modified" in the Input Editor numeric branch means any nonzero character-bit state
+that has not already matched a dynamic option or command; it is broader than only
+Control and Meta. A normal command, self-insert, or random-control error resets the
+argument to one. Commands that do not consult it still consume and reset it. The
+balanced-expression commands are one such intentional example.
 
 Consecutive compatible kills coalesce; a nonkill command breaks coalescing. Yank
-rotation is valid only after a yank-compatible command. Ordinary input history is
-per stream/type policy while the kill ring is shared by editors in the selected
-system. Semantic blips are indivisible for character operations and MAY count as one
-Lisp expression for structural motion. Less-common chords, style spans over blips,
-and search/selection edge behavior are `TODO-RUNTIME`, not world-confirmed here.
+rotation is valid only after a compatible yank. Ordinary input history is selected by
+stream/type policy while the kill ring is shared. Semantic blips remain indivisible
+for character operations and may count as one Lisp expression for structural motion.
+The source also defines, but gives no base key to, display-internal-state, four
+matching-history display commands, vertical-scroll-beginning, vertical-scroll-end,
+and clear-history. They are extension points, not hidden bindings.
+
+The complete source map and dispatch order above are no longer an oracle gap.
+Runtime behavior over styles, blips, history edges, failed viewport registers, and
+site mutations remains `TODO-RUNTIME`; those probes test the stated contract rather
+than license an omitted chord.
 
 ### Completion state machine
 
@@ -828,10 +934,13 @@ tests.
 Ambiguity provides nondestructive feedback. Replacing text MUST preserve quoting and
 put point after the inserted material. Closed enumerated types cannot be bypassed by
 `C-Return`. An alist-backed completion returns the associated object, not the display
-name. Ellipsis choices expand only in the matching completion context. Exact behavior
-for maximal completion and left-substring edge cases remains `TODO-RUNTIME`.
+name. Ellipsis choices expand only in the matching completion context. This is the
+complete selected completion-gesture inventory; maximal-completion and
+left-substring edge results still require `TODO-RUNTIME` oracle comparison, not an
+invented extra chord.
 
-**Evidence:** `G85-SRC` at `io/input-editor.lisp.~332~:120-2309` and
+**Evidence:** `G85-SRC` at `io/input-editor.lisp.~332~:120-2309`,
+`io/readers.lisp.~251~:62-71`, and
 `dynamic-windows/completion.lisp.~206~:743-1923`; `G8-MAN` independently describes
 activation, rescan, preemption, parser/editor separation, and input-editor options.
 Only representative correction and pointer-blip paths are currently `G85-RUN`.
@@ -853,11 +962,44 @@ gestures. A gesture mapping converts raw button/modifier/key events into those n
 Applications MUST NOT need to hard-code host button numbers. The mapping is part of
 the user/environment profile and can vary without redefining every translator.
 
-The selected default mapping supplies these logical meanings. A physical chord can
+The selected initialization first creates one unique primary gesture for every one
+of 32 Shift/Control/Meta/Super/Hyper bit states on each of three buttons: 96 raw
+characters in all. The table lists the **additional aliases** installed on named
+states. Every unlisted state, including Hyper-only and other multi-modifier
+combinations, retains only its unique primary gesture. A physical chord can therefore
 name more than one logical gesture so different handlers can bind the same chord in
 different semantic contexts.
 
-| Physical chord | Selected logical meanings |
+Primary names preserve the historical formatter: numeric bit state 3 is specially
+spelled `CONTROL-META`, while other combinations use Hyper, Super, Meta, Control,
+then Shift order. For example state 19 has primary
+`META-CONTROL-SHIFT-{LEFT|MIDDLE|RIGHT}` names even though source character syntax
+uses the `c-m-sh` order for its Monitor/Unmonitor aliases.
+
+The complete primary-state inventory is below. Each row expands to the three raw
+characters `<prefix>LEFT`, `<prefix>MIDDLE`, and `<prefix>RIGHT`; state 0 uses no
+prefix. This is an exhaustive 96-cell map, not a representative subset.
+
+| State | Historical primary prefix | State | Historical primary prefix |
+| ---: | --- | ---: | --- |
+| 0 | *(empty)* | 16 | `SHIFT-` |
+| 1 | `CONTROL-` | 17 | `CONTROL-SHIFT-` |
+| 2 | `META-` | 18 | `META-SHIFT-` |
+| 3 | `CONTROL-META-` | 19 | `META-CONTROL-SHIFT-` |
+| 4 | `SUPER-` | 20 | `SUPER-SHIFT-` |
+| 5 | `SUPER-CONTROL-` | 21 | `SUPER-CONTROL-SHIFT-` |
+| 6 | `SUPER-META-` | 22 | `SUPER-META-SHIFT-` |
+| 7 | `SUPER-META-CONTROL-` | 23 | `SUPER-META-CONTROL-SHIFT-` |
+| 8 | `HYPER-` | 24 | `HYPER-SHIFT-` |
+| 9 | `HYPER-CONTROL-` | 25 | `HYPER-CONTROL-SHIFT-` |
+| 10 | `HYPER-META-` | 26 | `HYPER-META-SHIFT-` |
+| 11 | `HYPER-META-CONTROL-` | 27 | `HYPER-META-CONTROL-SHIFT-` |
+| 12 | `HYPER-SUPER-` | 28 | `HYPER-SUPER-SHIFT-` |
+| 13 | `HYPER-SUPER-CONTROL-` | 29 | `HYPER-SUPER-CONTROL-SHIFT-` |
+| 14 | `HYPER-SUPER-META-` | 30 | `HYPER-SUPER-META-SHIFT-` |
+| 15 | `HYPER-SUPER-META-CONTROL-` | 31 | `HYPER-SUPER-META-CONTROL-SHIFT-` |
+
+| Exact raw state | Selected logical meanings |
 | --- | --- |
 | Left | Select |
 | Middle | Describe; Select-and-Edit |
@@ -877,13 +1019,37 @@ different semantic contexts.
 | Super-Right | Presentation-Debugging-Menu |
 | Super-Shift-Left | Reprint-Differently |
 | Super-Shift-Middle | Edit-Viewspecs |
-| Control-Meta-Left/Middle/Right | Set; clear; modify/complex breakpoint |
-| Control-Meta-Shift-Left/Middle | Monitor; unmonitor location |
+| Control-Meta-Left | Set-Breakpoint |
+| Control-Meta-Middle | Clear-Breakpoint |
+| Control-Meta-Right | Modify; Set-Complex-Breakpoint |
+| Control-Meta-Shift-Left | Monitor-Location |
+| Control-Meta-Shift-Middle | Unmonitor-Location |
+
+The physical encoder chooses the highest newly-down button bit, so Left+Middle is
+Middle and every simultaneous newly-down set containing Right is Right. It waits a
+configurable interval for release/repress of that same button, suppresses double-click
+construction when keyboard input is pending, ORs Shift into a recognized second
+click, and stops after the second click. Consequently there is no triple-click
+encoding; a NIL interval disables double-click construction entirely; and Shift+single
+and an unmodified double click are indistinguishable. An exact `CHAR-MOUSE-EQUAL`
+Shift-Right/Right-double match is consumed by Essential Mouse before Dynamic Windows:
+it opens System Menu when console-enabled and otherwise beeps, with no Dynamic Windows
+fallback. Direct logical-character tests MUST therefore be separated from physical
+transition tests.
 
 Gesture metadata also says whether raw text is required, whether a presentation
 description should be requested, and whether documentation appears without a normal
 semantic match. Remapping a chord MUST invalidate handler and pointer-documentation
 caches.
+
+The fixed selected-source contract comprises all 96 primary cells, initialization
+aliases/order, highest-newly-down-button and Shift-OR double rules, lookup/context/dead
+semantics, and built-in handler definitions. Mutable/profile inputs comprise gesture
+remapping, loaded handlers and command tables, active contexts and selected window,
+tester/capability/object state, host keyboard-to-internal modifier mapping,
+double-click timeout including NIL-off, and local-versus-remote debounce. A
+conformance report MUST record these inputs rather than presenting initialization as
+an immutable global keymap.
 
 ### Applicability
 
@@ -904,45 +1070,88 @@ the historical universal presentation type named `T`.
 
 ### Resolution algorithm
 
+Routing to this algorithm is selected-window-sensitive. If the selected window
+implements `:PRESENTATION-INPUT-BLIP-HANDLER`, the clicked window supplies the hit
+presentation and coordinates but the event is enqueued through the console system-I/O
+buffer, so the selected window's active contexts and command table govern resolution.
+Otherwise input is forced to the clicked window. On blank area, the generic
+unmodified-Left Select This Window handler applies only when clicked and selected
+window aliases differ.
+
 The following is normative at the semantic level:
 
 ```text
 resolve(pointer, raw_event, context_stack, command_table):
-  gesture = map_raw_event(raw_event)
-  presentations = hit_test_innermost_first(pointer)
-  seen_contexts = identity_set()
-  for context in context_stack from innermost to outermost:
-    if context was already seen by identity: continue
-    remember context
-    candidates = []
-    for presentation in presentations from innermost to outermost:
-      for handler indexed by presentation.type and gesture:
-        expand an all-gestures handler for the direct/menu mode
-        require displayed-type <: handler-source-type
-        run object tester
-        translate speculatively only when result-dependent testing requires it
-        reject the translator's explicit no-result/no-applicability outcome
-        require handler-target-type <: requested-context-type
-        run context/result tester and menu-presence policy
-        append passing candidate with rejection evidence retained separately
-    if candidates not empty:
-      sort by descending explicit priority
-      order context-dependent before context-independent where otherwise tied
-      apply direct/menu and all-gesture ordering rules
-      break the final tie by stable handler package/name
-      apply exclude-other-handlers filtering
-      return direct winner or ordered menu set
+  actual_char = raw_event's exact mouse character
+  chord_chars = LEFT, MIDDLE, and RIGHT characters sharing actual_char's modifier bits
+
+  (presentation, highlighted_context) =
+    innermost_sensitive_presentation(pointer, chord_chars,
+                                     obey_suppress_highlighting = true)
+  # This walks the hit presentation's enclosing-presentation chain under the
+  # shared-sensitive-box/context rules; it is not a Cartesian scan of all hits.
+  if presentation exists:
+    try actual_char on that presentation in highlighted_context
+    if a handler is found: invoke it and normalize its result as below
+
+    seen_presentation_types = EQ identity set
+    for context in context_stack from innermost to outermost:
+      if context.presentation_type is EQ to a previously seen type: continue
+      remember context.presentation_type
+      try actual_char on the same presentation in context
+      if a handler is found: invoke it and normalize its result as below
+
+  (actual_presentation, ignored_context) =
+    innermost_sensitive_presentation(pointer, [actual_char],
+                                     obey_suppress_highlighting = false)
+  if actual_presentation exists:
+    seen_presentation_types = EQ identity set
+    for context in context_stack from innermost to outermost:
+      if context.presentation_type is EQ to a previously seen type: continue
+      remember context.presentation_type
+      try actual_char on actual_presentation in context
+      if a handler is found: invoke it and normalize its result as below
+
   consider applicable blank-area or command-menu handlers
-  return no-handler
+  if no matching handler: signal dead-blip; beep only if unhandled; return (dead-blip)
+  if a found handler returns NIL without an explicit non-NIL type, or explicit (dead-blip):
+    return (dead-blip) directly without the no-match signal/beep path
 ```
+
+Each `try` maps the actual character to its ordered primary gesture and aliases, then
+indexes handlers by presentation type and gesture. It expands all-gesture handlers
+for direct/menu mode, requires displayed type below handler source type and handler
+target below requested context type, runs object and context/result testers, rejects
+explicit no-applicability, applies menu-presence and exclusion rules, and sorts the
+surviving candidates by the selected priority/context/direct-menu rules. Translation
+is speculative only where result-dependent testing requires it, and rejection reasons
+remain available to diagnostics.
 
 The subtype directions are normative: the displayed type is below the handler source,
 and the handler target is below the requested context. Reversing either test admits
 results the acceptor cannot consume or lets overly specific handlers claim general
-objects. Nesting preference comes from context/presentation traversal and candidate
-construction; the final source tie-break is priority and stable name/package, not an
-unspecified “most recently defined” callback order. An implementation MUST retain
-diagnostic reasons for candidate rejection so behavior can be inspected.
+objects. Nesting preference comes from the explicit two-pass presentation selection
+and same-presentation context retry above. The selected source's final same-priority
+name comparator contains an
+apparent comparison typo, so this profile does not turn intended package/name order
+into a false compatibility claim: a conforming preserved-world profile MUST dump the
+effective order wherever such a tie exists. An implementation MUST retain diagnostic
+reasons for candidate rejection so behavior can be inspected.
+
+Exact Right on a presentation opens an Operation menu whose unstyled entries precede
+styled submenu entries; each group sorts case-insensitively by label, duplicates are
+removed, and the most recent choice is remembered separately per menu type. The
+styled candidates include Marking and Yanking Menu whenever an active
+`si:input-editor` context makes that named menu nonempty. The
+generic blank-area menu always offers Window Operation Menu, adds System Menu when
+console-enabled, can add Select This Window when the alias tester succeeds, and adds
+Marking and Yanking Menu when an active `si:input-editor` context makes that menu
+nonempty. A
+nonempty menu dismissed without a choice returns silent semantic `(dead-blip)` through
+the found-handler path. An empty applicable menu beeps explicitly before returning
+the same semantic result. Presentation Debugging is not a blank-area member; loading
+Presentation Inspector can make its Super-Right named menu nonempty for ordinary
+nonanonymous presentations when the debugging tester succeeds.
 
 ### Handler results
 
@@ -971,8 +1180,13 @@ is not required to reproduce those inefficiencies; it IS required to reproduce
 dispatch results and cache invalidation behavior observable by applications.
 
 **Evidence:** `G85-SRC` at `define-handler.lisp.~12~:65-587`,
-`mouse-handler-lookup.lisp.~33~:1452-2220`, and
-`dynamic-input.lisp.~498~:243-1313`; `UIST89` independently corroborates source and
+`mouse-handler-lookup.lisp.~33~:1452-2220`,
+`dynamic-input.lisp.~498~:243-367,1160-1239`,
+`dynamic-window-mixins.lisp.~204~:708-743`,
+`basic-handlers.lisp.~30~:498-621,861-872,901-1169`,
+`clcp/iofns.lisp.~273~:2562-2584`,
+`io/format.lisp.~369~:1006-1036`, and
+`window/mouse.lisp.~472~:631-700,1153-1163,1862-1867`; `UIST89` independently corroborates source and
 target subtype direction, nested contexts/presentations, testers, priorities, menus,
 and documentation. The inspected live handler report is `G85-RUN`; equal-priority and
 exclusion conflicts remain `TODO-RUNTIME`.
@@ -1629,21 +1843,141 @@ screen/window; an Accept Values pane participates in its owning framework.
 
 ### Interaction contract
 
-The `DW-G85/D4` standalone form MUST support:
+The standalone `DW-G85/D4` form is a keyboard-accelerated program whose local command
+table inherits exactly `standard scrolling` and `standard arguments`. It does not
+inherit `Colon Full Command`, `Unshifted Arguments`, or the Input Editor map at its
+idle command boundary. The selected source initializes this complete direct map:
 
-- Select to replace a value through its type;
-- Select-and-Edit to begin from the prior value;
-- Remove to reset through the form's query command;
-- presentation-sensitive enumerated choices, samples, and command buttons;
-- next/previous question and next/previous choice navigation;
-- edit/remove accelerators;
-- complete refresh;
-- generated Help;
-- Done/End validation and commit; and
-- Abort without accepting the form.
+| Exact idle binding | Standalone Accepting Values result | Argument policy |
+| --- | --- | --- |
+| Refresh | Force complete form redisplay and mark query redisplay necessary | Disallowed |
+| Help | Display Accepting Values guidance plus the effective accelerator list | Disallowed |
+| End | Validate required/confirmed queries, then commit and return | Disallowed |
+| Abort | Signal Abort without accepting the form | Disallowed |
+| Space | Replace the highlighted query, or choose the highlighted enumerated choice | Disallowed |
+| `C-E` | Edit the highlighted query from its old value; on a highlighted enumerated choice, choose it just like Space | Disallowed |
+| `C-D` | Reset the highlighted query to NIL; on a highlighted enumerated choice, signal the source's cannot-remove accelerator error | Disallowed |
+| `C-N` | Move to the next query | Signed count allowed |
+| `C-P` | Move to the previous query | Signed count allowed |
+| `C-F` | Move to the next displayed choice in the current query | Signed count allowed |
+| `C-B` | Move to the previous displayed choice in the current query | Signed count allowed |
 
-Pane-based Accept Values reuses the query/redisplay substrate but routes its commands
-through the owning program. It MUST resynchronize program state after commands.
+Space, `C-E`, and `C-D` signal an accelerator error when neither a query nor choice is
+highlighted. Query/choice motion never wraps. Positive motion from a NIL cursor finds
+the first query or choice; negative motion from NIL beeps. Motion beyond either end
+beeps and preserves the preceding cursor. Negative counts reverse direction. A zero
+query count reselects the current query when non-NIL and beeps when there is no current
+query. For a zero choice count the selected source
+takes a single-value branch and supplies NIL as the presentation to the highlighting
+setter; a strict implementation MUST retain that call path rather than silently
+invent wrap or no-op behavior. The exact condition/result of that edge in the loaded
+world is `TODO-RUNTIME`.
+
+The inherited `standard scrolling` table contributes this exact map. These are
+accelerators at the idle form boundary, not aliases from the Input Editor table:
+
+| Exact inherited binding | Result | Argument policy |
+| --- | --- | --- |
+| Scroll | Scroll the selected vertical window forward | No argument/sign-only means one screen; finite digit argument means lines; infinity means end |
+| `M-Scroll`; Back-Scroll | Scroll vertically backward | No argument/sign-only means one screen; other arguments mean lines |
+| `M-<`; Home | Scroll vertically to beginning | Disallowed |
+| `M->` | Scroll vertically to end | Disallowed |
+| `Super-Scroll` | Scroll horizontally forward | No argument/sign-only means one screen; finite digit argument means columns; infinity means end |
+| `M-Super-Scroll`; `Super-Back-Scroll` | Scroll horizontally backward | No argument/sign-only means one screen; other arguments mean columns |
+| `C-Scroll` | Scroll the typeout window vertically forward | No argument/sign-only means one screen; finite digit argument means lines; infinity means end |
+| `C-M-Scroll`; `C-Back-Scroll` | Scroll the typeout window vertically backward | No argument/sign-only means one screen; other arguments mean lines |
+| `C-M-S` | Read one semantic character register and save the selected window/viewport position | Disallowed; this is a second-stage character read |
+| `C-M-R` | Read one semantic character register and restore only a position saved for the same selected window | Disallowed; missing/mismatched register signals command error |
+| `C-S`; `Super-S` | Search displayed strings forward | Disallowed |
+| `C-R`; `Super-R` | Search displayed strings backward | Disallowed |
+
+The inherited argument grammar is a multi-stage binding tree, not a free-standing
+command:
+
+```text
+Accepting Values idle
+├─ C-U -> argument 4
+│  └─ C-U repeated -> multiply by four each time
+├─ Control-, Meta-, or Control-Meta-minus -> negative-sign state
+├─ Control-, Meta-, or Control-Meta-digit -> decimal digit state
+│  └─ more modified digits -> signed decimal accumulation
+├─ selected modified infinity-argument character -> signed infinity state
+└─ next accelerator
+   ├─ C-N, C-P, C-F, or C-B -> deliver signed count
+   ├─ forward/backward vertical, horizontal, or typeout scroll -> deliver count/mode
+   ├─ another argument character -> continue argument state
+   └─ every argument-disallowing or unknown leaf -> accelerator error
+```
+
+The source creates the Control, Meta, and Control-Meta digit/minus/infinity variants
+in `Standard arguments`; the unmodified digit, minus, and infinity entries belong to
+the separate `Unshifted Arguments` table and are not effective here. On an accelerator
+error the standalone reader beeps, clears accelerator input, displays the diagnostic,
+and reprompts. Any other unknown idle character follows the same path. In particular,
+colon is not a hidden full-command prefix in this table. A presentation-produced
+command blip remains a separate valid input route.
+
+The complete standalone pointer and menu tree is:
+
+```text
+displayed query value
+├─ exact unmodified Left / Select -> replace from empty typed input
+├─ exact unmodified Middle / Select-and-Edit -> edit from printed old value
+├─ exact Shift-Middle / Remove -> reset through query command
+└─ exact unmodified Right / Menu -> generic Operation menu
+   └─ offer applicable replace, edit, and remove handlers
+
+displayed enumerated choice
+├─ exact unmodified Left / Select -> choose semantic choice
+└─ exact unmodified Right / Menu -> generic Operation menu containing choose
+
+compatible displayed sample
+├─ exact unmodified Left / Select -> copy sample into matching query
+└─ exact unmodified Right / Menu -> generic Operation menu containing use-sample
+
+displayed command button
+├─ exact unmodified Left / Select -> run continuation and resynchronize
+└─ exact unmodified Right / Menu -> generic Operation menu containing button action
+
+Done or Abort command-menu cell / inline exit presentation
+├─ exact unmodified Left -> execute zero-argument command
+├─ exact unmodified Right -> execute the same zero-argument command
+└─ Middle or any modified raw gesture -> no command-menu handler
+```
+
+Every translator above defaults to menu inclusion, so Right is generic handler-menu
+resolution rather than a second direct translator. Direct gesture matching is exact:
+the selected Dynamic Windows table has 32 modifier-bit states for each of three
+buttons, and a handler for Select does not match a modified Left event merely because
+Left is present. All raw states not named above continue through generic Dynamic
+Windows handler resolution and otherwise become a dead-blip/beep result.
+
+The TV mouse encoder chooses the highest newly pressed button bit, so a simultaneous
+Left+Middle transition reaches Middle and any simultaneous transition containing
+Right reaches Right. Sequential chords are separate newly-down transitions. The same
+encoder represents a double click by setting the Shift bit. Consequently double
+Middle is indistinguishable at this boundary from Shift-Middle and reaches Remove;
+double Left is Shift-Left and has no Accepting Values direct handler. A conforming
+test MUST inject logical/raw events rather than assume host toolkit double-click
+semantics.
+
+Selecting a query leaves the idle accelerator reader and enters typed `ACCEPT` for
+that query. At that point the complete Input Editor map above becomes effective only
+after the query's activation, rescan, completion, command, blip, and per-call editor
+overlays. Return and End are the ordinary Accept activation characters unless a
+specific presentation type overrides them; completion types additionally consume the
+completion gestures specified above. Successful parsing updates the query; full
+rubout or correction returns through the query editor rather than being mistaken for
+an idle form accelerator.
+
+Pane-based Accept Values reuses the query/redisplay substrate but routes commands
+through the owning program. The base `accept-values-pane` table adds the value,
+choice, and command-button presentation translators but no keyboard accelerators.
+The optional `accept-values-pane-with-keyboard-commands` table adds exactly Space,
+`C-E`, `C-D`, `C-N`, `C-P`, `C-F`, and `C-B`, with the same cursor semantics and no
+echo. It inherits only `accept-values-pane`; Refresh, Help, Done, Abort, scrolling,
+and argument prefixes exist only when the owning program explicitly contributes
+them. After a pane command it MUST resynchronize owning program state.
 
 ![The live Set GC Options Accepting Values form with typed Boolean choices and the pointer over its Abort presentation.](../assets/genera-screenshots/accepting-values-gc-options.png)
 
@@ -1656,11 +1990,15 @@ through the owning program. It MUST resynchronize program state after commands.
 > [Genera screenshot asset catalog](../assets/genera-screenshots/index.md); the image is
 > evidence, not decoration or a runtime dump.
 
-**Evidence:** `G85-SRC`, `accept-values.lisp.~244~:105-1706`; `G8-MAN` independently
-documents prompt/query identity, `EQUAL` comparison, conditional queries, and
-formatted query output. Boolean correction and Abort are `G85-RUN`; changed-default
-resynchronization, every edit placement, command buttons, and non-Dynamic/serial
-fallbacks remain `TODO-RUNTIME`.
+**Evidence:** `G85-SRC`, `accept-values.lisp.~244~:105-1797`, plus
+`cp/read-accelerated-command.lisp.~142~:55-831`,
+`cp/substrate-commands.lisp.~6~:99-299`,
+`dynamic-windows/dynamic-input.lisp.~498~:250-311,1160-1204`, and
+`window/mouse.lisp.~472~:631-700`; `G8-MAN` independently documents prompt/query
+identity, `EQUAL` comparison, conditional queries, and formatted query output.
+Boolean correction and Abort are `G85-RUN`; changed-default resynchronization, every
+edit placement, command buttons, all 96 raw modifier/button states, zero-count choice
+motion, and non-Dynamic/serial fallbacks remain `TODO-RUNTIME` oracle obligations.
 
 ## FQUERY and query-stream compatibility
 
@@ -1809,7 +2147,7 @@ A conforming implementation MUST report and unwind safely for:
 - incomplete, ambiguous, or invalid typed input;
 - a handler translation whose result fails the target context;
 - handler ambiguity that cannot be resolved by specified nesting, priority,
-  dependency, menu, and stable-name rules;
+  dependency and menu rules plus the selected profile's dumped same-priority tie order;
 - stale or invisible presentation selection;
 - duplicate redisplay IDs within one matching scope;
 - malformed formatted-output nesting;
@@ -1948,7 +2286,7 @@ System 452.22 additions or differences without publishing implementation bodies.
 | Typed output, input, and contexts | `PRESENT`, scoped presentation recording, `ACCEPT`, input transactions, defaults, histories, completion, and nested contexts | Exact operator signatures, keyword defaults, multiple values, condition/restart contracts, and context-form grammars are **pending** |
 | Handler definitions and logical gestures | Handler kinds, applicability, ordering, menu/direct modes, gesture mapping, diagnostics, and invalidation | Complete built-in handler catalog, exact defining forms/options, standard handler names, and add/remove/redefinition interfaces are **pending** |
 | Standard presentation types | The 135 source-form calls are inventoried by family; common family invariants are normative | Per-type data and presentation lambda lists, defaults, parser/printer/view behavior, aliases, conditional population, and loaded-world identity are **pending** |
-| Input editor, history, and completion | Buffer/blip/rescan model, major command map, numeric arguments, completion states, and semantic return values | Exact public entry points, every command chord, option grammar, history protocol, resource conditions, and completion auxiliary values are **pending** |
+| Input editor, history, and completion | Buffer/blip/rescan model, complete selected base binding map and dispatch tree, numeric and staged prefixes, completion gestures/states, and semantic return values | Exact public entry points, option grammar, history protocol, resource conditions, completion auxiliary values, site mutations, and loaded-world behavioral confirmation are **pending**; no selected base chord is omitted |
 | Command Processor | Command objects, table inheritance, typed arguments, accelerators, menus, command/form reading, and loop semantics | Exact CP packages, public symbols, macro grammars, argument-slot encodings, prefix APIs, compatibility aliases, values, conditions, and restarts are **pending** |
 | Formatted output and redisplay | Box families, simulation, tables, capture rules, updating pieces, reconciliation, movement, and recovery | Exact combinator names/signatures/options, output-record classes, redisplay entry points, rounding rules, and callback counts are **pending** |
 | Graphics and raster integration | Drawing state, primitive families, transforms, clipping, ALUs, opacity, recorded graphics, and output modes | Exact graphics signatures/options, pattern constructors, device auxiliary values, primitive edge rules, and public binary-graphics framing are **pending** |
@@ -1976,7 +2314,7 @@ base profile; the remaining public surface needs a subprofile or D5 closure.
 | `SUBSTRATE-DEFINITIONS`, `TYPE-DESCRIPTOR`, `TYPE-METHODS`, `TYPE-WALK`, `TYPE-KEYS`, `DEFINE-TYPE`, `DEFINE-HANDLER`, `TYPE-PRIMITIVES`, `ACCEPT-SUBSTRATE` | **Normative:** semantic records, types, methods, lattice, definitions, typed I/O, and invalidation | Exact public operators and representation-facing auxiliary values are D5-pending |
 | `GOOD-TABLES`, `MOUSE-HANDLER-TEST`, `HISTORY-INNER`, `HISTORY-SUBSTRATE`, `RESTRUCTURE-ARGLIST` | **Infrastructure/partial:** table lookup, testing, history, and argument normalization effects are consumed by normative protocols | No independent public contract is claimed; audit exports and callers before assigning a D5 surface |
 | `CORE-TYPES`, `NUMBER-TYPES`, `SEQUENCE-TYPES`, `PRESENTATION-TYPES`, `CHARACTER-STYLE-PRESENTATIONS` | **Partial:** source-form name inventory and family invariants are specified | Exact per-type signatures/methods and live conditional population are D5-pending and `TODO-RUNTIME` |
-| `COMPLETION`, `DYNAMIC-INPUT` | **Normative:** completion, editor/blip integration, gestures, pointer documentation, and input-context behavior | Remaining command/chord and ambiguity edges are `TODO-RUNTIME`; exact APIs are D5-pending |
+| `COMPLETION`, `DYNAMIC-INPUT` | **Normative:** complete selected completion gestures, editor/blip integration, 96-state raw gesture mapping, pointer documentation, and input-context behavior | Loaded-world ambiguity, maximal/left-substring completion, modifier, and cache oracles remain `TODO-RUNTIME`; exact APIs are D5-pending |
 | `BASIC-HANDLERS` | **Partial:** handler mechanism, standard gesture meanings, and representative live handlers are specified | Complete identity/default translator, action, command, menu, and debugging-handler inventory and contracts are D5-pending |
 | CP `DEFS`, `COMTAB`, `COMMAND-PROCESSOR`, `READ-ACCELERATED-COMMAND`, `SUBSTRATE-COMMANDS` | **Normative** for command-table, typed reader, accelerator, and loop semantics; `DEFS` supplies shared declarations | Exact public API, standard substrate commands, and conditions are D5-pending |
 | CP `OLD-SYMBOL-LINKS` | **Compatibility support** | Historical aliases are required only for D5 and remain pending |
@@ -1989,7 +2327,7 @@ base profile; the remaining public surface needs a subprofile or D5 closure.
 | `WINDOW;ACTIVITIES` | **Normative dependency:** registration, compatibility, selection, reuse, and state distinctions | Exact TV activity API belongs to the Genera-TV backend/D5 manifest |
 | `WINDOW;BACKGROUND-STREAM` | **Partial dependency:** capability-tested textual degradation is normative | Exact queueing, process, remote, failure, and lifecycle behavior remains `TODO-RUNTIME` and D5-pending |
 | Dynamic Windows `COMETH` | **Unclassified selected component** | Its independent purpose and public contract are not established here; do not infer either. Source/caller analysis is required before D5 closure |
-| `PROGRAM-FRAMEWORK-PANES`, `DEFINE-PROGRAM-FRAMEWORK`, `ACCEPT-VALUES`, `IO1;FQUERY`, `REORDER-SEQUENCE` | **Normative** for pane families, lifecycle, typed forms/queries, menus, and sequence clients | Exact public grammars, options, values, and remaining interaction oracles are D5-pending |
+| `PROGRAM-FRAMEWORK-PANES`, `DEFINE-PROGRAM-FRAMEWORK`, `ACCEPT-VALUES`, `IO1;FQUERY`, `REORDER-SEQUENCE` | **Normative** for pane families, lifecycle, typed forms/queries, complete Accepting Values base bindings, menus, and sequence clients | Exact public grammars, options, values, site/owning-program overlays, and remaining interaction oracles are D5-pending |
 | `GRAPHICS-TESTS`, `FORMATTED-OUTPUT-TESTS` | **Test-only in the selected directory:** not selected as normal loaded components | They are candidate oracle cases and evidence, not automatically normative production APIs |
 
 **Coverage evidence:** `G85-SRC` component selection at
@@ -2025,8 +2363,11 @@ provenance described below.
 | `DW-T15` | Semantic blip rescan | Placeholder is visible, but parser receives the original atomic blip/object after editing |
 | `DW-T16` | Dead blip | Deleting its presentation produces controlled correction, never stale dereference |
 | `DW-T17` | Kill/history separation | Consecutive kills coalesce, yank rotates only after yank, and stream history remains separate |
-| `DW-T18` | Numeric editor argument | Modified digits/minus and repeated `C-U` affect character, word, and expression commands correctly |
+| `DW-T18` | Numeric editor argument | Every nonzero-bit modified digit/minus and repeated `C-U` follows the exact state grammar; character/line/word/case/whitespace/history/scroll consumers use it as specified, while expression and other nonconsumers ignore then reset it |
 | `DW-T19` | Completion policy | No-match, ambiguity, left-substring, unique and exact states; closed types reject forced arbitrary input |
+| `DW-T20` | Complete base Input Editor map | Every listed key and alias reaches exactly one source command; End and every unlisted nongraphic character take the context activation or unbound-beep branch rather than an invented binding |
+| `DW-T21` | Input dispatch precedence | Activation/rescan/command/blip/pass-through and per-call editor overlays shadow the base map in the stated order; mutation updates effective Help and dispatch immediately |
+| `DW-T22` | Input multi-stage leaves | `C-Q` literal/error branches and `C-M-S`/`C-M-R` character-register reads terminate, fail, and reset numeric state exactly as specified |
 
 ### Handler tests
 
@@ -2037,7 +2378,7 @@ provenance described below.
 | `DW-H03` | Rejected result | A translated object failing target predicate is not accepted |
 | `DW-H04` | Nested contexts | Innermost applicable context wins; outer context remains available if inner has no candidate |
 | `DW-H05` | Nested presentations | Innermost eligible presentation wins subject to explicit priority and sensitivity policy |
-| `DW-H06` | Priority and deterministic tie | Effective ordering is stable and diagnostics show the rule |
+| `DW-H06` | Priority and same-priority tie | Priority is exact; the selected loaded profile's effective same-priority order is dumped and diagnostics expose it rather than assuming intended stable-name behavior |
 | `DW-H07` | Action continuation | Action runs and original accept continues without a spurious value |
 | `DW-H08` | Presentation-to-command | Result is a typed command object with selected operand, not immediate callback-only execution |
 | `DW-H09` | Blank-area fallback | Applies only when no more specific candidate owns the gesture/context |
@@ -2047,6 +2388,7 @@ provenance described below.
 | `DW-H13` | Menu/direct separation | Menu-only and gesture-only handlers appear only in the applicable mode |
 | `DW-H14` | Context dependency and exclusion | Context-dependent tie and exclude-other-handlers follow selected ordering |
 | `DW-H15` | Gesture remap | Remapping physical chord updates dispatch and pointer documentation immediately |
+| `DW-H16` | Complete raw gesture matrix | All 32 modifier states by three buttons have distinct primary gestures and only the listed aliases; direct injection is separate from physical simultaneous/down-transition, timeout/NIL-off, keyboard-pending, Shift/double, no-triple, and Essential Mouse tests; found-handler semantic dead and true no-match signal/beep remain distinct rather than falling back to an unmodified gesture |
 
 ### D1 command tests
 
@@ -2121,6 +2463,12 @@ provenance described below.
 | `DW-Q01` | FQUERY choice parity | Character, line/completion, and pointer choice return the same semantic choice object |
 | `DW-Q02` | FQUERY cleanup | Temporary query window and editor/context state unwind on every Abort boundary |
 | `DW-A06` | Query resynchronization | Conditional removal/reappearance preserves explicit-ID changed value under selected policy |
+| `DW-A07` | Complete idle accelerator tree | Every local and inherited standalone key, alias, numeric/infinity sequence, argument-disallowed leaf, colon, and unknown character matches the normative tree and diagnostic outcome |
+| `DW-A08` | Cursor navigation edges | Positive, negative, zero, first, and beyond-end counts for all four query/choice motions match no-wrap, beep, preservation, and zero-choice call-path semantics |
+| `DW-A09` | Complete pointer tree | Direct injection of all 96 named raw modifier/button states over values, choices, samples, buttons, exit presentations, and blank area selects the exact direct/menu/dead-blip path; separate physical tests cover simultaneous-button precedence, release/repress timeout and NIL-disabled mode, keyboard-pending suppression, Shift/double equivalence, no triple encoding, and pre-Dynamic-Windows Shift-Right interception |
+| `DW-A10` | Field-editor handoff | Entering replace/edit leaves idle accelerators for the context-shadowed Input Editor tree; activation, correction, full rubout, and successful typed commit return to the correct query state |
+| `DW-A11` | Pane binding profile | Base pane supplies no accelerator; optional keyboard pane supplies exactly seven direct keys, and only explicit owning-table inheritance adds scrolling, argument, Help, Done, or Abort behavior |
+| `DW-A12` | Pointer routing and semantic-dead split | Selected/unselected clicked windows with and without presentation-input-blip handling prove which context/table owns translation; blank Left alias tester, three-sibling-button highlight selection, Operation-menu sort/default/dismiss/empty behavior, and found-handler dead versus true no-match signal/beep all match the selected profile |
 | `DW-U01` | Branching undo | Undo then new action preserves both redo branches; branch choice reaches the selected operation |
 | `DW-U02` | Clear history index | Clear empties first/last/current while later operation indices remain monotonic |
 
@@ -2180,18 +2528,23 @@ claim.
 ## Known unknowns and required follow-up
 
 - `TODO-RUNTIME`: define a small synthetic type lattice and measure exact live
-  priority, context-dependency, stable-name tie order, nested contexts, and nested
+  priority, context-dependency, dumped loaded-profile tie order, nested contexts, and nested
   presentations.
 - `TODO-RUNTIME`: exercise handler add/remove/redefinition and observe cache
   invalidation in the preserved 8.5 world.
 - `TODO-RUNTIME`: compare all logical gesture/modifier mappings and mouse
   documentation for a synthetic handler set.
-- `TODO-RUNTIME`: exercise the full input-editor command map over text, styles, and
-  presentation blips, including kill/history/search/selection and rescan boundaries.
+- `TODO-RUNTIME`: execute the now-complete source-defined Input Editor map over text,
+  styles, presentation blips, context shadowing, site mutation, failed register reads,
+  kill/history/search/selection, and rescan boundaries in the preserved world.
 - `TODO-RUNTIME`: measure every completion state, maximal completion,
   left-substring termination, quoting, and forced-invalid policy.
 - `TODO-RUNTIME`: test command-table parent conflicts, accelerator prefix Help,
   numeric arguments, unread conditional arguments, and command/form fallback.
+- `TODO-RUNTIME`: exhaust the standalone and optional-pane Accepting Values binding
+  trees, including every local/inherited accelerator, argument-error leaf, all 96 raw
+  pointer states, multi-button/double-click encoding, no-wrap cursor edges, and the
+  zero-count choice call path.
 - `TODO-RUNTIME`: run a synthetic formatted table/item list through width changes and
   record exact rounding and conditional-break results.
 - `TODO-RUNTIME`: exercise redisplay insert, delete, move, reorder, duplicate ID,
@@ -2231,6 +2584,10 @@ The following are metadata for licensed local evidence; the files remain untrack
 | `sys.sct/dynamic-windows/define-type.lisp.~8~` | 43,218 | `f7505ed64460c90361b2cdfc09e2a96667dc1381a76270301233aa88573e4046` | Type-definition interface |
 | `sys.sct/dynamic-windows/define-handler.lisp.~12~` | 25,689 | `00d7c33ea97a342ff53877b8c33106f2b1730bb0fd86963d1a086e4bac883ab0` | Handler-definition interface |
 | `sys.sct/dynamic-windows/dynamic-input.lisp.~498~` | 55,058 | `a79805ece6844ccb568ecf97e2d818a0c6095e539e51fbf74423944a32b6dd8f` | Input contexts and typed interaction |
+| `sys.sct/dynamic-windows/dynamic-window-mixins.lisp.~204~` | 139,058 | `d1c9db01f37982f10efdd5f7f21dff938a437c4b1f80633c04054158be87a482` | Selected-window-sensitive presentation click routing |
+| `sys.sct/dynamic-windows/basic-handlers.lisp.~30~` | 58,716 | `3a85f039dbeb76b65401c0f88f1b1712cf9961645aee6f82c5bfb04c14c4303d` | Generic presentation, menu, marking, window-operation, and System Menu handlers |
+| `sys.sct/dynamic-windows/handler-debug.lisp.~33~` | 13,058 | `ff2081af4ac6b0c4c41446b2f12de971e6f16b8197cd8005a204bfca5c04007a` | Presentation-debugging gesture and menu handlers |
+| `sys.sct/dynamic-windows/presentation-inspector.lisp.~4053~` | 45,825 | `9f20e13acd39201e73fee30d6890275aaf9d0b745f6b2089dfad0e05869f494d` | Loaded Presentation Inspector menu-only debugging handler |
 | `sys.sct/dynamic-windows/mouse-handler-lookup.lisp.~33~` | 99,828 | `601385c017301e7158599b8dfe235650a1f5dee06a7944fc701ce8a4a491d716` | Handler lookup and caches |
 | `sys.sct/dynamic-windows/accept-substrate.lisp.~19~` | 53,779 | `3cc5c405bac3dc98d321cef309d51e4f9b1ec77369c3a82019e0fbd983376a33` | `PRESENT`, `ACCEPT`, tokens/history |
 | `sys.sct/dynamic-windows/core-types.lisp.~34~` | 83,350 | `3ff0511b6fcfd6b8d5583b6f5dd96bc7e651ac5ee49147ea50cb5126fbd2f927` | Core standard presentation types |
@@ -2240,9 +2597,14 @@ The following are metadata for licensed local evidence; the files remain untrack
 | `sys.sct/sys2/character-style-presentations.lisp.~64~` | 45,871 | `0649ab332ccd23954b660d31f21766c5cc18e388372f799c4152ea0113630aed` | Character-style presentation types |
 | `sys.sct/dynamic-windows/completion.lisp.~206~` | 103,114 | `1af865c9149920a4a47090e2aea50d2db70ebf05550e2ed9a1c1e7fe6c62b07f` | Completion state machine |
 | `sys.sct/io/input-editor.lisp.~332~` | 110,515 | `856548d945403aa4f5fa3036bd2e8b936890b07b231673c9e2cab5f9e42707b3` | Input editing, blips, rescan, commands |
+| `sys.sct/io/readers.lisp.~251~` | 89,420 | `234f313926a322f3d61e7d750c96bd3a1f4408b8eaf9eb8afffb294a28667491` | Standard intercepted-character sets and reader behavior |
+| `sys.sct/io/format.lisp.~369~` | 91,024 | `ae5135cf2be3af4741093ea7f8e885259927d9aaa32555c7fa292553eb112249` | Historical modifier-name formatter for the 96 primary pointer gestures |
 | `sys.sct/cp/comtab.lisp.~103~` | 36,295 | `f60724c8e2526950000f090f2dae4745b3394079713b3601606be865c23b98e1` | Command tables/inheritance |
 | `sys.sct/cp/command-processor.lisp.~318~` | 131,639 | `248550a755130c40322b3a12c608cfa7a18213b504d18f36d5fcf3399dc4bca6` | Command definitions and typed reader |
+| `sys.sct/clcp/iofns.lisp.~273~` | 100,273 | `21b171f5c23054894b7d11a3001226dabc6109790a1badb19a1f8ebbea84212d` | Command-reading wrapper and outer Input Editor presentation context |
 | `sys.sct/cp/read-accelerated-command.lisp.~142~` | 37,639 | `8107cf4e993068344e624ec924c8d0cf0327158a927c1962666d22eb81494388` | Accelerator/prefix reader |
+| `sys.sct/cp/substrate-commands.lisp.~6~` | 14,731 | `558f085cc3953de3f831e4e9e195104303e9e6331861a9ed629b550870fb4f44` | Standard scrolling accelerators and semantic commands |
+| `sys.sct/window/mouse.lisp.~472~` | 119,392 | `9375d99e127c097e22852dc0ea7f6cd496101f01946a42eb0c6bf58051d4a3b6` | Mouse transition, multi-button, and double-click encoding |
 | `sys.sct/dynamic-windows/displayed-presentation.lisp.~47~` | 47,909 | `b0d4dc75d13fef088bec77bc228af3b87b51f59ab2d1334e7051f93cc9ebc4c0` | Spatial records and hit testing |
 | `sys.sct/dynamic-windows/formatted-output.lisp.~397~` | 108,448 | `7317eee2b94d185f6f3ca51feed57a4adec7594760a81c17f7b55b043bb67de0` | Formatted output |
 | `sys.sct/dynamic-windows/redisplay.lisp.~185~` | 113,947 | `61134f02a3491966b3f45199af264e622b2004feccc3c2e3263e9866a99b699e` | Incremental redisplay |

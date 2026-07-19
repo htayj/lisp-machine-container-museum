@@ -3,7 +3,7 @@ type: Reimplementation Specification
 title: MIT CADR and LM-3 TV window system reimplementation specification
 description: A reconstruction-grade behavioral and architectural specification of screens, sheets, streams, exposure, input, menus, frames, constraints, scrolling, and screen management in the MIT CADR and LM-3 TV system.
 tags: [mit-cadr, lm-3, tv, window-system, reimplementation, specification, preservation]
-timestamp: 2026-07-19T00:37:30-04:00
+timestamp: 2026-07-19T07:37:50-04:00
 ---
 
 # MIT CADR and LM-3 TV window system reimplementation specification
@@ -805,6 +805,15 @@ RUBOUT-HANDLER or profile-equivalent input editing entry
 The object MUST be usable through the Lisp stream calling convention for its profile,
 not only through host-language methods.
 
+For `TV-303`, the selected `RH-ON` load installs the native alternate rubout handler
+as the stream default. Its complete mutable base command map, dispatch precedence,
+decimal argument grammar, `C-Q` second-stage tree, Help variants, pointer/System-Menu
+filter, full-rubout handshake, and parser-error retry are normatively incorporated
+from the [System 303 Attributes input tree](../screen-editor-and-frame-up-layout-design-reimplementation-specification.md#system-303-attributes-nested-input-tree).
+That application supplies no command/activation/editor override, so it is also a
+bounded executable witness for the generic handler. A site profile MUST still dump
+`RH-COMMAND-ALIST`; local additions do not rewrite the source-initialized base map.
+
 ### Cursor and character processing
 
 - Cursor X and Y are local pixel positions, normally constrained to the inside
@@ -990,14 +999,23 @@ Keyboard ingress MUST be one atomic decision against the current selected I/O bu
 3. Otherwise translate the hardware code to a Lisp Machine character and record
    keyboard activity.
 4. Recognize Terminal/Escape and System prefixes before ordinary enqueueing.
-5. Intercept Call and Abort as asynchronous selected-window operations unless the
-   buffer requests super-image mode.
+5. Apply the release-specific asynchronous rule. `TV-46` intercepts Call and Abort
+   as selected-window operations unless the buffer requests super-image mode.
+   `TV-303` instead intercepts Terminal, System, and Control-Clear globally, then
+   consults the current selected buffer's asynchronous-character table; its base
+   defaults include Control-Abort, Control-Meta-Abort, Control-Break, and
+   Control-Meta-Break. The C303 Call path is commented out and MUST NOT be invented.
 6. Enqueue an ordinary converted character and invoke its input interrupt only when
    space exists.
 
-This ordering is observable: Call/Abort cannot appear as ordinary text in normal
-mode, and a prefix key cannot leak to an application before the selector reads its
-suffix. (`S46-SRC`, `303-SRC`)
+This ordering is observable: the selected profile's intercepted asynchronous
+characters cannot appear as ordinary text in normal mode, and a prefix key cannot
+leak to an application before the selector reads its suffix. (`S46-SRC`, `303-SRC`)
+
+The exact release-specific Terminal/Escape and System prefix leaves, numeric/minus
+state, Help precedence, mutable registrations, and unknown-suffix outcomes are
+normatively enumerated in
+[D02's complete CADR keyboard-prefix trees](../program-selection-activities-and-window-management-reimplementation-specification.md#cadr-keyboard-prefixes).
 
 Before a System or Terminal operation changes selection, pending ordinary typeahead
 MUST be transferred in order from the global queue to the old selected window's

@@ -79,6 +79,14 @@ asset exclusion. MIT, LM-3, and the named contributors do not endorse this museu
   surrounding screen relationship reviewed on 2026-07-19. It does not prove
   target-window, registry, callback, destructive-operation, or saved-layout state
   and is not a generic CADR illustration.
+- [`screen-editor-menu.png`](screen-editor-menu.png) is also embedded in the
+  [Screen Editor and Frame-Up layout design reimplementation
+  specification](../../screen-editor-and-frame-up-layout-design-reimplementation-specification.md).
+  Its use there is limited to the visible System 303 fifteen-item menu, item order,
+  current-item box, Reshape pointer documentation, and surrounding-screen
+  relationship reviewed on 2026-07-19. It does not establish staged button
+  semantics, geometry, Undo, mutation, or source/build identity and is not a generic
+  CADR illustration.
 
 ## Capture catalog
 
@@ -409,3 +417,6 @@ the [D01 Listener specification](../../lisp-listeners-reimplementation-specifica
 [System Menu and Select](../../mit-cadr/system-menu-and-select.md),
 the [D02 program-selection specification](../../program-selection-activities-and-window-management-reimplementation-specification.md),
 [Inspector](../../mit-cadr/inspector.md), and [Peek](../../mit-cadr/peek.md).
+
+The Screen Editor capture supports [Screen Editor and Frame-Up](../../screen-editor-and-frame-up.md)
+and [the D03 Screen Editor and Frame-Up specification](../../screen-editor-and-frame-up-layout-design-reimplementation-specification.md).
