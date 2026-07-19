@@ -44,6 +44,16 @@ prose is extended to these third-party screen displays. Downstream users receive
 additional permission from this project beyond rights they may independently have
 under applicable law.
 
+## Approved specification uses
+
+- [`dynamic-lisp-listener-multiple-values.png`](dynamic-lisp-listener-multiple-values.png)
+  is also embedded in the [Lisp Listeners and editable input reimplementation
+  specification](../../lisp-listeners-reimplementation-specification.md). Its use
+  there is limited to the Dynamic Lisp Listener's visible interactor, scrolling,
+  prompt, cursor, who-line, and value-line ordering reviewed on 2026-07-19; the
+  startup notice remains incidental context and the image is not a generic Genera
+  illustration.
+
 ## Source sessions
 
 ### Zmacs session
@@ -563,6 +573,7 @@ support and [the Genera computer-use harness](../../genera/genera-computer-use-h
 for the capture and isolation model.
 
 The core-session captures support [the Dynamic Lisp Listener](../../genera/dynamic-lisp-listener.md),
+the [D01 Listener specification](../../lisp-listeners-reimplementation-specification.md),
 [activities and the System Menu](../../genera/activities-and-system-menu.md), and
 [Inspector and Peek](../../genera/inspector-and-peek.md).
 

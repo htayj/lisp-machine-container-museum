@@ -64,6 +64,14 @@ software. Reusers must evaluate their own purpose, amount, jurisdiction, and ris
 The surrounding catalog metadata and original museum prose are not subject to this
 asset exclusion. MIT, LM-3, and the named contributors do not endorse this museum.
 
+## Approved specification uses
+
+- [`lisp-listener-multiple-values.png`](lisp-listener-multiple-values.png) is also
+  embedded in the [Lisp Listeners and editable input reimplementation
+  specification](../../lisp-listeners-reimplementation-specification.md). Its use
+  there is limited to the visible Listener regions, input cursor, and value-line
+  ordering reviewed on 2026-07-19; the image is not a generic CADR illustration.
+
 ## Capture catalog
 
 Eighteen files are exact 768 by 963 pixel grayscale framebuffers. `spacewar-game.png`
@@ -389,5 +397,6 @@ The Doctor and QIX captures support [DOCTOR](../../mit-cadr/doctor.md) and the
 [CADR HACKS suite](../../mit-cadr/cadr-hacks-display-sound-and-novelty-suite.md).
 
 The same core-environment captures support [the Lisp Listener](../../mit-cadr/lisp-listener.md),
+the [D01 Listener specification](../../lisp-listeners-reimplementation-specification.md),
 [System Menu and Select](../../mit-cadr/system-menu-and-select.md),
 [Inspector](../../mit-cadr/inspector.md), and [Peek](../../mit-cadr/peek.md).

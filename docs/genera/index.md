@@ -22,6 +22,11 @@ as its Virtual Lisp Machine implementation hosted on Unix.
 - [Dynamic Lisp Listener in Symbolics Genera](dynamic-lisp-listener.md) documents
   the evaluation loop, Command Processor, Input Editor, presentations, complete
   configured base bindings, history timing, and fresh Genera 8.5 behavior.
+- [Lisp Listeners and editable input reimplementation specification](../lisp-listeners-reimplementation-specification.md)
+  gives the release-selectable Genera 8.5 reconstruction contract and contrasts its
+  native Dynamic Windows command/form interaction with the CADR Listener families.
+- [Reimplementation specification coverage](../reimplementation-specification-coverage.md)
+  tracks the finite D01-D60 specification worklist across Genera, CADR, and LM-3.
 - [Activities, Select keys, and the System Menu](activities-and-system-menu.md)
   reconciles the live selection and creation registries with source and manuals,
   including exact controls and an observed menu.

@@ -3,7 +3,7 @@ type: Rights Review
 title: Publishing runtime screenshots for museum documentation
 description: Capture-specific U.S. copyright review and publication policy for CADR and Genera runtime screenshots used as historical evidence.
 tags: [screenshots, copyright, fair-use, preservation, cadr, genera]
-timestamp: 2026-07-18T12:56:34-04:00
+timestamp: 2026-07-19T02:22:09-04:00
 ---
 
 # Publishing runtime screenshots for museum documentation
@@ -120,6 +120,19 @@ The Genera full-Help and command-list captures were not approved as a bulk
 publication set. A particular screen containing more installed explanatory
 prose can still receive a separate review when the prose itself is necessary to
 an article's analysis, but convenience or visual interest is not enough.
+
+### Reimplementation-specification reuse reviewed 2026-07-19
+
+The exact `lisp-listener-multiple-values.png` and
+`dynamic-lisp-listener-multiple-values.png` files were separately reassessed for
+the [Lisp Listeners and editable input reimplementation specification](lisp-listeners-reimplementation-specification.md).
+That page uses one frame from each system beside narrower analysis of the visible
+Listener regions, input cursor, value-line ordering, and release-specific window
+substrate. It adds no pixels, source, Help prose, or decorative use. The two frames
+are the minimum needed to make the cross-release visual contract checkable and do
+not substitute for either system. The capture-specific conclusions above therefore
+support this additional scholarly use. This paragraph approves no other screenshot
+for specification reuse.
 
 ## U.S. fair-use analysis
 

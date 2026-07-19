@@ -15,6 +15,11 @@ the public LM-3 software and the `usim` emulator.
 - [The MIT Lisp Machine Lisp Listener](lisp-listener.md) documents the per-window
   REPL, input editing, histories, process and package state, complete controls, and
   a fresh System 303 multiple-value observation.
+- [Lisp Listeners and editable input reimplementation specification](../lisp-listeners-reimplementation-specification.md)
+  gives the release-selectable System 46 and System 303 reconstruction contract,
+  including ZDT/ZTOP, failures, screenshots, oracle gaps, and conformance tests.
+- [Reimplementation specification coverage](../reimplementation-specification-coverage.md)
+  tracks the finite D01-D60 specification worklist across CADR, LM-3, and Genera.
 - [TV window-system reimplementation specification](tv-window-system-reimplementation-specification.md)
   gives a reconstruction-grade, release-selectable contract for System 46 and
   maintained System 303 raster, sheet, exposure, stream, selection, input, menu,

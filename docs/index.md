@@ -31,6 +31,13 @@ machine-readable metadata layer while retaining ordinary Markdown as the source.
 - [Application dossier coverage](software-application-dossiers.md) defines the
   finite 60-topic documentation boundary, the editor-depth evidence standard, and
   the exact completed, grouped, and runtime-blocked status for every catalog entry.
+- [Reimplementation specification coverage](reimplementation-specification-coverage.md)
+  tracks the D01-D60 reconstruction contracts, their release profiles, visual
+  evidence obligations, and completion gates.
+- [Lisp Listeners and editable input reimplementation specification](lisp-listeners-reimplementation-specification.md)
+  defines the System 46, System 303, and Genera 8.5 Listener state, histories,
+  input editing, ZDT/ZTOP embodiments, command dispatch, recovery, visible regions,
+  and conformance tests.
 - [How CLIM was used across the software catalogs](clim-use-across-lisp-machine-software.md)
   audits all sixty dossiers, separating true CLIM applications, ports, consumers,
   and compatibility hooks from Dynamic Windows and the earlier TV/EINE/ZWEI stack.
