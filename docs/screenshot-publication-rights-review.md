@@ -3,7 +3,7 @@ type: Rights Review
 title: Publishing runtime screenshots for museum documentation
 description: Capture-specific U.S. copyright review and publication policy for CADR and Genera runtime screenshots used as historical evidence.
 tags: [screenshots, copyright, fair-use, preservation, cadr, genera]
-timestamp: 2026-07-19T08:55:47-04:00
+timestamp: 2026-07-19T12:23:53-04:00
 ---
 
 # Publishing runtime screenshots for museum documentation
@@ -67,9 +67,9 @@ passed review for publication in the
 | `zmacs-editor-menu.png` | Shows the editor's short functional menu while the right button is held | Publish beside analysis of the editor menu |
 | `zmacs-help-dispatcher.png` | Shows that host `F12` reached the Help dispatcher in this harness | Publish beside the harness-bounded Help observation; do not present `F12` as a Symbolics-keyboard fact |
 | `zmacs-two-window-layout.png` | Shows the two-pane result of `Control-X 3` and the new lower buffer | Publish beside analysis of window splitting |
-| `zmacs-edit-buffers.png` | Shows the presentation-oriented Edit Buffers display and the modified-buffer marker | Publish beside analysis of buffer management |
-| `zmacs-buffer-entry-mouse-documentation.png` | Shows the bottom-line mouse documentation after pointing at a buffer row | Publish beside analysis of presentation-sensitive pointer feedback |
-| `zmacs-buffer-list-context-menu.png` | Shows the contextual menu while the buffer list is displayed | Publish only for the observed context; the image alone does not prove that a row presentation owns the menu |
+| `zmacs-list-buffers.png` | Shows the presentation-oriented List Buffers typeout report and its new/non-file-buffer legend | Publish beside analysis of buffer reporting; do not relabel it as Edit Buffers |
+| `zmacs-list-buffers-pointer-documentation.png` | Shows generic bottom-line mouse documentation while List Buffers is visible | Publish only beside the corrected analysis; it does not prove a row-presentation hit or buffer-specific operation |
+| `zmacs-list-buffers-generic-operation-menu.png` | Shows a generic Operation menu while List Buffers is displayed | Publish only for the observed context; the image does not prove a row presentation or buffer-specific menu owner |
 | `dynamic-lisp-listener-multiple-values.png` | Shows the Listener printing two values from the researcher-entered form `(values 17 23)` | Publish beside analysis of Listener evaluation and multiple-value display; the startup notice is incidental context, not the publication purpose |
 | `system-menu.png` | Shows the observed three-column System Menu and its short functional labels | Publish beside the source/runtime menu comparison; the startup notice is incidental context, not the publication purpose |
 | `emergency-break-arithmetic-evaluation.png` | Shows the separately targeted cold-load client identifying Emergency Break and the cold-load breakpoint, then evaluating the researcher-entered form `(+ 40 2)` to `42` | Publish only beside the D04 recovery-console analysis and specification; do not reuse as a generic Genera or Lisp Machine illustration |
@@ -227,6 +227,39 @@ in D04 under this case-specific fair-use rationale. The approval adds no pixels 
 licensed payloads, extends no repository license to either screen, and does not
 approve either file as a generic illustration, any additional screenshot, richer
 debugger or Help screens, or reuse outside the analyzed purpose.
+
+### D05 editor-family specification reuse reviewed 2026-07-19
+
+The exact CADR `zmacs-lisp-buffer.png`, `zwei-help-menu.png`,
+`zmacs-text-mode.png`, and `zmacs-lisp-mode.png` files and the exact Genera
+`zmacs-editor-menu.png`, `zmacs-help-dispatcher.png`, and
+`zmacs-two-window-layout.png` files were separately reassessed
+for the [EINE, ZWEI, and Zmacs editor-family reimplementation
+specification](eine-zwei-and-zmacs-editor-family-reimplementation-specification.md).
+
+The D05 page uses the four public-system observations to constrain initial editor
+geometry, the staged Help state, and a mode transition. It uses the three Genera
+observations to constrain the editor menu, Help state, and two-pane relationship.
+The images sit beside source-grounded criticism and conformance requirements;
+none is a decorative
+illustration or operating substitute. The Help frames contain only the one
+functional dispatcher state needed to identify the multistage interface, not a
+navigable Help corpus.
+
+Seven complete frames are proportionate because each supplies a distinct visual
+state across two release profiles; D05 publishes no full or step-by-step
+interaction sequence, EINE facsimile, source listing, font sheet, manual page,
+or additional Genera output.
+The frames cannot provide the editors, public band, licensed world, source, Help
+database, keymap or presentation registry. Their market value derives from the
+museum's provenance and analysis. On balance, the existing capture-specific
+conclusions support these exact scholarly reuses.
+
+The images establish only the visible anchors named on D05. They do not establish
+source-to-band/world identity, hidden table or translator ownership, command
+effects, complete Help prose, timing, undo, file mutation, exact fonts, or pixel
+identity. This review approves no other D05 screenshot or generic reuse and
+extends no project license to the screen displays.
 
 ## U.S. fair-use analysis
 

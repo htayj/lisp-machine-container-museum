@@ -106,9 +106,15 @@ as its Virtual Lisp Machine implementation hosted on Unix.
   model, Zmacs application, development features, modes, source/manual
   discrepancies, and isolated Genera 8.5 observations; its
   [binding companion](zmacs-keybindings.md) enumerates the inspected configured
-  tables, while the [named-command audit](zmacs-named-commands.md) records the
+  tables, arguments, Help, mode composition, pointer/presentation layers and
+  live-world oracle, while the [named-command audit](zmacs-named-commands.md) records the
   counts, categories, and installation semantics of 277 source candidates
   without publishing the exact licensed-source inventory.
+- [EINE, ZWEI, and Zmacs editor-family reimplementation
+  specification](../eine-zwei-and-zmacs-editor-family-reimplementation-specification.md)
+  defines the Genera 8.5 configured-source editor contract, complete fixed-tree
+  boundary, installed-overlay oracle, lifecycle, failure behavior, visuals, and
+  conformance tests while keeping licensed evidence local.
 - [Operating Genera through the Xvfb computer-use harness](genera-computer-use-harness.md) -
   How authenticated, network-isolated private sessions turn real VLM keyboard,
   pointer, and screenshot observations into evidence without distributing licensed

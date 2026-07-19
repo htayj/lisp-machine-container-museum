@@ -3,7 +3,7 @@ type: Artifact Analysis
 title: EINE, the first Lisp Machine editor
 description: Source-grounded architecture and feature study of the late-1977 EINE display editor, including its definition-oriented file model and incomplete mouse gestures.
 tags: [mit-cadr, eine, editor, source-code, preservation]
-timestamp: 2026-07-18T01:40:28-04:00
+timestamp: 2026-07-19T10:30:14-04:00
 ---
 
 # EINE, the first Lisp Machine editor
@@ -17,7 +17,8 @@ their relationship to a larger source file.
 
 This page studies a coherent late-1977 source set, not an unspecified ideal
 version of EINE. The [binding companion](eine-keybindings.md) enumerates every
-non-empty initial keyboard and mouse slot and every named extended command in
+initial keyboard and mouse cell, every named extended command, the `Control-X`
+and Help trees, and all source-visible EDT and recursive-minibuffer shadows in
 that set.
 
 ## Inspected source set
@@ -25,11 +26,16 @@ that set.
 The public source is preserved by the MIT Department of Distinctive Collections
 from ITS backup tapes. The archive contains multiple versions and branches, not
 a single release checkout. This study follows the 19-module recipe in
-`eine/9004365/dlw/eine.8`, resolving each named module to the latest numbered
-source in the adjacent `dlw2` directory. The recipe is 1,129 bytes with SHA-256
+`eine/9004365/dlw/eine.8`, resolving each named module to the latest
+archive-dated source in the adjacent `dlw2` directory. This matters for `EDFN`:
+the selected `edfn.46` is archive-later than numerically larger `edfn.113`.
+The recipe is 1,129 bytes with SHA-256
 `1ae9bed8b613e4bf1997b8a232e66de20c525f399c1cd15964c75f56282f4976`.
 The resulting 276,909-byte corpus has aggregate manifest SHA-256
 `7aefec316b32dac5ec42db1721655c010a14c394ecb2c9b7f03b42a7261ed8f5`.
+Each lexical-path-ordered record is the UTF-8 repository-relative pathname,
+one NUL byte, and the 32-byte binary file SHA-256; records are concatenated
+without a terminator and hashed again.
 The key findings rely principally on:
 
 | File | Role | Bytes | SHA-256 |
@@ -74,7 +80,10 @@ four-row dispatch table, executes it, updates command history and mark state,
 and asks redisplay for only the necessary degree of repair. The rows represent
 unmodified, Control, Meta, and Control-Meta input. `Control-X` dispatches through
 a second table with the same four modifier rows. `Meta-X` completes over a
-named-command association list.
+named-command association list. Recursive string and Lisp minibuffers temporarily
+shadow activation, cancel, and exit cells in that same table and unwind those
+changes on return; they are not accurately modeled as an entirely separate
+permanent keymap.
 
 ## Feature inventory
 

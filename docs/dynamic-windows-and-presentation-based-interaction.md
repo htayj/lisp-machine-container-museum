@@ -3,7 +3,7 @@ type: Museum Guide
 title: Dynamic Windows and presentation-based interaction
 description: A source-, manual-, paper-, and runtime-grounded study of Genera's typed presentations, input contexts, handlers, command tables, output history, redisplay, program frameworks, and their CADR antecedents.
 tags: [genera, dynamic-windows, presentations, user-interface, command-processor, mit-cadr]
-timestamp: 2026-07-19T00:28:30-04:00
+timestamp: 2026-07-19T12:23:53-04:00
 ---
 
 # Dynamic Windows and presentation-based interaction
@@ -17,7 +17,7 @@ to another type or a command, document the available gestures, and combine typed
 pointer input with the same command language used from the keyboard.
 
 That object/type/display link is the central historical idea. It explains why a
-pathname printed by the Command Processor, a row in Edit Buffers, a frame pane name,
+pathname printed by the Command Processor, a row in List Buffers, a frame pane name,
 and a graphical circuit component can all be live operands without being conventional
 buttons. Dynamic Windows also supplies output histories, formatted layout,
 incremental redisplay, graphics, panes, command tables, and program frameworks, but
@@ -574,7 +574,7 @@ history.
 The fresh Frame-Up, Presentation Inspector, and standalone Accepting Values sessions
 prove the program-frame, pane, presentation, context, typed-query, correction,
 redisplay, and handler layers in the preserved Genera 8.5 world.
-Other documented applications—Zmacs Edit Buffers, the Inspector, Document Examiner,
+Other documented applications—Zmacs List Buffers, the Inspector, Document Examiner,
 Zmail, Flavor Examiner and the Display Debugger—supply additional cross-checks in
 their own dossiers. A dedicated standalone `menu-program`, `reorder-sequence`,
 `alter-sequences`, and branching-undo exercise remains deferred because these are

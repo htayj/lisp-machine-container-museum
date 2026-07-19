@@ -1,9 +1,9 @@
 ---
 type: Reference
 title: Genera 8.5 Zmacs keybindings
-description: Evidence-only inventory of the standard Zwei, Zmacs, Control-X, minibuffer, search, task, and mode bindings configured by the inspected licensed Genera 8.5 source.
+description: Evidence-only effective-tree inventory of Genera 8.5 ZWEI/Zmacs fixed tables, prefixes, arguments, modes, Help, pointer/presentation layers, known loaded-system overlays, and live-world oracle gaps.
 tags: [genera, zwei, zmacs, keybindings, reference]
-timestamp: 2026-07-18T01:54:01-04:00
+timestamp: 2026-07-19T12:23:53-04:00
 ---
 
 # Genera 8.5 Zmacs keybindings
@@ -11,7 +11,9 @@ timestamp: 2026-07-18T01:54:01-04:00
 This reference describes every configured direct entry in the inspected
 standard Zwei, Zmacs, and `Control-X` source tables; every initialized base
 minibuffer, pathname, FQUERY, extended-search, and macro-mover context; and the
-complete local deltas for the inspected general and task modes. It contains
+complete local deltas for the inspected general and task modes. It also defines
+the lookup, argument, mode-order, Help, pointer/presentation, and known
+loaded-system overlay layers needed to interpret those cells. It contains
 factual binding names and original summaries, not proprietary source or copied
 manual text. All machine-derived Genera output remains ignored.
 
@@ -43,6 +45,42 @@ CP source candidates; their exact ordered arrays remain ignored local evidence.
 - The subordinate contexts add 50 literal configured cells: 21 minibuffer,
   pathname, and FQUERY cells; 28 extended-search cells; and one synthetic
   keyboard-macro-mover event. Five are explicit undefined shadows.
+- “Complete” below means the configured fixed source base within this boundary.
+  It does not mean that every optional product, patch, site/user form, or
+  installed-world omission has already been dumped. The 64 ZWEI translators and
+  two ZWEI actions are enumerated below. The incorporated Dynamic Windows
+  catalog closes its selected-source three-module denominator at 54
+  definitions/66 records and its ordinary-Zmacs inherited subset at 47/59;
+  live residency, redefinitions, applicability, equal-score order, gesture
+  remaps, and additional handlers remain runtime layers.
+
+### Generated aliases and finite table domains
+
+A full Genera comtab has a base keyboard array of octal `300` codes (192
+decimal) by 16 modifier states and a pointer array of three buttons by 32
+modifier states. Characters outside that base code array are stored in explicit
+other-character-set buckets; the Standard range forms named below create such
+entries where necessary. A sparse comtab stores only explicit character/value
+pairs.
+
+Constructing a table through `SET-COMTAB`'s `NIL`-or-name creation path installs
+26 unmodified lowercase aliases, `a` through `z` to their uppercase forms,
+before later specifications overwrite cells. Raw comtab allocation alone does
+not install them, and this path does not generate modified-letter aliases. The
+Standard `Control-X` table then applies Control indirection, filling only
+still-`NIL` base-array cells:
+
+1. ordinary Return, Linefeed, Tab, Backspace, and Form alias the corresponding
+   Control ASCII character;
+2. every Meta-only and Control-Meta cell across all 192 base codes aliases the
+   same code with Meta removed; and
+3. every Control-only cell outside ASCII `@` through `_` aliases the same
+   unmodified code.
+
+Aliases store a modifier state and destination character. Lookup restarts at
+the original top comtab, so the ordered literal rows, these exact generation
+rules, the other-character-set entries, and the parent chain define every
+configured inherited leaf without flattening thousands of redundant rows.
 
 ## Standard Zwei direct table
 
@@ -88,6 +126,22 @@ CP source candidates; their exact ordered arrays remain ignored local evidence.
 | `C-U` | Quadruple Numeric Arg |
 | `-` with each configured Control/Meta/Super/Hyper combination | Negate Numeric Arg |
 | digits `0`–`9` with each configured Control/Meta/Super/Hyper combination | Numbers |
+
+The two generated families cover all 15 nonempty combinations of Control, Meta,
+Super, and Hyper. Unmodified digits remain ordinary insertion. Before each real
+command, argument state is value 1, presence `NIL`, and digit count zero.
+Argument commands return the internal `:ARGUMENT` result and continue reading:
+
+- a modified minus sets the value to negative absolute value and presence to
+  sign state; it never toggles;
+- `C-U` multiplies by four and sets Control-U state;
+- the first modified digit replaces a preceding Control-U/sign magnitude while
+  preserving negativity, then sets digit state; and
+- later digits append in base ten.
+
+A following `C-X` consumes the next key in its child table and includes the
+argument in its prompt. `C-X C-U` is Uppercase Region, not another universal
+argument.
 
 ### Words, structures, paragraphs, and sentences
 
@@ -264,6 +318,100 @@ active local mini-input table instead defines:
 | `Help` | Mini Input Editor Help |
 | `Return` | Mini-input special character or insert Return, depending on context |
 
+### Mini-input special-character gateway
+
+The six “special character” cells above are gateways, not terminal command
+names. `Return` uses the same gateway but inserts a newline when the active
+context does not classify it as special. `Help` first permits a context-specific
+classification and otherwise enters the default mini-input Help path.
+
+For an input object `x`, resolve the first applicable branch:
+
+1. a list whose first element is not a keyword is already an out-of-band editor
+   object and passes through unchanged;
+2. an atomic non-character or a list beginning with `:MENU` is ignored;
+3. an accepted `:BLIP-CHARACTER` becomes a record of that class;
+4. otherwise an accepted `:ACTIVATION` becomes an activation record;
+5. otherwise an accepted `:COMMAND` becomes a command record;
+6. otherwise, while Dynamic Windows `ACCEPT` is active, an ACCEPT-blip
+   character is returned for insertion and rescan; and
+7. otherwise there is no special result.
+
+The generated record contains class, original character, and the explicit
+numeric argument or `NIL`. Predicate precedence is therefore blip character,
+activation, command, then ACCEPT fallback. A strict gateway cell with no result
+barfs: the command loop aborts that leaf, beeps, requests text redisplay, and
+keeps the mini-editor active. It does not self-insert. `Return` is the exception:
+with no special result it invokes Insert CR, including its numeric repeat and
+blank-line reuse rules.
+
+A special non-character result is stored out of band and forces rescan. An
+ACCEPT fallback character is inserted at point, text is marked for redisplay,
+the slot is cleared, and input is rescanned. Buffered text is delivered before
+the stored special result.
+
+On `ANY-TYI`, predicates are reevaluated because dynamic input contexts may have
+changed during rescan. A still-special object returns its newly classified
+record. If it is no longer special, a graphic character or Return is inserted;
+Help shows default mini-input Help; anything else beeps; editing then resumes.
+Presentation blips remain out of band. Plain `TYI` instead returns the stored
+record's character. `UNTYI` of the record or character restores the last stored
+special record.
+
+### Generic ACCEPT and completion leaves
+
+An unextended Dynamic Windows `ACCEPT` context supplies Return and End as its
+activation characters, excluding any character also configured as an ACCEPT
+blip. Callers may replace or append activation and blip sets and lower-level
+predicates.
+
+| Fixed cell | Unextended generic-ACCEPT result |
+| --- | --- |
+| `Complete`, `S-Complete`, `C-?`, `C-/`, `C-Return` | no classification; strict leaf barfs |
+| `End` | `:ACTIVATION` |
+| `Return` | `:ACTIVATION`; no newline is inserted |
+
+Removing Return from activation makes its wrapper insert a newline unless
+another predicate accepts it. Adding `C-Return` makes that cell an activation.
+
+`COMPLETE-INPUT` overrides predicates while consulting the predicates it
+shadowed. Its activation predicate recognizes Complete, S-Complete and Tab,
+recognizes `C-Return` when forced return is enabled, then calls the prior
+activation predicate. Its command predicate recognizes `C-?` and `C-/`, then
+calls the prior command predicate. Its rescan predicate recognizes `C-?`,
+`C-/`, and Help, then calls the prior rescan predicate.
+
+| Cell | Built-in `COMPLETE-INPUT` transition |
+| --- | --- |
+| `Complete` | Request ordinary full completion and normally stay. With `complete-activates`, exit only after a unique completed result and leave the delimiter for the enclosing parser. |
+| `S-Complete` | Request maximal completion and stay. Move point to a useful failure position when supplied. |
+| `C-?` | Display possibilities for the current token; do not complete or exit. |
+| `C-/` | Display possibilities according to `*WHAT-CONTROL-/-DOES*`, whose base value is `:APROPOS`; do not exit. |
+| `End` | Complete and exit on a unique result or an established left-substring completion; otherwise remain. |
+| `C-Return` | With forced return, or when an enclosing predicate includes it, skip completion, return the typed token and leave the delimiter for the enclosing parser; otherwise barf. |
+| `Return` | Trim configured right-edge characters. With `allow-any-input`, return the token without completion; otherwise complete/validate and return only a valid unique or left-substring result. |
+
+Invalid ordinary completion signals the required-type parse condition when
+arbitrary input is disallowed; the mini-editor catches it, beeps, may show the
+`C-Return` recovery hint, and resumes. With arbitrary input allowed, invalid
+ordinary completion beeps. Ambiguity also beeps and stays. Maximal completion
+deliberately avoids those ordinary-mode beep branches when arbitrary input is
+allowed.
+
+Empty input with a return-requesting delimiter—End, enabled `C-Return`, Return,
+or activating Complete—takes the null-input path before completion so enclosing
+`ACCEPT` can provide a default. `C-?`, `C-/`, nonactivating Complete and
+S-Complete do not. Numeric prefixes are carried in special records but do not
+repeat these completion operations; the Return insertion fallback does consume
+the count.
+
+Compatibility completion enables `C-Return` only when its
+`IMPOSSIBLE-IS-OK-P` option is `RETURN`. Zmacs buffer-name completion normally
+enables it through `CREATE-P :IF-FORCED`, permitting an unmatched name to reach
+buffer creation. The public wrapper accepts `INITIAL-COMPLETE`, but this source
+reset explicitly ignores it; it does not synthesize an initial Complete action.
+Recursive mini-buffer entry is rejected before reset.
+
 Control-R and Recursive Edit are independent sparse tables; neither inherits
 the other:
 
@@ -271,7 +419,7 @@ the other:
 | --- | --- | --- |
 | Control-R | `C-Altmode`, `End`, `Abort` Exit Control-R; `C-Z` explicitly undefined | Standard Zwei |
 | Recursive Edit | `C-Altmode`, `End` Exit Control-R; `C-G` Recursive Edit Beep; `Abort` Recursive Edit Abort; `C-Z` explicitly undefined | Standard Zwei |
-| Standalone | `End`, `C-Altmode` Quit | None stated by the initializer |
+| Standalone | `End`, `C-Altmode` Quit | Standard Zwei |
 
 Thus Control-R has four cells, Recursive Edit five, and Standalone two. A Patch
 Comment Editor and every standalone editor-frame mode table separately install
@@ -457,7 +605,7 @@ Dynamic Windows contributions are not inferred from this fixed object.
 | Mode | Effective delta |
 | --- | --- |
 | Atom Word | Redirect word syntax to Lisp atoms |
-| Emacs | `C-^`, `Altmode`, `C-C` become Control/Meta/Control-Meta prefixes; `C-U` Universal Argument; `C-I`, `C-H`, `C-]` alias Tab, Backspace, Abort |
+| Emacs | `C-^`, `Altmode`, `C-C` become open Control/Meta/Control-Meta prefixes over the then-effective table; `C-U` uses the Emacs argument reader; `C-I`, `C-H`, `C-]` alias Tab, Backspace, Abort |
 | Auto Fill | Post-command hook fills at activation characters and persists the buffer's no-fill preference |
 | Full Auto Fill | Post-command hook refills the affected paragraph/line region |
 | Overwrite | Replace the standard insertion command with Self Overwrite |
@@ -465,6 +613,238 @@ Dynamic Windows contributions are not inferred from this fixed object.
 | Electric Shift Lock | Uppercase inserted letters outside strings/comments |
 | Electric Character Style Lock | Apply comment styling through command/comment-entry hooks |
 | Auto Fill Lisp Comments | Fill comments at a separate comment fill column without filling code |
+
+### Open Emacs prefixes and mode precedence
+
+The three Emacs prefix leaves are higher-order trees rather than finite child
+tables. They read the next input, synthesize Control, Meta, or Control-Meta on
+it, and resolve the resulting character through the then-effective active
+comtab. Help can enumerate that effective destination. Emacs `C-U` has its own
+reader: it accepts an optional minus and decimal digits; with no following
+numeric component it multiplies by four, then pushes back the first
+nonargument character.
+
+All active modes mutate the same sparse mode and mode-`Control-X` tables. A
+newly enabled mode shadows older collisions. Disabling an older mode unwinds
+all newer modes, unwinds and removes the target, then replays the newer modes
+in order. User mode forms are appended after built-in forms and therefore win
+inside that mode. A complete effective dump MUST retain activation order and
+form provenance.
+
+## Effective lookup and failure tree
+
+After Zmacs initialization, ordinary fixed-table lookup is:
+
+~~~text
+raw editor character
+└─ shared sparse mode table
+   └─ Zmacs direct table
+      └─ Standard Zwei direct table
+         └─ unbound
+
+C-X
+└─ shared sparse mode C-X table
+   └─ Zmacs C-X table
+      └─ Standard C-X table
+         └─ unbound
+~~~
+
+A `NIL` cell falls through to the parent. `:UNDEFINED` terminates lookup. A
+list cell is an alias, and alias resolution restarts at the original top comtab;
+therefore a top-level override can shadow the destination of an inherited
+alias. A symbol is a command. Both an exhausted lookup and `:UNDEFINED` clear
+pending input and report a not-defined key; a command symbol without a function
+binding produces the distinct not-implemented error.
+
+Table installation processes specifications in order, so later cells win. It
+also creates lowercase-to-uppercase aliases and can append extended-command
+candidates. An unresolved named command is warned about and omitted. The 140
+Standard plus 135 Zmacs source candidates are therefore not an installed-world
+count.
+
+## Help dispatcher tree
+
+The editor's `Help` leaf enters another input tree:
+
+| Input | Operation |
+| --- | --- |
+| `A` | command Apropos |
+| `C` | Self Document, followed by an arbitrary key or prefix subtree |
+| `D` | Describe Command |
+| `L` | What Lossage |
+| `T` | tutorial/basic editor Help; lazily load its support if needed |
+| `U` | Undo help |
+| `V` | Variable Apropos |
+| `W` | Where Is |
+| `Space` | repeat the preceding Help request |
+| `?` or `Help` | explain the Help dispatcher |
+| `Abort` or `Rubout` | exit Help |
+| `C-G` | clear pending input and abort |
+| any other key | beep and ask again |
+
+Key documentation follows aliases and prefixes, accepts mouse characters, and
+has no timeout. `*` at a prefix enumerates all leaves. The stored prior Help
+request initializes to `B`, but `B` is absent from this revision's accepted
+dispatcher operations. Consequently fresh `Help Space` substitutes `B`, finds
+no dispatch function, and prints the dispatcher prompt again without an
+explicit beep. After a valid non-Space operation, `Space` repeats that persisted
+operation. `C-X Help` documents the active prefix; `C-X Abort` exits the
+prefix/no-ops and terminates keyboard-macro collection, while `C-X C-G` beeps
+and also terminates macro collection.
+
+## Pointer and Dynamic Windows presentation tree
+
+The [Dynamic Windows reimplementation
+specification](dynamic-windows-reimplementation-specification.md#gestures-and-handler-resolution)
+is normatively incorporated for the complete 96 raw cells formed by 32 modifier
+states times three buttons, their aliases, physical-button rules and mutable
+gesture map. Its [configured built-in handler
+catalog](dynamic-windows-reimplementation-specification.md#configured-built-in-handler-catalog)
+is also normative: the selected three modules define 54 handlers/66 emitted
+records, of which the ordinary Zmacs input context can inherit the bounded 47/59
+subset. Seven Presentation Inspector translators require a compatible nested
+Command Processor context and are conditional child edges rather than ordinary
+Zmacs leaves. Zmacs then adds:
+
+- `M-Mouse-Middle` Editor Describe;
+- `M-Mouse-Right` Editor Presentation Menu;
+- the fixed Standard double-left Move Region and double-middle Kill/Yank cells;
+  and
+- unmodified right button's 15-item Zmacs Editor menu listed above.
+
+A presentation translator is eligible only when its required comtab is present
+in the active parent chain. A `NIL` gesture is menu-only. Type, tester, input
+context, priority and the current gesture map further gate selection. A generic
+compatible-comtab translator routes eligible pointer input through the same
+effective fixed lookup.
+
+Clicking a different editor pane temporarily makes that pane and interval current
+for dispatch, except for the right-button menu path. A minibuffer can fall back
+to Standard so the surrounding application does not capture its mouse input.
+Blank-area, buffer-pointer, typed-expression and task-row presentations therefore
+have different trees even at identical coordinates and buttons.
+
+### Configured-source translator matrix
+
+The inspected 54-module base contains exactly 64 presentation translators: 59
+definitions made through the editor-command translator macro and five direct
+Dynamic Windows translators. For the 59 `ETC` rows, the target type is
+`PRESENTATION-COMMAND`; the wrapper adds the required-comtab ancestor test; and
+an omitted gesture is explicitly `NIL`, making the operation menu-only. A direct
+translator instead defaults an omitted gesture to `:SELECT`. Symbolic gesture
+names remain symbolic because the Dynamic Windows gesture map is mutable.
+
+This is the complete configured-source matrix, not a claim about patches,
+omitted modules, site/user additions, or a live world's gesture-map values. The
+operation/effect descriptions are original analysis rather than copied source
+text.
+
+| # | Definition | Kind | Source | Input type | Required comtab or target | Gesture | Effect | Additional gate |
+| ---: | --- | --- | --- | --- | --- | --- | --- | --- |
+| 1 | `EDIT-BUFFER-LISTING` | ETC | `buffer-editor.lisp.~12~:129` | `ZMACS-BUFFER-LISTING` | `*ZMACS-COMTAB*` | `:SELECT` | Open Edit Buffers filtered by the selected listing | none |
+| 2 | `SHOW-PRESENTATION-TYPE` | ETC | `com-dw.lisp.~20~:76` | `DW:PRESENTATION-TYPE-NAME` | `*STANDARD-COMTAB*` | `EDITOR-DESCRIBE` | Show the selected presentation type | symbol with registered presentation-type descriptor |
+| 3 | `SHOW-RESOURCE` | ETC | `com-dw.lisp.~20~:151` | `SI:RESOURCE-NAME` | `*STANDARD-COMTAB*` | `EDITOR-DESCRIBE` | Describe the selected resource | none |
+| 4 | `STANDARD-PRESENTATION-MENU` | ETC | `com-dw.lisp.~20~:157` | `T` | `*STANDARD-COMTAB*` | `EDITOR-PRESENTATION-MENU` | Invoke the presentation menu directly | always eligible; noncomposing; menu defined; highlighting suppressed |
+| 5 | `SHOW-INITIALIZATION-LIST` | ETC | `com-dw.lisp.~20~:173` | `SI:INITIALIZATION-LIST-NAME` | `*STANDARD-COMTAB*` | `EDITOR-DESCRIBE` | Show the selected initialization list | none |
+| 6 | `YANK-FROM-MOUSE` | ETC | `coma.lisp.~148~:659` | `SI:HISTORY-AND-ELEMENT` | `*STANDARD-COMTAB*` | menu-only | Yank the selected history element | none |
+| 7 | `TYPEIN-LINE-EVALUATE-FORM` | ETC | `comc.lisp.~342~:131` | `SYS:CODE-FRAGMENT` | `*STANDARD-COMTAB*` | `:EVALUATE-FORM` | Evaluate the fragment and report values on the typein line | bound symbol, or list headed by a valid defined function spec |
+| 8 | `COM-DESCRIBE-VARIABLE` | ETC | `comd.lisp.~236~:315` | `VARIABLE` | `*ZMACS-COMTAB*` | `:DESCRIBE` | Display the editor variable's value and documentation | none |
+| 9 | `COM-SET-VARIABLE` | ETC | `comd.lisp.~236~:385` | `VARIABLE` | `*ZMACS-COMTAB*` | `:SELECT` | Enter the checked variable-update workflow | none |
+| 10 | `TYPEOUT-MENU-ARGLIST` | ETC | `comf.lisp.~259~:737` | defined `SYS:FUNCTION-SPEC` | `*STANDARD-COMTAB*` | menu-only | Print the selected function's argument list | input type requires a defined function |
+| 11 | `SET-BREAKPOINT` | ETC | `comf.lisp.~259~:1304` | `SYS:CODE-FRAGMENT` | `*ZMACS-COMTAB*` | `:SET-BREAKPOINT` | Set a breakpoint at the translated function and PC | presentation node; mode translator present; function and PC non-`NIL` |
+| 12 | `CLEAR-BREAKPOINT` | ETC | `comf.lisp.~259~:1317` | `SYS:CODE-FRAGMENT` | `*ZMACS-COMTAB*` | `:CLEAR-BREAKPOINT` | Clear a breakpoint at the translated function and PC | same three-stage gate as row 11 |
+| 13 | `DO-DISASSEMBLE` | ETC | `comf.lisp.~259~:1348` | defined `SYS:FUNCTION-SPEC` | `*STANDARD-COMTAB*` | menu-only | Disassemble the selected function | input type requires a defined function |
+| 14 | `EXTENDED-COMMAND-NAME` | ETC | `comtab.lisp.~589~:571` | `EXTENDED-COMMAND-NAME` | current `*COMTAB*` | `:SELECT` | Invoke the selected extended command | symbol occurs in a reachable extended-command array |
+| 15 | `INTERVAL-CONTENTS` | direct | `debugging.lisp.~9~:103` | `INTERVAL` | target `SYS:FORM` | `:CONTROL-LEFT` | Convert the interval to a form yielding its text | none |
+| 16 | `DESCRIBE-LINE` | direct | `debugging.lisp.~9~:108` | `STRING` | target `SYS:FORM` | `:DESCRIBE` | Produce a form that describes the selected editor line | array leader length equals `LINE-LEADER-SIZE` |
+| 17 | `DESCRIBE-BP-LINE` | ETC | `debugging.lisp.~9~:121` | `BP` | `*STANDARD-COMTAB*` | `:SUPER-MIDDLE` | Describe the line containing the buffer pointer | mapped eligible Zwei window; nonselecting other-window policy |
+| 18 | `DISPLAY-BP-TOP-LEVEL-NODE` | ETC | `debugging.lisp.~9~:135` | `BP` | `*STANDARD-COMTAB*` | `:SUPER-META-LEFT` | Describe the pointer's top-level node | same window gate as row 17 |
+| 19 | `DISPLAY-BP-NODE` | ETC | `debugging.lisp.~9~:147` | `BP` | `*STANDARD-COMTAB*` | `:SUPER-LEFT` | Describe the pointer's immediate node | same window gate as row 17 |
+| 20 | `LOCATE-DEFINITION` | ETC | `definitions-buffer.lisp.~40~:70` | `DEFINITION-SUBNODE` | `*ZMACS-COMTAB*` | `:SELECT` | Locate the selected subnode in the active definitions buffer | definitions buffer exists |
+| 21 | `EDIT-DEFINITION` | ETC | `definitions-buffer.lisp.~40~:767` | `SYS:EXPRESSION` | `*ZMACS-COMTAB*` | `:SELECT` | Edit the recognized definition | expression converts to a function spec |
+| 22 | `ZMACS-EDIT-CODE-FRAGMENT` | ETC | `definitions-buffer.lisp.~40~:781` | `SYS:EXPRESSION` | `*STANDARD-COMTAB*` | `:EDIT-FUNCTION` | Enter `ED` at the recognized definition outside Zmacs | expression converts to a function spec |
+| 23 | `SRCCOM-FILE` | ETC | `dired.lisp.~465~:509` | `FS:PATHNAME` | `*ZMACS-COMTAB*` | menu-only | Source-compare the file with its newest version by default | none |
+| 24 | `EDIT-DIRECTORY` | ETC | `files.lisp.~378~:1041` | `FS:WILDCARD-PATHNAME` | `*ZMACS-COMTAB*` | `:SELECT` | Enter Dired for the wildcard directory | none |
+| 25 | `VIEW-DIRECTORY` | ETC | `files.lisp.~378~:1054` | `FS:WILDCARD-PATHNAME` | `*ZMACS-COMTAB*` | menu-only | Display the selected directory | none |
+| 26 | `EDIT-DIRECTORY-FILE` | ETC | `files.lisp.~378~:1063` | `FS:DIRECTORY-PATHNAME` | `*ZMACS-COMTAB*` | `:SELECT` | Convert to a wildcard directory and enter Dired | none |
+| 27 | `FIND-FILE-1` | ETC | `files.lisp.~378~:1139` | `FS:PATHNAME` | `*ZMACS-COMTAB*` | `:SELECT` | Visit the pathname with editor pathname defaults | none |
+| 28 | `FIND-FILE-2` | ETC | `files.lisp.~378~:1145` | `FS:PATHNAME` | `*ZMACS-COMTAB*` | `:EDIT-DEFINITION` | Visit the pathname with editor pathname defaults | none |
+| 29 | `LOAD-FILE` | ETC | `files.lisp.~378~:1178` | `FS:PATHNAME` | `*ZMACS-COMTAB*` | menu-only | Load the pathname after applying editor defaults | none |
+| 30 | `VIEW-FILE` | ETC | `files.lisp.~378~:1188` | `FS:PATHNAME` | `*ZMACS-COMTAB*` | menu-only | View the pathname after applying editor defaults | none |
+| 31 | `SAVE-BUFFER` | ETC | `files.lisp.~378~:1870` | `BUFFER` | `*ZMACS-COMTAB*` | menu-only | Save the selected buffer | none |
+| 32 | `EDIT-GENERIC-FUNCTION` | ETC | `flavor.lisp.~50~:401` | defined `SYS:GENERIC-FUNCTION-NAME` | `*ZMACS-COMTAB*` | `:SELECT` | Edit the Flavors generic function and methods | input type requires a defined function |
+| 33 | `EDIT-CLOS-GENERIC-FUNCTION` | ETC | `flavor.lisp.~50~:417` | defined CLOS generic-function name | `*ZMACS-COMTAB*` | `:SELECT` | Edit the CLOS generic function and methods | input type requires a defined function |
+| 34 | `SHOW-FLAVOR-INIT-KEYWORDS` | ETC | `flavor.lisp.~50~:589` | `SYS:FLAVOR-NAME` | `*STANDARD-COMTAB*` | `EDITOR-DESCRIBE` | Show flavor initialization information | none |
+| 35 | `CLASS-SHOW-CLASS-SUPERCLASSES` | ETC | `flavor.lisp.~50~:603` | `CLOS:CLASS` | `*STANDARD-COMTAB*` | menu-only | Show superclasses | noncomposing |
+| 36 | `CLASS-SHOW-CLASS-SUBCLASSES` | ETC | `flavor.lisp.~50~:618` | `CLOS:CLASS` | `*STANDARD-COMTAB*` | menu-only | Show subclasses | noncomposing |
+| 37 | `CLASS-SHOW-CLASS-INITARGS` | ETC | `flavor.lisp.~50~:633` | `CLOS:CLASS` | `*STANDARD-COMTAB*` | menu-only | Show initialization arguments | noncomposing |
+| 38 | `CLASS-SHOW-CLASS-SLOTS` | ETC | `flavor.lisp.~50~:648` | `CLOS:CLASS` | `*STANDARD-COMTAB*` | menu-only | Show slots | noncomposing |
+| 39 | `CLASS-SHOW-CLASS-METHODS` | ETC | `flavor.lisp.~50~:663` | `CLOS:CLASS` | `*STANDARD-COMTAB*` | menu-only | Show methods | noncomposing |
+| 40 | `CLASS-SHOW-CLASS-GENERIC-FUNCTIONS` | ETC | `flavor.lisp.~50~:678` | `CLOS:CLASS` | `*STANDARD-COMTAB*` | menu-only | Show applicable generic functions | noncomposing |
+| 41 | `CLOS-GENERIC-FUNCTION-SHOW` | ETC | `flavor.lisp.~50~:694` | `CLOS:GENERIC-FUNCTION-NAME` | `*STANDARD-COMTAB*` | menu-only | Describe the CLOS generic function | fbound standard generic function; noncomposing |
+| 42 | `CLASS-EDIT-DEFINITION` | ETC | `flavor.lisp.~50~:719` | `CLOS:CLASS` | `*STANDARD-COMTAB*` | `:SELECT` | Edit the class's `CLOS:DEFCLASS` definition | class has a proper name; noncomposing |
+| 43 | `EDIT-FUNCTION-LIST` | ETC | `functions-buffers.lisp.~44~:330` | `EDIT-FUNCTION-LIST` | `*STANDARD-COMTAB*` | `:SELECT` | Start a special-purpose buffer for the function list | none |
+| 44 | `RE-EXECUTE-MINI-BUFFER-COMMAND-FROM-MOUSE` | ETC | `mini-buffer.lisp.~98~:419` | `MINI-BUFFER-COMMAND` | `*ZMACS-COMTAB*` | `:SELECT` | Replay the selected minibuffer-history command | none |
+| 45 | `COMPATIBLE-COMTAB-LOOKUP` | direct | `mouse.lisp.~224~:94` | `BP` | target `PRESENTATION-COMMAND` | any registered gesture | Convert a fixed-comtab mouse leaf to an editor presentation command | eligible Zwei window and active-comtab hit; blank allowed; absent from menus |
+| 46 | `EDITOR-YANK` | direct | `mouse.lisp.~224~:552` | `BP` | target `SI:INPUT-EDITOR` | `:YANK-WORD` | Return the pointed Lisp syntactic unit to Input Editor | pointer or Zwei-window handler; priority 1; blank allowed; noncomposing |
+| 47 | `MOVE-POINT` | ETC | `mouse.lisp.~224~:609` | `BP` | `*STANDARD-COMTAB*` | `:SELECT` | Move point, with held-region tracking | mapped eligible window and interval ownership; absent from menus |
+| 48 | `MOVE-POINT-1` | ETC | `mouse.lisp.~224~:628` | `BP` | `*STANDARD-COMTAB*` | `:HOLD-AND-MARK-REGION` | Move point with held-region tracking | same gate as row 47; absent from menus |
+| 49 | `MOVE-TO-END-OF-NEARBY-LINE` | ETC | `mouse.lisp.~224~:669` | `DW:NO-TYPE` | `*STANDARD-COMTAB*` | `:SELECT` | Map blank area to a nearby line end, then move/track | mapped eligible window and selection policy; absent from menus |
+| 50 | `MOVE-TO-END-OF-NEARBY-LINE-1` | ETC | `mouse.lisp.~224~:683` | `DW:NO-TYPE` | `*STANDARD-COMTAB*` | `:HOLD-AND-MARK-REGION` | Same blank-area operation as row 49 | same gate as row 49; absent from menus |
+| 51 | `MARK-THING` | ETC | `mouse.lisp.~224~:704` | `BP` | `*STANDARD-COMTAB*` | `:MIDDLE` | Ask the major mode to mark the pointed syntactic object | eligible mapped window; nonselecting policy; blank allowed |
+| 52 | `SWITCH-WINDOWS` | ETC | `mouse.lisp.~224~:753` | `BP` | `*STANDARD-COMTAB*` | `:SELECT` | Make the pointed editor window current | different listed window; not minibuffer; automatic selection disabled |
+| 53 | `EXPRESSION-TO-FUNCTION-SPEC` | direct | `presentation-nodes.lisp.~80~:613` | `SYS:EXPRESSION` | target `SYS:FUNCTION-SPEC` | implicit `:SELECT` | Heuristically convert an expression to a function spec | conversion may decline with `NIL` |
+| 54 | `EDIT-INSTANCE-VARIABLE-ACCESSOR` | ETC | `presentation-nodes.lisp.~80~:715` | `FLAVOR:INSTANCE-VARIABLE-ACCESSOR` | `*ZMACS-COMTAB*` | `:SELECT` | Edit the accessor definition | none |
+| 55 | `EDIT-PRESENTATION-HANDLER` | ETC | `presentation-nodes.lisp.~80~:723` | `T` | `*ZMACS-COMTAB*` | menu-only | Locate and edit the selected handler definition | presentation-debug state and discoverable definition; blank allowed; noncomposing |
+| 56 | `EDIT-SECTION` | ETC | `sectionization-aux.lisp.~6~:161` | `SECTION` | `*ZMACS-COMTAB*` | `:SELECT` | Select the section buffer and move to its definition or first line | none |
+| 57 | `EDIT-SECTION-1` | ETC | `sectionization-aux.lisp.~6~:167` | `SECTION` | `*ZMACS-COMTAB*` | `:EDIT-FUNCTION` | Same section-edit operation as row 56 | none |
+| 58 | `SHOW-LINES-CONTAINING-CHARACTER-STYLE` | ETC | `style.lisp.~123~:550` | `SCL:CHARACTER-STYLE` | `*STANDARD-COMTAB*` | `:SELECT` | Display lines containing the style | unconditional tester |
+| 59 | `UNDO-BACK-TO-CHANGE` | ETC | `undo.lisp.~22~:1331` | `CHANGE-HISTORY-ELEMENT` | `*STANDARD-COMTAB*` | `:LEFT` | Undo or redo through the selected record | direction from record kind |
+| 60 | `UNDO-ONE-CHANGE` | ETC | `undo.lisp.~22~:1342` | `CHANGE-HISTORY-ELEMENT` | `*STANDARD-COMTAB*` | `:MIDDLE` | Undo or redo only the selected record | direction from record kind |
+| 61 | `HIGHLIGHT-CHANGED-REGION` | ETC | `undo.lisp.~22~:1353` | `CHANGE-HISTORY-ELEMENT` | `*STANDARD-COMTAB*` | `:EDIT-DEFINITION` | Highlight and expose the affected buffer region | none |
+| 62 | `MAKE-BUFFER-CURRENT` | ETC | `zmacs-buffers.lisp.~54~:403` | `BUFFER` | `*ZMACS-COMTAB*` | `:SELECT` | Select the buffer, including the minibuffer transfer path | none |
+| 63 | `SET-NOT-MODIFIED` | ETC | `zmacs-buffers.lisp.~54~:1073` | `BUFFER` | `*ZMACS-COMTAB*` | menu-only | Mark the buffer not modified | none |
+| 64 | `KILL-BUFFER` | ETC | `zmacs-buffers.lisp.~54~:1211` | `BUFFER` | `*ZMACS-COMTAB*` | menu-only | Kill the buffer through normal save/query semantics | none |
+
+Rows 15, 16, 45, 46, and 53 are the five direct translators. The other 59 are
+editor-command translator definitions.
+
+### Presentation actions outside the translator denominator
+
+The same corpus has two presentation actions, for 66 total presentation-dispatch
+definitions. An action defaults to `:SELECT`, is forcibly noncomposing, performs
+its side effect, and returns `NIL` rather than a translated object.
+
+| Definition | Source | Input type | Target | Gesture | Effect | Gate |
+| --- | --- | --- | --- | --- | --- | --- |
+| `DISPLAY-REST-OF-HISTORY` | `mini-buffer.lisp.~98~:408` | `DISPLAY-REST-OF-HISTORY` | `SI:INPUT-EDITOR` | implicit `:SELECT` | Continue minibuffer-history typeout | no explicit tester |
+| `DISPLAY-REST-OF-CHANGE-HISTORY` | `undo.lisp.~22~:1385` | `DISPLAY-REST-OF-CHANGE-HISTORY` | `SI:INPUT-EDITOR` | implicit `:SELECT` | Continue change-history typeout from stored state | no explicit tester |
+
+The tracked List Buffers screenshots prove that the report and a generic Operation
+menu appeared. Their pointer documentation and menu entries do not prove a typed
+buffer-row presentation hit or identify an owning translator. This source matrix
+and the incorporated Dynamic Windows catalog supply the complete selected-source
+candidates, while exact-glyph runtime recognition, resident redefinitions,
+object-specific applicability, equal-score order, effective menu contents, and
+gesture-map values remain runtime oracles.
+
+## Known loaded-system and mutable overlays
+
+The inspected source distribution includes overlays that are not part of the
+four base table constructors:
+
+| Overlay | Fixed or named additions | Runtime status |
+| --- | --- | --- |
+| NSage | Zmacs `M-Sh-A` Show Documentation Function, `M-Sh-V` Show Documentation Variable, `M-Sh-F` Show Documentation Flavor, named Format Buffer; Standard `M-Sh-D` Show Documentation plus seven named documentation/format operations; three presentation translators | source present; loaded state unverified |
+| Hardcopy | named Hardcopy File and Region in Standard; Hardcopy Buffer in Zmacs | source present; effective installation must be dumped |
+| Flavor Update | three named flavor syntax-update operations | source present; effective installation must be dumped |
+| Zmail | named Show Mail and address presentation operations | D08 dependency; loaded state must be dumped |
+
+Optional C, FORTRAN, Pascal, Joshua, Concordia, conversion, and version-control
+systems can add further mode, named-command or presentation layers. Users,
+patches and site initialization can install keys and keyboard or mouse macros.
+`M-X` traverses the effective extended-command parent chain; `C-M-X` can reach
+loaded global ZWEI commands. No base-constructor count closes those namespaces.
 
 ## Source and runtime status
 
@@ -484,9 +864,17 @@ named-command candidate arrays. They do not cover the subordinate, mode, and
 task tables added by the broader audit on this page. Neither artifact is tracked
 because it is mechanically derived from licensed source.
 
-TODO: enumerate pristine live comtab inheritance in Fundamental, Lisp, Text,
-Dired, Edit Buffers, and mini-input contexts; compare each result with `Where
-Is`/Help; retain the generated dump only under ignored local output.
+TODO: under the isolated licensed harness, enumerate pristine live comtab
+inheritance in Fundamental, Lisp, Text, every D05 recursive/input context, and
+representative D06 task contexts. Record every keyboard cell and sparse mouse
+cell, `NIL`/`:UNDEFINED`/alias/prefix/command state, recursively expand every
+prefix, and retain base versus patch/site/user overlays separately. Enumerate
+installed extended names and omissions. Then inject all 96 raw pointer
+characters over blank area, buffer pointer, expression, buffer row, and file-row
+fixtures, recording direct versus menu-only handler, translator, tester,
+priority, gesture-map revision, and Help/Where-Is result. Keep the complete
+generated dump only under ignored `build/genera-computer-use/`; publish counts,
+diffs, hashes, and original analysis.
 
 ## Public cross-checks
 
@@ -494,3 +882,32 @@ Is`/Help; retain the generated dump only under ignored local output.
   verified 2026-07-18.
 - Symbolics, [Genera 8.0 Reference Cards](https://bitsavers.org/pdf/symbolics/software/genera_8/Genera_8.0_Reference_Cards.pdf),
   used as an 8.0 comparison rather than proof of 8.5 state; verified 2026-07-18.
+
+The principal locally inspected licensed files for the effective-tree additions
+are `sys.sct/zwei/comtab.lisp.~589~`, 100,220 bytes, SHA-256
+`5101f5a25a7222d6d0f8f48401522fa418576eb27d145f659513eb80660ca2b1`;
+`sys.sct/zwei/coma.lisp.~148~`, 56,742 bytes,
+`adcf794d01715aef8278dea5a333046248de57dd519b61366f8c8845ca860737`;
+`sys.sct/zwei/mini-buffer.lisp.~98~`, 59,753 bytes,
+`202c9494c9ef54f82df12d319183bda65c451a0272a785941d218766d293fa88`;
+`sys.sct/zwei/doc.lisp.~110~`, 24,234 bytes,
+`571f3fe9114376c9e13434e1825f4610198c227594cc3cb44eb35fc65edd0bcd`;
+`sys.sct/zwei/com-dw.lisp.~20~`, 8,228 bytes,
+`6582f3abc73528a5528d7d5611a1c91606418187151486085931d87e0714e7a5`;
+`sys.sct/zwei/mouse.lisp.~224~`, 44,507 bytes,
+`5eec190f9456ac6bb73cf19c2c9531190b7f39f3f97c1018227a173c20fa7364`;
+`sys.sct/zwei/macros.lisp.~276~`, 71,023 bytes,
+`c7db63e24f706e2fa102db25026a8556ebfbc950d18592c0817f7b48274ad59d`;
+`sys.sct/nsage/sage-ui.lisp.~287~`, 24,922 bytes,
+`af2f4a124bdfdaa14625c8758829cbe7edf516ba65030d61b5197ea64247773a`;
+`sys.sct/dynamic-windows/dynamic-input.lisp.~498~`, 55,058 bytes,
+`a79805ece6844ccb568ecf97e2d818a0c6095e539e51fbf74423944a32b6dd8f`;
+`sys.sct/dynamic-windows/accept-substrate.lisp.~19~`, 53,779 bytes,
+`3cc5c405bac3dc98d321cef309d51e4f9b1ec77369c3a82019e0fbd983376a33`;
+`sys.sct/dynamic-windows/completion.lisp.~206~`, 103,114 bytes,
+`1af865c9149920a4a47090e2aea50d2db70ebf05550e2ed9a1c1e7fe6c62b07f`;
+and `sys.sct/io/input-editor.lisp.~332~`, 110,515 bytes,
+`856548d945403aa4f5fa3036bd2e8b936890b07b231673c9e2cab5f9e42707b3`.
+Presentation-action semantics were also checked in
+`sys.sct/dynamic-windows/define-handler.lisp.~12~`, 25,689 bytes, SHA-256
+`00d7c33ea97a342ff53877b8c33106f2b1730bb0fd86963d1a086e4bac883ab0`.

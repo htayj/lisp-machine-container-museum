@@ -96,6 +96,17 @@ asset exclusion. MIT, LM-3, and the named contributors do not endorse this museu
   relationship, and runtime/harness limitation reviewed on 2026-07-19. It does not
   establish successful Resume delivery, every entry path, or general CADR screen
   appearance and is not a generic Lisp Machine illustration.
+- [`zmacs-lisp-buffer.png`](zmacs-lisp-buffer.png),
+  [`zwei-help-menu.png`](zwei-help-menu.png),
+  [`zmacs-text-mode.png`](zmacs-text-mode.png), and
+  [`zmacs-lisp-mode.png`](zmacs-lisp-mode.png) are also embedded in the
+  [EINE, ZWEI, and Zmacs editor-family reimplementation
+  specification](../../eine-zwei-and-zmacs-editor-family-reimplementation-specification.md).
+  Their use there is limited to initial System 303 editor geometry, the one
+  functional Help-dispatcher state, and the observed Text/Lisp mode-line
+  transition reviewed on 2026-07-19. They establish no complete Help corpus,
+  hidden command table, source-to-band identity, command semantics, timing,
+  exact font, or general CADR pixel identity.
 
 ## Capture catalog
 

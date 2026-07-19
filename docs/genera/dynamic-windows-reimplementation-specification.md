@@ -3,7 +3,7 @@ type: Reimplementation Specification
 title: Symbolics Genera Dynamic Windows reimplementation specification
 description: A reconstruction-grade D0-D4 semantic and behavioral specification of Genera's presentation substrate, typed input and output, handlers, commands, formatted output, redisplay, graphics, program frameworks, and reusable clients, with D5 reserved for exact historical source compatibility.
 tags: [genera, dynamic-windows, presentations, command-processor, reimplementation, specification, preservation]
-timestamp: 2026-07-19T07:40:32-04:00
+timestamp: 2026-07-19T10:35:00-04:00
 ---
 
 # Symbolics Genera Dynamic Windows reimplementation specification
@@ -144,7 +144,7 @@ into the running world.
 | Type and data model | `dynamic-windows/substrate-definitions.lisp.~44~:148-481`; `type-descriptor.lisp.~12~:81-316`; `type-walk.lisp.~17~:58-887`; standard types in `core-types.lisp.~34~:137-1957`, `number-types.lisp.~5~:148-781`, `sequence-types.lisp.~28~:55-1893`, `presentation-types.lisp.~722~:58-1775`, and `sys2/character-style-presentations.lisp.~64~:371-671` | Presentation Inspector displayed live integer/symbol types and methods, but lattice edge cases and conditional live-name population remain `TODO-RUNTIME` | `G8-MAN`; `UIST89` type-lattice model |
 | Typed output/history | `accept-substrate.lisp.~19~:217-249`; `displayed-presentation.lisp.~47~:64-720`; `dynamic-window.lisp.~625~:225-848,1214-3844` | Live Inspector and Presentation Inspector outputs retain sensitive objects | `G8-MAN` presentations and Dynamic Windows chapters; `UIST89` |
 | Typed input/editor/completion | `accept-substrate.lisp.~19~:397-1339`; `io/input-editor.lisp.~332~:120-2309`; `io/readers.lisp.~251~:62-71`; `completion.lisp.~206~:743-1923` | GC Boolean correction and pointer Abort are `G85-RUN`; the complete source map is specified below, while exhaustive loaded-world execution remains `TODO-RUNTIME` | `G8-MAN` input-editor, Accept, and completion chapters |
-| Handlers/gestures | `define-handler.lisp.~12~:65-587`; `mouse-handler-lookup.lisp.~33~:1452-2220`; `dynamic-input.lisp.~498~:57-1313`; `dynamic-window-mixins.lisp.~204~:708-743`; `basic-handlers.lisp.~30~:127-1169`; `handler-debug.lisp.~33~:294-304`; `presentation-inspector.lisp.~4053~:1068-1077`; `io/format.lisp.~369~:1006-1036`; `window/mouse.lisp.~472~:631-700,1153-1163,1862-1867` | Presentation Inspector handler report is `G85-RUN`; synthetic tie tests, physical click matrix, selected-window routing, and the mutable 96-cell live map are `TODO-RUNTIME` | `G8-MAN`; `UIST89` translator-selection section |
+| Handlers/gestures | `define-handler.lisp.~12~:65-587`; `mouse-handler-lookup.lisp.~33~:1452-2220`; `dynamic-input.lisp.~498~:57-1313`; `dynamic-window-mixins.lisp.~204~:708-743`; `basic-handlers.lisp.~30~:127-1381`; `handler-debug.lisp.~33~:96-307`; `presentation-inspector.lisp.~4053~:588-1079`; `io/format.lisp.~369~:1006-1036`; `window/mouse.lisp.~472~:631-700,1153-1163,1862-1867` | Presentation Inspector handler report is `G85-RUN`; synthetic tie tests, physical click matrix, selected-window routing, and the mutable 96-cell live map are `TODO-RUNTIME` | `G8-MAN`; `UIST89` translator-selection section |
 | Commands | `cp/comtab.lisp.~103~:55-423`; `cp/command-processor.lisp.~318~:532-2596`; `cp/read-accelerated-command.lisp.~142~:55-831`; `cp/substrate-commands.lisp.~6~:99-299` | Resident listeners/frameworks exercise commands; the selected prefix and argument grammar is source-grounded, while loaded-table conflicts and prefix-Help presentation remain `TODO-RUNTIME` | `G8-MAN` Command Processor chapters; `UIST89` application construction |
 | Formatted output/redisplay | `formatted-output.lisp.~397~:76-2681`; `redisplay.lisp.~185~:57-2590` | Visible framework redisplay is `G85-RUN`; two-pass counters and pixel-copy ordering are `TODO-RUNTIME` | `G8-MAN` output, replay, and incremental-redisplay chapters |
 | Graphics | `graphics-flavors.lisp.~21~:59-192`; `graphics-generics.lisp.~246~:123-4005`; `raster-graphics-mixin.lisp.~157~:57-2393`; `define-viewport-graphics-operation.lisp.~62~:57-1459` | Live clients draw and highlight; primitive edge/raster cases are `TODO-RUNTIME` | `G8-MAN` graphics overview/dictionary; the later source exceeds `UIST89`'s paper-era account |
@@ -1153,6 +1153,146 @@ the same semantic result. Presentation Debugging is not a blank-area member; loa
 Presentation Inspector can make its Super-Right named menu nonempty for ordinary
 nonanonymous presentations when the debugging tester succeeds.
 
+### Configured built-in handler catalog
+
+This catalog closes the selected-source three-module identity/gesture boundary.
+It contains 54 active definitions and 66 source-emitted handler records: 42
+definitions and 50 records in `BASIC-HANDLERS`, four definitions and seven
+records in `HANDLER-DEBUG`, and eight definitions and nine records in
+Presentation Inspector. The apparent `SI:COM-COPY-FILE-TO-LIB` form is inside a
+block comment and is not a definition. The ordinary-Zmacs selected-source
+inheritance boundary contains a bounded 47-definition/59-record subset: one
+Presentation Inspector definition contributes two Presentation Debugging
+records, while its seven presentation-to-command translators require a
+compatible nested Command Processor context. Whether every record was resident
+or later redefined in the preserved world remains a runtime question.
+
+`typed+blank` means one declared typed record plus a generated `NO-TYPE`
+blank-area record. An omitted priority is zero. An omitted translator gesture
+is `:SELECT`; a `NIL` gesture is menu-only. `Op`, `Blank`, `MY`, and `PD` mean
+the ordinary Operation, blank-area Operation, Marking and Yanking, and
+Presentation Debugging menu categories. Effects are original technical
+descriptions, not copied source documentation.
+
+| Definition; source line | Kind; displayed to target | Gesture / raw chord | Gate or priority | Composition; menu; scope | Effect |
+| --- | --- | --- | --- | --- | --- |
+| `IDENTITY`; BH 127 | translator; `T` to `T` | Select / Left | context non-`NIL`; displayed type/object satisfies requested type | composable; Op; typed | Return object/displayed type; command-name context adds nonactivation, no quote and space suffix |
+| `EXPRESSION-IDENTITY`; 143 | translator; `EXPRESSION` to `T` | Left | 1.5; stand-in-aware applicability | composable; Op; typed | Return displayed type when valid, otherwise runtime type |
+| `EXACT-IDENTITY`; 165 | translator; `EXPRESSION` to `T` | Left | 6; displayed/requested type names equal and value applicable | composable; Op; typed | Exact identity with command-name echo options |
+| `SELECT-OBJECT`; 197 | translator; `T` to `T` | Select Object / Super-Left | nonraw presentation and runtime type satisfies context | composable; no menu; typed | Return object as `EXPRESSION` |
+| `SELECT-OBJECT-QUOTED`; 213 | translator; `T` to `FORM` | Super-Left | active context, nonraw; `NIL` declines | composable; no menu; typed | Quote symbol/cons; preserve keyword, Boolean and other values |
+| `SELECT-EXPRESSION-AND-ACTIVATE`; 233 | translator; `EXPRESSION` to `T` | Shift-Left | stand-in-aware applicability | composable; Op; typed | Identity translation with activation |
+| `SELECT-AND-ACTIVATE`; 254 | translator; `T` to `T` | Shift-Left | displayed object/type satisfies context | composable; Op; typed | Return object/type with activation |
+| `QUOTED-EXPRESSION`; 268 | translator; `EXPRESSION` to `FORM` | Left | 1.5; active form context, not already Form or raw | composable; Op; typed | Quote symbol/cons and preserve other expression values |
+| `EVALUATED-EXPRESSION`; 288 | translator; `EXPRESSION` to `FORM` | Shift-Left | 1.5; same form-context gate | composable; Op; typed | Return expression unchanged for evaluation |
+| `DESCRIBE`; 320 | translator; `EXPRESSION` to `FORM` | Middle | 1.5; nonraw Lisp object and active genuine-form context | composable; Op; typed | Construct Describe form with quoting as needed |
+| `DESCRIBE-FORM`; 337 | translator; `FORM` to `FORM` | Middle | 1.5; genuine-form context | composable; Op; typed | Construct Describe around the form |
+| `INSPECT-EXPRESSION`; 347 | translator; `EXPRESSION` to `FORM` | Shift-Middle | Lisp/form-context restriction | composable; Op; typed | Construct Inspect form with quoting as needed |
+| `INSPECT-FORM`; 361 | translator; `FORM` to `FORM` | Shift-Middle | form-context restriction | composable; Op; typed | Construct Inspect around the form |
+| `REPLACE`; 372 | action; `EXPRESSION` to top-level command context | C-M-Right | replaceable value and window handles value replacement | noncomposing; Op; typed | Ask window to replace selected value |
+| `SI:COM-SHOW-FILE`; 400 | to-command; pathname to CP command | Left | nondirectory, nonbinary, sequentially accessible | composable; Op; typed | Build Show File command |
+| `SI:COM-LOAD-BINARY-FILE`; 414 | to-command; pathname to CP command | Left | 0.5; default binary canonical type | composable; Op; typed | Build Load File for binary pathname |
+| `SI:COM-LOAD-FILE`; 426 | to-command; pathname to CP command | menu-only | nonbinary, nondirectory, sequentially accessible | composable; Op; typed | Build Load File command |
+| `SI:COM-DELETE-FILE`; 439 | to-command; pathname to CP command | menu-only | result passes active CP context | composable; Op; typed | Build Delete File command |
+| `SI:COM-UNDELETE-FILE`; 445 | to-command; pathname to CP command | menu-only | result passes active CP context | composable; Op; typed | Build Undelete File command |
+| `MENU`; 498 | action; `T` to `T` | Right | ordinary submenu nonempty | noncomposing; defines Op; typed | Open Operation menu |
+| `BLANK-AREA-MENU`; 509 | action; `NO-TYPE` to `T` | Right | blank submenu nonempty | noncomposing/context-independent; defines Blank; blank | Open blank-area menu |
+| `EDIT-VIEWSPECS`; 674 | action; `T` to `T` | Super-Shift-Middle | presentation-capable window and type has view choices | noncomposing/context-independent; Op; typed | Edit output parameters and re-represent |
+| `REPRESENT-DIFFERENTLY`; 697 | action; `T` to `T` | Super-Shift-Left | alternate presentation type computable | noncomposing/context-independent; Op; typed | Cycle representation |
+| `SYSTEM-MENU`; 801 | action; `T` to `T` | Shift-Right | console System Menu enabled | noncomposing/context-independent; styled Op; typed | Open System Menu |
+| `SYSTEM-MENU-BLANK-AREA`; 814 | action; `NO-TYPE` to `T` | Shift-Right | same console gate | noncomposing/context-independent; styled Blank; blank | Open System Menu from blank area |
+| `WINDOW-OPERATION-MENU`; 826 | action; `T` to `T` | Meta-Shift-Right | unconditional tester | noncomposing/context-independent; styled Op; typed | Run Window Editor near converted click |
+| `WINDOW-OPERATION-MENU-BLANK-AREA`; 843 | action; `NO-TYPE` to `T` | Meta-Shift-Right | unconditional tester | noncomposing/context-independent; styled Blank; blank | Same from blank area |
+| `SELECT-WINDOW`; 861 | action; `NO-TYPE` to `T` | Left | clicked alias differs from selected alias | noncomposing/context-independent; styled Blank; blank | Mouse-select clicked window |
+| `YANK-FROM-HISTORY`; 890 | translator; history element to Input Editor | Left | unconditional | composable; Op; typed | Notify history and return element text |
+| `YANK-WORD`; 901 | translator; raw text to Input Editor | C-Middle | delimiters yield nonempty span | noncomposing; MY; typed | Return pointed syntactic unit text |
+| `MARK-WORD`; 970 | action; raw text to Input Editor | C-Shift-Middle | window supports region strings and span exists | noncomposing; MY; typed | Highlight word or line-at-end |
+| `YANK-MARKED-TEXT`; 1052 | translator; `T` to Input Editor | menu-only | marked text exists | noncomposing; MY; typed+blank | Return marked text and unmark |
+| `YANK-FROM-KILL-RING`; 1064 | translator; `T` to Input Editor | menu-only | kill history nonempty | noncomposing; MY; typed+blank | Return top kill entry |
+| `SAVE-MARKED-TEXT`; 1078 | action; `T` to Input Editor | menu-only | marked text exists | noncomposing; MY; typed+blank | Push text to kill ring and unmark |
+| `UNMARK-MARKED-TEXT`; 1089 | action; `T` to Input Editor | menu-only | marked text exists | noncomposing; MY; typed+blank | Remove marking only |
+| `CLEAR-MARKED-TEXT`; 1105 | translator; `T` to Input Editor | menu-only | marked text and output-history compression | noncomposing; MY; typed+blank | Clear marked output-history text |
+| `MARKING-AND-YANKING-MENU`; 1118 | action; `T` to Input Editor | C-Right | MY submenu nonempty | noncomposing; styled Op; defines MY; typed | Open MY menu |
+| `MARKING-AND-YANKING-MENU-BLANK-AREA`; 1133 | action; no-type to Input Editor | C-Right | MY submenu nonempty | noncomposing; styled Blank; defines MY; blank | Open MY menu from blank area |
+| `CLICK-AND-HOLD-MARK-REGION`; 1149 | action; `T` to Input Editor | C-Left | displayed strings supported | noncomposing; no menu; typed+blank | Track pointer and mark traversed text |
+| `CLICK-AND-HOLD-MARK-REGION-MENU`; 1164 | action; `T` to Input Editor | menu-only | displayed strings supported | noncomposing; MY; typed+blank | Enter interactive region marking |
+| `EXTEND-MARKED-TEXT`; 1311 | action; `T` to Input Editor | menu-only | displayed strings and existing mark | noncomposing; MY; typed+blank | Extend from nearest marked endpoint |
+| `IN-BAND-MENU`; 1369 | translator; no-type to in-band menu | Right | matching in-band input context | composable; no menu; blank | Return one-shot in-band acceptance |
+| `PRESENTATION-TYPE-TO-NAME`; HD 150 | translator; presentation type to name | Left | result/context validation | composable; Op; typed | Return selected type name |
+| `DESCRIBE-PRESENTATION`; HD 237 | translator; `T` to `FORM` | Super-Middle | nonanonymous unless debugging flag permits | composable; PD; typed+blank | Produce Describe form for record |
+| `EDIT-PRESENTATION-HANDLER`; HD 247 | translator; `T` to CP command | menu-only | debug gate and valid Edit Definition command context | noncomposing; PD; typed+blank | Build Edit Definition for selected handler |
+| `PRESENTATION-DEBUGGING-MENU`; HD 294 | action; `T` to `T` | Super-Right | PD submenu nonempty | noncomposing/context-independent; styled Op, not Blank; defines PD; typed+blank | Open Presentation Debugging menu |
+| `INVOKE-PRESENTATION-INSPECTOR`; PI 1068 | action; `T` to `T` | menu-only | nonanonymous/debug gate | noncomposing; PD; typed+blank | Open/reuse inspector on record/context/window/program |
+
+The remaining seven Presentation Inspector records are part of the complete
+selected-source denominator but not ordinary Zmacs leaves. All are composable,
+have priority zero, and appear in the ordinary `Op` menu when their target
+Command Processor context admits the constructed command.
+
+| Definition; source line | Displayed to target | Gesture / raw chord | Constructed command and context boundary |
+| --- | --- | --- | --- |
+| `COM-SHOW-PRESENTATION-HANDLERS`; PI 623 | `PRESENTATION` to `CP:COMMAND` | Middle / Describe | Inspector Show Handlers This Presentation; requires an active CP command predicate that admits it |
+| `COM-DESCRIBE-HANDLER`; PI 635 | `PRESENTATION-MOUSE-HANDLER` to `CP:COMMAND` | Middle / Describe | Inspector Describe Handler; same target-context gate |
+| `COM-SHOW-HANDLER-APPLICABILITY`; PI 906 | `PRESENTATION-MOUSE-HANDLER` to `CP:COMMAND` | Left / Select | Inspector Show Handler Applicability; same target-context gate |
+| `COM-SHOW-HANDLER-CONTEXT-APPLICABILITY`; PI 912 | `HANDLER-IN-CONTEXT` to `CP:COMMAND` | Left / Select | Inspector Show Handler Context Applicability; same target-context gate |
+| `COM-SET-PRESENTATION`; PI 969 | `PRESENTATION` to `CP:COMMAND` | Left / Select | Inspector Set Presentation; same target-context gate |
+| `EDIT-PRESENTATION-MOUSE-HANDLER`; PI 972 | `PRESENTATION-MOUSE-HANDLER` to `CP:COMMAND` | Meta-Left / Edit Function | Build `SI:COM-EDIT-DEFINITION`; reachable only in a nested CP context that admits that command |
+| `EDIT-PRESENTATION-TYPE`; PI 982 | `PRESENTATION-TYPE` to `CP:COMMAND` | Meta-Left / Edit Function | Build `SI:COM-EDIT-DEFINITION`; same conditional nested-context edge |
+
+Handler Debug also defines three named commands in command table
+`Presentation`: Show Mouse Handlers, Show Presentation Type, and Show Handlers
+for Types. Presentation Inspector adds Show Presentation Handlers From Type to
+that table and has ten local commands/menu labels: Show Handlers This
+Presentation, Show Handlers All Presentations, Describe Handler, Show Handler
+Applicability, Show Handler Context Applicability, Show Input Context, Show
+Presentation Hierarchy, Set Presentation, Help, and Exit. These are command-table
+entries, not raw-key bindings inherited by Zmacs. The seven rows above are the
+typed pointer routes into those commands; `INVOKE-PRESENTATION-INSPECTOR` is the
+only Presentation Inspector definition on ordinary Zmacs's inherited `PD` menu
+edge.
+
+The ordinary Zmacs reader requests `(OR PRESENTATION-COMMAND
+SI:INPUT-EDITOR)`. Input Editor handlers are therefore inherited candidates.
+`FORM`, `CP:COMMAND`, `IN-BAND-MENU`, and presentation-type-name translators
+need a corresponding nested input context; pathname command translators are not
+ordinary Zmacs leaves merely because they are globally registered. ZWEI `BP`
+expands to Dynamic Windows `RAW-TEXT`, so the raw-text rows do apply to Zmacs.
+
+Application and inherited precedence is exact:
+
+1. Zmacs `COMPATIBLE-COMTAB-LOOKUP` has all-gesture `T` and is searched before
+   named gestures. If its tester finds an effective fixed comtab leaf, it wins
+   and routes the exact raw mouse character through ZWEI; otherwise inherited
+   named candidates continue.
+2. Search walks requested-context subtypes and displayed-type supertypes.
+   Non-`T` displayed handlers precede handlers declared on `T`. Score adds
+   explicit priority, two for exact requested-context type name, and four for
+   exact displayed-type name. The source's final equal-score name comparator
+   accidentally reads handler two twice, so equal-score order remains a live
+   oracle.
+3. No definition above excludes other gesture buckets. Menu-only handlers are
+   considered only through an applicable menu-defining action of the same
+   category. Direct handlers remain menu candidates unless menu is `NIL`.
+4. Menu assembly reruns type/test/context gates, removes same-label or same-value
+   duplicates in the same/context-independent context, places unstyled before
+   styled entries, sorts each group case-insensitively, and remembers last choice
+   per category. An empty submenu makes its defining action inapplicable. Direct
+   invocation of an empty menu beeps/dead-blips; dismissing a nonempty menu
+   dead-blips silently.
+5. Actions are noncomposing. Ordinary side-effect completion reaches the action
+   macro's `NIL` fallback and normalizes to dead-blip; menu actions can return
+   their nested menu result before that fallback. The explicit noncomposing
+   translators are Yank Word, Yank Marked Text, Yank From Kill Ring, Clear
+   Marked Text, and Edit Presentation Handler. Other translator results must
+   satisfy the target context predicate.
+6. `:BLANK-AREA T` on displayed `T` adds a no-type record; it does not duplicate
+   a no-type definition. A displayed no-type record whose object type is not
+   no-type cannot use blank handlers.
+7. With no surviving candidate, dispatch signals dead-blip, beeps only when
+   unhandled, and returns dead-blip. A found handler returning `NIL` with no
+   non-`NIL` type returns dead-blip without the no-match signal/beep. There is no
+   generic modifier-stripping fallback.
+
 ### Handler results
 
 | Kind | Required effect |
@@ -1183,7 +1323,9 @@ dispatch results and cache invalidation behavior observable by applications.
 `mouse-handler-lookup.lisp.~33~:1452-2220`,
 `dynamic-input.lisp.~498~:243-367,1160-1239`,
 `dynamic-window-mixins.lisp.~204~:708-743`,
-`basic-handlers.lisp.~30~:498-621,861-872,901-1169`,
+`basic-handlers.lisp.~30~:127-1381`,
+`handler-debug.lisp.~33~:96-307`,
+`presentation-inspector.lisp.~4053~:588-1079`,
 `clcp/iofns.lisp.~273~:2562-2584`,
 `io/format.lisp.~369~:1006-1036`, and
 `window/mouse.lisp.~472~:631-700,1153-1163,1862-1867`; `UIST89` independently corroborates source and
@@ -2284,7 +2426,7 @@ System 452.22 additions or differences without publishing implementation bodies.
 | --- | --- | --- |
 | Presentation-type definition and methods | Descriptor, argument classes, inheritance, method roles, generations, and invalidation | Exact defining macro/function names, package exports, lambda lists, method option grammars, redefinition values, and conditions are **pending** |
 | Typed output, input, and contexts | `PRESENT`, scoped presentation recording, `ACCEPT`, input transactions, defaults, histories, completion, and nested contexts | Exact operator signatures, keyword defaults, multiple values, condition/restart contracts, and context-form grammars are **pending** |
-| Handler definitions and logical gestures | Handler kinds, applicability, ordering, menu/direct modes, gesture mapping, diagnostics, and invalidation | Complete built-in handler catalog, exact defining forms/options, standard handler names, and add/remove/redefinition interfaces are **pending** |
+| Handler definitions and logical gestures | Handler kinds, applicability, ordering, menu/direct modes, gesture mapping, diagnostics, invalidation, and the complete 54-definition/66-record selected-source catalog | Exact defining forms/options, public signatures, and add/remove/redefinition interfaces are **pending**; installed-world identity, patches, equal-score order, remaps, and site/user additions remain runtime profile data |
 | Standard presentation types | The 135 source-form calls are inventoried by family; common family invariants are normative | Per-type data and presentation lambda lists, defaults, parser/printer/view behavior, aliases, conditional population, and loaded-world identity are **pending** |
 | Input editor, history, and completion | Buffer/blip/rescan model, complete selected base binding map and dispatch tree, numeric and staged prefixes, completion gestures/states, and semantic return values | Exact public entry points, option grammar, history protocol, resource conditions, completion auxiliary values, site mutations, and loaded-world behavioral confirmation are **pending**; no selected base chord is omitted |
 | Command Processor | Command objects, table inheritance, typed arguments, accelerators, menus, command/form reading, and loop semantics | Exact CP packages, public symbols, macro grammars, argument-slot encodings, prefix APIs, compatibility aliases, values, conditions, and restarts are **pending** |
@@ -2315,7 +2457,7 @@ base profile; the remaining public surface needs a subprofile or D5 closure.
 | `GOOD-TABLES`, `MOUSE-HANDLER-TEST`, `HISTORY-INNER`, `HISTORY-SUBSTRATE`, `RESTRUCTURE-ARGLIST` | **Infrastructure/partial:** table lookup, testing, history, and argument normalization effects are consumed by normative protocols | No independent public contract is claimed; audit exports and callers before assigning a D5 surface |
 | `CORE-TYPES`, `NUMBER-TYPES`, `SEQUENCE-TYPES`, `PRESENTATION-TYPES`, `CHARACTER-STYLE-PRESENTATIONS` | **Partial:** source-form name inventory and family invariants are specified | Exact per-type signatures/methods and live conditional population are D5-pending and `TODO-RUNTIME` |
 | `COMPLETION`, `DYNAMIC-INPUT` | **Normative:** complete selected completion gestures, editor/blip integration, 96-state raw gesture mapping, pointer documentation, and input-context behavior | Loaded-world ambiguity, maximal/left-substring completion, modifier, and cache oracles remain `TODO-RUNTIME`; exact APIs are D5-pending |
-| `BASIC-HANDLERS` | **Partial:** handler mechanism, standard gesture meanings, and representative live handlers are specified | Complete identity/default translator, action, command, menu, and debugging-handler inventory and contracts are D5-pending |
+| `BASIC-HANDLERS`, `HANDLER-DEBUG`, selected Presentation Inspector handlers | **Normative:** complete selected-source catalogs contain 42/50, 4/7, and 8/9 definitions/records respectively; ordinary Zmacs inherits the stated 47/59 subset | Exact public definition APIs remain D5-pending; installed-world identity, patches, same-score order, remaps, and site/user additions remain `TODO-RUNTIME` |
 | CP `DEFS`, `COMTAB`, `COMMAND-PROCESSOR`, `READ-ACCELERATED-COMMAND`, `SUBSTRATE-COMMANDS` | **Normative** for command-table, typed reader, accelerator, and loop semantics; `DEFS` supplies shared declarations | Exact public API, standard substrate commands, and conditions are D5-pending |
 | CP `OLD-SYMBOL-LINKS` | **Compatibility support** | Historical aliases are required only for D5 and remain pending |
 | `FORMATTED-OUTPUT`, `REDISPLAY`, `DISPLAYED-PRESENTATION`, `DYNAMIC-WINDOW` | **Normative:** layout families, recorded output, semantic regions, streams, replay, and redisplay | Exact public API and remaining layout/pixel oracles are D5-pending or `TODO-RUNTIME` |
@@ -2389,6 +2531,11 @@ provenance described below.
 | `DW-H14` | Context dependency and exclusion | Context-dependent tie and exclude-other-handlers follow selected ordering |
 | `DW-H15` | Gesture remap | Remapping physical chord updates dispatch and pointer documentation immediately |
 | `DW-H16` | Complete raw gesture matrix | All 32 modifier states by three buttons have distinct primary gestures and only the listed aliases; direct injection is separate from physical simultaneous/down-transition, timeout/NIL-off, keyboard-pending, Shift/double, no-triple, and Essential Mouse tests; found-handler semantic dead and true no-match signal/beep remain distinct rather than falling back to an unmodified gesture |
+| `DW-H17` | Selected-source registry census | A block-comment-aware source reader enumerates exactly 42/50 Basic, 4/7 Handler Debug, and 8/9 Presentation Inspector definitions/records and compares every name, source/target type, gesture, menu/blank/composition flag, tester, and priority with the catalog |
+| `DW-H18` | Zmacs inherited-context matrix | All 96 raw characters over BP, blank no-type, expression, pathname, history-element, and presentation-type fixtures in ordinary Zmacs, Input Editor, Form, CP Command, and In-Band Menu contexts produce the exact ordered candidates and winner; ordinary Zmacs's selected-source inherited denominator is 47/59 |
+| `DW-H19` | Application-before-inherited precedence | A raw event with a successful Zmacs compatible-comtab leaf takes that leaf; removing only that fixed cell falls through to the named Dynamic Windows handler |
+| `DW-H20` | Specificity and menus | BP-to-raw-text expansion selects Editor Yank versus generic Yank Word by type/priority, and Op/Blank/MY/PD menus preserve category isolation, styled-last ordering, duplicate removal, remembered defaults, empty behavior, and dismiss behavior |
+| `DW-H21` | No modifier fallback and mutation | A fully modified raw state with no mapped alias does not strip modifiers; add/remove/redefine invalidates candidate caches; equal-score live-world order is recorded as runtime profile data rather than selected-source conformance |
 
 ### D1 command tests
 
@@ -2527,9 +2674,11 @@ claim.
 
 ## Known unknowns and required follow-up
 
-- `TODO-RUNTIME`: define a small synthetic type lattice and measure exact live
-  priority, context-dependency, dumped loaded-profile tie order, nested contexts, and nested
-  presentations.
+- `TODO-RUNTIME`: dump resident/redefined identity for the complete 54/66
+  selected-source handler denominator, then use a small synthetic type lattice
+  to measure exact live priority, context-dependency, equal-score order, nested
+  contexts, and nested presentations. Patches, gesture remaps, and site/user
+  additions remain overlays rather than omissions from the source catalog.
 - `TODO-RUNTIME`: exercise handler add/remove/redefinition and observe cache
   invalidation in the preserved 8.5 world.
 - `TODO-RUNTIME`: compare all logical gesture/modifier mappings and mouse
@@ -2587,7 +2736,7 @@ The following are metadata for licensed local evidence; the files remain untrack
 | `sys.sct/dynamic-windows/dynamic-window-mixins.lisp.~204~` | 139,058 | `d1c9db01f37982f10efdd5f7f21dff938a437c4b1f80633c04054158be87a482` | Selected-window-sensitive presentation click routing |
 | `sys.sct/dynamic-windows/basic-handlers.lisp.~30~` | 58,716 | `3a85f039dbeb76b65401c0f88f1b1712cf9961645aee6f82c5bfb04c14c4303d` | Generic presentation, menu, marking, window-operation, and System Menu handlers |
 | `sys.sct/dynamic-windows/handler-debug.lisp.~33~` | 13,058 | `ff2081af4ac6b0c4c41446b2f12de971e6f16b8197cd8005a204bfca5c04007a` | Presentation-debugging gesture and menu handlers |
-| `sys.sct/dynamic-windows/presentation-inspector.lisp.~4053~` | 45,825 | `9f20e13acd39201e73fee30d6890275aaf9d0b745f6b2089dfad0e05869f494d` | Loaded Presentation Inspector menu-only debugging handler |
+| `sys.sct/dynamic-windows/presentation-inspector.lisp.~4053~` | 45,825 | `9f20e13acd39201e73fee30d6890275aaf9d0b745f6b2089dfad0e05869f494d` | Eight selected handler definitions/nine records plus local inspector commands; runtime screenshot proves only the exercised inspector path |
 | `sys.sct/dynamic-windows/mouse-handler-lookup.lisp.~33~` | 99,828 | `601385c017301e7158599b8dfe235650a1f5dee06a7944fc701ce8a4a491d716` | Handler lookup and caches |
 | `sys.sct/dynamic-windows/accept-substrate.lisp.~19~` | 53,779 | `3cc5c405bac3dc98d321cef309d51e4f9b1ec77369c3a82019e0fbd983376a33` | `PRESENT`, `ACCEPT`, tokens/history |
 | `sys.sct/dynamic-windows/core-types.lisp.~34~` | 83,350 | `3ff0511b6fcfd6b8d5583b6f5dd96bc7e651ac5ee49147ea50cb5126fbd2f927` | Core standard presentation types |

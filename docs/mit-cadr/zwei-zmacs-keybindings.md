@@ -1,9 +1,9 @@
 ---
 type: Reference
 title: MIT ZWEI and Zmacs keybindings
-description: Release-bounded inventories of the public System 46 ZWEI evidence and every configured fixed table in the pinned LM-3 System 303 ZWEI subsystem.
+description: Release-bounded effective-tree inventories of public System 46 ZWEI evidence and the fixed, intercepted, Help, pointer-hook, mode, and context layers in the pinned LM-3 System 303 ZWEI subsystem.
 tags: [mit-cadr, lm-3, zwei, zmacs, keybindings, reference]
-timestamp: 2026-07-18T01:53:00-04:00
+timestamp: 2026-07-19T12:26:08-04:00
 ---
 
 # MIT ZWEI and Zmacs keybindings
@@ -24,20 +24,58 @@ binding.
 - Multiple keys in one cell are source-defined aliases for the same command.
 - A range such as `C-0` … `C-9` represents the source's range form and is not a
   sampling shortcut.
-- “Complete” means that every non-comment fixed entry or generated range in the
-  named System 303 subsystem appears below, including subordinate input/search,
-  stream, and application tables. Automatic compatibility aliases not written
-  as table cells, dynamically loaded packages, patches, user initialization,
-  and runtime table mutation remain separate layers.
+- “Complete fixed source tree” means that every non-comment fixed entry or
+  generated range in the named System 303 subsystem appears below, including
+  subordinate input/search, stream, and application tables. This page also
+  specifies the source-visible TV intercepts, pointer hooks, Help subtrees and
+  mode-composition algorithm. Dynamically loaded packages, patches, user
+  initialization, and runtime mutation remain separately identified oracle
+  layers; they are not silently included in the fixed-tree claim.
 
 Beyond the standard, prefix, Zmacs, completing-reader, and general-mode tables,
-the fixed subordinate and special tables enumerated below contain 199 configured
-local slots: 164 direct commands, prefixes, or sentinels; 32 explicit lowercase
-aliases; and 3 explicit undefined leaves. The total is 19 minibuffer/pathname,
-26 search, 8 editor-stream, 1 macro-mover, 135 application/task, and 10
-Control-R/Recursive Edit/Standalone cells. It excludes inherited effective
-bindings, generated Control/Meta/uppercase/Hyper indirections, and named
-commands without keys.
+the fixed System 303 subordinate and special tables enumerated below contain
+199 configured local slots: 164 direct commands, prefixes, or sentinels; 32
+explicit lowercase aliases; and 3 explicit undefined leaves. The total is 19
+minibuffer/pathname, 26 search, 8 editor-stream, 1 macro-mover, 135
+application/task, and 10 Control-R/Recursive Edit/Standalone cells. These are
+constructor counts, not an effective-tree denominator. The exact generated
+alias algorithms and parent lookup below make every inherited or generated
+leaf derivable; named commands without keys remain a separate namespace.
+
+### Generated aliases and finite domains
+
+Both releases use 160 keyboard codes (octal `000` through `237`) by 16 modifier
+states. A newly created System 46 table preloads every lowercase ASCII letter,
+under every one of the 16 modifier states, with an alias to the corresponding
+uppercase code at the same modifier state: 26 × 16 generated cells before
+explicit specifications overwrite them.
+
+A newly named System 303 table instead installs two exact compatibility
+families, without overwriting a non-`NIL` cell:
+
+1. each unmodified lowercase `a` through `z` aliases unmodified uppercase `A`
+   through `Z` (26 candidates); and
+2. for uppercase `A` through `Z`, each of the seven Hyper-containing modifier
+   states `H-C`, `H-M`, `H-S`, `H-C-M`, `H-C-S`, `H-M-S`, and `H-C-M-S`
+   aliases the corresponding lowercase letter with Hyper removed and all other
+   modifiers retained (182 candidates).
+
+`SET-COMTAB-CONTROL-INDIRECTION`, used by the Standard `Control-X` tables and
+the search operator table where stated, then fills only still-`NIL` cells over
+that same 160 × 16 domain:
+
+1. ordinary Return, Linefeed, Tab, Backspace, Form, and Vertical Tab alias the
+   corresponding Control code obtained by subtracting octal `100`;
+2. every Meta-only and Control-Meta cell aliases the same code with Meta
+   removed; and
+3. every Control-only cell whose code is outside ASCII `@` through `_` aliases
+   the same unmodified code.
+
+An alias stores a `(modifier-state, code)` destination. Lookup restarts that
+destination at the original top comtab, then applies explicit `:UNDEFINED`,
+parent fallthrough, and unbound behavior described below. Thus the algorithms,
+ordered direct tables, and parent chains are an exact finite mapping; aliases
+are not counted again as handwritten rows.
 
 ## System 46 boundary and canonical built listing
 
@@ -62,6 +100,115 @@ for 362 source-defined command symbols; 11 major modes, 6 minor modes, and 450
 literal expanded `SET-COMTAB` assignments. The six declared but absent
 modules are `SEARCH`, `SCREEN`, `STREAM`, `SECTIO`, `ZMACS`, and `ZYMURG`; that
 gap is why the count is explicitly “source-present,” not a whole-release claim.
+
+### Complete preserved System 46 Standard table
+
+The following grouped rows enumerate every active fixed Standard cell and range
+in `comtab.115`. They are not a delta inferred from System 303.
+
+| Binding(s) | Command(s), in binding order |
+| --- | --- |
+| unmodified codes `000`–`177` octal; `Backspace` | Standard insertion |
+| `C-F`, `C-B`, `C-N`, `C-P` | Forward; Backward; Down Real Line; Up Real Line |
+| `C-V`, `M-V`, `C-M-V` | Next Screen; Previous Screen; Scroll Other Window |
+| `C-A`, `C-E`, `M-R`, `M-<`, `M->` | Beginning Of Line; End Of Line; Move To Screen Edge; Goto Beginning; Goto End |
+| `C-<`, `C->`, `C-Space`/`C-@`, `M-Space`, `C-M-Space` | Mark Beginning; Mark End; Set Pop Mark; Push Pop Point Explicit; Move To Previous Point |
+| `Return`, `C-O`, `C-M-O`, `M-O`, `M-^`/`C-M-^` | Insert CRs; Make Room; Split Line; This Indentation; Delete Indentation |
+| `C-D`, `Rubout`, `C-Rubout`, `C-K`, `Clear` | Delete Forward; Rubout; Tab Hacking Rubout; Kill Line; Clear |
+| `Break` | Break |
+| `M-W`, `C-W`, `C-M-W`, `C-Y`, `M-Y` | Save Region; Kill Region; Append Next Kill; Yank; Yank Pop |
+| `C-L`, `Form`/`C-M-!` | Recenter Window; Complete Redisplay |
+| `C-U` | Quadruple Numeric Arg |
+| `C--`, `M--`, `C-M--` | Negate Numeric Arg |
+| `C-0`…`C-9`, `M-0`…`M-9`, `C-M-0`…`C-M-9` | Numbers |
+| `C-T`, `M-T`, `C-M-T` | Exchange Characters; Exchange Words; Exchange Sexps |
+| `M-F`, `M-B`, `M-K`, `M-D`, `M-Rubout`, `M-@` | Forward Word; Backward Word; Kill Sentence; Kill Word; Backward Kill Word; Mark Word |
+| `C-M-F`, `C-M-N`, `C-M-B`, `C-M-P` | Forward Sexp; Forward List; Backward Sexp; Backward List |
+| `C-M-K`, `C-M-Rubout`, `C-M-@` | Kill Sexp; Backward Kill Sexp; Mark Sexp |
+| `C-M-)`, `C-M-(`/`C-M-U` | Forward Up List; Backward Up List |
+| `C-M-[`/`C-M-A`, `C-M-]`/`C-M-E`, `C-M-D` | Beginning Of Defun; End Of Defun; Down List |
+| `M-)`, `M-(` | Move Over `)`; Make `()` |
+| `M-]`, `M-[`, `M-H`, `M-E`, `M-A` | Forward Paragraph; Backward Paragraph; Mark Paragraph; Forward Sentence; Backward Sentence |
+| `C-G` | Beep |
+| `Tab`/`M-Tab`, `C-M-Tab`, `C-Tab`, `Line` | Insert Tab; Indent For Lisp; Indent Differently; Indent New Line |
+| `C-M-Q` | Indent Sexp |
+| `C-;`/`M-;`, `C-M-;`, `M-N`, `M-P` | Indent For Comment; Kill Comment; Down Comment Line; Up Comment Line |
+| `M-Q`, `M-G` | Fill Paragraph; Fill Region |
+| `M-\`, `C-M-\` | Delete Horizontal Space; Indent Region |
+| `M-Return`/`M-M`/`C-M-Return`/`C-M-M` | Back To Indentation |
+| `M-U`, `M-L`, `M-C` | Uppercase Word; Lowercase Word; Uppercase Initial |
+| `M-Form`, `M-S`, `M-=`, `C-=` | Insert Form Feed; Center Line; Count Lines Region; Fast Where Am I |
+| `C-S`, `C-R` | Incremental Search; Reverse Incremental Search |
+| `M-033` raw | Evaluate Mini Buffer |
+| `C-006` | Compile Defun |
+| `C-022`, `M-022`, `C-M-022` | Evaluate Defun; Evaluate Defun Verbose; Evaluate Defun Hack |
+| `C-?`/`M-?`, `C-M-?`/`Help` | Self Document; Documentation |
+| `C-Q` | Various Quantities |
+| `M-X`, `C-M-X` | Extended Command; Any Extended Command |
+| `M-Line` | Indent New Comment Line |
+| `C-%`, `M-%` | Replace String; Query Replace |
+| `C-M-H`, `C-M-R`, `M-'` | Mark Defun; Reposition Window; Upcase Digit |
+| `C-035` raw | Find Pattern |
+| `C-Z`, `End` | Quit |
+| `M-~` | Not Modified |
+| `C-M-&`, `C-M-$` | Frob Lisp Conditional; Frob Do |
+| `C-034`, `C-036`, `M-036` | Quick Arglist; Brief Documentation; Long Documentation |
+| `C-J`, `M-J`, `C-M-J` | Change Font Char; Change Font Word; Change Default Font |
+| `M-#`, `M-_`, `C-M-#` | Text Justifier Change Font Word; Text Justifier Underline Word; Goto Character |
+| `Mouse-1-1`/`Mouse-1-2` | Mouse Mark Region; Mouse Move Region |
+| `Mouse-2-1`/`Mouse-2-2` | Mouse Mark Thing; Mouse Kill Yank |
+| `C-X` | enter the System 46 Standard `Control-X` child |
+
+The source repeats `C-<` and `C->`; later identical assignments do not change
+their effective commands. Commented Form recenter and `C-M-G` Format Code forms
+are not bindings.
+
+### Complete preserved System 46 Control-X and recursive contexts
+
+| Binding(s) | Command(s), in binding order |
+| --- | --- |
+| `C-X C-G`, `C-X C-D`, `C-X C-N`, `C-X C-P`, `C-X C-X` | Prefix Beep; Display Directory; Set Goal Column; Mark Page; Swap Point And Mark |
+| `C-X G`, `C-X X`, `C-X L` | Open Get Q Register; Put Q Register; Count Lines Page |
+| `C-X Rubout`, `C-X ;`, `C-X .`, `C-X F` | Backward Kill Sentence; Set Comment Column; Set Fill Prefix; Set Fill Column |
+| `C-X C-U`, `C-X C-L`, `C-X C-O`, `C-X C-I` | Uppercase Region; Lowercase Region; Delete Blank Lines; Indent Rigidly |
+| `C-X =`, `C-X [`, `C-X ]`, `C-X H`, `C-X C-C` | Where Am I; Previous Page; Next Page; Mark Whole; Quit |
+| `C-X C-J` | Change Font Region |
+| `C-X (`, `C-X )`, `C-X E`, `C-X Q` | Start/End/Call Keyboard Macro; Keyboard Macro Query |
+| `C-X 033` raw, `C-X C-T`, `C-X T` | Repeat Last Mini Buffer Command; Exchange Lines; Exchange Regions |
+| `C-X #`, `C-X _`, `C-X C-M-Space` | Text Justifier Change Font Region; Text Justifier Underline Region; Move To Default Previous Point |
+
+The System 46 prefix has no `Help` or `Abort` leaf. Control indirection supplies
+the source-defined plain/controlled compatibility aliases; an unknown second key
+follows ordinary undefined behavior.
+
+| Context | Complete local cells; every other cell inherits Standard |
+| --- | --- |
+| Completing reader | raw `033` Complete; `Space` and `)` Self Insert And Complete; `?` List Completions; `C-Q` Quoted Insert; `Help` Document Completing Read; `C-/` Completion Apropos; `Return`/`C-Return`/`End` Complete And Exit; `C-G` Mini Buffer Beep; `Mouse-1-1` End Of Mini Buffer; `Mouse-3-1` List Completions; `C-Z`/`M-Z`/`C-M-Z` hard undefined |
+| Control-R | `C-033` and `End` Exit Control-R |
+| Recursive Edit | `C-033` and `End` Exit Control-R; `C-G` Recursive Edit Beep |
+| Standalone | `C-033` Quit |
+
+The public source also constructs two ordinary minibuffer tables that were
+separate from the completing reader:
+
+| Context | Complete local cells; every other cell follows the stated parent |
+| --- | --- |
+| Multi-line minibuffer | `Help` Document Containing Command; `C-Return` and `End` End Of Mini Buffer; `C-G` Mini Buffer Beep; `C-Z`, `M-Z`, and `C-M-Z` hard undefined; `C-M-Y` Pop Mini Buffer Ring; `Mouse-1-2` Mouse End Of Mini Buffer; parent Standard |
+| Single-line minibuffer | `Return` End Of Mini Buffer; parent multi-line minibuffer |
+
+The multi-line table has nine direct cells and the single-line child one. This
+is public fixed evidence and does not depend on the missing System 46 Zmacs
+module.
+
+### Complete System 46 Help subtree
+
+`Help` enters a staged dispatcher: `A` Apropos, `B` basic ZWEI
+documentation, `C` Self Document followed by any key or prefix subtree, `D`
+Describe Command, `L` What Lossage, `U` Undo, `V` Variable Apropos, `W` Where
+Is, `Space` repeat the preceding request, and `?` describe the Help dispatcher.
+`C-G` aborts; every other input beeps and prompts again. Self Document follows a
+prefix closure recursively, and `*` at that stage enumerates every leaf of the
+selected prefix.
 
 ## System 303 standard ZWEI table
 
@@ -102,14 +249,16 @@ gap is why the count is explicitly “source-present,” not a whole-release cla
 | `C-L` | Recenter Window |
 | `Form`, `C-M-!` | Complete Redisplay |
 | `C-U` | Universal Argument |
-| every source-listed `-` modifier form using Control, Meta, Super, and Hyper | Negate Numeric Arg |
+| `C--`, `M--`, `C-M--`, `S--`, `S-C--`, `S-M--`, `S-C-M--`, `H--`, `H-M--`, `H-C-M--`, `H-S--`, `H-S-C--`, `H-S-M--`, `H-S-C-M--` | Negate Numeric Arg |
+| `H-C--` | **No source-installed leaf in this profile** |
 | digits `0`–`9` under each source-listed Control/Meta/Super/Hyper modifier combination | Numbers |
 | `C-T`, `M-T`, `C-M-T` | Exchange Characters; Exchange Words; Exchange Sexps |
 
-The `-` and digit rows expand across the source's Control, Meta, Control-Meta,
-Super, and Hyper combinations, including their Super/Hyper combinations. They
-are stated as generated families because the implementation creates the whole
-ten-digit ranges.
+The source spells `C--` twice and never spells `H-C--`. By contrast, the
+digit ranges do include `H-C-0` through `H-C-9`. This asymmetry is part of the
+strict source profile and MUST NOT be silently regularized. The digit rows are
+stated as generated families because each source form creates a complete
+ten-digit range.
 
 ### Words, lists, definitions, paragraphs, and sentences
 
@@ -535,6 +684,103 @@ assignments.
 | Mail | The 15-cell Mail and Mail `Control-X` overlay listed above |
 | Require Activation modes | Editor-stream/ZTOP contexts require an explicit activation command before buffered input runs |
 
+### Mode-composition order
+
+System 303 major and minor modes do not form independent immutable maps. Every
+active mode writes a shared sparse mode table and, when needed, a shared mode
+`Control-X` table. A newly enabled mode therefore wins a collision with an
+older mode. To disable an older mode, ZWEI:
+
+1. unwinds every newer mode;
+2. unwinds the target mode;
+3. removes the target from the active order; and
+4. reapplies the newer modes in their original order.
+
+This transaction preserves temporal precedence. An effective-tree dump MUST
+record mode activation order, not merely the set of mode names.
+
+## System 303 effective ingress and pointer overlays
+
+The fixed cells above are only one layer of the effective editor tree:
+
+~~~text
+raw TV input
+├─ Abort      -> editor intercept -> TV Abort
+├─ Meta-Abort -> editor intercept -> TV Abort All
+├─ Break      -> editor intercept -> TV Break
+├─ Meta-Break -> editor intercept -> TV Error Break
+└─ other input
+   ├─ active dynamic mouse hook -> hook-owned pointer result
+   └─ mode table -> Zmacs table -> Standard table
+      └─ C-X: mode C-X -> Zmacs C-X -> Standard C-X
+~~~
+
+The ordinary editor installs the four TV intercepts around its command loop.
+Consequently the Standard `Break` and `Abort` cells remain table facts but are
+not the effective top-level path while interception is active. A returning
+Break completes typeout and redisplays editor windows unless the break remains
+recursive or the typeout window was selected. Abort paths complete query/typeout
+state before delegating to TV.
+
+An absent comtab cell falls through to the parent. An explicit `:UNDEFINED`
+stops lookup. An alias restarts resolution from the original top table, so a
+top-level override can change the destination reached by an inherited alias.
+Either unbound result clears queued input and reports a not-defined key; a
+command symbol without a function binding reports the distinct not-implemented
+case.
+
+### Read Function Name pointer hook
+
+While Read Function Name has an empty minibuffer, it installs a dynamic hook
+ahead of ordinary pointer-table dispatch:
+
+| Preconditions | Gesture | Result |
+| --- | --- | --- |
+| pointed highlighted atom passes the source predicate | `Mouse-1-1` | copy the name, remove the hook, and return it immediately |
+| same | `Mouse-3-1` | copy the name, put point after it, remove the hook, and continue editing |
+
+Pointer routing also has pane precedence. A click in an unselected frame selects
+that frame first. In a selected frame but noncurrent editor pane, `Mouse-1-1`
+normally selects the pane without running its ordinary editing command; other
+buttons dispatch in the clicked pane. During that dispatch, the clicked window
+and interval are the current dynamic editing context. A minibuffer exception can
+select the Standard table so an unrelated application overlay does not capture
+minibuffer input.
+
+## System 303 Help subtree
+
+`Help` is a command tree:
+
+| Input | Help operation |
+| --- | --- |
+| `C` | Self Document, then read any key or recurse into a prefix |
+| `D` | Describe Command |
+| `A` | Apropos in the current mode |
+| `U` | Undo help |
+| `V` | Variable Apropos |
+| `W` | Where Is |
+| `L` | What Lossage, only when playback support is available |
+| `Space` | repeat the preceding Help request |
+| `Help` | describe Help itself |
+| `C-G` or `Rubout` | abort Help |
+| any other input | beep and prompt again |
+
+Self Document follows aliases and prefix commands. `*` after selecting a prefix
+enumerates all reachable leaves in that prefix. `C-X Help` directly documents
+the active prefix table. The stored prior Help character initializes to `B`,
+although this System 303 dispatcher has no `B` operation. Therefore `Space` as
+the first request substitutes `B`, finds no dispatch function, and loops to
+print the Help prompt again without an explicit beep. After a valid request,
+`Space` repeats the stored request; that stored value persists in the editor
+closure until another non-Space request changes it.
+
+The command body contains a later `?`-or-`Help` test, but the input reader
+accepts only the dispatcher alist, `Space`, and `Help`. Because `?` is absent
+from that alist, it never reaches the test: it takes the invalid-input path,
+beeps, and prompts again. Dired and BDIRED still bind an initial `?` directly to
+their documentation commands; once inside this shared dispatcher, a following
+`?` is likewise invalid.
+
 ## Runtime check
 
 In the isolated System 303 load band, the harness evaluated
@@ -545,14 +791,16 @@ pressing `Help`, and invoking `Meta-X` produced the live editor Help dispatcher,
 Help menu, and `Extended command:` prompt. `Text Mode` visibly changed the mode
 line to `ZMACS (Text)`, and `Lisp Mode` changed it back. This confirms the
 high-level input paths, active editor identity, and executable mode transition;
-it does not exhaustively execute every table leaf. System 303 screenshots remain
-local pending rights review; the
+it does not exhaustively execute every table leaf. Four selected screenshots
+have passed the repository's capture-specific rights review and are tracked in
+the [curated CADR screenshot catalog](../assets/mit-cadr-screenshots/); the
 [architecture article](zwei-and-zmacs.md#runtime-observations) records their
-actions and hashes as evidence.
+actions and evidentiary limits.
 
 ## Sources
 
-- MIT CADR System 46, [`comtab.115`](https://github.com/mietek/mit-cadr-system-software/blob/8e978d7d1704096a63edd4386a3b8326a2e584af/src/nzwei/comtab.115#L603-L856)
+- MIT CADR System 46, [`comtab.115` Standard tables](https://github.com/mietek/mit-cadr-system-software/blob/8e978d7d1704096a63edd4386a3b8326a2e584af/src/nzwei/comtab.115#L603-L856),
+  its [completing-reader and minibuffer tables](https://github.com/mietek/mit-cadr-system-software/blob/8e978d7d1704096a63edd4386a3b8326a2e584af/src/nzwei/comtab.115#L1087-L1107),
   and the [expected Zmacs tags](https://github.com/mietek/mit-cadr-system-software/blob/8e978d7d1704096a63edd4386a3b8326a2e584af/src/nzwei/nzwei.tags#L1592-L1674),
   revision `8e978d7`; verified 2026-07-18.
 - LM-3 System 303, [`comtab.lisp`](https://tumbleweed.nu/r/lm-3/file/l/sys/zwei/comtab.lisp?ci=4df393c68d7f083ce42d5c377039d26043cc18a9031ace28258dc97f4137eb91),

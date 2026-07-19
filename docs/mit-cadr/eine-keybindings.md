@@ -1,18 +1,20 @@
 ---
 type: Reference
 title: EINE late-1977 keybindings and commands
-description: Complete source-derived inventory of EINE's initial keyboard, Control-X, Meta-X, and mouse dispatch tables in the inspected late-1977 source set.
+description: Complete source-derived inventory of EINE's initial keyboard, Control-X, Meta-X, dynamic minibuffer, EDT, Help, and mouse dispatch trees in the inspected late-1977 source set.
 tags: [mit-cadr, eine, keybindings, commands, reference]
-timestamp: 2026-07-18T00:54:00-04:00
+timestamp: 2026-07-19T10:30:14-04:00
 ---
 
 # EINE late-1977 keybindings and commands
 
-This is a complete inventory of the non-empty slots in EINE's initial main,
-`Control-X`, named-command, and mouse dispatch tables in `etable.34`. It is
-complete for that source file, not for every EINE version or for a session after
-a user has installed commands. See [the EINE system article](eine.md) for
-architecture, features, provenance, and the current runtime-verification limit.
+This is a complete source-profile inventory of EINE's initial main,
+`Control-X`, named-command, recursive-minibuffer, EDT, Help, and mouse dispatch
+trees. It covers the fixed tables in `etable.34` and every dynamic shadow found
+in the selected 19-module recipe. It is not a claim about every EINE version or
+a session after a user has installed commands. See
+[the EINE system article](eine.md) for architecture, features, provenance, and
+the current runtime-verification limit.
 
 ## Notation and counting boundary
 
@@ -32,9 +34,10 @@ architecture, features, provenance, and the current runtime-verification limit.
 The exhaustive denominator is 576 main-table cells (263 direct, 78 aliases,
 one prefix, 234 unbound), 576 `Control-X` cells (19 direct, 104 aliases, 453
 unbound), 53 named extended commands, and 27 mouse cells (23 direct, 4
-unbound). A binding whose target is absent from the exact 19-file build corpus is
-shown as a binding and labeled missing; it is not silently promoted to a working
-feature.
+unbound), plus the seven distinct cells shadowed by the two recursive-minibuffer
+contexts and the six-cell EDT overlay. A binding whose target is absent from the
+exact 19-file build corpus is shown as a binding and labeled missing; it is not
+silently promoted to a working feature.
 
 ## Unmodified characters
 
@@ -252,6 +255,43 @@ binding.
 | `Clear` | Interim-2 Clear | Recenter at the current EDT output/input boundary. |
 | `C-Return` | Activate | Submit buffered input to the top-level stream. |
 
+## Recursive minibuffer context overrides
+
+EINE does not construct a separate static minibuffer keymap. Each reader
+dynamically rebinds cells in the live base array around a recursive command
+loop; every cell not listed here continues through the ordinary EINE table.
+The bindings unwind when that recursive invocation returns.
+
+| Context | Binding or raw cell | Effective command or value |
+| --- | --- | --- |
+| String minibuffer | modifier row 0, code `033` octal | Get String Exit |
+| String minibuffer | `Return`, row 0 code `215` octal | Get String Exit |
+| String minibuffer | `C-G` | Mini Buffer Beep |
+| String minibuffer | `C-Z`, `M-Z`, `C-M-Z` | explicitly `NIL` / unbound |
+| Lisp reader minibuffer | `C-G` | Mini Buffer Beep |
+| Lisp reader minibuffer | `C-Return` | Read Exit |
+| Lisp reader minibuffer | `C-Z`, `M-Z`, `C-M-Z` | explicitly `NIL` / unbound |
+
+The raw `033` cell is intentionally not assigned a modern key name without a
+pinned character-map proof. Mini Buffer Beep has contextual behavior: with
+nonempty input it deletes the whole minibuffer; with empty input it rings,
+unwinds to EINE's top level, and restores the enclosing display. Read Exit
+initializes the buffer stream and reads one Lisp expression; Get String Exit
+returns a copy of the first line, with the caller selecting case conversion and
+trimming.
+
+## Prefix and Help traversal
+
+`C-X` reads exactly one further character through the captured prefix array.
+An unbound leaf follows the ordinary undefined-command path. Self Document reads
+an arbitrary character; if it finds a prefix closure it reads another character
+and follows that closure's captured table, so Help exposes the staged tree rather
+than describing only `C-X`. An undefined target is reported as undefined.
+
+`Install Command` can mutate a key during a session. The tables above therefore
+define the pristine selected source profile. A complete live dump MUST record
+later user mutations as a separate overlay.
+
 ## Mouse and tablet bindings
 
 Click count is saturated at three, so “triple” also covers higher counts. The
@@ -278,4 +318,14 @@ two stub rows are bound in the table but their functions only beep in `edm.122`.
   used to distinguish implemented mouse operations from beep-only stubs;
   verified 2026-07-18.
 - MIT DDC, [`edt.84`](https://github.com/MITDDC/eine-1975-1981/blob/b12f5b7c9a8817886ed85c72fa48bccaf5296be5/eine/9004365/dlw2/edt.84),
-  EINE-based editor top-level overlay; verified 2026-07-18.
+  6,884 bytes, SHA-256
+  `5e71d7316fe2d558807724fae38583437ef5e5470dfda9bc424a5a2e5f5dcc20`;
+  EINE-based editor top-level overlay; verified 2026-07-19.
+- MIT DDC, [`ecmd.50`](https://github.com/MITDDC/eine-1975-1981/blob/b12f5b7c9a8817886ed85c72fa48bccaf5296be5/eine/9004365/dlw2/ecmd.50),
+  16,531 bytes, SHA-256
+  `3f552b88c9064f5890938e4ebc0cbf6e662e7b0fe46205bba66a3abb62a5fc10`;
+  recursive minibuffer shadows, lookup and failure behavior; verified 2026-07-19.
+- MIT DDC, [`erand.31`](https://github.com/MITDDC/eine-1975-1981/blob/b12f5b7c9a8817886ed85c72fa48bccaf5296be5/eine/9004365/dlw2/erand.31),
+  11,851 bytes, SHA-256
+  `f5d626baa3a199394d6e45587f208481c8b1d0a124d7460a8b57257c114f650a`;
+  prefix, Self Document and command-installation behavior; verified 2026-07-19.

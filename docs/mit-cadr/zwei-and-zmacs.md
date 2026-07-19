@@ -3,7 +3,7 @@ type: Artifact Analysis
 title: ZWEI and Zmacs on the MIT CADR and LM-3
 description: Code- and runtime-grounded study of the ZWEI editing substrate and Zmacs application in public System 46 and LM-3 System 303 materials.
 tags: [mit-cadr, lm-3, zwei, zmacs, editor, source-code]
-timestamp: 2026-07-18T02:21:27-04:00
+timestamp: 2026-07-19T10:30:14-04:00
 ---
 
 # ZWEI and Zmacs on the MIT CADR and LM-3
@@ -15,8 +15,12 @@ below a Zmacs command-table overlay and Zmacs-specific buffer, file, source, and
 window machinery.
 
 This page covers architecture, features, modes, and observed behavior. The
-[binding companion](zwei-zmacs-keybindings.md) gives release-bounded direct-key
-inventories and links the complete public System 46 named-command output.
+[binding companion](zwei-zmacs-keybindings.md) gives the complete preserved
+System 46 Standard tree and the configured System 303 fixed tables, Help,
+intercept, pointer-hook, and mode-composition layers. The
+[reimplementation specification](../eine-zwei-and-zmacs-editor-family-reimplementation-specification.md)
+turns those inventories into release-bounded text, command-loop, lifecycle,
+failure, visual, and conformance contracts.
 
 ## Two public evidence sets
 
@@ -71,6 +75,9 @@ an assertion that every line shares one original creation date.
 The active declaration resolves to 42 ZWEI files totaling 1,706,505 bytes, with
 aggregate manifest SHA-256
 `87af558ea62e894f8f279f73365b1dee69786f09fb657928a90cd76c61d19a1a`.
+Each lexical-path-ordered record is the UTF-8 `zwei/<file>.lisp` pathname, one
+NUL byte, and the 32-byte binary file SHA-256; records are concatenated without
+a terminator and hashed again.
 Static audit found 671 literal concrete `DEFCOM` names plus 31 generated mode
 commands, for 702 source-defined command symbols. It expanded 800 literal
 keyboard assignments and found 285 named-command occurrences. These are source

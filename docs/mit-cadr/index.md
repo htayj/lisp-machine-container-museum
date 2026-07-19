@@ -107,11 +107,17 @@ the public LM-3 software and the `usim` emulator.
   recipe-derived source corpus, definition-oriented file model, graphical
   interaction, and source-visible incomplete behavior; its
   [binding companion](eine-keybindings.md) inventories every initial keyboard,
-  prefix, named-command, and mouse entry.
+  prefix, named-command, Help, minibuffer, EDT, and mouse entry.
 - [ZWEI and Zmacs on the MIT CADR and LM-3](zwei-and-zmacs.md) documents the
   reusable editing substrate, Zmacs application, public System 46 source gap,
   maintained System 303 implementation, and verified runtime behavior; its
-  [binding companion](zwei-zmacs-keybindings.md) gives release-bounded tables.
+  [binding companion](zwei-zmacs-keybindings.md) gives release-bounded effective
+  trees.
+- [EINE, ZWEI, and Zmacs editor-family reimplementation
+  specification](../eine-zwei-and-zmacs-editor-family-reimplementation-specification.md)
+  defines the data, operation, complete input-tree, lifecycle, failure, visual,
+  and conformance contracts for the public profiles without filling the missing
+  System 46 Zmacs layer from a later release.
 - [Operating CADR through the Xvfb computer-use harness](cadr-computer-use-harness.md)
   documents the sentinel-owned private-session architecture, hardened screenshot
   provenance, shared-executable verification, observed System 303 interactions, and

@@ -252,6 +252,11 @@ machine-readable metadata layer while retaining ordinary Markdown as the source.
   editor lineage, separates reusable ZWEI machinery from the Zmacs application,
   and links the code- and runtime-grounded feature and keybinding references for
   both preserved systems.
+- [EINE, ZWEI, and Zmacs editor-family reimplementation
+  specification](eine-zwei-and-zmacs-editor-family-reimplementation-specification.md)
+  defines release-selectable semantic models, command loops, complete
+  source-profile input trees and prefixes, files, modes, lifecycle, failure
+  behavior, reviewed visuals, and conformance tests.
 - [Operating Genera through the Xvfb computer-use harness](genera/genera-computer-use-harness.md)
   explains authenticated, network-isolated operation of a licensed world, exact-window
   evidence capture, and why an accepted shutdown confirmation currently ends in

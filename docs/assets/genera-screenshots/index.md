@@ -82,6 +82,18 @@ under applicable law.
   reviewed on 2026-07-19. It does not establish every entry gesture, editor key,
   nested-debugger state, recovery branch, or screen-save transition, and it is not a
   generic Genera illustration.
+- [`zmacs-editor-menu.png`](zmacs-editor-menu.png),
+  [`zmacs-help-dispatcher.png`](zmacs-help-dispatcher.png),
+  and [`zmacs-two-window-layout.png`](zmacs-two-window-layout.png)
+  are also embedded in the [EINE, ZWEI, and Zmacs editor-family
+  reimplementation
+  specification](../../eine-zwei-and-zmacs-editor-family-reimplementation-specification.md).
+  Their use there is limited to the visible fifteen-action Editor menu, one
+  functional Help-dispatcher state, and two-pane relationship reviewed on
+  2026-07-19. They do not establish hidden
+  comtabs or translator ownership, command effects, source-to-world identity,
+  exact fonts, timing, or general Genera pixel identity; startup text is
+  incidental context.
 
 ## Source sessions
 
@@ -422,9 +434,9 @@ the final keystroke.
 | [Zmacs Editor menu](zmacs-editor-menu.png) | `0003-zmacs-editor-menu-held.png` | After `Select E`, move to `(400,300)` and press button 3; Editor menu captured while the button remained down | 2026-07-18 00:11:39 EDT | 6 records; SHA-256 `d80550180a298297506a1d60a9772e73ab86cde6af850de4bf8a684b562173fa` |
 | [Zmacs Help dispatcher](zmacs-help-dispatcher.png) | `0007-zmacs-help-f12.png` | Host `F12` reached the editor Help dispatcher after the recorded host-key mapping probes | 2026-07-18 00:15:09 EDT | 18 records; SHA-256 `74994458c5f79f2773143fc3cdeb585ea23140f8766cdf78194859908e768d91` |
 | [Zmacs two-window layout](zmacs-two-window-layout.png) | `0015-zmacs-view-two-windows.png` | `Control-X 3` split the editor and selected a new `*Buffer-2*` in the lower pane | 2026-07-18 00:19:12 EDT | 44 records; SHA-256 `41598ed68d07a206267e646ec48f64ac3b29c8af45c6cca4fb103fc266262782` |
-| [Zmacs Edit Buffers display](zmacs-edit-buffers.png) | `0016-zmacs-list-buffers.png` | `Control-X Control-B` opened Edit Buffers; `+` identifies the modified `*Buffer-1*` | 2026-07-18 00:19:28 EDT | 46 records; SHA-256 `4d0ae13df04c4c4f5c89c2453d4f013fdb9f6ad5b1da78df64b5950b5409bd27` |
-| [Buffer-entry mouse documentation](zmacs-buffer-entry-mouse-documentation.png) | `0018-zmacs-buffer-entry-mouse-doc.png` | Pointer moves to `(65,48)` and then `(70,76)` put it on a buffer row; the bottom line changed to entry-specific operations | 2026-07-18 00:19:51 EDT | 50 records; SHA-256 `d84d95879b22ff53144746a18feb3e311eb52ae3bca5ab52366edf1fe3aa24d4` |
-| [Buffer-list contextual menu](zmacs-buffer-list-context-menu.png) | `0019-zmacs-buffer-entry-menu-held.png` | Button 3 pressed while the buffer list was displayed; the image proves a contextual menu appeared, not that the row presentation owns that menu | 2026-07-18 00:20:05 EDT | 52 records; SHA-256 `ee7709dfed79a93b6a5ab8a7dd215e01b239b06a1b2ce8ec9ee2d6ab3ea97e65` |
+| [Zmacs List Buffers report](zmacs-list-buffers.png) | `0016-zmacs-list-buffers.png` | `Control-X Control-B` opened List Buffers typeout; the visible legend says `+` identifies a new file or nonempty non-file buffer | 2026-07-18 00:19:28 EDT | 46 records; SHA-256 `4d0ae13df04c4c4f5c89c2453d4f013fdb9f6ad5b1da78df64b5950b5409bd27` |
+| [List Buffers pointer documentation](zmacs-list-buffers-pointer-documentation.png) | `0018-zmacs-buffer-entry-mouse-doc.png` | Pointer moves to `(65,48)` and then `(70,76)` while List Buffers is visible; the captured bottom line remains generic and does not prove a row-presentation hit | 2026-07-18 00:19:51 EDT | 50 records; SHA-256 `d84d95879b22ff53144746a18feb3e311eb52ae3bca5ab52366edf1fe3aa24d4` |
+| [List Buffers generic Operation menu](zmacs-list-buffers-generic-operation-menu.png) | `0019-zmacs-buffer-entry-menu-held.png` | Button 3 pressed while List Buffers was displayed; the visible menu contains generic Marking and Yanking, System, and Window operations and does not prove a row-presentation hit | 2026-07-18 00:20:05 EDT | 52 records; SHA-256 `ee7709dfed79a93b6a5ab8a7dd215e01b239b06a1b2ce8ec9ee2d6ab3ea97e65` |
 | [Dynamic Lisp Listener multiple values](dynamic-lisp-listener-multiple-values.png) | `0002-listener-multiple-values.png` | Evaluate the project-owned form `(values 17 23)`; the Listener prints both values on separate lines | 2026-07-18 04:00:04 EDT | 2 records; SHA-256 `05564580417f9901acb71585872e56a8bf5fe0b4004f7e8251528b3d7c9506a2` |
 | [System Menu](system-menu.png) | `0004-system-menu.png` | Hold Shift and button 3 over the Listener; the observed three-column System Menu appears | 2026-07-18 04:00:48 EDT | 10 records; SHA-256 `0f09c1ed08ca140069792249c6a9235cc857277382605bc2152bf1e2c491012c` |
 | [Emergency Break arithmetic evaluation](emergency-break-arithmetic-evaluation.png) | `0005-emergency-break-arithmetic.png` | Select **Emergency Break** from the main client's System Menu; in the separately targeted `cold-load` client type `(+ 40 2)` and send End; the breakpoint prints `42` | 2026-07-19 08:15:35 EDT | 40 records; SHA-256 `f9e8fa29298c2d6c48f5a190bc6aadcebd353fcd941f8d1df8fe94ab03a74398` |
@@ -468,9 +480,9 @@ other transform.
 | `zmacs-editor-menu.png` | 4,169 | 1200 by 900 | `723851fb4b7b20cc6c0c6aa966c7be6326e82d3934ce2de5a3dddeb7b036c69c` | `c4a8d52560a183ae835995a8ce8101a9fb9344d61fd7c748087b905068b7b0db` |
 | `zmacs-help-dispatcher.png` | 2,846 | 1200 by 900 | `3bb262dd10fbc7e641a749a9047af753fc7886774815d88321e8c5a925a26c28` | `9faf0e0c2fc57d3f81df27896cffaad1e6a4afeafa7fc4b64051702c97dcb474` |
 | `zmacs-two-window-layout.png` | 2,781 | 1200 by 900 | `812a7a2a218e0974899fc49cd46f85a903aa98f07083b6a82b759c4dcad95690` | `c7de742a69646cf37ec00d59e4a745d9327637f110cdd0088de7b17cf5cc5f43` |
-| `zmacs-edit-buffers.png` | 3,473 | 1200 by 900 | `970c299ec6f091dd2895022bd24935abb897931110b592e8c3517cde6a936963` | `83a075cd975ab0acd61ecf357a3b577fa17fd734985d8452a8c766126da6ff82` |
-| `zmacs-buffer-entry-mouse-documentation.png` | 3,073 | 1200 by 900 | `21bc8582103ceca9cb77b8c4201afb3f5795e4cb1346751141a55bb409fde3eb` | `2f02cae693e344712b4ab0b9d83cd24c23c1189e227764f21c535866856e9670` |
-| `zmacs-buffer-list-context-menu.png` | 3,658 | 1200 by 900 | `4aa320fc70babdaff198cccb13f64731780faf71ee07de6bd7da0badc090585f` | `57a71c53d12eac6afe5ac4697ffaa341570fce5e928322e4713ee547dfe3d256` |
+| `zmacs-list-buffers.png` | 3,473 | 1200 by 900 | `970c299ec6f091dd2895022bd24935abb897931110b592e8c3517cde6a936963` | `83a075cd975ab0acd61ecf357a3b577fa17fd734985d8452a8c766126da6ff82` |
+| `zmacs-list-buffers-pointer-documentation.png` | 3,073 | 1200 by 900 | `21bc8582103ceca9cb77b8c4201afb3f5795e4cb1346751141a55bb409fde3eb` | `2f02cae693e344712b4ab0b9d83cd24c23c1189e227764f21c535866856e9670` |
+| `zmacs-list-buffers-generic-operation-menu.png` | 3,658 | 1200 by 900 | `4aa320fc70babdaff198cccb13f64731780faf71ee07de6bd7da0badc090585f` | `57a71c53d12eac6afe5ac4697ffaa341570fce5e928322e4713ee547dfe3d256` |
 | `dynamic-lisp-listener-multiple-values.png` | 11,824 | 1200 by 900 | `39061d7b9ea5b55428020cfaf7558b5566c101ab56822cbd951905c520c3ebac` | `99003664b87974790051046a01a9579ffa77b48e25e2d7c406e7c87e42ee5c37` |
 | `system-menu.png` | 15,215 | 1200 by 900 | `e1a8a968d891e68e9f4315ee7d943d4b0b1fb70b103226402ba64d23f91a5d66` | `3a233d323b245d7d7da5587b014bd47ac12f29fa239972871c9f22e6b32358af` |
 | `emergency-break-arithmetic-evaluation.png` | 1,712 | 1024 by 768 | `b7edcce3ba94e9601335ac280438988d5ae40451c1f2235f2b5fe786f8736eb6` | `219c9bce8d7771553141df4873aced28255317f6e7b1cd9700c61ef5ac834445` |

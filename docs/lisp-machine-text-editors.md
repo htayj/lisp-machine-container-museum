@@ -3,7 +3,7 @@ type: Historical Article
 title: From EINE to ZWEI and Zmacs
 description: An evidence-bounded guide to the MIT and Symbolics Lisp-machine editor lineage, its architecture, and the editors represented in this museum.
 tags: [lisp-machine, eine, zwei, zmacs, editor, history]
-timestamp: 2026-07-18T02:21:36-04:00
+timestamp: 2026-07-19T12:23:53-04:00
 ---
 
 # From EINE to ZWEI and Zmacs
@@ -26,7 +26,11 @@ features, modes, and release-bounded key inventories are in:
 - [Zmacs in Symbolics Genera](genera/zmacs.md) and the
   [Genera 8.5 binding inventory](genera/zmacs-keybindings.md), with a separate
   [named-command audit](genera/zmacs-named-commands.md) of the 277 constructor
-  candidates.
+  candidates; and
+- [EINE, ZWEI, and Zmacs editor-family reimplementation
+  specification](eine-zwei-and-zmacs-editor-family-reimplementation-specification.md)
+  defines the release profiles, complete effective input-tree boundary, semantic
+  operations, lifecycle/failure rules, visuals, and conformance tests.
 
 ## Names and scope
 
@@ -103,11 +107,11 @@ source comparison, and changed-definition operations.
 Genera retains that composition and adds hardware editing keys, character
 styles, presentations, richer mouse menus, modernized file/buffer commands, and
 undo/redo integration. A fresh Genera 8.5 runtime session confirmed that
-`Select E` enters Zmacs in Fundamental mode, a normal buffer-list entry has
-entry-specific mouse documentation, and a right-button menu appears while the
-list is displayed. Source establishes that editor Help consults active command
-tables; the capture does not attribute the menu specifically to the row
-presentation.
+`Select E` enters Zmacs in Fundamental mode, List Buffers produces a nonmodal
+typeout report, and generic bottom-line documentation and a generic Operation
+menu appear while that report is displayed. Source establishes presentation-wrapped
+report rows and active-table Help; the captures do not establish an exact row hit
+or buffer-specific runtime operation.
 
 ## Shared interaction model
 
@@ -150,10 +154,11 @@ manual feature lists:
 - In the inspected Genera-on-X11 environment, host `F12` reached the Genera Help
   key while host `F11` did not. This is a property of the current harness/X key
   translation, not a claim about a Symbolics keyboard.
-- In live Genera Zmacs, pointing at a normal buffer-list entry changed the bottom
-  mouse line to entry-specific operations. A right-button menu was also observed
-  in that state, but the capture establishes only contextual Dynamic Windows
-  behavior, not that the menu itself was owned by the row presentation.
+- In live Genera Zmacs, pointer movement while List Buffers was visible left
+  generic mouse documentation at the bottom, and a right-button generic Operation
+  menu was observed. The source establishes typed report rows, but the captures do
+  not prove row recognition, buffer-specific documentation, or row-owned menu
+  dispatch.
 
 ## Evidence method and limits
 
@@ -187,9 +192,12 @@ The four [System 303 captures](assets/mit-cadr-screenshots/index.md) show entry 
 a fresh Zmacs Lisp buffer, the live ZWEI Help dispatcher, and the visible mode-line
 changes from Lisp to Text mode and back. The six
 [Genera 8.5 captures](assets/genera-screenshots/index.md) show the editor menu, the
-Help dispatcher reached through this harness's host-key mapping, a two-window layout,
-the Edit Buffers display, presentation-sensitive mouse documentation, and the
-contextual menu observed while that list was displayed.
+Help dispatcher reached through this harness's host-key mapping, a two-window
+layout, the nonmodal List Buffers report, generic mouse documentation, and a
+generic Operation menu observed while that report was displayed. Those last two
+captures do not prove a typed row hit. The source-distinct Edit Buffers application
+and an exact List Buffers presentation-hit probe still require reviewed runtime
+captures.
 
 Each capture appears beside the system-level analysis it supports, and each asset
 catalog records its raw-source mapping, hashes, action prefix, runtime identity, and

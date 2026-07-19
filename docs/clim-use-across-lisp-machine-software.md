@@ -3,7 +3,7 @@ type: Museum Catalog
 title: How CLIM was used across the CADR and Genera software catalogs
 description: A source-grounded audit of whether and how each of the sixty canonical Lisp-machine software dossiers used CLIM, provided a CLIM port or compatibility hook, used Dynamic Windows instead, or predates CLIM entirely.
 tags: [lisp-machine, mit-cadr, lm-3, genera, clim, dynamic-windows, applications, user-interface]
-timestamp: 2026-07-18T14:05:34-04:00
+timestamp: 2026-07-19T12:23:53-04:00
 ---
 
 # How CLIM was used across the CADR and Genera software catalogs
@@ -152,11 +152,13 @@ definitions without changing the editor's own toolkit.
 
 **Classification: ZWEI/TV with Dynamic Windows assistance, not CLIM.** CADR Dired,
 BDired, and Edit Buffers are special ZWEI modes displayed in TV editor windows. The
-Genera versions remain ZWEI special buffers and add native presentation-sensitive
-object operations (`sys.sct/zwei/dired.lisp.~465~`). Searches of Dired and the
-encoded Buffer Editor source found no CLIM dependency or application frame. Their
-interactive object displays belong to Genera's ZWEI/Dynamic Windows integration,
-not to CLIM.
+Genera Dired remains a ZWEI special buffer and adds native presentation-sensitive
+object operations (`sys.sct/zwei/dired.lisp.~465~`). Genera List Buffers is a
+presentation-backed typeout report, while the distinct Edit Buffers special buffer
+uses line properties and a local action table (`sys.sct/zwei/buffer-editor.lisp.~12~`).
+Searches of Dired and the encoded Buffer Editor source found no CLIM dependency or
+application frame. Their interactive displays belong to Genera's ZWEI/Dynamic
+Windows and TV integration, not to CLIM.
 
 ### D07 — Help, self-documentation, and Document Examiner
 

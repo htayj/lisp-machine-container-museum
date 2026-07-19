@@ -3,7 +3,7 @@ type: Artifact Analysis
 title: Zmacs in Symbolics Genera
 description: Code-, help-, and runtime-grounded study of Genera 8.5 Zmacs, its Zwei architecture, development features, modes, presentations, and observed behavior.
 tags: [genera, zmacs, zwei, editor, source-code, runtime]
-timestamp: 2026-07-18T02:22:48-04:00
+timestamp: 2026-07-19T12:23:53-04:00
 ---
 
 # Zmacs in Symbolics Genera
@@ -17,10 +17,14 @@ menus, and buffer-list operations rather than as a static wall chart.
 
 This page documents architecture and features. The
 [binding companion](zmacs-keybindings.md) enumerates the configured standard,
-Zmacs, prefix, and mode bindings in the inspected source revisions. The
+Zmacs, prefix, argument, Help, mode, and pointer/presentation layers in the
+inspected source revisions, while preserving the installed-world dump as an
+explicit oracle. The
 [named-command audit](zmacs-named-commands.md) records the counts, functional
 groups, and installation semantics of the two base command-alist constructors
-and the later CP additions.
+and the later CP additions. The
+[editor-family reimplementation specification](../eine-zwei-and-zmacs-editor-family-reimplementation-specification.md)
+defines the semantic and behavioral reconstruction contract.
 
 ## Evidence and rights boundary
 
@@ -45,7 +49,7 @@ not extend to the source tree, decoded Help, worlds, fonts, or other session out
 | `sys.sct/zwei/search.lisp.~152~` | 62,618 | `4b98387119a754d74f388a5b94e435b4f492a296859ad009984b2fae80c04279` | extended-search table hierarchy and operators |
 | `sys.sct/zwei/comg.lisp.~96~` | 17,848 | `66007d528c90407fb162df152e6dfc383282981c0162abd67ebd3c6702784043` | keyboard-macro mover and transient sentinel table |
 | `sys.sct/zwei/dired.lisp.~465~` | 78,695 | `d988987ca7220fd156a0c35eca2651e009c0054a8b9b86774890bfcaa6055da5` | Dired mode and local commands |
-| `sys.sct/zwei/buffer-editor.lisp.~12~` | 24,248 | `f339b6b55994148b02c46dbca3fd532a4784d67b8ae24d89fa9ef954c07bef14` | Edit Buffers presentations and command table |
+| `sys.sct/zwei/buffer-editor.lisp.~12~` | 24,248 | `f339b6b55994148b02c46dbca3fd532a4784d67b8ae24d89fa9ef954c07bef14` | Edit Buffers line-property/action model and local table; List Buffers presentations |
 | `sys.sct/zwei/mail.lisp.~38~` | 31,024 | `533278201f8538e9709cea2415491543bcc52a250c00acf9a387d391cd8ff93b` | editor Mail mode and bindings |
 | `sys.sct/zwei/pated.lisp.~321~` | 127,190 | `010026c3ca264dc76c3278eda79bbbd69d1e9f51e4a6d088c686187ba2f418bf` | patch-description editor integration |
 
@@ -53,6 +57,11 @@ The local `defsystem zwei` declaration names 54 modules, and the highest
 evacuated Lisp revision is present for all 54. Together they total 2,405,992
 bytes; the declaration-order manifest has SHA-256
 `d32d09305b38f8636d689cf89161a2e97fba254ea5890fd448bef3b984eed6eb`.
+The declaration witness `sys.sct/zwei/sysdcl.lisp.~3~` is 5,581 bytes with
+SHA-256 `69a0dc2c0709cabcf1d3b14c35e745fbcb0b6414efc800057473c1d93545d0c3`.
+Each manifest record is its UTF-8 archive-relative versioned pathname, one NUL
+byte, and the 32-byte binary file SHA-256; declaration-order records are
+concatenated without a terminator and hashed again.
 That is the static base-subsystem denominator used here. Conditional or
 compiled-only Fortran, C, Pascal, Joshua, Concordia, PostScript, and contributed
 Macsyma packages are not promoted to base-world-active modes without runtime
@@ -156,8 +165,9 @@ checksums, and reproducibility boundary.
   release of file locks;
 - one- and two-window layouts, comparison views, multiple buffers, window
   growth, other-window selection, and two views showing one region;
-- an Edit Buffers major mode whose rows are presentations with commands and
-  menus, not merely passive text.
+- an Edit Buffers read-only major mode whose rows carry buffer/action line
+  properties and whose local command table schedules operations; the separate
+  List Buffers typeout report wraps displayed rows as presentations.
 
 ### Search, replace, and possibility sets
 
@@ -325,7 +335,8 @@ reduction, not a claim of a complete kernel security boundary.
 The ordered input intents were: `Select E`; pointer movement and a held/released
 right button; insertion of the probe text; host `Help`, `F11`, and `F12` mapping
 probes; Help command/list paths and aborts; Meta-X translation probes; `Control-X
-3`; `Control-X Control-B`; buffer-row pointer and right-button operations;
+3`; `Control-X Control-B`; pointer movement and a generic right-button menu while
+List Buffers was visible;
 `Control-X 1`; Help Apropos with empty input; Help command description for List
 Commands; and a final Meta-X keysym probe. The generation-scoped log preserves
 all 37 intents and their 37 linked outcomes, including attempts that produced no
@@ -360,7 +371,7 @@ and Apropos paths were also reached. An empty Apropos input was rejected with
 verified 2026-07-18: host `F12` reached the editor Help dispatcher. The image
 records this harness translation, not the position of Help on Symbolics hardware.*
 
-### Windows and Edit Buffers
+### Windows and buffer lists
 
 `Control-X 3` displayed two windows and selected a new `*Buffer-2*` in the lower
 pane.
@@ -371,34 +382,42 @@ pane.
 verified 2026-07-18: `Control-X 3` produced two independently selected editor
 windows and created the lower `*Buffer-2*` view.*
 
-`Control-X Control-B` then opened the presentation-oriented Edit Buffers display,
-where `+` marked the modified `*Buffer-1*`.
+`Control-X Control-B` then opened the presentation-oriented, nonmodal List Buffers
+typeout report. Its own visible legend says that `+` denotes a new file or a
+nonempty non-file buffer; it is not a generic modified-buffer marker. This agrees
+with the selected source, which binds `Control-X Control-B` to List Buffers and
+reserves `Control-X Control-Shift-B` for the distinct Edit Buffers application.
 
-![Genera Zmacs Edit Buffers display listing Buffer-2 and modified Buffer-1](../assets/genera-screenshots/zmacs-edit-buffers.png)
-
-*Runtime observation — Genera 8.5, session `zmacs-research`, generation 1,
-verified 2026-07-18: `Control-X Control-B` opened Edit Buffers; the plus sign in
-the first column identifies the modified buffer.*
-
-### Buffer-row mouse behavior
-
-Pointing at a buffer entry changed the bottom-line mouse documentation from the
-window-level description to entry-specific operations.
-
-![Genera Zmacs buffer list with bottom-line mouse documentation for the pointed-to buffer row](../assets/genera-screenshots/zmacs-buffer-entry-mouse-documentation.png)
+![Genera Zmacs List Buffers report listing Buffer-2 and Buffer-1](../assets/genera-screenshots/zmacs-list-buffers.png)
 
 *Runtime observation — Genera 8.5, session `zmacs-research`, generation 1,
-verified 2026-07-18: moving the pointer onto a buffer row changed the displayed
-mouse operations without a keyboard command.*
+verified 2026-07-18 and reclassified 2026-07-19: `Control-X Control-B` opened
+List Buffers; the visible heading, legend, and unchanged `Zmacs (Fundamental)`
+mode line distinguish the report from Edit Buffers.*
 
-A right-button menu was also observed while the list was displayed.
+### List-report mouse observations
 
-![Genera Zmacs buffer list with a contextual Operation menu open](../assets/genera-screenshots/zmacs-buffer-list-context-menu.png)
+The pointer was moved to coordinates intended to hit a displayed buffer row. The
+captured bottom line still shows generic window/menu documentation, so the image
+does not establish a typed presentation hit or buffer-specific operation.
+
+![Genera Zmacs List Buffers report with generic bottom-line mouse documentation](../assets/genera-screenshots/zmacs-list-buffers-pointer-documentation.png)
 
 *Runtime observation — Genera 8.5, session `zmacs-research`, generation 1,
-verified 2026-07-18: button 3 opened a contextual Operation menu while Edit
-Buffers was displayed. The capture does not establish that the row presentation,
-rather than a surrounding Dynamic Windows context, owns the menu.*
+captured 2026-07-18 and reassessed 2026-07-19: pointer movement left a generic
+`Mouse-R: Menu`-style description visible. An exact-glyph hit probe remains
+required before claiming List Buffers row recognition.*
+
+A generic right-button Operation menu was also observed while the list was
+displayed.
+
+![Genera Zmacs List Buffers report with a generic Operation menu open](../assets/genera-screenshots/zmacs-list-buffers-generic-operation-menu.png)
+
+*Runtime observation — Genera 8.5, session `zmacs-research`, generation 1,
+verified 2026-07-18 and reclassified 2026-07-19: button 3 opened a contextual
+Operation menu while List Buffers typeout was displayed. Its entries are generic
+Marking and Yanking, System, and Window menus; the capture does not establish a
+buffer-row presentation or buffer-specific menu owner.*
 
 The six images above are exact, unmodified copies of the selected raw PNGs. Their
 raw-to-curated mappings, capture times, per-capture action-prefix hashes, dimensions,

@@ -3,7 +3,7 @@ type: Artifact Analysis
 title: Software areas, applications, and programs in the inspected Genera 8.5 environment
 description: Evidence-bounded catalog of interactive programs, command areas, release systems, optional products, services, and demonstrations present in the inspected Open Genera media and world.
 tags: [genera, open-genera, applications, software-catalog, preservation]
-timestamp: 2026-07-18T13:16:09-04:00
+timestamp: 2026-07-19T12:23:53-04:00
 ---
 
 # Software areas, applications, and programs in the inspected Genera 8.5 environment
@@ -489,7 +489,7 @@ independent Select activities.
 | [Input Editor](dynamic-lisp-listener.md#complete-configured-base-input-editor-bindings) | Editable command/form input on interactive streams. | Core source/help; distinct from Zwei even though integrations exist. |
 | Zmacs / Zwei | General file/program editor and its reusable editing substrate. | Runtime opened, source audited, documented separately in [Zmacs](zmacs.md). |
 | [Dired](../directory-difference-and-buffer-editors.md) | Directory editor built on Zwei. | Source, installed help, and complete specialized command audit; not a separate Zmacs version. |
-| [Edit Buffers](../directory-difference-and-buffer-editors.md) | Presentation-oriented buffer list and buffer operations inside Zmacs. | Runtime opened and complete commands/presentations audited. |
+| [Edit Buffers](../directory-difference-and-buffer-editors.md) | Read-only action editor for buffer operations inside Zmacs; distinct from the presentation-backed List Buffers report. | Complete source commands audited; the existing runtime capture is List Buffers, so true Edit Buffers remains a runtime screenshot TODO. |
 | Teach Zmacs | Interactive editor tutorial assembled from a command and tutorial buffers. | Source consumer and local-only extracted text verified. |
 | [Mail mode](zmail.md#zwei-mail-mode-in-zmacs) | Zwei-based message-composition mode. | Source and complete bindings audited; distinct blank composition surface verified live. |
 | [Zmail](zmail.md) | Zwei-family mail application with message, summary, filter, collection, and composition surfaces. | Activity, source/help/commands, and reviewed empty-reader runtime evidence. |

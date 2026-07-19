@@ -3,7 +3,7 @@ type: Historical Article
 title: Directory, difference, and buffer editors on CADR and Genera
 description: An implementation, command, and runtime study of Dired, BDired, Edit Buffers, List Buffers, and Kill Or Save Buffers from MIT System 46 through LM-3 System 303 and Genera 8.5.
 tags: [mit-cadr, lm-3, genera, zwei, zmacs, dired, bdired, buffers]
-timestamp: 2026-07-18T05:42:17-04:00
+timestamp: 2026-07-19T12:23:53-04:00
 ---
 
 # Directory, difference, and buffer editors on CADR and Genera
@@ -306,14 +306,15 @@ rebuilt directory buffer.
 
 ## Genera Edit Buffers, List Buffers, and Kill Or Save Buffers
 
-### Edit Buffers is a presentation-backed special node
+### Edit Buffers is a read-only special node with line-property rows
 
 Genera's `EDIT-BUFFERS-BUFFER` is a read-only special-purpose node with an optional
 name substring. A numeric argument to Edit Buffers prompts for that substring. Its
 heading is a `ZMACS-BUFFER-LISTING` presentation, so a displayed List Buffers result
-can be translated directly into an editable list with the same filter. Each row
-stores the actual buffer in `:BUFFER` and is itself displayed through the buffer
-listing machinery.
+can be translated directly into an editable list with the same filter. Edit Buffers
+rows themselves store the actual buffer in the line's `:BUFFER` property and use an
+action character at column zero; they are not emitted by the presentation wrapper
+used for List Buffers report rows.
 
 Unlike System 303, there is one action character per row: `D`, `S`, `~`, or blank.
 `E` immediately selects the row's buffer without executing any other marks. Exiting
@@ -341,9 +342,18 @@ kills. `H` automatically marks modified file buffers for saving.
 The source table contains 36 local cells when digit expansion and lowercase aliases
 are counted. At the surrounding Zmacs level, `Control-X Control-Shift-B` invokes
 Edit Buffers in the inspected source; `Control-X Control-B` is List Buffers. The
-earlier isolated runtime session mapped host `Control-X Control-B` to the Edit Buffers
-display in that world, so the static and host-input observations are recorded
-separately rather than silently forced to agree.
+isolated runtime capture agrees: its `Buffers in Zmacs` heading, explanatory
+status-character legend, and unchanged `Zmacs (Fundamental)` mode line identify the
+nonmodal List Buffers typeout report. The earlier Edit Buffers classification was a
+documentation error, not a source/runtime discrepancy.
+
+Source evidence is exact for the selected profile: `zwei/zmacs.lisp.~1058~:141`
+binds `C-X C-B` to List Buffers and `:155` binds `C-X C-Shift-B` to Edit Buffers;
+`zwei/buffer-editor.lisp.~12~:64-93,155-185` defines the Edit Buffers local table,
+mode line, and line-property rebuild, while `:328-346` defines List Buffers and its
+presentation-wrapped report rows. The reclassified 1200-by-900 PNG is
+`zmacs-list-buffers.png`, SHA-256
+`970c299ec6f091dd2895022bd24935abb897931110b592e8c3517cde6a936963`.
 
 `=` requires a file buffer with an associated pathname. Its bit-decoded numeric
 argument uses bit 2 to ignore case and character style and bit 4 to ignore
@@ -373,17 +383,19 @@ This three-way split is easy to miss in a feature list:
 
 | Surface | Best use | Interaction model |
 | --- | --- | --- |
-| List Buffers | Inspect and point at buffers | Presentation report and row menu |
+| List Buffers | Inspect and point at buffers | Presentation report and source-defined row menu; live exact-hit probe pending |
 | Edit Buffers | Schedule one main state change per row with keyboard motion | Special read-only Zwei node |
 | Kill Or Save Buffers | Apply several lifecycle actions across many buffers | Multiple-choice graphical menu |
 
-![Genera Zmacs Edit Buffers display listing two buffers](assets/genera-screenshots/zmacs-edit-buffers.png)
+![Genera Zmacs List Buffers typeout report listing two buffers](assets/genera-screenshots/zmacs-list-buffers.png)
 
 *Runtime observation — Genera 8.5, session `zmacs-research`, generation 1,
-verified 2026-07-18: Edit Buffers displayed `*Buffer-2*` and the modified
-`*Buffer-1*`. This previously reviewed image is reused here as evidence for the
-specialized buffer view; its full provenance and publication review are in the
-[Genera screenshot catalog](assets/genera-screenshots/).*
+verified 2026-07-18 and reclassified 2026-07-19: `Control-X Control-B` displayed
+the List Buffers typeout report containing `*Buffer-2*` and `*Buffer-1*`. Its
+heading, legend, and unchanged Fundamental mode line rule out the distinct Edit
+Buffers application. The image remains evidence for the presentation-backed report;
+its full provenance and publication review are in the [Genera screenshot
+catalog](assets/genera-screenshots/).*
 
 ## Fresh System 303 runtime observations
 
@@ -449,9 +461,10 @@ a substitution of an unverified description.
   Transfer destinations exist in the model before the editor paints `T` marks.
 - System 303 Edit Buffers can schedule four independent classes of work on one row,
   which produces both its flexibility and the live `U` bug.
-- Genera's Edit Buffers heading and rows are presentations. The filtered List Buffers
-  report can therefore act as an entry object for the editable view rather than only
-  as printed text.
+- Genera's Edit Buffers heading is a `ZMACS-BUFFER-LISTING` presentation, while its
+  editable rows are line-property records. List Buffers instead emits each report
+  row as a buffer presentation. The filtered report heading can therefore enter the
+  editable view without making the two row models identical.
 - Genera's `Kill Or Save Buffers` has dependency ordering between choices and handles
   the current buffer last; neither behavior follows from the four visible choice
   labels alone.
@@ -465,10 +478,11 @@ a substitution of an unverified description.
 - Capture a fresh Genera Dired listing and confirmation screen in the isolated VLM
   only after a non-external, disposable guest-visible pathname is established. The
   current harness intentionally exposes no host file service.
-- Determine why host `Control-X Control-B` reached Edit Buffers in the earlier
-  Genera session while the inspected static table assigns the unshifted chord to
-  List Buffers. Possible causes include host key translation, world patch state, or
-  a runtime table mutation; no cause is asserted yet.
+- Capture the actual Genera Edit Buffers application with
+  `Control-X Control-Shift-B`; verify its read-only Edit-Buffers mode line, local
+  action column, Help tree, `End`/`Abort` behavior, and relationship to the List
+  Buffers presentation translator. The existing `Control-X Control-B` capture is
+  List Buffers and cannot close this obligation.
 - Review and curate the two System 303 Edit Buffers images above. A Dired login prompt
   is not a useful substitute for the blocked directory listing and should not be
   published decoratively.
@@ -492,10 +506,12 @@ a substitution of an unverified description.
   entries for Dired, Edit Buffers, List Buffers, and Kill Or Save Buffers.
 - Licensed local Genera 8.5 `zwei/dired.lisp.~465~`, 78,695 bytes, SHA-256
   `d988987ca7220fd156a0c35eca2651e009c0054a8b9b86774890bfcaa6055da5`,
-  and `zwei/buffer-editor.lisp.~12~`, 24,248 bytes, SHA-256
-  `f339b6b55994148b02c46dbca3fd532a4784d67b8ae24d89fa9ef954c07bef14`.
+  `zwei/buffer-editor.lisp.~12~`, 24,248 bytes, SHA-256
+  `f339b6b55994148b02c46dbca3fd532a4784d67b8ae24d89fa9ef954c07bef14`,
+  and `zwei/zmacs.lisp.~1058~`, 31,456 bytes, SHA-256
+  `082959472626b04d74631ada24bb8ad164bc44ef19f292343f905fbf10bf1d2f`.
 - Fresh System 303 Xvfb session `d06-d07-20260718`, generation 1, observed
   2026-07-18; and the previously reviewed Genera `zmacs-research`, generation 1,
   observation described above.
 
-Last verified: 2026-07-18.
+Last verified: 2026-07-19.
