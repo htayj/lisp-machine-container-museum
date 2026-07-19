@@ -61,6 +61,9 @@ as its Virtual Lisp Machine implementation hosted on Unix.
 - [Help, self-documentation, and Document Examiner](../help-self-documentation-and-document-examiner.md)
   documents the visible Help architecture and the full Document Examiner workflow,
   including a reviewed Standard-frame runtime observation.
+- [D07 reimplementation specification](../help-self-documentation-and-document-examiner-reimplementation-specification.md)
+  specifies Zmacs Help, Dynamic Windows Help, the pop-up frame, and Standard/Small
+  Document Examiner state, complete inputs, failure ordering, and conformance tests.
 - [Zmail and mail composition in Symbolics Genera](zmail.md) separates the full
   reader, integrated Zmail drafts, Zmacs Text Mail mode, and background Mailer;
   its [command and binding companion](zmail-commands-and-bindings.md) inventories

@@ -107,6 +107,13 @@ asset exclusion. MIT, LM-3, and the named contributors do not endorse this museu
   transition reviewed on 2026-07-19. They establish no complete Help corpus,
   hidden command table, source-to-band identity, command semantics, timing,
   exact font, or general CADR pixel identity.
+- [`zwei-help-menu.png`](zwei-help-menu.png) is separately approved for the
+  [D07 Help, self-documentation, and Document Examiner reimplementation
+  specification](../../help-self-documentation-and-document-examiner-reimplementation-specification.md).
+  Its use there is limited to the visible System 303 C/D/L/A/U/V/W choices,
+  Space/Help prompt, and active Zmacs Lisp context reviewed on 2026-07-19. It does
+  not establish hidden-L behavior, the unreachable `?` branch, leaf effects,
+  System 46 behavior, maintained-source identity, or a general Help corpus.
 - [`edit-buffers.png`](edit-buffers.png) is approved for the
   [directory, difference, and buffer editors reimplementation
   specification](../../directory-difference-and-buffer-editors-reimplementation-specification.md).

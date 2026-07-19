@@ -3,7 +3,7 @@ type: Coverage Index
 title: Reimplementation specification coverage
 description: The finite D01-D60 worklist for release-bounded, implementation-ready specifications of the CADR, LM-3, and Genera software areas documented by this museum.
 tags: [lisp-machine, mit-cadr, lm-3, genera, reimplementation, specification, coverage]
-timestamp: 2026-07-19T13:47:58-04:00
+timestamp: 2026-07-19T16:48:57-04:00
 ---
 
 # Reimplementation specification coverage
@@ -58,7 +58,7 @@ application-level contract. The Dynamic Windows specification is D28.
 | D04 | Emergency Break and degraded interaction paths | Specified | [Emergency Break and degraded interaction paths](emergency-break-and-degraded-interaction-paths-reimplementation-specification.md) |
 | D05 | EINE, ZWEI, and Zmacs editor family | Specified | [EINE, ZWEI, and Zmacs editor family](eine-zwei-and-zmacs-editor-family-reimplementation-specification.md) |
 | D06 | Directory, difference, and buffer editors | Specified | [Directory, difference, and buffer editors](directory-difference-and-buffer-editors-reimplementation-specification.md) |
-| D07 | Help, self-documentation, and Document Examiner | Planned | — |
+| D07 | Help, self-documentation, and Document Examiner | Specified | [Help, self-documentation, and Document Examiner](help-self-documentation-and-document-examiner-reimplementation-specification.md) |
 | D08 | ZMail and mail composition | Planned | — |
 | D09 | Converse, direct messages, and Notifications | Planned | — |
 | D10 | Network terminal applications | Planned | — |

@@ -92,6 +92,9 @@ machine-readable metadata layer while retaining ordinary Markdown as the source.
 - [Help, self-documentation, and Document Examiner](help-self-documentation-and-document-examiner.md)
   connects editor and system Help to Genera's documentation browser, with complete
   controls, search behavior, source-only findings, and a reviewed live frame.
+- [Help, self-documentation, and Document Examiner reimplementation specification](help-self-documentation-and-document-examiner-reimplementation-specification.md)
+  defines the release-selectable state, exhaustive effective input/gesture trees,
+  failures, private-document bytes, visual requirements, and conformance suite.
 - [Presentation Inspector in Symbolics Genera](genera/presentation-inspector.md)
   explains how Genera diagnoses presentation hierarchies, input contexts, handlers,
   gestures, menus, priorities, and translator failures.

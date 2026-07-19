@@ -3,7 +3,7 @@ type: Rights Review
 title: Publishing runtime screenshots for museum documentation
 description: Capture-specific U.S. copyright review and publication policy for CADR and Genera runtime screenshots used as historical evidence.
 tags: [screenshots, copyright, fair-use, preservation, cadr, genera]
-timestamp: 2026-07-19T13:47:58-04:00
+timestamp: 2026-07-19T16:48:57-04:00
 ---
 
 # Publishing runtime screenshots for museum documentation
@@ -306,6 +306,50 @@ directory-listing illustration, destructive action execution, bulk reuse, or a
 project license in either screen display. Pixels establish only the visible states;
 input dispatch and the Genera `d` transition additionally rely on the recorded
 action log, while the older CADR session remains explicitly intermediate evidence.
+
+### D07 Help and Document Examiner captures reviewed 2026-07-19
+
+The exact CADR `zwei-help-menu.png` and Genera `zmacs-help-dispatcher.png` and
+`document-examiner-initial.png` files were separately reviewed for the
+[Help, self-documentation, and Document Examiner reimplementation
+specification](help-self-documentation-and-document-examiner-reimplementation-specification.md).
+This conclusion is limited to those three files on that scholarly specification and
+the [Help, self-documentation, and Document Examiner evidence dossier](help-self-documentation-and-document-examiner.md).
+
+1. **Purpose and character.** D07 uses the two dispatcher images to compare the
+   short, staged, release-specific editor Help surfaces with the source-defined
+   effective trees, and the DEX image to make the Standard layout contract
+   independently checkable. Each sits beside criticism of behavior manuals omit,
+   provenance, nonclaims, and conformance tests. They are evidence, not decoration,
+   advertising, operating substitutes, or a screenshot gallery. This factor
+   strongly favors the reviewed use.
+2. **Nature of the displayed work.** The frames are functional interface states:
+   short dispatcher prompts, researcher-created or default editor content, sparse
+   panes, candidates, labels, and menu items. They contain no source listing,
+   artwork, third-party media, user data, font sheet, substantial Help/manual prose,
+   or displayed Sage document body. This factor favors the reviewed use while
+   recognizing possible copyright in screen expression and the licensed nature of
+   the Genera runtime.
+3. **Amount and substantiality.** One dispatcher frame per runnable profile is the
+   minimum that preserves each complete staged choice surface; one Standard DEX
+   frame is the minimum that preserves pane and menu relationships. The page does
+   not publish a full interaction sequence, System/Terminal Help table, pop-up Help
+   frame, Small DEX, computed DEX Help, search results, rich documentation, tutorial,
+   source, or extracted payload. Three stills are a minute portion of two large
+   interactive systems. This factor favors the reviewed use.
+4. **Effect on the market.** The stills cannot execute a command, provide the CADR
+   band or licensed Genera world, reproduce a manual or Sage corpus, expose complete
+   bindings, substitute for software access, or replace a screenshot-licensing
+   product. Their value arises from the museum's source/runtime comparison,
+   provenance, and reconstruction tests. This factor strongly favors the reviewed
+   use.
+
+On balance, these three exact images may be published for this D07 evidentiary use.
+The review does not approve physical F12 as a Symbolics-keyboard fact, hidden option
+behavior, command effects, boxed DEX menu cells, the 950-pixel threshold, Small DEX,
+the pop-up Help frame, optional commands, richer documentation screens, the local
+System Help capture, bulk/generic reuse, or a project license in any screen display.
+The public CADR and licensed Genera artifact boundaries remain separate.
 
 ## U.S. fair-use analysis
 

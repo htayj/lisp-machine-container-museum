@@ -47,6 +47,9 @@ the public LM-3 software and the `usim` emulator.
 - [Help, self-documentation, and Document Examiner](../help-self-documentation-and-document-examiner.md)
   documents CADR editor, System, Lisp, and flavor Help and compares them with the
   later Genera application.
+- [D07 reimplementation specification](../help-self-documentation-and-document-examiner-reimplementation-specification.md)
+  gives separate System 46 and System 303 dispatcher, registry, documentation,
+  defect, runtime-oracle, and conformance profiles.
 - [The MIT Lisp Machine Inspector](inspector.md) inventories object displays,
   history, navigation and mutation controls, and a synthetic-object runtime study.
 - [Peek on the MIT Lisp Machine](peek.md) documents every registered status mode,

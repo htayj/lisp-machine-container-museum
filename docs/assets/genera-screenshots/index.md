@@ -94,6 +94,17 @@ under applicable law.
   comtabs or translator ownership, command effects, source-to-world identity,
   exact fonts, timing, or general Genera pixel identity; startup text is
   incidental context.
+- [`zmacs-help-dispatcher.png`](zmacs-help-dispatcher.png) and
+  [`document-examiner-initial.png`](document-examiner-initial.png) are separately
+  approved for the [D07 Help, self-documentation, and Document Examiner
+  reimplementation
+  specification](../../help-self-documentation-and-document-examiner-reimplementation-specification.md).
+  Their use there is limited to the one-line Genera Zmacs dispatcher and the
+  1200-by-900 Standard Document Examiner arrangement, populated Current Candidates,
+  empty Bookmarks, Commands interactor, and eight menu-item positions reviewed on
+  2026-07-19. They do not establish physical F12 identity, leaf/gesture effects,
+  boxed menu cells, the 950-pixel threshold, Small layout, pop-up Help, optional
+  commands, licensed documentation content, or general Genera appearance.
 - [`zmacs-edit-buffers-marked-delete.png`](zmacs-edit-buffers-marked-delete.png)
   is approved for the [directory, difference, and buffer editors
   reimplementation

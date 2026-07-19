@@ -3,7 +3,7 @@ type: Historical Article
 title: Help, self-documentation, and Document Examiner on CADR and Genera
 description: A source, manual, and runtime study of editor Help, keyboard Help, Lisp and flavor documentation, Genera Help frames, and the Document Examiner.
 tags: [mit-cadr, lm-3, genera, zwei, zmacs, help, document-examiner, sage]
-timestamp: 2026-07-18T05:45:05-04:00
+timestamp: 2026-07-19T16:48:57-04:00
 ---
 
 # Help, self-documentation, and Document Examiner on CADR and Genera
@@ -35,7 +35,10 @@ The companion preservation articles explain how the
 [public CADR help corpus](mit-cadr/online-help-and-documentation-recovery.md) and the
 [licensed Genera databases](genera/online-help-and-documentation-recovery.md) are
 recovered. This dossier concentrates on the user-facing programs and the code paths
-that produce their behavior.
+that produce their behavior. The implementation-ready companion is the
+[Help, self-documentation, and Document Examiner reimplementation specification](help-self-documentation-and-document-examiner-reimplementation-specification.md),
+which carries the exhaustive effective input trees, source-visible defects, binary
+private-document grammar, failure ordering, runtime oracles, and conformance tests.
 
 ## Evidence and release boundaries
 
@@ -96,8 +99,10 @@ System Help and Terminal Help belong to the window/keyboard system, not to ZWEI.
 
 `SYSTEM HELP` walks `TV:*SYSTEM-KEYS*`, a mutable registry whose rows identify a
 character, a window or flavor, printable documentation, and how a new window may be
-created. The same registry drives actual program selection. A Control-modified
-System character requests creation; `System Rubout` cancels the prefix. The
+created. The same registry drives actual program selection. System 46 preserves
+exact modifier identity and does not give Control a generic create meaning. System
+303 instead records Control as force-create, strips it before lookup, and creates
+where the row permits. `System Rubout` cancels the prefix. The
 contemporary operator manual explicitly recommends System Help because sites and
 programs can add choices.
 
@@ -130,8 +135,9 @@ function records. A DEFCOM can therefore have useful editor Help even when a gen
 
 The maintained System 303 `zwei/doc.lisp` removes the System 46 `B` file-view option
 and makes the displayed choice list conditional. `L` appears only when the input
-stream supports playback, and `U` only when the current buffer has change history.
-Its `A` operation is specifically **current-mode apropos**, whereas a separate
+stream supports playback; `U` is unconditional. The predicate filters the prompt,
+not acceptance, so a hidden `L` can still be typed. Its `A` operation is specifically
+**current-mode apropos**, whereas a separate
 implementation path can search the broader command set.
 
 In the fresh runnable world the dispatcher displayed the complete available set:
@@ -148,6 +154,11 @@ In the fresh runnable world the dispatcher displayed the complete available set:
 | `Space` | Repeat the prior Help request |
 | `Help` | Explain the dispatcher |
 
+Three source-visible edge cases are not apparent in the menu. The initial repeat
+choice is still `B`, so fresh Space finds no row and silently reprompts. The code has
+a `?` Help branch after validation, but validation rejects `?`, making that branch
+unreachable. Prompt predicates are evaluated forms and can have effects or fail.
+
 The System 303 key documenter adds explicit mouse-scroll explanation and understands
 sparse as well as array command tables. The named-command search distinguishes a
 key-bound command, a command reachable through the local extended-command dispatcher,
@@ -159,7 +170,10 @@ and a command available only through the broader “any extended command” path
 verified 2026-07-18: pressing `Help` and then `Help` displayed the current editor
 dispatcher choices. This reviewed screenshot is evidence for this world, not every
 CADR load band; full capture and publication provenance are in the
-[CADR screenshot catalog](assets/mit-cadr-screenshots/).*
+[CADR screenshot catalog](assets/mit-cadr-screenshots/). MIT and other applicable
+rightsholders retain interests in the screen expression; this minimum image is
+published under the page-specific fair-use review to support historical criticism,
+and no endorsement is implied.*
 
 ## Genera Zmacs self-documentation
 
@@ -180,8 +194,14 @@ complete static option set is:
 | `?`, `Help` | Explain the dispatcher |
 | `Abort`, `Rubout` | Leave the dispatcher without a request |
 
-Genera Apropos searches both names and short documentation and, when there is no
-match, proposes related search words from explicit synonym sets such as
+Genera still initializes the repeat slot to `B` although it has no `B` row, so fresh
+Space silently reprompts. Once `?` or Help is entered, that dispatcher-help request
+becomes the repeat target and the following Space replays it. The L/U predicates
+filter the displayed prompt but do not prevent direct entry of a hidden option.
+
+Genera Apropos searches both names and short documentation and then processes
+explicit synonym sets regardless of whether command matches occurred, so it can
+propose related search words such as
 insert/yank/paste and kill/delete/remove. `Where Is` reports that a command is not
 available in the current context rather than treating presence in a global alist as
 availability. The key documenter follows aliases and prefixes, enumerates menu
@@ -198,7 +218,10 @@ local asset described in the [Genera help recovery article](genera/online-help-a
 verified 2026-07-18: host `F12` reached the Zmacs Help dispatcher after recorded
 host-key translation probes. The image establishes that harness mapping and the
 displayed choices, not the physical location of Help on a Symbolics keyboard. Full
-provenance is in the [Genera screenshot catalog](assets/genera-screenshots/).*
+provenance is in the [Genera screenshot catalog](assets/genera-screenshots/).
+Symbolics and other applicable rightsholders retain interests in the licensed screen;
+this minimum image is published under the page-specific fair-use review to support
+historical criticism, and no endorsement is implied.*
 
 ## Genera's reusable Help Program
 
@@ -232,12 +255,13 @@ installed command.
 
 The nonselectable `help` program inherits from Help Program and supplies the
 ephemeral frame used by Select Help, Function Help, Symbol-Help, and debugger
-Control-Help. `SHOW-HELP` reuses an existing frame, changes its title and display
-function, selects it, and can wait for the user to return. Deexposure buries the
+Control-Help. `SHOW-HELP` finds or creates a matching frame in the caller's optional
+console/superior domain, changes its title and display function, selects it, and can
+wait for the user to return. Deexposure buries the
 frame, so it behaves like a temporary inspection surface rather than a permanent
 application activity.
 
-Its complete frame-specific and documented inherited controls are:
+Its fixed frame-specific leaves and commonly visible inherited controls are:
 
 | Binding or gesture | Operation |
 | --- | --- |
@@ -251,6 +275,13 @@ Its complete frame-specific and documented inherited controls are:
 | `Control-Mouse-Right` | Open the marked-text menu |
 | `Super-W`, `Meta-W` | Push marked text onto the editor kill ring |
 | `Refresh` | Redisplay the frame |
+
+The complete effective table is larger: Standard Arguments supplies only modified
+minus/digits/Infinity; Input Editor Compatibility adds horizontal/typeout scrolling,
+display-position save/restore prefixes, search aliases, Cut/Copy/unmark, five no-op
+keys, and the full typed pointer tree. Exact aliases, numeric acceptance and errors,
+prefix leaves, fallthrough, and stale-frame cache tests are in the
+[D07 specification](help-self-documentation-and-document-examiner-reimplementation-specification.md#complete-pop-up-help-accelerator-behavior).
 
 Function Help enumerates the mutable function-key table. Select Help enumerates the
 live Select-key table and turns each activity name into a presentation, while
@@ -267,7 +298,8 @@ installed documentation database. The *Genera User's Guide* gives three equivale
 entry routes: `Select D`, the Document Examiner item in the System menu, and `Select
 Activity Document Examiner` from the Command Processor. Source registers one
 dispatching Select key and chooses a frame class from screen width: wider than 950
-pixels uses Standard Document Examiner; smaller screens use Small Document Examiner.
+pixels uses Standard Document Examiner; 950 pixels or narrower uses Small Document
+Examiner.
 The two implementation variants are hidden behind the one activity name.
 
 The application works with documentation **records**. A record has a topic, a type,
@@ -295,9 +327,13 @@ The standard frame has six functional surfaces:
 
 The standard menu is two columns: Show Candidates, Show Documentation, Show Overview,
 Show Table of Contents; then Help, Select Viewer, Reselect Candidates, and Read
-Private Document. Small Document Examiner replaces those eight fixed cells with
-`Show` and `Other` submenus and rearranges panes to conserve vertical and horizontal
-space. This is a real layout specialization, not merely a smaller font.
+Private Document. Small Document Examiner rearranges panes to conserve vertical and
+horizontal space. Source defines `Show` and `Other` submenu tables and a menu pane,
+but the selected Small layout compiles the menu-pane reference out under `#+Ignore`.
+The submenu hierarchy remains defined in the source command tables; it is not
+evidence for two visible Small-frame menu items. Whether another effective user route
+reaches those tables remains a Small-frame runtime TODO. This is a real layout
+specialization, not merely a smaller font.
 
 ### Search and navigation model
 
@@ -337,6 +373,9 @@ inspected Document Examiner sources. Optional hardcopy commands are separated be
 | Help | Construct and show the live Document Examiner command summary |
 | Document Examiner Documentation | Show the full installed Document Examiner documentation |
 | Beginning of Topic; End of Topic | Show the first or last previously displayed screen of a topic |
+| Goto Beginning; Goto End | Go to the first or last item in the selected viewer |
+| Remove Typeout Window | Dismiss transient command/Overview typeout and return to the viewer |
+| Show Forward Reference | Handle a presented undefined documentation reference |
 | Reselect Candidates | Choose an earlier candidate query |
 | Select Viewer; Select Previous Viewer; Remove Viewer | Manage named reading contexts |
 | Refresh | Reformat and redisplay the current context |
@@ -349,6 +388,7 @@ inspected Document Examiner sources. Optional hardcopy commands are separated be
 | Set, Clear, List Sage Variable | Imported Sage environment controls |
 | Run Documentation Example; Edit Documentation Example | Imported executable-example controls |
 | Edit Definition | Imported when Development Utilities is loaded |
+| Edit Documentation | Optional Concordia overlay; wins the shared edit gesture when installed |
 
 The full menu hierarchy exposes the top-level eight items plus viewer commands
 (select, remove, and optional hardcopy) and private-document commands (read, load,
@@ -361,23 +401,25 @@ restrict viewer hardcopy to material already seen.
 
 | Binding(s) | Operation |
 | --- | --- |
-| `Help` | Show the computed command summary |
-| `Control-Meta-L` | Select the previous viewer; a numeric argument chooses farther back |
-| `Space` | Remove a viewer typeout window / return to the main viewer position |
-| `Refresh` | Refresh the current viewer |
-| `Meta-<`, `Meta->` | Go to the first topic or the last screen of the last topic |
-| `Scroll`, `Control-V` | Scroll the viewer forward; a numeric argument switches to lines and an infinite argument goes to the end |
-| `Meta-Scroll`, `Meta-V` | Scroll backward; corresponding arguments choose lines or beginning |
-| `Control-Scroll` | Scroll the typeout window forward |
-| `Control-Meta-Scroll` | Scroll the typeout window backward |
-| `Super-S`, `Super-R` | Search viewer text forward or backward |
-| `Super-G` | Clear marked text in exposed panes |
-| `Super-W` | Push marked text from exposed panes onto the Zwei kill ring |
+| `Help` | Show the computed command summary; a pending numeric argument is an accelerator error |
+| `Control-Meta-L` | Select an earlier viewer; absent or explicit 1 becomes 2, a high index beeps, and zero/negative reaches the unguarded sequence-index error |
+| `Space` | Remove a viewer typeout window / return to the main viewer position; numeric argument rejected |
+| `Refresh` | Refresh the current viewer; numeric argument rejected |
+| `Meta-<`, `Meta->` | Go to the first topic or the last screen of the last topic; numeric argument rejected |
+| `Scroll`, `Control-V` | Scroll viewer forward; absent/sign-only means screens, finite means lines, infinity means end; signed negative reverses direction |
+| `Meta-Scroll`, `Meta-V` | Negate the same signed count and scroll backward; infinity means beginning |
+| `Control-Scroll` | Scroll typeout forward with the forward numeric rules |
+| `Control-Meta-Scroll` | Scroll typeout backward with the backward numeric rules |
+| `Super-S`, `Super-R` | Search viewer text forward or backward; numeric argument rejected |
+| `Super-G` | Clear marked text in exposed panes; numeric argument rejected |
+| `Super-W` | Push marked text from exposed panes onto the Zwei kill ring; numeric argument rejected |
 
-This is the complete explicit accelerator set installed by the inspected core
+This is the complete fixed core accelerator set installed by the inspected core
 `examiner.lisp` and `dexcom.lisp` sources. Named commands, menu handlers,
 presentations, standard numeric-argument handling, and optional modules add access
-paths without adding another fixed key in those files.
+paths without adding another fixed key in those files. The specification linked
+above gives the exhaustive effective tree, including every inherited argument state,
+shadowed candidate, and unbound outcome.
 
 ### Pointer gestures and presentations
 
@@ -386,13 +428,16 @@ The core source defines these direct gestures:
 
 | Object and gesture | Result |
 | --- | --- |
-| Candidate/topic, left | Show the documentation in the current viewer |
-| Candidate/topic, middle | Show its Overview |
-| Candidate/topic, Shift-middle | Add it as a bookmark |
+| Candidate/topic record group or record-group name, left | Show the documentation in the current viewer |
+| Candidate/topic record group or record-group name, middle | Show its Overview |
+| Candidate/topic record group or record-group name, Shift-middle | Add it as a bookmark |
 | Bookmark, left | Show its documentation |
 | Bookmark, middle | Show its Overview |
 | Bookmark, Shift-middle | Discard the bookmark |
 | Ellipsis presentation | Load and display more of that topic |
+| Active example, default selection | Run the documentation example, subject to execution policy |
+| Active example, edit gesture | Copy its text to the non-file Documentation Examples Zmacs buffer |
+| Record group/name, edit gesture | Edit Definition when Development Utilities is installed; higher-priority Edit Documentation when Concordia is installed |
 | Help menu item, left or right | Show the computed command summary |
 | Help menu item, middle | Show full Document Examiner documentation |
 
@@ -410,6 +455,12 @@ file is therefore a curated reading list over the installed database, not an arc
 containing the referenced documentation prose. This implementation fact is more
 precise than the manual's user-facing analogy to creating a private document.
 
+The write path truncates and emits progressively; Read/Load selects or creates its
+viewer before opening and applies records as decoded. A later file, syntax, package,
+type, or topic error can therefore leave a partial file or a changed viewer with a
+valid prefix already installed. The specification gives the exact little-endian SAB
+codes and overflow behavior.
+
 ### Self-help is generated from the installed command environment
 
 The `Help` command does not display one frozen command summary. The macro that defines
@@ -418,6 +469,12 @@ its documentation in `*DEX-COMMAND-HELP-ALIST*` and increments a tick. Help sort
 keyboard commands, lists named commands, constructs a computed Sage record, and
 rebuilds it when that tick changes. Optional modules can therefore extend the summary
 when loaded.
+
+That generated summary is not the complete effective table: it deliberately hides
+Control-V/Meta-V aliases and can omit imported or directly installed commands. Its
+tick is process-global while formatted item caches are per frame, allowing a second
+frame to retain stale Help after the first consumes a change. The exhaustive command
+tree must therefore come from the effective table audit, not from this one display.
 
 The full-documentation path is separate: middle-clicking Help or invoking Document
 Examiner Documentation resolves the installed “Document Examiner” section. The
@@ -433,22 +490,26 @@ split exactly.
 - General Lisp `DOCUMENTATION`, Zwei command Help, flavor description, and Document
   Examiner are complementary registries. A `NIL` result in one does not prove that
   another has no documentation.
-- Genera Help Program caches topic availability against the Sage index length, so a
-  newly installed documentation index invalidates prior negative lookups without
-  requiring a static menu rebuild.
-- The Help frame is intentionally ephemeral and reuses one program frame by replacing
-  its rendering function; it is not a separately accumulating activity history.
+- Genera Help Program caches topic availability against the Sage topic-array fill
+  pointer. A changed length invalidates positive and negative lookups; replacement or
+  mutation at the same length can leave either result stale.
+- The Help frame is intentionally ephemeral and reuses a matching program window by
+  console/superior lookup while replacing its rendering function; source does not
+  establish one global singleton or a separately accumulating activity history.
 - Document Examiner chooses a different frame implementation at a 950-pixel screen
   boundary while preserving one Select key and activity identity.
 - Document Examiner closes kept Sage file streams after approximately one idle minute
   when they remain open. The top level resets this timer around user input and closes
-  each stream normally or, after an error, in abort mode.
+  each stream normally or, after an error, in abort mode. The selected DEX source
+  establishes no separate exit-time stream-close guarantee.
 - Candidate search has a source comment acknowledging a tokenization edge case for a
   one-character string that is both an opening and closing delimiter. The code falls
   back to the original string rather than silently returning no token.
-- The hardcopy layer can print only topics already seen in a viewer and filters
-  candidate printers through the Sage backend; this behavior is not implied by a
-  generic “Hardcopy Viewer” label.
+- Bookmark display stably orders items with any nonempty seen-context history before
+  never-seen items; that first pass is not a selected-viewer membership test.
+- The hardcopy layer's default seen-only mode stops at the first bookmark not seen in
+  the selected viewer; it is a contiguous-prefix cutoff, not an independent filter
+  over later items. It also filters candidate printers through the Sage backend.
 - The source contains a complete command/menu missing-documentation auditor, but it is
   block-commented. Documentation coverage was a recognized maintenance problem even
   though this particular audit command did not ship active here.
@@ -498,16 +559,17 @@ client was `Genera on DIS-LOCAL-HOST`, XID 4194310, at 1200 by 900 pixels. `Sele
 therefore chose the source-predicted Standard Document Examiner rather than the
 small-screen variant.
 
-![The Genera 8.5 Standard Document Examiner with its title, empty Default Viewer, Current Candidates, empty Bookmarks, Commands pane, and complete two-column eight-item menu.](assets/genera-screenshots/document-examiner-initial.png)
+![The Genera 8.5 Standard Document Examiner with its title, empty Default Viewer, populated Current Candidates, empty Bookmarks, Commands interactor, and complete two-column eight-item menu.](assets/genera-screenshots/document-examiner-initial.png)
 
 *Runtime observation: `Select D` opened this 1200-pixel Standard Document
 Examiner on 2026-07-18. The initial frame is published as the minimum visual
 evidence for the six-pane layout and menu; it shows only short installed-document
 titles rather than documentation prose. Symbolics retains interests in the
-licensed software, and inclusion implies no endorsement.*
+licensed software. It is published under the page-specific fair-use review to support
+historical criticism of the layout, and inclusion implies no endorsement.*
 
 The initial frame visibly confirmed all six standard surfaces: title, empty Default
-Viewer, Current Candidates, empty Bookmarks, Commands, and the two-column eight-item
+Viewer, populated Current Candidates, empty Bookmarks, Commands interactor, and the two-column eight-item
 menu. Current Candidates began with installed documentation families and release-note
 sets. Pressing host `F12`, the harness mapping already established for Genera Help,
 inserted the computed **Document Examiner Command Summary** into the viewer and its
@@ -568,16 +630,19 @@ command summary or frame layout may be used as evidence after review; substantia
 manual pages or Help prose, decorative galleries, and bulk interaction sequences are
 not appropriate. The governing review is
 [Publishing runtime screenshots for museum documentation](screenshot-publication-rights-review.md).
-The selected initial Document Examiner frame passed that review for this article
-only; it does not authorize redistribution of the underlying documentation corpus.
+The exact CADR dispatcher, Genera dispatcher, and initial Document Examiner images
+passed page-specific review for this dossier and the linked D07 specification only;
+that review does not authorize redistribution of the underlying documentation corpus
+or any other capture.
 
 ## Open questions
 
 - Enumerate the live Genera Help Program subclasses and compare their installed topic
   mappings with the 7,809 static help-bearing source candidates.
-- Determine whether the Development Utilities `Edit Definition` command is installed
-  in the exact Genera 8.5 world. The fresh computed summary confirms the hardcopy
-  layer, but the unscrolled first screen does not establish this later optional item.
+- Determine whether the source-conditional Development Utilities `Edit Definition`
+  and the higher-priority Concordia `Edit Documentation` overlay are installed in the
+  exact Genera 8.5 world. The fresh computed summary confirms hardcopy names, but it
+  is not an exhaustive effective-table dump.
 - Audit compiled-only System 303 documentation records so `NIL` from a few probes is
   not mistaken for a census of the world.
 - Recover or identify the intended System 46 Basic ZWEI file without substituting the
@@ -591,6 +656,10 @@ only; it does not authorize redistribution of the underlying documentation corpu
 - MIT CADR System 46, [`nzwei/basic.zwei`](https://github.com/mietek/mit-cadr-system-software/blob/8e978d7d1704096a63edd4386a3b8326a2e584af/src/nzwei/basic.zwei),
   the 53-byte placeholder reached by the `B` option, SHA-256
   `27ff8f344dc9bd48f4b3ee0178d9eb5df92626c3ef0969e36475203b3b63cc36`.
+- MIT CADR System 46, [`lmwin/basstr.163`](https://github.com/mietek/mit-cadr-system-software/blob/8e978d7d1704096a63edd4386a3b8326a2e584af/src/lmwin/basstr.163),
+  37,385 bytes, SHA-256
+  `19e0771ff876d5325f18b97a2ccbf392f7d5950d3a89751d633d27d7cbe01e72`,
+  the selected loaded System and Terminal implementation.
 - MIT CADR System 46, [`lmwind/operat.27`](https://github.com/mietek/mit-cadr-system-software/blob/8e978d7d1704096a63edd4386a3b8326a2e584af/src/lmwind/operat.27),
   85,337 bytes, SHA-256
   `a5ab658210dc09891b0886b58af705368e33a41f013073c8b9a637d99ab0f02d`,
@@ -629,4 +698,4 @@ only; it does not authorize redistribution of the underlying documentation corpu
   observation; and fresh isolated Genera `d06-d07-genera-20260718`, generation 3,
   Document Examiner observation.
 
-Last verified: 2026-07-18.
+Last verified: 2026-07-19.

@@ -3,7 +3,7 @@ type: Artifact Analysis
 title: MIT CADR on-line help and documentation recovery
 description: How CADR software constructs in-program help from source declarations, generated editor listings, key tables, and application handlers, with a tracked System 46 recovery corpus.
 tags: [mit-cadr, lm-3, zwei, online-help, source-recovery, preservation]
-timestamp: 2026-07-17T04:15:00-04:00
+timestamp: 2026-07-19T16:48:57-04:00
 ---
 
 # MIT CADR on-line help and documentation recovery
@@ -87,11 +87,14 @@ with optional documentation; menus and windows answer documentation messages; an
 programs such as PEEK, FED, the error handler, STEP, SUPDUP, and MUNCH implement their
 own Help or `?` behavior.
 
-For example,
-[`lmio1/escape.6`](https://github.com/mietek/mit-cadr-system-software/blob/8e978d7d1704096a63edd4386a3b8326a2e584af/src/lmio1/escape.6#L70-L140)
-defines the Escape-key registry, and its
-[Help-key registrations](https://github.com/mietek/mit-cadr-system-software/blob/8e978d7d1704096a63edd4386a3b8326a2e584af/src/lmio1/escape.6#L483-L486)
-expose both one-key and all-key documentation.
+For the selected System 46 load profile, `lispm/pkgdcl.230` loads
+[`lmwin/basstr.163`](https://github.com/mietek/mit-cadr-system-software/blob/8e978d7d1704096a63edd4386a3b8326a2e584af/src/lmwin/basstr.163),
+whose System and Terminal registries drive both execution and generated Help.
+[`lmio1/escape.6`](https://github.com/mietek/mit-cadr-system-software/blob/8e978d7d1704096a63edd4386a3b8326a2e584af/src/lmio1/escape.6)
+preserves an older alternate Escape-repository architecture; it is historical
+evidence, not the normative runtime architecture for this profile. The exact release
+split is specified in the
+[D07 reimplementation specification](../help-self-documentation-and-document-examiner-reimplementation-specification.md#exact-source-interface-and-module-closure-boundary).
 
 ## Recovered System 46 corpus
 
@@ -318,7 +321,7 @@ compare that state with this source recovery.
 
 - MIT CADR System 46 source, commit
   [`8e978d7d1704096a63edd4386a3b8326a2e584af`](https://github.com/mietek/mit-cadr-system-software/tree/8e978d7d1704096a63edd4386a3b8326a2e584af/src),
-  verified 2026-07-17.
+  verified 2026-07-19.
 - LM-3 `sys` Fossil repository, maintained System 303 check-in
   [`4df393c68d7f083ce42d5c377039d26043cc18a9031ace28258dc97f4137eb91`](https://tumbleweed.nu/r/sys/info/4df393c68d7f083ce42d5c377039d26043cc18a9),
-  verified 2026-07-17.
+  verified 2026-07-19.
