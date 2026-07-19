@@ -1,0 +1,4 @@
+interface:
+  display_name: "Write Reimplementation Specs"
+  short_description: "Evidence-grounded reconstruction specifications"
+  default_prompt: "Use $write-reimplementation-specs to produce a release-bounded, evidence-grounded specification for recreating this system."

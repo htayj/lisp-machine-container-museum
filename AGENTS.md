@@ -1,5 +1,13 @@
 # Repository guidance
 
+## Repository skills
+
+Use the project skill `$write-reimplementation-specs` in
+`.agents/skills/write-reimplementation-specs/` when creating or auditing a
+reimplementation specification. The skill supplies the reconstruction methodology;
+this file and `docs/writing-guide.md` remain authoritative for repository-specific
+evidence, rights, OKF, screenshot, and publication rules.
+
 ## Museum documentation
 
 This repository is both runnable preservation infrastructure and a museum knowledge
