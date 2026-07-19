@@ -89,6 +89,10 @@ Derive the layer graph and ownership boundaries. Then specify, as applicable:
 - concurrency, locking, callback, retry, and atomicity rules;
 - failure, abort, partial-mutation, rollback, and recovery behavior;
 - input routing, output recording, caching, and invalidation;
+- complete application binding trees: direct keys, modifiers, contexts and modes,
+  prefixes and every reachable multi-stage leaf, numeric arguments and repetition,
+  pointer or presentation gestures, menu accelerators, precedence, fallthrough,
+  Help exposure, and unbound behavior;
 - extension points, registration, enumeration, and module boundaries;
 - boot, load, shutdown, reuse, and reconfiguration order; and
 - release-specific deltas and deliberate safety corrections.
@@ -124,6 +128,15 @@ namespaces, operator kinds, complete signatures or macro grammars, defaults, ret
 and multiple values, conditions/restarts, aliases, method-combination behavior, and
 load/module contracts.
 
+For every interactive application, include one complete effective binding inventory
+per selected profile, directly or through a named normative in-repository companion.
+A flat list is insufficient when dispatch has prefixes,
+contexts, modes, panes, modifier normalization, presentation translators, or
+shadowing: render those relationships as a tree or equivalent exact mapping down to
+every reachable leaf. Specify unknown and unbound fallbacks and add an exhaustive
+enumeration test. If the application owns no bindings, say so with evidence and
+separate inherited substrate bindings from application-owned ones.
+
 End with conformance tests, comparison procedure, known unknowns, artifact identities,
 and primary sources. Keep observations, inference, and requirements visibly distinct.
 
@@ -139,6 +152,8 @@ pass when practical. Ask reviewers to find:
 - source/world/runtime/manual disagreement hidden by wording;
 - inferred architecture presented as historical fact;
 - ambiguous variables or overloaded type names;
+- incomplete binding trees, omitted prefix leaves, or inherited bindings presented
+  as application-owned;
 - missing failure and abort paths;
 - tests too weak to distinguish incompatible implementations;
 - incorrect line spans, checksums, links, or screenshot identities; and

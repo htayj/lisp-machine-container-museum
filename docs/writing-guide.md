@@ -3,7 +3,7 @@ type: Editorial Guide
 title: Writing and research guide
 description: Conventions for evidence-based, preservation-conscious museum documentation in the repository's OKF bundle.
 tags: [documentation, okf, preservation, research]
-timestamp: 2026-07-19T00:28:30-04:00
+timestamp: 2026-07-19T04:36:35-04:00
 ---
 
 # Writing and research guide
@@ -104,6 +104,18 @@ difference as profile behavior; do not synthesize a historically nonexistent ave
 Do not call a specification complete merely because it inventories public function
 names. State the remaining oracle probes and the compatibility grain that the current
 evidence can actually support.
+
+Every interactive application specification also needs, directly or through a named
+normative in-repository companion, a complete input-binding inventory for each
+selected release profile. Record direct keys, modifier-sensitive
+variants, pane/mode/context overrides, prefix keys and every reachable multi-stage
+leaf, numeric arguments and repeats, pointer and presentation gestures, menu
+accelerators, precedence and shadowing, fallthrough, Help exposure, and unbound
+behavior. Express prefix families as a tree or equivalent exact mapping and include
+an exhaustive conformance test against the effective runtime table. Distinguish
+application-owned bindings from inherited window-system, editor, command-processor,
+or CLIM bindings. If there are no application-specific bindings, say so and cite the
+evidence.
 
 ## Local artifact notes
 

@@ -3,7 +3,7 @@ type: Rights Review
 title: Publishing runtime screenshots for museum documentation
 description: Capture-specific U.S. copyright review and publication policy for CADR and Genera runtime screenshots used as historical evidence.
 tags: [screenshots, copyright, fair-use, preservation, cadr, genera]
-timestamp: 2026-07-19T02:22:09-04:00
+timestamp: 2026-07-19T04:36:35-04:00
 ---
 
 # Publishing runtime screenshots for museum documentation
@@ -133,6 +133,24 @@ are the minimum needed to make the cross-release visual contract checkable and d
 not substitute for either system. The capture-specific conclusions above therefore
 support this additional scholarly use. This paragraph approves no other screenshot
 for specification reuse.
+
+### Program-selection specification reuse reviewed 2026-07-19
+
+The exact CADR and Genera `system-menu.png` files were separately reassessed for the
+[program selection, activities, and window management reimplementation
+specification](program-selection-activities-and-window-management-reimplementation-specification.md).
+That page uses one sparse frame from each system to compare the visible displayed
+menu state: placement, three-column organization, labels, current item box, and
+bottom pointer documentation. The Genera frame additionally establishes its title,
+border, and drop shadow; those features are not attributed to the CADR frame. The
+surrounding startup and Listener text is incidental context. The reuse adds no
+pixels, source, Help prose, or decorative use. The images do not establish the
+invocation gesture, target-window or registry identity, registry dynamism,
+selection/reuse/create order, callback order, destructive-operation results, or
+layout identity and persistence; those claims remain action-log-, source-, or
+runtime-trace-grounded. These two exact frames are the minimum reviewed images needed
+to make the release-specific visual contract checkable. This paragraph approves no
+other screenshot for specification reuse.
 
 ## U.S. fair-use analysis
 

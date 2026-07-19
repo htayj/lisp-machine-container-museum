@@ -38,6 +38,10 @@ machine-readable metadata layer while retaining ordinary Markdown as the source.
   defines the System 46, System 303, and Genera 8.5 Listener state, histories,
   input editing, ZDT/ZTOP embodiments, command dispatch, recovery, visible regions,
   and conformance tests.
+- [Program selection, activities, and window management reimplementation specification](program-selection-activities-and-window-management-reimplementation-specification.md)
+  defines the release-specific registries, reuse/create selection order, System and
+  Select keys, System Menu transactions, Select Key Selector, Split Screen, live
+  layouts, failure behavior, visual references, and conformance tests.
 - [How CLIM was used across the software catalogs](clim-use-across-lisp-machine-software.md)
   audits all sixty dossiers, separating true CLIM applications, ports, consumers,
   and compatibility hooks from Dynamic Windows and the earlier TV/EINE/ZWEI stack.

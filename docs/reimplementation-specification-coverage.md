@@ -3,7 +3,7 @@ type: Coverage Index
 title: Reimplementation specification coverage
 description: The finite D01-D60 worklist for release-bounded, implementation-ready specifications of the CADR, LM-3, and Genera software areas documented by this museum.
 tags: [lisp-machine, mit-cadr, lm-3, genera, reimplementation, specification, coverage]
-timestamp: 2026-07-19T02:22:09-04:00
+timestamp: 2026-07-19T04:36:35-04:00
 ---
 
 # Reimplementation specification coverage
@@ -34,6 +34,16 @@ probe and blocker; a screenshot from a related application cannot stand in for i
 Images constrain only visible facts. Their use must be recorded in the curated asset
 catalog and the [publication-rights review](screenshot-publication-rights-review.md).
 
+Every interactive application is incomplete until its specification contains, or
+explicitly incorporates from a named normative in-repository companion, the full
+effective input-binding tree for each selected profile: direct and modified
+keys, every prefix and reachable multi-stage leaf, pane/mode/context overrides,
+numeric arguments and repeats, pointer/presentation gestures, menu accelerators,
+precedence and fallthrough, Help exposure, and unbound behavior. The conformance
+suite must enumerate and inject that tree. An evidenced statement that the
+application owns no bindings is the required substitute, not an omitted section;
+inherited substrate bindings remain explicitly outside or inside the claimed scope.
+
 The [MIT CADR/LM-3 TV window-system specification](mit-cadr/tv-window-system-reimplementation-specification.md)
 is the common CADR display substrate for several topics, but it does not replace an
 application-level contract. The Dynamic Windows specification is D28.
@@ -43,7 +53,7 @@ application-level contract. The Dynamic Windows specification is D28.
 | ID | Software area or program family | Status | Specification |
 | --- | --- | --- | --- |
 | D01 | Lisp Listeners and editable input | Specified | [Lisp Listeners and editable input](lisp-listeners-reimplementation-specification.md) |
-| D02 | Program selection, activities, and window management | Planned | — |
+| D02 | Program selection, activities, and window management | Specified | [Program selection, activities, and window management](program-selection-activities-and-window-management-reimplementation-specification.md) |
 | D03 | Screen Editor and Frame-Up layout design | Planned | — |
 | D04 | Emergency Break and degraded interaction paths | Planned | — |
 | D05 | EINE, ZWEI, and Zmacs editor family | Planned | — |

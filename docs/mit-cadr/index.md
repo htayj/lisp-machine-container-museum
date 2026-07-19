@@ -27,6 +27,10 @@ the public LM-3 software and the `usim` emulator.
 - [System Menu and program selection](system-menu-and-select.md) compares the
   pointer menu, System-key registry, recent-window stack, screen layouts, and
   creation-versus-reuse rules in System 46 and System 303.
+- [Program selection, activities, and window management reimplementation specification](../program-selection-activities-and-window-management-reimplementation-specification.md)
+  gives the release-selectable System 46 and System 303 contract for System-key and
+  pointer selection, dynamic menu registries, Split Screen, live layouts, errors,
+  visible states, and objective conformance tests.
 - [Screen Editor and Frame-Up](../screen-editor-and-frame-up.md) traces the
   live-window Screen Editor from System 46 through System 303 and Genera, inventories
   its complete pointer command surface, and distinguishes it from Frame-Up.

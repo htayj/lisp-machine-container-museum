@@ -71,6 +71,14 @@ asset exclusion. MIT, LM-3, and the named contributors do not endorse this museu
   specification](../../lisp-listeners-reimplementation-specification.md). Its use
   there is limited to the visible Listener regions, input cursor, and value-line
   ordering reviewed on 2026-07-19; the image is not a generic CADR illustration.
+- [`system-menu.png`](system-menu.png) is also embedded in the [program selection,
+  activities, and window management reimplementation
+  specification](../../program-selection-activities-and-window-management-reimplementation-specification.md).
+  Its use there is limited to the live System 303 popup's visible three-column
+  organization, labels, highlighted **Attributes** item, pointer documentation, and
+  surrounding screen relationship reviewed on 2026-07-19. It does not prove
+  target-window, registry, callback, destructive-operation, or saved-layout state
+  and is not a generic CADR illustration.
 
 ## Capture catalog
 
@@ -399,4 +407,5 @@ The Doctor and QIX captures support [DOCTOR](../../mit-cadr/doctor.md) and the
 The same core-environment captures support [the Lisp Listener](../../mit-cadr/lisp-listener.md),
 the [D01 Listener specification](../../lisp-listeners-reimplementation-specification.md),
 [System Menu and Select](../../mit-cadr/system-menu-and-select.md),
+the [D02 program-selection specification](../../program-selection-activities-and-window-management-reimplementation-specification.md),
 [Inspector](../../mit-cadr/inspector.md), and [Peek](../../mit-cadr/peek.md).

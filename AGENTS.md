@@ -57,6 +57,16 @@ them.
   and conformance tests; do not turn an architectural overview or public-API list
   into a claim of complete behavioral compatibility. When releases disagree, make
   the difference selectable instead of silently averaging them.
+- Every application specification must contain, or explicitly incorporate from a
+  named normative in-repository companion, a complete input-binding inventory for
+  its selected profile. Enumerate direct keys, modifier-sensitive variants,
+  mode/pane/context overrides, prefix keys and every reachable multi-stage leaf,
+  numeric-argument and repeat behavior, pointer buttons or chords, presentation
+  translators, menu accelerators, shadowing and fallthrough, Help exposure, and
+  unbound behavior. Represent prefix families as an explicit tree or an equivalent
+  exact mapping, and test the effective runtime tree exhaustively. When an
+  application has no application-specific bindings, state that conclusion and its
+  evidence instead of silently omitting the section.
 - Every application dossier must identify its actual user-interface substrate and its
   relationship, if any, to CLIM. Do not infer CLIM use merely from shared terms such
   as frames, panes, presentations, command tables, formatted output, or redisplay;

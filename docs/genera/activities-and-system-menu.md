@@ -3,7 +3,7 @@ type: Artifact Analysis
 title: Activities, Select keys, and the System Menu in Symbolics Genera
 description: Code-, help-, manual-, and runtime-grounded study of Genera 8.5 activity registration, selection, window reuse, System Menu operations, layouts, and split-screen behavior.
 tags: [genera, activities, select-keys, system-menu, windows, runtime]
-timestamp: 2026-07-18T04:37:00-04:00
+timestamp: 2026-07-19T04:36:35-04:00
 ---
 
 # Activities, Select keys, and the System Menu in Symbolics Genera
@@ -215,7 +215,7 @@ Several have right-button variants that first ask which window to affect.
 | Move | Relocate a window; the alternate path can choose the victim explicitly. |
 | Shape | Change a window's outline; the alternate path can choose the victim. |
 | Expand | Expand a window; the alternate path can choose the victim. |
-| Hardcopy | Send an image of the selected window through the installed hardcopy facility. Presence does not prove a printer is configured. |
+| Hardcopy | Left and Middle use the ordinary automatic-target wrapper; Right always opens the alias-versus-concrete target chooser. Both eventually enter the installed hardcopy facility; presence does not prove a printer is configured. |
 | Refresh | Request redisplay of the window. |
 | Bury | Move the window behind others without destroying it. |
 | Kill | Terminate/remove the selected window, with confirmation where the target requires it. |
@@ -227,6 +227,13 @@ Several have right-button variants that first ask which window to affect.
 The menu therefore exposes process control and window-stack control beside geometry.
 `Bury`, `Arrest`, and `Kill` are not synonyms: one changes exposure order, one
 suspends execution, and one removes the target.
+
+The Hardcopy button triple is a live-world observation, not an inference from two
+similarly named source wrappers. A read-only registry query printed Left/Middle as
+`TV:SYSTEM-MENU-HARDCOPY-WINDOW` and Right as
+`TV:SYSTEM-MENU-HARDCOPY-WINDOW-MENU`; it did not invoke either wrapper or submit
+output. The exact binding and target-routing contract is specified in the
+[D02 reimplementation specification](../program-selection-activities-and-window-management-reimplementation-specification.md).
 
 ## Programs-column operations
 
@@ -391,6 +398,36 @@ world stayed byte-identical to the base, and no process remained. See
 [the Genera computer-use harness article](genera-computer-use-harness.md) for the full
 provenance model.
 
+### Read-only Hardcopy binding probe
+
+An additional isolated session, `d01-hardcopy-item-probe-g85-20260719`, generation 1,
+looked up and printed only the live **Hardcopy** item. The action log SHA-256 is
+`398e844474cef70a92f774ae466ed6afa7ae29b5685b21283218a9cb33a52de9`; the final
+ignored evaluator capture has PNG SHA-256
+`9c2034e9e91de5f8e3ffe7f3122a9a5e6806446b73ac3f2f9674193b75cf8838` and decoded
+pixel SHA-256
+`c22456f9ddf8a88b6a2d3f185f6341642b724fcbc4064b1fda8f2f714b5923e7`. It is local
+evidence, not a publication asset. Base and private world bytes remained at SHA-256
+`a8ee5e86cc7e322f7385af3e0cd579d7650d4dcfc3ce328acbf8b25515dd0672`.
+The harness requested neither Save World nor a process checkpoint; the guest Save
+World and checkpoint fields remain unknown. The shutdown prompt, confirmation, and
+cleanup progress were observed before bounded forced cleanup of the known stall.
+Run-record SHA-256:
+`71eaa7541ee4a1d19d72ec55b93f597c6f73daa71155d4247aa95874c2dd2c49`.
+
+| Probe field | Portable evidence |
+| --- | --- |
+| Interval/final record | 2026-07-19 04:18:42–04:24:22 EDT; `forced-stopped`; run SHA-256 above |
+| Licensed world | `Genera-8-5.vlod`, 54,804,480 bytes; base/private SHA-256 `a8ee5e86cc7e322f7385af3e0cd579d7650d4dcfc3ce328acbf8b25515dd0672` at start and stop; unchanged |
+| VLM/debugger | execution VLM SHA-256 `9f5e18d5770f973879716182b6856ef5a8ee9d3b2bb907476ea0cf35986aa4c7`; debugger SHA-256 `2db918cfe8f35f52c7ff4b7695b0ecd3bb85e41a3327ea5a94874edf05edb54a` |
+| Harness/config | harness execution SHA-256 `bc9276ac766913bc15018dd334a2a2704ae5a926e1fcbc30ccfcff08af8cb48a`; config SHA-256 `5ce6509f5adf2cf2d054d34eb4ba777ce462285b8cd9b01bc071bf819139e086` |
+| Compatibility inputs | X preload SHA-256 `acd71dbcb948f05b7fd2730b2b4706c08f16f46d792bd9aa6aa64370e855e4b1`; `ifconfig` preload SHA-256 `f45f45461622975996ab41138f64bb84a4b17c51fba0dbb649208914898c26b7` |
+| Time/toolchain | RFC 868 responder SHA-256 `cc3a2274149c5593b52e6608d732d4048518c766134df5e0f018746ad5cf98bb`, evidence SHA-256 `ba0d5e7f2093a96e28d1fbb1b7334d4393c18d273e1ca5f6fbc5eb1eea7bd28a`, exit zero; Guix manifest SHA-256 `3adae999bbe420182f22adc2499fcc82449a46eaf580a362de9c0e718fa6b37d`, channel `230aa373f315f247852ee07dff34146e9b480aec` |
+| Isolation/display | Bubblewrap user/mount/network/PID/IPC/hostname isolation; no default/external route or guest-visible host file service; MIT-SHM absent; private 1440×1100×24 Xvfb |
+| Selected client | `Genera on DIS-LOCAL-HOST`, XID 4194310, x=72, y=55, 1200×900 |
+| Ordered input | 16 records forming eight linked intent/outcome pairs; a first combined input failed in the reader before evaluation; after aborting and clearing it, the exact read-only lookup was submitted once and evaluated; action-log SHA-256 above; Hardcopy was never invoked |
+| Persistence/shutdown | Harness Save World invocation false; harness-created process checkpoint false; guest Save World/checkpoint unknown; prompt, confirmation, and cleanup progress observed; `forced_stop`, `forced_after_confirmed_shutdown_stall`, `state_may_be_incomplete`, and `unsaved_lisp_state_discarded` true; orderly VLM host shutdown false |
+
 ## Scope limits and open questions
 
 - The exact activity and menu lists describe one inspected 8.5 world. Loading or
@@ -417,3 +454,6 @@ provenance model.
   recorded above; inspected 2026-07-18.
 - Fresh `core-dossiers-20260718` Genera Xvfb session, generation 1, input, image, and
   shutdown evidence recorded above; observed 2026-07-18.
+- Fresh `d01-hardcopy-item-probe-g85-20260719` Genera Xvfb session, generation 1,
+  read-only registry, image, unchanged-world, and shutdown evidence recorded above;
+  observed 2026-07-19.

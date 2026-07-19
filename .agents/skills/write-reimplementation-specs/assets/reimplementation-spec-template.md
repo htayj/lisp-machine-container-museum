@@ -103,6 +103,32 @@ When witnesses disagree, <state profile-specific precedence and preservation rul
 2. <Distinct predicates that must not be collapsed.>
 3. <Ownership, generation, cache, registry, or lifetime invariant.>
 
+## Complete input and gesture binding trees
+
+<!--
+Required for an interactive application. A named normative in-repository companion
+may hold the exact inventory, but this section must state that incorporation and its
+scope. Separate application-owned bindings from inherited substrate bindings. If
+there are no application-specific bindings, state that fact with its evidence. Do
+not omit unreachable, shadowed, or unbound cases.
+-->
+
+| Context/mode/pane | Direct gesture | Modifier or argument handling | Operation | Shadowing/fallthrough/unbound result | Evidence |
+| --- | --- | --- | --- | --- | --- |
+| <context> | <key, pointer chord, presentation gesture, or menu accelerator> | <normalization/repeat> | <leaf> | <precedence or fallback> | `<code>` |
+
+```text
+<prefix or staged-dispatch root>
+├─ <prefix/key> -> <subtree or exact leaf>
+│  ├─ <next key> -> <leaf>
+│  └─ <unbound/default> -> <beep, cancel, self-insert, fallthrough, etc.>
+└─ <other direct gesture> -> <leaf>
+```
+
+State how the effective tree is enumerated or dumped at runtime, how mutable
+registrations invalidate it, and which generic environment bindings remain outside
+the application's ownership boundary.
+
 ## Lifecycle and transaction model
 
 ### <Operation or phase>
@@ -198,6 +224,7 @@ they are part of the claim.
 | `<T-002>` | `<P1>/<L0>` | <invalid or boundary input> | <error and unchanged/recovered state> | <claim> |
 | `<T-003>` | `<P1>/<L1>` | <abort or concurrent path> | <ordering, cleanup, and retry result> | <claim> |
 | `<T-004>` | `<P1>` versus `<P2>` | <same discriminating input> | <profile-specific results> | <release delta> |
+| `<T-BINDINGS>` | all interactive profiles | Enumerate every context, prefix path, modifier, pointer/presentation gesture, leaf, shadowed entry, and one unbound value | Dump is isomorphic to the normative binding trees and every injected path reaches exactly its specified result | complete input contract |
 
 ## Preserved-system comparison procedure
 

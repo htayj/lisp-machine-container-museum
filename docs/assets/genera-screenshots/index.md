@@ -53,6 +53,15 @@ under applicable law.
   prompt, cursor, who-line, and value-line ordering reviewed on 2026-07-19; the
   startup notice remains incidental context and the image is not a generic Genera
   illustration.
+- [`system-menu.png`](system-menu.png) is also embedded in the [program selection,
+  activities, and window management reimplementation
+  specification](../../program-selection-activities-and-window-management-reimplementation-specification.md).
+  Its use there is limited to the live Genera 8.5 popup's visible three-column
+  organization, labels, highlighted **Refresh** item, pointer documentation, border,
+  drop shadow, and surrounding screen relationship reviewed on 2026-07-19. It does
+  not prove target-window, registry, callback, destructive-operation, or saved-layout
+  state; the startup notice remains incidental context, and the image is not a generic
+  Genera illustration.
 
 ## Source sessions
 
@@ -574,7 +583,8 @@ for the capture and isolation model.
 
 The core-session captures support [the Dynamic Lisp Listener](../../genera/dynamic-lisp-listener.md),
 the [D01 Listener specification](../../lisp-listeners-reimplementation-specification.md),
-[activities and the System Menu](../../genera/activities-and-system-menu.md), and
+[activities and the System Menu](../../genera/activities-and-system-menu.md),
+the [D02 program-selection specification](../../program-selection-activities-and-window-management-reimplementation-specification.md), and
 [Inspector and Peek](../../genera/inspector-and-peek.md).
 
 The Frame-Up capture supports [Screen Editor and Frame-Up](../../screen-editor-and-frame-up.md).

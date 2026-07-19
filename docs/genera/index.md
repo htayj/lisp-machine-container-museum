@@ -30,6 +30,10 @@ as its Virtual Lisp Machine implementation hosted on Unix.
 - [Activities, Select keys, and the System Menu](activities-and-system-menu.md)
   reconciles the live selection and creation registries with source and manuals,
   including exact controls and an observed menu.
+- [Program selection, activities, and window management reimplementation specification](../program-selection-activities-and-window-management-reimplementation-specification.md)
+  gives the Genera 8.5 contract for activities, Select-key dispatch and firewall,
+  the Select Key Selector, System Menu transactions, Split Screen, live layouts,
+  failure behavior, and conformance tests.
 - [SUPDUP, Telnet, and the Genera Terminal program](../network-terminal-applications.md)
   inventories Terminal's commands, connection controls, Dynamic Windows gestures,
   login protocols, simulators, and CADR lineage.
