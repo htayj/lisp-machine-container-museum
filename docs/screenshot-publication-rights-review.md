@@ -3,7 +3,7 @@ type: Rights Review
 title: Publishing runtime screenshots for museum documentation
 description: Capture-specific U.S. copyright review and publication policy for CADR and Genera runtime screenshots used as historical evidence.
 tags: [screenshots, copyright, fair-use, preservation, cadr, genera]
-timestamp: 2026-07-18T02:21:36-04:00
+timestamp: 2026-07-18T12:56:34-04:00
 ---
 
 # Publishing runtime screenshots for museum documentation
@@ -30,10 +30,34 @@ The following System 303 captures passed review and are published in the
 | `zwei-help-menu.png` | Shows the result of pressing `Help` twice and the live self-documentation dispatcher | Publish only beside analysis of that dispatcher; do not reuse as a general help-text extract |
 | `zmacs-text-mode.png` | Shows the mode-line result of invoking `Meta-X Text Mode` | Publish beside the mode-transition analysis |
 | `zmacs-lisp-mode.png` | Shows the mode line after invoking `Meta-X Lisp Mode` | Publish beside the mode-transition analysis |
+| `emergency-break-cold-load-evaluation.png` | Shows the degraded cold-load-stream breakpoint accepting the researcher-entered form `(+ 40 2)` and printing `42` over the saved listener display | Publish only beside analysis of the independent recovery console and the present harness limitation; do not reuse as a generic Lisp Machine illustration |
+| `lisp-listener-multiple-values.png` | Shows the Listener printing the two values of the researcher-entered form `(values 7 8)` | Publish beside analysis of Listener evaluation and multiple-value display |
+| `system-menu.png` | Shows the live three-column System Menu and its functional window-management labels | Publish beside analysis that cross-checks the observed menu against the pinned implementation |
+| `inspector-list.png` | Shows the Inspector displaying the researcher-created list `'(museum listener inspector peek)` | Publish beside analysis of Inspector layout, history, and object presentation; do not generalize the synthetic object to other inspected types |
+| `peek-processes.png` | Shows Peek's live Active Processes table without opening or operating a destructive action menu | Publish beside analysis of Peek's process-monitoring mode and source-defined columns |
+| `screen-editor-menu.png` | Shows the complete 15-item live Screen Editor menu and operation-specific pointer documentation without applying a geometry change | Publish beside the release/source comparison of Screen Editor controls; do not reuse as a generic CADR illustration |
+| `describe-flavor-lisp-listener.png` | Shows the first page of Zmacs's source-grounded `Describe Flavor` report for the system's own `TV:LISP-LISTENER` flavor, including component order, state, methods, and pagination | Publish beside the object-system inspection analysis; do not present the first page as a complete dump or reuse it as a generic CADR illustration |
+| `error-handler-dynamic-choices.png` | Shows a researcher-created condition in the ordinary Error Handler together with its live context and dynamically computed proceed choices | Publish beside debugger analysis; the synthetic error does not authorize publication of unrelated debugger sessions or user data |
+| `window-error-handler.png` | Shows the independent window-oriented Error Handler and its functional proceed interface for a second synthetic condition | Publish only for comparison with the ordinary handler and source-defined window behavior |
+| `trace-step-and-who-calls.png` | Shows trace output, entry into and exit from Step, and a `Who Calls` result for researcher-defined functions | Publish beside analysis of the three tools; do not generalize the one call-analysis result to completeness across compiled and interpreted code |
+| `compiler-macroexpand-disassembly.png` | Shows compilation, result `81`, a one-step macroexpansion, and CADR disassembly for one researcher-written function | Publish beside the cross-system runtime/compiler analysis; no installed source, Help prose, manual text, or user data is displayed |
+| `network-service-registry.png` | Shows the exact thirteen-contact System 303 Chaos registry, two security-sensitive gate values, and six function-presence results without invoking a service | Publish only beside analysis of the service inventory, defaults, and load-band boundary; the screen does not authorize service access, network bridging, or publication of real peer responses |
+| `spacewar-game.png` | Shows the complete live Spacewar playfield after loading the public source and public `SHIP` sprite font, with both ships and the central sun | Publish only beside the source/runtime game analysis; the 768-by-770 crop removes an unrelated debugger and retains no source listing, Help prose, manual text, or proprietary Genera material |
+| `doctor-conversation.png` | Shows three responses from public CADR DOCTOR source to researcher-written statements about computer preservation and history | Publish only beside the source/runtime conversational analysis; no private conversation, substantial script corpus, manual prose, or licensed Genera material is displayed |
+| `qix-live.png` | Shows the public CADR `NQIX` implementation's evolving XOR line trail in the full Listener interior | Publish only beside analysis of QIX and the HACKS suite; the single functional state is not a general screenshot gallery or evidence that the other hardware-, color-, data-, or service-dependent demos ran |
 
-The corresponding Genera review covered local session `zmacs-research`,
-generation 1, captured on 2026-07-18 from the identified Genera 8.5 world. Six
-screens passed review for publication in the
+The corresponding Genera review covered local sessions `zmacs-research`,
+`core-dossiers-20260718`, `layout-tools-20260718`,
+`debuggers-d12-genera-20260718`, `d06-d07-genera-20260718`,
+`flavors-d16-genera-20260718`, `d13-analysis-genera-20260718`,
+`zmail-d08-genera-20260718`, `d11-presentation-inspector-20260718`, and
+`d09-converse-notifications-genera-20260718`, `d20-namespace-editor`,
+`d22-runtime-compiler-genera-20260718`, and
+`d28-d29-ui-clim-20260718`, and `d35-hardcopy-20260718`, with the
+generation numbers recorded in the asset catalog, plus
+`d46-network-services-genera-20260718`, generation 2. All were captured on
+2026-07-18 from the same identified Genera 8.5 world. Thirty-one screens
+passed review for publication in the
 [curated Genera screenshot catalog](assets/genera-screenshots/index.md):
 
 | Curated capture | Documentary purpose | Conclusion |
@@ -44,12 +68,53 @@ screens passed review for publication in the
 | `zmacs-edit-buffers.png` | Shows the presentation-oriented Edit Buffers display and the modified-buffer marker | Publish beside analysis of buffer management |
 | `zmacs-buffer-entry-mouse-documentation.png` | Shows the bottom-line mouse documentation after pointing at a buffer row | Publish beside analysis of presentation-sensitive pointer feedback |
 | `zmacs-buffer-list-context-menu.png` | Shows the contextual menu while the buffer list is displayed | Publish only for the observed context; the image alone does not prove that a row presentation owns the menu |
+| `dynamic-lisp-listener-multiple-values.png` | Shows the Listener printing two values from the researcher-entered form `(values 17 23)` | Publish beside analysis of Listener evaluation and multiple-value display; the startup notice is incidental context, not the publication purpose |
+| `system-menu.png` | Shows the observed three-column System Menu and its short functional labels | Publish beside the source/runtime menu comparison; the startup notice is incidental context, not the publication purpose |
+| `inspector-list.png` | Shows the Inspector displaying the project-owned probe `'(alpha (beta . gamma) #(1 2 3))` | Publish beside analysis of Inspector panes, history, and the observed menu discrepancy; no licensed source is displayed |
+| `peek-processes.png` | Shows Peek's live process and timer headings without exposing a Help screen or choosing a process operation | Publish beside analysis of the Processes mode and the source-defined table structure |
+| `frame-up-split-layout.png` | Shows the researcher-created two-pane Frame-Up model and short Command Processor transcript after splitting the default pane | Publish beside the source/manual analysis of Frame-Up's pane model and horizontal-split semantics, including the Dynamic Windows program-framework analysis; no licensed source or Help prose is displayed |
+| `debugger-dynamic-choices.png` | Shows the ordinary Debugger for a researcher-created condition, its selected frame, and two condition-specific restart choices before any proceed operation | Publish beside the condition-system and Debugger analysis; do not reuse as a generic error illustration |
+| `display-debugger-layout.png` | Shows the pane-oriented Display Debugger after the article's explicitly documented internal-entry caveat, with the retained synthetic condition and functional pane arrangement | Publish only beside that caveated layout analysis; do not present the nested history-pane condition as normal supported entry behavior |
+| `screen-editor-menu.png` | Shows the complete functional Screen Editor menu reached from the live System Menu before exiting without a geometry change | Publish beside the source/runtime Screen Editor comparison; do not treat it as a reusable Genera menu gallery image |
+| `document-examiner-initial.png` | Shows the sparse initial Standard Document Examiner frame, six functional surfaces, short document-family titles, and eight-item menu before Help prose is requested | Publish beside layout and command-surface analysis; richer Help and candidate screens remain untracked |
+| `flavor-examiner-three-result-history.png` | Shows three nonmutating inspections of `DW:PROGRAM-FRAME` retained in the Flavor Examiner's source-defined history rotation | Publish beside object-system analysis; do not present the displayed result panes as a complete source or definition dump |
+| `clos-standard-object-superclasses.png` | Shows the short result of the separate CLOS superclass command for `CLOS:STANDARD-OBJECT` | Publish beside the Flavors/CLOS boundary analysis; the three-line result is functional evidence, not a class-library extract |
+| `trace-and-step-entry.png` | Shows trace entry/exit and the live Step `Eval:` prompt for researcher-owned functions, retaining initial empty breakpoint and callers-mode observations | Publish beside the trace/Stepper integration analysis; do not infer undocumented key behavior from the image |
+| `zmail-reader-empty.png` | Shows the empty live Zmail summary/message layout, 20-cell main menu, and three short operational hints after local login, without displaying user mail | Publish beside analysis of the reader architecture and live entry path; the short hints supply necessary functional context and do not authorize publication of message content or fuller Help prose |
+| `zmacs-text-mail-template.png` | Shows a blank Zmacs Text Mail template, body separator, and mode line, without a recipient or message body | Publish beside analysis distinguishing the embedded composition mode from the Zmail reader; do not use it as a mail-content illustration |
+| `presentation-inspector-integer.png` | Shows the Presentation Inspector's three functional surfaces, complete ten-command menu, copied contexts, and researcher-entered integer `42` | Publish beside analysis of the frame architecture, invocation, and lifecycle; the synthetic object does not authorize unrelated inspection sessions |
+| `presentation-inspector-handler-report.png` | Shows the first live all-presentations report page for the synthetic integer, including effective priorities, gestures, menus, and categorized handler candidates | Publish beside the Presentation Inspector or Dynamic Windows handler-matching analysis; do not present it as a general handler database extract or publish the exploratory report sequence |
+| `converse-empty.png` | Shows a fresh Converse editor containing only its functional `To:` template, structural separator, scrollbar, and short send/exit mode-line summary | Publish beside analysis of Converse's editor model and entry state; the blank form does not authorize publication of real conversations, addresses, or substantial local Help prose |
+| `notifications-synthetic-record.png` | Shows the separate Notifications title/typeout/menu frame containing one researcher-authored `TV:NOTIFY` record | Publish beside analysis of central notification retention and the viewer boundary; do not use it as permission to publish real system, user, network, or service notifications |
+| `namespace-editor-empty.png` | Shows the Namespace Editor's empty-object frame, prompt, pane division, and complete thirteen-command menu without any configured object or site data | Publish beside the source/manual analysis of the frame and command surface; do not use it as permission to publish configured namespace records or fuller Help prose |
+| `compiler-macroexpand-disassembly.png` | Shows the interpreted-to-compiled transition, result `81`, Common Lisp macroexpansion, and Ivory disassembly for one researcher-written function | Publish beside the compiler comparison; the synthetic form and functional output do not authorize publication of licensed source listings |
+| `lisp-context-gc-status.png` | Shows read-only language-context and garbage-collector status, including clearly volatile counts and capacities | Publish beside the runtime architecture analysis; do not generalize the measured values into release constants or use the screen as a decorative system-status image |
+| `accepting-values-gc-options.png` | Shows the live typed GC-options form with operational choices, current volatile values, a pointer over its printed Abort presentation, and the resulting context-sensitive mouse documentation | Publish only beside the Dynamic Windows analysis of Accepting Values, typed fields, presentations, redisplay, and abort behavior; do not treat current settings as release defaults or reuse the screen as a general configuration guide |
+| `hardcopy-file-options.png` | Shows the complete typed Hardcopy File form and the exact six live format choices while no printer or request is selected | Publish the cropped form only beside analysis of the Hardcopy command and live registry; do not infer successful printer configuration or output from unsubmitted defaults |
+| `screen-hardcopy-options.png` | Shows the complete Screen hardcopy option form, including capture sources, cursor inclusion, destination, announcement, and shutter-trigger controls | Publish the cropped form only beside Function-Q analysis; do not infer that a capture, file write, or printer submission occurred |
+| `network-service-registry-disabled.png` | Shows a researcher-entered read-only report of server policy, 47 core registrations, and selected registered/enabled pairs, all disabled, with optional Domain and Site-NAMES contacts absent | Publish only beside analysis of service registration, enablement, and the base-world load boundary; no service output, configured site data, installed Help, or network transaction is shown |
 
 These screens contain functional interface layout, short labels, status
-information, and researcher-entered text. They do not reproduce source files,
-fonts, a manual chapter, a demonstration image, or a useful substitute for the
-licensed world. Their reviewed raw source names and exact hashes are retained
-in the curated catalog.
+information, blank forms, and researcher-entered text. Genera captures that retain startup context also
+contain the short release copyright and unconfigured-site notices that the world
+displayed before the documented interaction; those notices are retained because
+the surrounding Listener and menu geometry is part of the runtime evidence, not
+to republish the notices as standalone text. The Emergency Break capture additionally
+contains a short debugger announcement needed to identify the recovery path. They do
+not reproduce source files, fonts, a manual chapter, a demonstration image, or a
+useful substitute for the software. These reviewed complete states are the minimum
+needed to distinguish Zmail from Zwei Mail mode, to establish both the Presentation
+Inspector frame and the report whose implementation the article analyzes, and to
+distinguish blank Converse from a Notifications history containing controlled
+research input, to establish the Namespace Editor's real empty-object layout
+without exposing site data, to compare actual compiler output and read-only
+runtime state without showing licensed source, to establish the live typed-form
+and presentation-sensitive abort behavior of Accepting Values, and to verify the
+Hardcopy registries and option structure without reproducing the unrelated Listener
+or exploratory Debugger, and to distinguish a registered service from an enabled
+one without publishing any request or response. Their reviewed raw
+source names and exact hashes are retained in the
+curated catalog.
 
 The Genera full-Help and command-list captures were not approved as a bulk
 publication set. A particular screen containing more installed explanatory
@@ -102,18 +167,20 @@ The Copyright Office's
 recognizes potentially copyrightable screen text, artwork, and photographs but
 also says registration should be refused where a screen-display claim rests
 only on layout or format, blank forms, de minimis menus, or purely functional
-elements. The reviewed editor screens are primarily functional and factual.
+elements. The reviewed application screens are primarily functional and factual.
 The ZWEI Help dispatcher contains more authored prose, so this factor is less
 favorable for that image, but the narrow analytical purpose remains strong.
 
 ### 3. Amount and substantiality
 
-Each image reproduces one complete visible state because the editor geometry,
-mode line, mouse documentation line, menu placement, and surrounding context
-are part of the evidence. Cropping those elements would impair the claim. The
-selected stills are nevertheless a minute part of large interactive systems,
-and the site does not publish a navigable sequence or comprehensive screen
-catalog.
+Most images reproduce one complete visible state because editor geometry, mode
+lines, mouse documentation, menu placement, or surrounding context are part of
+their evidence. Cropping those elements would impair those claims. The two
+Hardcopy images make the opposite capture-specific judgment: only the complete
+form is probative, so the unrelated underlying Listener and exploratory Debugger
+were removed. The selected stills are nevertheless a minute part of large
+interactive systems, and the site does not publish a navigable sequence or
+comprehensive screen catalog.
 
 This factor favors the reviewed set. *Sony v. Bleem* treated a handful of full
 software screenshots as an insignificant portion of the interactive works.

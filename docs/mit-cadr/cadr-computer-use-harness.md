@@ -3,7 +3,7 @@ type: Preservation Note
 title: Operating CADR through the Xvfb computer-use harness
 description: Architecture, provenance, verified System 303 interactions, and limitations of the museum's private headless CADR sessions.
 tags: [mit-cadr, lm-3, usim, computer-use, xvfb, preservation]
-timestamp: 2026-07-18T02:21:27-04:00
+timestamp: 2026-07-18T12:56:34-04:00
 ---
 
 # Operating CADR through the Xvfb computer-use harness
@@ -243,6 +243,55 @@ Its sidecar contains the start-time hash only; the equal execution-time hash abo
 run-state evidence. The session then stopped with both process exit statuses 0,
 `forced_stop` and `state_may_be_incomplete` false, the public base checksum
 unchanged, and all three recorded process identities gone.
+
+## Loading public source through the isolated FILE bridge
+
+The private harness can load public LM-3 files without putting them on the emulated
+disk. Its local Chaos FILE service appears to the guest as `LOCAL-BRIDGE`, with the
+public System tree exported below directory `tree`. A 2026-07-18 Spacewar session
+established an important pathname detail: ordinary Lisp Machine pathname components
+are canonicalized to uppercase, while the bridged Unix checkout uses lowercase names.
+The reproducible route is therefore to supply raw components explicitly:
+
+```lisp
+(load (fs:make-pathname
+        :host "LOCAL-BRIDGE"
+        :raw-directory '("tree" "io1")
+        :raw-name "swar"
+        :raw-type "lisp"))
+
+(load (fs:make-pathname
+        :host "LOCAL-BRIDGE"
+        :raw-directory '("tree" "fonts")
+        :raw-name "ship"
+        :raw-type "qfasl"))
+```
+
+The first form loaded into package `SPACEWAR`; the second loaded the public `SHIP`
+font into `FONTS`. Using ordinary `:directory`, `:name`, and `:type` components
+instead produced uppercase Unix path components and missed the files. This is a
+local bridge interoperability rule, not evidence that historical Lisp Machine file
+servers required lowercase raw pathnames.
+
+The first bridge access in a fresh System 303 session also enters the world's
+generic file-login dialogue. At its `loginname<space>password` prompt, a non-secret
+local label followed by a trailing space and no password completed the isolated
+bridge login; no historical site credential is required or appropriate. Later
+loads can repeat the short `Please log in` banner while proceeding with the saved
+local identity. The museum harness must never place a real password in a scripted
+interaction or provenance record.
+
+The successful session then called `SPACEWAR:INIT` synchronously from the Listener
+top level, entered the live game, captured the complete application window, and
+stopped cleanly. See [the Spacewar dossier](spacewar-on-the-lisp-machine.md) and its
+[curated capture record](../assets/mit-cadr-screenshots/#spacewar-session) for the
+source hashes, exact runtime identity, and observed behavior.
+
+A later shared Doctor/QIX session loaded four public `demo/` files by the same raw
+route, confirming that the method is not Spacewar-specific. See the
+[DOCTOR dossier](doctor.md#successful-raw-file-bridge-conversation), the
+[HACKS suite dossier](cadr-hacks-display-sound-and-novelty-suite.md#runtime-verification),
+and their [shared capture record](../assets/mit-cadr-screenshots/#doctor-and-qix-session).
 
 ## Current limitations
 

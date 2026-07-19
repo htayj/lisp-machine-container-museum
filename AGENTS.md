@@ -42,6 +42,20 @@ them.
   look for source-visible or runtime-visible behavior, limits, defaults, and
   contradictions that the manuals omit. Label each conclusion by its evidence and do
   not resolve a source/manual/runtime disagreement by guesswork.
+- A reimplementation specification must name its exact release profile and
+  compatibility target, separate source, compiled-image, runtime, manual, and paper
+  evidence, and identify untested behavior explicitly. Specify observable state,
+  invariants, transitions, ordering, failure and abort semantics, extension points,
+  and conformance tests; do not turn an architectural overview or public-API list
+  into a claim of complete behavioral compatibility. When releases disagree, make
+  the difference selectable instead of silently averaging them.
+- Every application dossier must identify its actual user-interface substrate and its
+  relationship, if any, to CLIM. Do not infer CLIM use merely from shared terms such
+  as frames, panes, presentations, command tables, formatted output, or redisplay;
+  establish it from package and system dependencies, CLIM application-frame or port
+  definitions, direct protocol use, compatibility hooks, or equivalent source and
+  runtime evidence. Distinguish CLIM from Dynamic Windows and from the earlier TV and
+  EINE/ZWEI facilities.
 - When researching CADR software, check both the public System 46 source snapshot and
   the upstream LM-3 Fossil repositories when relevant. Pin both Git commits and Fossil
   check-ins, and distinguish historical source versions from maintained LM-3

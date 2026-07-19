@@ -3,7 +3,7 @@ type: Editorial Guide
 title: Writing and research guide
 description: Conventions for evidence-based, preservation-conscious museum documentation in the repository's OKF bundle.
 tags: [documentation, okf, preservation, research]
-timestamp: 2026-07-18T02:21:36-04:00
+timestamp: 2026-07-19T00:28:30-04:00
 ---
 
 # Writing and research guide
@@ -93,6 +93,17 @@ appropriate harness. Actively record meaningful behavior, defaults, incomplete
 features, and source/manual/runtime contradictions that are not evident from the
 manual. Keep those evidence classes separate instead of choosing the most convenient
 one as automatically authoritative.
+
+A reimplementation specification has a stricter burden than an architectural study.
+Name the exact release or selectable compatibility profiles, record source,
+compiled-artifact or world, runtime, manual, and paper evidence separately, and mark
+untested claims as test obligations. Define the externally meaningful objects and
+state, invariants, transitions, operation ordering, failure and abort behavior,
+extension points, and conformance cases. If preserved releases disagree, expose the
+difference as profile behavior; do not synthesize a historically nonexistent average.
+Do not call a specification complete merely because it inventories public function
+names. State the remaining oracle probes and the compatibility grain that the current
+evidence can actually support.
 
 ## Local artifact notes
 
