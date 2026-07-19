@@ -1,7 +1,7 @@
 # Curated Genera runtime screenshots
 
-This directory contains thirty-one narrowly selected screen captures used to document
-visible application behavior in the museum's Genera 8.5 world. Twenty-nine are exact
+This directory contains thirty-two narrowly selected screen captures used to document
+visible application behavior in the museum's Genera 8.5 world. Thirty are exact
 byte-for-byte copies of captures produced by the Xvfb computer-use harness. The two
 Hardcopy images are documented crops of raw captures that remove an unrelated Listener
 and exploratory debugger state. The licensed world, raw sessions, JSON sidecars, logs,
@@ -9,8 +9,9 @@ and all other captures remain untracked.
 
 ## Rights basis and scope
 
-These thirty-one images were reviewed on 2026-07-18 for their specific use in the linked
-museum articles. They reproduce sparse, predominantly functional application screens in
+These thirty-two images were reviewed on 2026-07-18 and 2026-07-19 for their specific
+uses in the linked museum articles and specifications. They reproduce sparse,
+predominantly functional application screens in
 direct support of nonprofit historical criticism, comment, scholarship, and runtime
 verification. The repository-wide
 [screenshot publication rights review](../../screenshot-publication-rights-review.md)
@@ -71,6 +72,16 @@ under applicable law.
   and four-region application layout reviewed on 2026-07-19. They do not establish
   hidden handler contents, mutation, Undo, generated code, Preview, or general pixel
   identity; startup/debugger text remains incidental context.
+- [`emergency-break-arithmetic-evaluation.png`](emergency-break-arithmetic-evaluation.png)
+  is also embedded in the [Emergency Break and degraded interaction paths
+  reimplementation
+  specification](../../emergency-break-and-degraded-interaction-paths-reimplementation-specification.md).
+  Its use there is limited to the Genera 8.5 cold-load client's sparse functional
+  display, the explicit Emergency Break/breakpoint identity, the researcher-entered
+  `(+ 40 2)` form and `42` result, and the independent 1024-by-768 client geometry
+  reviewed on 2026-07-19. It does not establish every entry gesture, editor key,
+  nested-debugger state, recovery branch, or screen-save transition, and it is not a
+  generic Genera illustration.
 
 ## Source sessions
 
@@ -367,6 +378,37 @@ peer, opened no output file, and displayed no installed Help. A generation-1
 preflight failed before the VLM ran because it was invoked outside the required Guix
 wrapper; it produced no guest input and is not runtime evidence.
 
+### Emergency Break publication session
+
+| Field | Recorded value |
+| --- | --- |
+| Session | `d04-emergency-break-publication-20260719`, generation 1 |
+| Run interval | 2026-07-19 08:13:46 through 08:16:36 EDT |
+| Licensed archive | `opengenera2.tar.bz2`, 206,213,430 bytes; SHA-256 `89fb3e76b91d612834f565834dea950b603acf8f9dbacacdd0b1c3c284a2d36e` |
+| Base and private world | `Genera-8-5.vlod`, 54,804,480 bytes; SHA-256 `a8ee5e86cc7e322f7385af3e0cd579d7650d4dcfc3ce328acbf8b25515dd0672` at start and stop; the private copy never diverged |
+| VLM and debugger | VLM, 1,533,760 bytes, SHA-256 `9f5e18d5770f973879716182b6856ef5a8ee9d3b2bb907476ea0cf35986aa4c7`; debugger, 346,880 bytes, SHA-256 `2db918cfe8f35f52c7ff4b7695b0ecd3bb85e41a3327ea5a94874edf05edb54a` |
+| Harness | execution/start-time Python source SHA-256 `6f8c65bdc2f814a8408f92eb05d3fac68eafefefe889bd02e570059694145497`; shell entrypoint SHA-256 `e10d07a1c745d37044f1a97903455d334d6dcdb0c1d0e6854598e10fab24fa05`; configuration SHA-256 `5ce6509f5adf2cf2d054d34eb4ba777ce462285b8cd9b01bc071bf819139e086` |
+| Compatibility inputs | `ifconfig` preload binary SHA-256 `f45f45461622975996ab41138f64bb84a4b17c51fba0dbb649208914898c26b7`, source SHA-256 `a4d126dbb6fd6f4903835bbb41c39652cfc53c91e942267dc9166c1c938c36e7`; X preload binary SHA-256 `acd71dbcb948f05b7fd2730b2b4706c08f16f46d792bd9aa6aa64370e855e4b1`, source SHA-256 `4db1dee8e71d5ddc5cfd8289ecc3607738370ac97f856853786cfe713e94e392` |
+| RFC 868 responder | source/private helper SHA-256 `cc3a2274149c5593b52e6608d732d4048518c766134df5e0f018746ad5cf98bb`; successful completion record SHA-256 `d1c57167d845ff86bc50a8dd3780097a83d347111b3eb8d2be9d39c18f6891cb`; request/reply evidence SHA-256 `91ed212108e206db1ca30f7f5e93e395e4aa0251573cf7ef1811b4ce533df0e2`; responder exit status 0 |
+| Toolchain and isolation | `manifest.scm` SHA-256 `3adae999bbe420182f22adc2499fcc82449a46eaf580a362de9c0e718fa6b37d`; Guix revision `230aa373f315f247852ee07dff34146e9b480aec`; `bubblewrap-filesystem-process-and-network-sandbox` with separate user, mount, network, PID, IPC, and hostname namespaces; `bubblewrap-unprivileged-user-and-network-namespace` with no external/default route or guest-visible host file service; MIT-SHM live-verified absent |
+| Main client | kind `main`, `Genera on DIS-LOCAL-HOST`, XID 4194310, 1200 by 900 at `(72,55)` |
+| Captured client | kind `cold-load`, `INTERNET|10.0.0.2 Cold Load Stream`, XID 2097154, 1024 by 768 at `(100,100)` |
+| Complete action log | 42 records, 21,072 bytes; SHA-256 `0e3563bb5af99754dd00e08f294cdfc235e9bc2988b019c418342073f794bcdd` |
+| Selected-capture sidecar | 13,788 bytes; SHA-256 `e5259cc5f29efed2e37823de150e91ab424319d41fcaa4330b264fd8cc2ec84f` |
+| Final run record | 26,329 bytes; SHA-256 `2616944b7809fef78267e69aa00ac7d73b2abae104fff1cec16fc36a52edbc4b` |
+| Publication boundary | The selected PNG alone passed the image- and D04-use-specific fair-use review. The licensed world, raw captures, sidecars, action log, and session remain ignored, and no repository-wide code or content license extends to the displayed third-party screen. |
+
+The ordered interaction targeted the main client; opened the System Menu with the
+Shift/right-button gesture while retaining the complete exploratory attempts in the
+action log; highlighted and selected **Emergency Break**; targeted the separately
+identified cold-load client; typed the researcher-authored form `(+ 40 2)`; sent its
+End activation as host `KP_End`; captured the resulting `42`; sent host `F5` to the
+cold-load client for the mapped Resume gesture; verified the main Listener was
+restored in a separate ignored capture; and initiated shutdown. Every recorded input
+intent has a linked successful XTEST-dispatch outcome. The screenshot proves the
+displayed breakpoint state and evaluation; source and the ordered record, rather than
+the still alone, ground entry and return semantics.
+
 Each screenshot sidecar captured the prefix of the action log that existed when the
 PNG was installed. Counts below include both the recorded intent and its linked
 outcome, so six records represent three attempted actions. The sidecar's prefix hash
@@ -385,6 +427,7 @@ the final keystroke.
 | [Buffer-list contextual menu](zmacs-buffer-list-context-menu.png) | `0019-zmacs-buffer-entry-menu-held.png` | Button 3 pressed while the buffer list was displayed; the image proves a contextual menu appeared, not that the row presentation owns that menu | 2026-07-18 00:20:05 EDT | 52 records; SHA-256 `ee7709dfed79a93b6a5ab8a7dd215e01b239b06a1b2ce8ec9ee2d6ab3ea97e65` |
 | [Dynamic Lisp Listener multiple values](dynamic-lisp-listener-multiple-values.png) | `0002-listener-multiple-values.png` | Evaluate the project-owned form `(values 17 23)`; the Listener prints both values on separate lines | 2026-07-18 04:00:04 EDT | 2 records; SHA-256 `05564580417f9901acb71585872e56a8bf5fe0b4004f7e8251528b3d7c9506a2` |
 | [System Menu](system-menu.png) | `0004-system-menu.png` | Hold Shift and button 3 over the Listener; the observed three-column System Menu appears | 2026-07-18 04:00:48 EDT | 10 records; SHA-256 `0f09c1ed08ca140069792249c6a9235cc857277382605bc2152bf1e2c491012c` |
+| [Emergency Break arithmetic evaluation](emergency-break-arithmetic-evaluation.png) | `0005-emergency-break-arithmetic.png` | Select **Emergency Break** from the main client's System Menu; in the separately targeted `cold-load` client type `(+ 40 2)` and send End; the breakpoint prints `42` | 2026-07-19 08:15:35 EDT | 40 records; SHA-256 `f9e8fa29298c2d6c48f5a190bc6aadcebd353fcd941f8d1df8fe94ab03a74398` |
 | [Inspector probe list](inspector-list.png) | `0006-inspector-list.png` | Enter the project-owned probe `'(alpha (beta . gamma) #(1 2 3))`; history and the bottom object pane display the result | 2026-07-18 04:01:23 EDT | 16 records; SHA-256 `69d0ab419aea81284fef70fa24d26285950cfff2e78bd40a3c6e354920b50b13` |
 | [Peek Processes](peek-processes.png) | `0009-peek-processes.png` | Select Peek's Processes mode; live process columns and timer headings appear | 2026-07-18 04:02:16 EDT | 22 records; SHA-256 `c8f3c54d6f8ccd95e8b942df194a4c9daa7c1bf3e41be89ef3aa4be5f9d75c29` |
 | [Frame-Up split layout](frame-up-split-layout.png) | `0012-frame-up-split-complete.png` | Invoke Frame-Up with `Select Q`, choose **Split Pane**, point at `PANE-1`, and complete `Horizontally`; two equal display panes and the exact command transcript appear | 2026-07-18 04:53:57 EDT | 26 records; SHA-256 `ff67d57b9d36482395c5d5afc288bf7fd6aa86d9919593171882d927e3fbd2c9` |
@@ -430,6 +473,7 @@ other transform.
 | `zmacs-buffer-list-context-menu.png` | 3,658 | 1200 by 900 | `4aa320fc70babdaff198cccb13f64731780faf71ee07de6bd7da0badc090585f` | `57a71c53d12eac6afe5ac4697ffaa341570fce5e928322e4713ee547dfe3d256` |
 | `dynamic-lisp-listener-multiple-values.png` | 11,824 | 1200 by 900 | `39061d7b9ea5b55428020cfaf7558b5566c101ab56822cbd951905c520c3ebac` | `99003664b87974790051046a01a9579ffa77b48e25e2d7c406e7c87e42ee5c37` |
 | `system-menu.png` | 15,215 | 1200 by 900 | `e1a8a968d891e68e9f4315ee7d943d4b0b1fb70b103226402ba64d23f91a5d66` | `3a233d323b245d7d7da5587b014bd47ac12f29fa239972871c9f22e6b32358af` |
+| `emergency-break-arithmetic-evaluation.png` | 1,712 | 1024 by 768 | `b7edcce3ba94e9601335ac280438988d5ae40451c1f2235f2b5fe786f8736eb6` | `219c9bce8d7771553141df4873aced28255317f6e7b1cd9700c61ef5ac834445` |
 | `inspector-list.png` | 3,471 | 1200 by 900 | `f58fc2395aae855c5db1fe42752684d200373afb3fa8be6e13334c6835514234` | `17201261652263d7f8474829636ca6dc003d7c75f88cf98ca32ce3ab75413ba6` |
 | `peek-processes.png` | 9,715 | 1200 by 900 | `495197133b56601af46a6bda975643d46a3de66fe17eca927969c66ad3a65920` | `b44a3d83b78d71591adbad3896280b8d1ef573586dd17b31db46db0f42ddd02d` |
 | `frame-up-split-layout.png` | 2,940 | 1200 by 900 | `74925b70d33db0041b024d9fd68c2132d10f071839fc9cd688d09c0385966bb0` | `c74dcb59fac25239f723eb3be43327c39866f6a1533fe2838a8b2f94bb51b90a` |
@@ -586,6 +630,23 @@ world remained byte-identical to the base world, and the harness invoked neither
 World nor a checkpoint. The unchanged world establishes observation isolation, not
 an orderly VLM exit.
 
+### Emergency Break publication session
+
+The shutdown prompt was observed, `yes` was sent and accepted, and cleanup progress
+was visible before the reproduced Cold Load channel mutex stall required bounded
+host termination. The final record sets `forced_stop=true`,
+`forced_after_confirmed_shutdown_stall=true`, `state_may_be_incomplete=true`,
+`orderly_vlm_host_shutdown=false`, `vlm_forced_stop=true`, and
+`xvfb_returncode=0`; the launcher return code is 137. This was not an orderly VLM
+host shutdown.
+
+The private world stayed byte-identical to the base world for the entire run. The
+harness did not invoke Save World or create a host-process checkpoint;
+`save_world_performed` and `guest_checkpoint_created` remain unknown, and the final
+record marks the unsaved Lisp state discarded. These facts establish the bounded
+publication observation and lack of world-file mutation, not a general persistence
+claim.
+
 See [Zmacs in Symbolics Genera](../../genera/zmacs.md) for the behavior these images
 support and [the Genera computer-use harness](../../genera/genera-computer-use-harness.md)
 for the capture and isolation model.
@@ -599,6 +660,11 @@ and [Inspector and Peek](../../genera/inspector-and-peek.md).
 The Frame-Up and Screen Editor captures support
 [Screen Editor and Frame-Up](../../screen-editor-and-frame-up.md) and
 [the D03 Screen Editor and Frame-Up specification](../../screen-editor-and-frame-up-layout-design-reimplementation-specification.md).
+
+The Emergency Break capture supports
+[Emergency Break and the cold-load stream](../../emergency-break-and-cold-load-stream.md)
+and [the D04 Emergency Break and degraded interaction paths
+specification](../../emergency-break-and-degraded-interaction-paths-reimplementation-specification.md).
 
 The later captures support
 [the Genera Debugger and Display Debugger](../../genera/debugger-and-display-debugger.md),

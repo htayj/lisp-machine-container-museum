@@ -85,6 +85,13 @@ EXPECTED_BASE_SHA256 = {
 
 KEY_ALIASES = {
     "select": "F1",
+    "function": "F3",
+    "suspend": "F4",
+    "resume": "F5",
+    "clear-input": "F10",
+    "complete": "F11",
+    "end": "KP_End",
+    "help": "F12",
     "rubout": "Delete",
     "abort": "KP_Subtract",
     "super": "Control_R",
@@ -2358,21 +2365,57 @@ def require_running(session_dir: Path) -> dict[str, Any]:
     return state
 
 
-def refresh_window(session_dir: Path, state: dict[str, Any]) -> tuple[dict[str, Any], dict[str, Any]]:
+INTERACTION_WINDOW_KINDS = ("main", "cold-load", "debugger", "genera-other")
+
+
+def select_interaction_window(
+    candidates: Sequence[dict[str, Any]], window_kind: str
+) -> dict[str, Any]:
+    if window_kind not in INTERACTION_WINDOW_KINDS:
+        raise HarnessError(f"unsupported Genera interaction window kind: {window_kind}")
+    matching = [candidate for candidate in candidates if candidate["kind"] == window_kind]
+    if not matching:
+        raise HarnessError(
+            f"the requested Genera {window_kind!r} window could not be identified"
+        )
+    if len(matching) != 1:
+        identities = ", ".join(
+            f"{candidate['window_id']}:{candidate['title']!r}" for candidate in matching
+        )
+        raise HarnessError(
+            f"the requested Genera {window_kind!r} window is ambiguous: {identities}"
+        )
+    return matching[0]
+
+
+def refresh_window(
+    session_dir: Path,
+    state: dict[str, Any],
+    window_kind: str = "main",
+) -> tuple[dict[str, Any], dict[str, Any]]:
     observed = discover_windows(state)
-    selected = observed["selected"]
-    if not selected or selected["kind"] != "main":
-        raise HarnessError("the running Genera main window could not be identified")
+    selected = select_interaction_window(observed["candidates"], window_kind)
+    changes: dict[str, Any] = {
+        "window_candidates": observed["candidates"],
+        "last_interaction_window": selected,
+        "last_interaction_window_observed_at": now_iso(),
+    }
+    # These fields describe the canonical main client used to establish session
+    # readiness.  Do not overwrite them merely because a command deliberately
+    # targets the auxiliary cold-load or debugger client.
+    if window_kind == "main":
+        changes.update(
+            {
+                "window_id": selected["window_id"],
+                "window_title": selected["title"],
+                "window_kind": selected["kind"],
+                "window_geometry": selected["geometry"],
+                "window_observed_at": now_iso(),
+            }
+        )
     state = update_state(
         session_dir,
-        {
-            "window_candidates": observed["candidates"],
-            "window_id": selected["window_id"],
-            "window_title": selected["title"],
-            "window_kind": selected["kind"],
-            "window_geometry": selected["geometry"],
-            "window_observed_at": now_iso(),
-        },
+        changes,
     )
     return state, selected
 
@@ -2509,9 +2552,11 @@ def screenshot_provenance(state: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def take_screenshot(session_dir: Path, label: str) -> dict[str, Any]:
+def take_screenshot(
+    session_dir: Path, label: str, window_kind: str = "main"
+) -> dict[str, Any]:
     state = require_running(session_dir)
-    state, selected = refresh_window(session_dir, state)
+    state, selected = refresh_window(session_dir, state, window_kind)
     destination = next_screenshot_path(session_dir, label)
     captured = capture_window(state, selected, destination)
     actions = action_log_path(session_dir, int(state["generation"]))
@@ -2826,7 +2871,7 @@ def command_screenshot(args: argparse.Namespace, state_root: Path) -> int:
     session_dir = session_dir_for(state_root, args.session)
     with locked(session_dir / "control.lock", create_parent=False):
         require_session_directory(session_dir)
-        metadata = take_screenshot(session_dir, args.label)
+        metadata = take_screenshot(session_dir, args.label, args.window_kind)
     json_print(metadata)
     return 0
 
@@ -2841,6 +2886,7 @@ def action_context(state: dict[str, Any], selected: dict[str, Any]) -> dict[str,
         "generation": state["generation"],
         "window_id": selected["window_id"],
         "window_title": selected["title"],
+        "window_kind": selected["kind"],
         "window_geometry": selected["geometry"],
     }
 
@@ -2897,7 +2943,7 @@ def command_key(args: argparse.Namespace, state_root: Path) -> int:
     with locked(session_dir / "control.lock", create_parent=False):
         require_session_directory(session_dir)
         state = require_running(session_dir)
-        state, selected = refresh_window(session_dir, state)
+        state, selected = refresh_window(session_dir, state, args.window_kind)
         action = "keydown" if args.down else "keyup" if args.up else "key"
         keys = translate_keys(args.keys)
         details = {
@@ -2930,7 +2976,17 @@ def command_key(args: argparse.Namespace, state_root: Path) -> int:
         log = finish_action_attempt(
             session_dir, state, selected, action, attempt_id, succeeded=True
         )
-    json_print({"action": action, "keys": keys, "session": args.session, "action_log": log})
+    json_print(
+        {
+            "action": action,
+            "keys": keys,
+            "session": args.session,
+            "window_id": selected["window_id"],
+            "window_title": selected["title"],
+            "window_kind": selected["kind"],
+            "action_log": log,
+        }
+    )
     return 0
 
 
@@ -2939,7 +2995,7 @@ def command_type(args: argparse.Namespace, state_root: Path) -> int:
     with locked(session_dir / "control.lock", create_parent=False):
         require_session_directory(session_dir)
         state = require_running(session_dir)
-        state, selected = refresh_window(session_dir, state)
+        state, selected = refresh_window(session_dir, state, args.window_kind)
         action = "type"
         details = {
             "text": args.text,
@@ -2986,6 +3042,9 @@ def command_type(args: argparse.Namespace, state_root: Path) -> int:
             "delay_ms": args.delay_ms,
             "enter": args.enter,
             "session": args.session,
+            "window_id": selected["window_id"],
+            "window_title": selected["title"],
+            "window_kind": selected["kind"],
             "action_log": log,
         }
     )
@@ -3041,11 +3100,14 @@ def command_mouse(args: argparse.Namespace, state_root: Path) -> int:
     with locked(session_dir / "control.lock", create_parent=False):
         require_session_directory(session_dir)
         state = require_running(session_dir)
-        state, selected = refresh_window(session_dir, state)
+        state, selected = refresh_window(session_dir, state, args.window_kind)
         result: dict[str, Any] = {
             "action": args.mouse_action,
             "session": args.session,
             "timestamp": now_iso(),
+            "window_id": selected["window_id"],
+            "window_title": selected["title"],
+            "window_kind": selected["kind"],
         }
         details: dict[str, Any] = {}
         if args.mouse_action == "move":
@@ -3142,11 +3204,12 @@ def command_wait(args: argparse.Namespace, state_root: Path) -> int:
 
     if args.stable_for is None and args.changed_from is None:
         state = require_running(session_dir)
-        state, selected = refresh_window(session_dir, state)
+        state, selected = refresh_window(session_dir, state, args.window_kind)
         json_print(
             {
                 "session": args.session,
-                "condition": "main-window-ready",
+                "condition": "window-ready",
+                "window_kind": selected["kind"],
                 "window": selected,
             }
         )
@@ -3167,7 +3230,7 @@ def command_wait(args: argparse.Namespace, state_root: Path) -> int:
     previous_hash: str | None = None
     while time.monotonic() < deadline:
         state = require_running(session_dir)
-        state, selected = refresh_window(session_dir, state)
+        state, selected = refresh_window(session_dir, state, args.window_kind)
         temporary = temporary_capture_path(session_dir)
         try:
             captured = capture_window(state, selected, temporary)
@@ -3342,6 +3405,18 @@ def add_session_argument(parser: argparse.ArgumentParser) -> None:
     )
 
 
+def add_window_kind_argument(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument(
+        "--window-kind",
+        choices=INTERACTION_WINDOW_KINDS,
+        default="main",
+        help=(
+            "explicit Genera client to target (default: main); use cold-load "
+            "for the separate Emergency Break console"
+        ),
+    )
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         description=(
@@ -3375,9 +3450,11 @@ def build_parser() -> argparse.ArgumentParser:
     status.set_defaults(handler=command_status)
 
     wait = subparsers.add_parser(
-        "wait", help="wait for the main window, time, a screen change, or screen stability"
+        "wait",
+        help="wait for the selected window, time, a screen change, or screen stability",
     )
     add_session_argument(wait)
+    add_window_kind_argument(wait)
     wait_group = wait.add_mutually_exclusive_group()
     wait_group.add_argument("--seconds", type=nonnegative_float)
     wait_group.add_argument("--stable-for", type=nonnegative_float)
@@ -3388,6 +3465,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     key = subparsers.add_parser("key", help="send X key names through XTEST")
     add_session_argument(key)
+    add_window_kind_argument(key)
     direction = key.add_mutually_exclusive_group()
     direction.add_argument("--down", action="store_true")
     direction.add_argument("--up", action="store_true")
@@ -3404,6 +3482,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     type_parser = subparsers.add_parser("type", help="type text through XTEST")
     add_session_argument(type_parser)
+    add_window_kind_argument(type_parser)
     type_parser.add_argument("--delay-ms", type=nonnegative_int, default=40)
     type_parser.add_argument("--enter", action="store_true")
     type_parser.add_argument("text")
@@ -3411,6 +3490,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     mouse = subparsers.add_parser("mouse", help="move or use the three X mouse buttons")
     add_session_argument(mouse)
+    add_window_kind_argument(mouse)
     mouse_actions = mouse.add_subparsers(dest="mouse_action", required=True)
     move = mouse_actions.add_parser("move")
     move.add_argument("x", type=int)
@@ -3437,6 +3517,7 @@ def build_parser() -> argparse.ArgumentParser:
         "screenshot", help="capture the exact current Genera client and provenance"
     )
     add_session_argument(screenshot)
+    add_window_kind_argument(screenshot)
     screenshot.add_argument("--label", default="screen")
     screenshot.set_defaults(handler=command_screenshot)
 

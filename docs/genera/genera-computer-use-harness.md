@@ -3,7 +3,7 @@ type: Preservation Note
 title: Operating Genera through the Xvfb computer-use harness
 description: Isolation, compatibility, provenance, input, screenshot, and persistence boundaries for private headless Open Genera sessions.
 tags: [genera, open-genera, vlm, computer-use, xvfb, preservation]
-timestamp: 2026-07-18T02:30:44-04:00
+timestamp: 2026-07-19T08:55:47-04:00
 ---
 
 # Operating Genera through the Xvfb computer-use harness
@@ -11,8 +11,9 @@ timestamp: 2026-07-18T02:30:44-04:00
 The repository can operate the identified Genera 8.5 world through its real VLM X11
 client on an authenticated private Xvfb display. The tracked harness contains the
 native process in a Bubblewrap filesystem, process, and network sandbox, discovers
-the changing Cold Load and main windows, sends real XTEST keyboard and pointer
-events, and captures the exact selected client.
+and classifies changing Cold Load, main, and other Genera windows, sends real XTEST
+keyboard and pointer events to one explicitly selected kind, and captures that exact
+client.
 
 This is repeatable behavioral-research infrastructure, not a Genera distribution.
 The purchased archive, world, debugger, private runtime copies, logs, raw screen
@@ -241,24 +242,82 @@ one UDP request.
 
 ## Window discovery and input
 
-Open Genera changes X clients while moving from Cold Load to the main display. The
-harness continually rediscovers candidates and ranks a window titled `Genera on ...`
-above the Cold Load and debugger windows. Status, action, and screenshot records
-retain the selected identifier, title, kind, and geometry.
+Open Genera changes X clients while moving from Cold Load to the main display and can
+retain several clients simultaneously. `wait`, `key`, `type`, `mouse`, and
+`screenshot` therefore accept
+`--window-kind {main,cold-load,debugger,genera-other}`; omission means `main`. For
+every selecting operation the harness rediscovers all candidates, filters by the
+requested kind, and requires exactly one result. Zero matches are rejected rather
+than falling back to another client, and multiple matches are rejected as ambiguous
+with their IDs and titles. Targeting an auxiliary client does not overwrite the
+canonical main-window identity used to establish session readiness.
 
-`key`, `type`, and `mouse` focus that selected client and send real XTEST events.
-Each operation appends an intent record before dispatch and a linked `succeeded` or
-`failed-or-partial` outcome afterward. A timeout after partial XTEST delivery
-therefore remains visible instead of silently disappearing from the action history.
-A `succeeded` outcome proves host dispatch; a guest-behavior claim additionally
-requires a visible or otherwise recorded resulting state change. This verifies the
-preserved X client and VLM input paths, not the electrical behavior or legends of a
-historical Symbolics keyboard and mouse. Mouse coordinates are client-relative and
-are checked against the observed root position after each move.
+The preserved VLM Debugger normally occupies the Cold Load client and therefore
+uses `--window-kind cold-load`. `debugger` is only a reserved title-based category
+for a distinct X client whose title explicitly contains `VLM Debugger`. No D04 run
+observed that separate title, so the category is tested as classification behavior
+but is not evidence of a second verified VLM-debugger target.
 
-The default `wait` condition is semantic main-window discovery. Pixel stability is
-available for special cases but is not a readiness guarantee; the Listener's blinking
-cursor can also prevent a stable-pixel condition indefinitely.
+`key`, `type`, and `mouse` focus the exact selected client and send real XTEST
+events. Each operation appends an intent record before dispatch and a linked
+`succeeded` or `failed-or-partial` outcome afterward. Both phases retain the selected
+window's kind, X ID, title, and geometry; successful command output repeats the kind,
+ID, and title. Screenshot metadata retains the same identity and geometry. A timeout
+after partial XTEST delivery therefore remains visible instead of silently
+disappearing from the action history. A `succeeded` outcome proves host dispatch; a
+guest-behavior claim additionally requires a visible or otherwise recorded resulting
+state change. This verifies the preserved X client and VLM input paths, not the
+electrical behavior or legends of a historical Symbolics keyboard and mouse. Mouse
+coordinates are client-relative and are checked against the observed root position
+after each move.
+
+The portable key aliases are:
+
+| Alias | X keysym sent | Intended Genera key legend |
+| --- | --- | --- |
+| `select` | `F1` | Select |
+| `function` | `F3` | Function |
+| `suspend` | `F4` | Suspend |
+| `resume` | `F5` | Resume |
+| `clear-input` | `F10` | Clear Input |
+| `complete` | `F11` | Complete |
+| `end` | `KP_End` | End |
+| `help` | `F12` | Help |
+
+The pre-existing aliases remain `rubout` to `Delete`, `abort` to `KP_Subtract`,
+`super` to `Control_R`, `return` and `enter` to `Return`, `space` to `space`, and
+`escape` to `Escape`. These mappings make command transcripts portable; they do not
+assert that the named key has the same semantic effect in every Genera application
+or input state.
+
+The default `wait` condition is semantic discovery of the requested kind. Pixel
+stability is available for special cases but is not a readiness guarantee; the
+Listener's blinking cursor can also prevent a stable-pixel condition indefinitely.
+An elapsed-only `wait --seconds` does not select or inspect a client.
+
+After choosing **Emergency Break** through the main System Menu, a reproducible Cold
+Load interaction can use explicit targeting throughout:
+
+```bash
+./scripts/genera-computer-use.sh wait \
+  --session NAME --window-kind cold-load
+./scripts/genera-computer-use.sh screenshot \
+  --session NAME --window-kind cold-load --label emergency-break
+./scripts/genera-computer-use.sh type \
+  --session NAME --window-kind cold-load '(+ 40 2)'
+./scripts/genera-computer-use.sh key \
+  --session NAME --window-kind cold-load end
+./scripts/genera-computer-use.sh screenshot \
+  --session NAME --window-kind cold-load --label emergency-break-result
+./scripts/genera-computer-use.sh key \
+  --session NAME --window-kind cold-load resume
+./scripts/genera-computer-use.sh wait \
+  --session NAME --window-kind main
+```
+
+`end` is intentionally translated to `KP_End`; in the observed Cold Load reader it
+activated the completed form. `resume` translates to `F5`. The runtime result, rather
+than the alias name alone, is the evidence for either semantic claim.
 
 ## Per-generation provenance
 
@@ -369,10 +428,39 @@ markers were all observed. It records the known forced shutdown stall, unchanged
 base and private world hashes, no Save World invocation by the harness, and unknown
 rather than guessed in-guest save/checkpoint status.
 
+Ignored D04 verification session
+`d04-emergency-break-publication-20260719`, generation 1, exercised the explicit
+auxiliary-window target on 2026-07-19. Its execution record identifies Python
+harness source SHA-256
+`6f8c65bdc2f814a8408f92eb05d3fac68eafefefe889bd02e570059694145497`.
+On the 1,200 by 900 main client, X ID `4194310` and title
+`Genera on DIS-LOCAL-HOST`, the recorded pointer sequence opened the System Menu,
+highlighted **Emergency Break**, and selected it. The resulting exact
+`cold-load` target was the 1,024 by 768 client X ID `2097154`, titled
+`INTERNET|10.0.0.2 Cold Load Stream`; its visible heading identified the reason as
+Emergency Break. Typing `(+ 40 2)`, sending the portable `end` alias (`KP_End`), and
+capturing the result visibly established `42`. Sending the portable `resume` alias
+(`F5`) to the same Cold Load client restored the prior main Listener screen, which
+was then captured through an explicit `main` target.
+
+The final action log contains 42 intent-and-outcome records and has SHA-256
+`0e3563bb5af99754dd00e08f294cdfc235e9bc2988b019c418342073f794bcdd`.
+Every attempted action has a linked `succeeded` outcome. Stop observed the prompt,
+sent and confirmed `yes`, observed cleanup progress, and ended in the already known
+forced Cold Load-channel shutdown stall; it is not an orderly shutdown. Both the
+base and private worlds remained byte-identical to their starting SHA-256
+`a8ee5e86cc7e322f7385af3e0cd579d7650d4dcfc3ce328acbf8b25515dd0672`.
+The final record has `save_world_invoked_by_harness=false` and
+`process_checkpoint_created_by_harness=false`; `save_world_performed` and
+`guest_checkpoint_created` remain unknown rather than inferred. The ignored run,
+raw captures, and sidecars remain local evidence; publication of a selected image is
+governed separately by the capture-specific screenshot review.
+
 ## Repeating an observation
 
 1. Run `doctor`, then start a named `--fresh` session with the purchased archive.
-2. Use `wait --session NAME` and inspect the selected main window.
+2. Use `wait --session NAME --window-kind KIND` and inspect that exact selected
+   client; use the default `main` only when it is really the intended target.
 3. Record every `key`, `type`, and `mouse` action in order.
 4. Capture each distinct state with a descriptive screenshot label.
 5. Stop the session and expect status 2 for the currently identified shutdown stall.
@@ -404,8 +492,8 @@ rather than guessed in-guest save/checkpoint status.
   for the core `QueryExtension`, `SetModifierMapping`, request-sequence, and reply
   layouts; inspected 2026-07-17.
 - The tracked harness, sandbox helpers, responder, and two bounded compatibility
-  sources in `scripts/`, inspected 2026-07-17.
+  sources in `scripts/`, inspected through 2026-07-19.
 - Local A/B boots, X protocol logs, packet evidence, process traces, and shutdown
-  inspection retained under the ignored build tree, inspected through 2026-07-18.
+  inspection retained under the ignored build tree, inspected through 2026-07-19.
 
-Last verified: 2026-07-18.
+Last verified: 2026-07-19.

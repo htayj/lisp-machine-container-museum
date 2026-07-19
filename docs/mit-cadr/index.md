@@ -99,6 +99,10 @@ the public LM-3 software and the `usim` emulator.
 - [Emergency Break and the cold-load stream](../emergency-break-and-cold-load-stream.md)
   explains the independent recovery console across CADR, LM-3, and Genera and
   includes a verified System 303 evaluation.
+- [Emergency Break and degraded interaction paths reimplementation specification](../emergency-break-and-degraded-interaction-paths-reimplementation-specification.md)
+  defines separate System 46 and System 303 entry, cold-reader, breakpoint,
+  exact debugger-transition, ownership, failure, visual, and complete D04-owned
+  input-tree profiles.
 - [EINE, the first Lisp Machine editor](eine.md) studies the exact late-1977
   recipe-derived source corpus, definition-oriented file model, graphical
   interaction, and source-visible incomplete behavior; its

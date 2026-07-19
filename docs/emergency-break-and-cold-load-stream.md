@@ -3,18 +3,20 @@ type: Artifact Analysis
 title: Emergency Break and the cold-load stream
 description: Source- and runtime-grounded comparison of the degraded Lisp and debugger path retained below the ordinary window systems of the MIT CADR and Symbolics Genera.
 tags: [lisp-machine, mit-cadr, lm-3, genera, emergency-break, cold-load-stream, debugger]
-timestamp: 2026-07-18T04:20:00-04:00
+timestamp: 2026-07-19T08:55:47-04:00
 ---
 
 # Emergency Break and the cold-load stream
 
 **Emergency Break is a live recovery console, not a reset, reboot, load-band
 restoration, or virtual-machine snapshot.** On both the MIT CADR lineage and
-Symbolics Genera it enters a Lisp debugger using a deliberately primitive stream
-that does not depend on the ordinary window system. An operator can inspect or
-change the running Lisp world while normal windows are unusable, then attempt to
-return to it. That power is also why both implementations label the path for
-experienced users and why museum runtime work uses a disposable private world.
+Symbolics Genera it enters a primitive Lisp break loop using a deliberately
+primitive stream that does not depend on the ordinary window system. Evaluation
+errors or an explicit debugger key can then transition into a Lisp debugger. An
+operator can inspect or change the running Lisp world while normal windows are
+unusable, then attempt to return to it. That power is also why both implementations
+label the path for experienced users and why museum runtime work uses a disposable
+private world.
 
 The implementations are related but not identical. System 46 has a compact direct
 break loop. The maintained LM-3 System 303 implementation saves and restores the
@@ -22,6 +24,11 @@ screen, arbitrates keyboard ownership, and can divert an error whose window is
 locked. Genera retains the same architectural escape hatch but adds a front-end
 processor-backed console, a more capable input editor, explicit cleanup, and
 platform-dependent availability.
+
+The implementation-ready contract, including every source-visible entry prefix,
+cold-reader key, pagination branch, breakpoint leaf, debugger transition, recovery
+query, pointer route and multi-stage key sequence, is the
+[Emergency Break and degraded interaction paths reimplementation specification](emergency-break-and-degraded-interaction-paths-reimplementation-specification.md).
 
 ## Evidence and release boundaries
 
@@ -57,15 +64,19 @@ is 43,408 bytes with SHA-256
 
 The Genera analysis uses the locally purchased Open Genera 2.0 release and the
 Genera 8.5 world it supplies. The source inputs remain ignored and are not linked or
-redistributed. Three locally inspected files establish the implementation boundary:
+redistributed. The complete specification records the exact locally inspected
+source artifacts needed for its contracts. The core stream and entry files are:
 
 | Release pathname | Bytes | SHA-256 | Evidence supplied |
 | --- | ---: | --- | --- |
 | `sys.sct/window/sysmen.lisp.~250~` | 52,798 | `2f54fdb15335fc7f9f9f5c47a03f1ad2a5803d86787267949825f23853363f4c` | System Menu registration |
 | `sys.sct/window/basstr.lisp.~645~` | 65,555 | `112245299c0d46cf81a67f2cc8de714c766711653be215467ef41bb2c6778021` | function-key entry, selection, cleanup, and availability logic |
 | `sys.sct/sys/cold-load-stream.lisp.~6~` | 15,225 | `a6ba54d93b4d8b5852653686b183e9e7ba70763da48fe276e842f591f60ff27c` | front-end console stream and input editing |
+| `sys.sct/sys/ifepio.lisp.~239~` | 17,345 | `2ea2530f775e4653891e49ea59c2dc05fe16b8155a91bdb8c30521aa2c61ac78` | low-level special-character interception, output, and `**MORE**` |
+| `sys.sct/debugger/debugger.lisp.~784~` | 99,026 | `0f12aed40337a76298f42ba16fe3e23723ac005e34a63927c0dbff8b6c91e600` | cold takeover, saved-screen ownership, cleanup, and recursive degradation |
+| `sys.sct/sys/ltop.lisp.~754~` | 25,132 | `18f1cc03e5a5aefc06b97eaa5649cffdf2717b824f994422d8ea2111f1db6ebb` | distinct minimal emergency evaluator and warm-reinitialization boundary |
 
-These are local artifact observations made 2026-07-18. They support original
+These are local artifact observations verified through 2026-07-19. They support original
 technical description here, not publication of the proprietary files.
 
 ## Entry points and visible contract
@@ -78,10 +89,11 @@ technical description here, not publication of the proprietary files.
 | Genera 8.5 | `Function Suspend` | get to the cold-load stream, with caution |
 | Genera 8.5 | **Emergency Break** in the System Menu | start a high-priority process that enters the same stream with that reason label |
 
-The menu entry is not a different debugger. In each inspected source it starts a
-process that calls the same keyboard recovery function. The menu exists partly
-because a mouse may still work when the relevant keyboard path does not; a System 46
-change note says this explicitly.
+The menu item and keyboard prefix are not different breakpoint implementations. In
+each inspected release they start a process that calls the same keyboard recovery
+function. The menu exists partly because a mouse may still work when the relevant
+keyboard path does not; a System 46 change note says this explicitly. After the
+cold stream is selected, however, it has no pointer or presentation bindings.
 
 ## Why it survives window-system failure
 
@@ -155,12 +167,36 @@ debugger's cold-load recovery function. The actual Emergency Break path clears t
 selected-window binding, prints the current package, and invokes `BREAK` over the
 cold-load stream.
 
+That user-facing path is distinct from the function named
+`SI:EMERGENCY-BREAK`. When recursive debugger depth reaches 25, Genera bypasses the
+ordinary debugger command surface and enters that smaller read/evaluate/print loop;
+at depth 30 it halts into the auxiliary FEP/VLM layer. The menu label therefore must
+not be used as evidence that the menu directly invokes the minimal evaluator.
+
 The underlying Genera stream is not just a character-output primitive. The inspected
 source maintains cursor geometry, a rubout-handler buffer, prompt and “noise string”
-state, activator and unread-character cells, line editing, cursor motion, clearing,
-and `**MORE**` behavior. Its lowest-level display and keyboard operations go through
-the front-end processor interface. This explains how the console can offer a usable
+state, activator and unread-character cells, single-character Rubout, whole-buffer
+Clear Input, screen refresh, Help, activation, and `**MORE**` behavior. It does not
+provide the ordinary Input Editor's cursor-motion, word-motion, kill/yank, or
+completion maps. Its lowest-level display and keyboard operations go through the
+front-end processor interface. This explains how the console can offer a usable
 reader while avoiding Dynamic Windows.
+
+The exact source tree is context-sensitive. Before rubout editing,
+Control-Suspend recursively enters `BREAK`, Control-Meta-Suspend enters the ordinary
+Debugger, and Control-Abort signals Abort. Within the editor, Refresh redraws the
+prompt and buffer, Control-Refresh redraws after a fresh line, Help chooses the first
+available configured help mode, and any otherwise unhandled modified character
+beeps. The Lisp reader uses `End` as its activation character. There is no cold-stream
+pointer command or multi-stage editor prefix.
+
+The ordinary Break loop then gives the first nonwhitespace character another
+context: Resume returns; Abort and Control-Z take the abort path; Suspend enters a
+nested Break; Meta-Suspend enters the ordinary Debugger; and `(RETURN expression)`
+returns all values of the expression. Once text has begun, intercepted characters
+again follow their ordinary asynchronous behavior. This command-loop layer is
+distinct from both the lower cold-stream intercept and the depth-25 minimal
+evaluator.
 
 Availability is platform-sensitive:
 
@@ -248,14 +284,50 @@ labels, and researcher-entered arithmetic. Its use is reviewed in the
 and recorded in the [curated CADR screenshot catalog](assets/mit-cadr-screenshots/).
 It is not a source, manual, font, or decorative screenshot gallery.
 
-## Genera runtime TODO
+## Runtime observation on Genera 8.5
 
-`TODO`: repeat the same narrow test in a fresh, disposable Genera session: record the
-System Menu entry, enter Emergency Break, evaluate a synthetic arithmetic form,
-exercise the documented recovery gesture, and stop without saving the world. Publish
-at most one capture after a separate image-specific review. Until then, this page's
-Genera behavior claims are source-grounded and its visible VLM behavior is explicitly
-unverified.
+Disposable isolated session `d04-emergency-break-publication-20260719`, generation
+1, used the exact identified Open Genera archive, VLM, debugger, and base world. The
+harness explicitly targeted either the main or Cold Load X client and failed closed
+if that kind was absent or ambiguous.
+
+The positive action sequence was:
+
+1. hold Shift and the rightmost mouse button to display the System Menu;
+2. move to and visibly highlight **Emergency Break**;
+3. release the momentary-menu button and select the still-displayed item with Left;
+4. observe the separate Cold Load client announce “Emergency Break, using the cold
+   load stream,” proving the actual menu dispatch rather than a direct substitute;
+5. type the synthetic form `(+ 40 2)`;
+6. send the source-defined `End` character through host `KP_End`;
+7. observe the value `42` and a new `Command:` prompt; and
+8. send `Resume` through host `F5`, then observe the saved main Listener display
+   restored.
+
+![The Open Genera Cold Load Stream client displaying the actual Emergency Break banner, the researcher-entered form (+ 40 2), result 42, and another command prompt.](assets/genera-screenshots/emergency-break-arithmetic-evaluation.png)
+
+*Runtime observation: Open Genera Emergency Break after actual System Menu entry,
+captured 2026-07-19. Underlying software and display material remain the property of
+their respective rightsholders; reproduced for criticism, scholarship, and
+historical documentation under 17 U.S.C. section 107. No affiliation or endorsement
+is implied. The image is excluded from the repository's project license.*
+
+| Runtime item | Recorded value |
+| --- | --- |
+| Session interval | 2026-07-19 08:13:46–08:16:36 EDT |
+| Archive | 206,213,430 bytes; SHA-256 `89fb3e76b91d612834f565834dea950b603acf8f9dbacacdd0b1c3c284a2d36e` |
+| World | 54,804,480 bytes; SHA-256 `a8ee5e86cc7e322f7385af3e0cd579d7650d4dcfc3ce328acbf8b25515dd0672` |
+| VLM / debugger | SHA-256 `9f5e18d5770f973879716182b6856ef5a8ee9d3b2bb907476ea0cf35986aa4c7` / `2db918cfe8f35f52c7ff4b7695b0ecd3bb85e41a3327ea5a94874edf05edb54a` |
+| Harness | Python source SHA-256 `6f8c65bdc2f814a8408f92eb05d3fac68eafefefe889bd02e570059694145497` |
+| Selected screenshot | 1024 by 768; PNG SHA-256 `b7edcce3ba94e9601335ac280438988d5ae40451c1f2235f2b5fe786f8736eb6`; decoded-pixel SHA-256 `219c9bce8d7771553141df4873aced28255317f6e7b1cd9700c61ef5ac834445` |
+| Final action log | 42 records; SHA-256 `0e3563bb5af99754dd00e08f294cdfc235e9bc2988b019c418342073f794bcdd` |
+| Recovery | `Resume` visibly restored the 1200 by 900 main client; restored capture PNG SHA-256 `641dcef54b379e67a74e5e7bd19bbb5838ae42d01d5b63f8536c8fd2695bb35d` |
+| Persistence and stop | base/private world unchanged; `save_world_invoked_by_harness=false`; `process_checkpoint_created_by_harness=false`; in-guest save/checkpoint fields unknown; unsaved state recorded discarded/non-resumable; confirmation and cleanup progress observed; known forced VLM mutex-stall cleanup, so `state_may_be_incomplete=true` |
+
+Two earlier menu gestures in this same session changed global input status without
+displaying or selecting the item. They remain negative timing/focus evidence, not
+successful entries. The third observed menu, highlight, exact reason banner, value,
+and restored display form the positive claim chain.
 
 ## Preservation and safety guidance
 
@@ -275,16 +347,21 @@ unverified.
 - Which exact physical-key sequence is appropriate for returning from this System
   303 breakpoint through the present `usim` Space Cadet mapping? The source and
   display name Resume, but the current harness delivery was not verified.
-- Does the purchased VLM world expose its cold-load stream on the first attempted
-  Emergency Break, or take the source's unavailable-console notification path?
+- Which actual platform/availability branches besides the now-verified base-world
+  menu entry are reachable on 3600, Ivory, and Domino configurations?
+- Does `Function Suspend` in the purchased world follow the same complete lifecycle,
+  including ignored numeric argument and typeahead release, as the source?
 - Which Genera debugger commands remain usable when invoked through the primitive
   stream, and which assume Dynamic Windows despite the stream redirection?
 - Can a controlled locked-error-window fixture demonstrate the System 303 diversion
   path without risking unrelated state?
+- Can equivalent Genera locked-window and Output Hold fixtures cover the cold
+  yes/no/debugger choices without manufacturing destructive failure?
 
 ## Related articles
 
 - [Software application dossier coverage](software-application-dossiers.md)
+- [Emergency Break and degraded interaction paths reimplementation specification](emergency-break-and-degraded-interaction-paths-reimplementation-specification.md)
 - [Lisp Listeners on the MIT CADR and LM-3](mit-cadr/lisp-listener.md)
 - [Operating CADR through the Xvfb harness](mit-cadr/cadr-computer-use-harness.md)
 - [Operating Genera through the Xvfb harness](genera/genera-computer-use-harness.md)

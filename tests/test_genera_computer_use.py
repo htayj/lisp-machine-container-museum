@@ -1582,6 +1582,9 @@ class WindowInputAndActionTests(unittest.TestCase):
     def test_window_classification_and_selection_follow_dynamic_roles(self) -> None:
         self.assertEqual(genera.classify_window("Genera on VLM"), "main")
         self.assertEqual(genera.classify_window("genera (Cold Load)"), "cold-load")
+        self.assertEqual(
+            genera.classify_window("VLM Debugger - Cold Load"), "cold-load"
+        )
         self.assertEqual(genera.classify_window("VLM Debugger"), "debugger")
         self.assertEqual(genera.classify_window("Genera status"), "genera-other")
         self.assertEqual(genera.classify_window("unrelated"), "other")
@@ -1636,6 +1639,67 @@ class WindowInputAndActionTests(unittest.TestCase):
         self.assertEqual(observed["selected"]["window_id"], 11)
         self.assertEqual(observed["selected"]["kind"], "cold-load")
 
+    def test_explicit_interaction_window_selection_is_exact_and_fail_closed(self) -> None:
+        main = {
+            "window_id": 12,
+            "title": "Genera on private-vlm",
+            "kind": "main",
+            "geometry": {"width": 1200, "height": 900},
+            "area": 1080000,
+        }
+        cold = {
+            "window_id": 11,
+            "title": "INTERNET|10.0.0.2 Cold Load Stream",
+            "kind": "cold-load",
+            "geometry": {"width": 1024, "height": 768},
+            "area": 786432,
+        }
+        self.assertIs(genera.select_interaction_window([main, cold], "main"), main)
+        self.assertIs(
+            genera.select_interaction_window([main, cold], "cold-load"), cold
+        )
+        with self.assertRaisesRegex(genera.HarnessError, "could not be identified"):
+            genera.select_interaction_window([main], "cold-load")
+        with self.assertRaisesRegex(genera.HarnessError, "ambiguous"):
+            genera.select_interaction_window(
+                [cold, {**cold, "window_id": 13, "title": "second Cold Load"}],
+                "cold-load",
+            )
+        with self.assertRaisesRegex(genera.HarnessError, "unsupported"):
+            genera.select_interaction_window([main, cold], "other")
+
+    def test_interaction_commands_parse_main_default_and_explicit_cold_load(self) -> None:
+        parser = genera.build_parser()
+        cases = (
+            (["key", "F12"], "main"),
+            (["key", "--window-kind", "cold-load", "Return"], "cold-load"),
+            (["type", "(+ 40 2)"], "main"),
+            (["type", "--window-kind", "cold-load", "(+ 40 2)"], "cold-load"),
+            (["mouse", "move", "1", "2"], "main"),
+            (
+                ["mouse", "--window-kind", "cold-load", "move", "1", "2"],
+                "cold-load",
+            ),
+            (["screenshot"], "main"),
+            (["screenshot", "--window-kind", "cold-load"], "cold-load"),
+            (["wait"], "main"),
+            (["wait", "--window-kind", "cold-load"], "cold-load"),
+        )
+        for arguments, expected in cases:
+            with self.subTest(arguments=arguments):
+                self.assertEqual(parser.parse_args(arguments).window_kind, expected)
+
+    def test_action_context_records_exact_interaction_window_kind(self) -> None:
+        selected = {
+            "window_id": 11,
+            "title": "INTERNET|10.0.0.2 Cold Load Stream",
+            "kind": "cold-load",
+            "geometry": {"x": 100, "y": 100, "width": 1024, "height": 768},
+        }
+        context = genera.action_context({"generation": 3}, selected)
+        self.assertEqual(context["window_kind"], "cold-load")
+        self.assertEqual(context["window_id"], 11)
+
     def test_coordinates_use_current_geometry_and_buttons_are_bounded(self) -> None:
         geometry = {"width": 1200, "height": 900}
         for point in ((0, 0), (1199, 899)):
@@ -1652,9 +1716,39 @@ class WindowInputAndActionTests(unittest.TestCase):
 
         self.assertEqual(
             genera.translate_keys(
-                ["SELECT", "rubout", "Abort", "super", "enter", "space", "F12"]
+                [
+                    "SELECT",
+                    "function",
+                    "suspend",
+                    "resume",
+                    "clear-input",
+                    "complete",
+                    "end",
+                    "help",
+                    "rubout",
+                    "Abort",
+                    "super",
+                    "enter",
+                    "space",
+                    "F12",
+                ]
             ),
-            ["F1", "Delete", "KP_Subtract", "Control_R", "Return", "space", "F12"],
+            [
+                "F1",
+                "F3",
+                "F4",
+                "F5",
+                "F10",
+                "F11",
+                "KP_End",
+                "F12",
+                "Delete",
+                "KP_Subtract",
+                "Control_R",
+                "Return",
+                "space",
+                "F12",
+            ],
         )
 
     def test_mouse_move_does_not_wait_for_motion_at_an_already_reached_point(
@@ -2761,6 +2855,42 @@ class WaitCommandTests(unittest.TestCase):
                     genera.command_wait(args, state_root)
 
         require_running.assert_called_once_with(state_root / "museum")
+
+    def test_semantic_wait_reports_the_selected_window_kind(self) -> None:
+        args = genera.argparse.Namespace(
+            session="museum",
+            seconds=None,
+            stable_for=None,
+            changed_from=None,
+            window_kind="cold-load",
+        )
+        state = {"status": "running"}
+        selected = {
+            "kind": "cold-load",
+            "window_id": 17,
+            "title": "INTERNET|10.0.0.2 Cold Load Stream",
+            "geometry": {"x": 0, "y": 0, "width": 1280, "height": 956},
+        }
+        with tempfile.TemporaryDirectory() as temporary:
+            state_root = Path(temporary)
+            with mock.patch.object(
+                genera, "require_running", return_value=state
+            ) as require_running, mock.patch.object(
+                genera, "refresh_window", return_value=(state, selected)
+            ) as refresh_window, mock.patch.object(genera, "json_print") as json_print:
+                self.assertEqual(genera.command_wait(args, state_root), 0)
+
+        session_dir = state_root / "museum"
+        require_running.assert_called_once_with(session_dir)
+        refresh_window.assert_called_once_with(session_dir, state, "cold-load")
+        json_print.assert_called_once_with(
+            {
+                "session": "museum",
+                "condition": "window-ready",
+                "window_kind": "cold-load",
+                "window": selected,
+            }
+        )
 
 
 class ParserTests(unittest.TestCase):

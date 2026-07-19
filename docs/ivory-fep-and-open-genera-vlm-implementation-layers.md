@@ -3,7 +3,7 @@ type: Architecture Note
 title: Ivory, FEP, and Open Genera VLM implementation layers
 description: A source-, manual-, and runtime-grounded account of the Ivory architecture, physical FEP and IFEP control planes, Open Genera Life Support and VLM, boot and debugger controls, architecture-specific compiler systems, and adjacent platform facilities, with a CADR comparison.
 tags: [genera, open-genera, ivory, i-machine, fep, ifep, vlm, life-support, compiler, linker, boot, debugger, mit-cadr, lm-3]
-timestamp: 2026-07-18T13:10:00-04:00
+timestamp: 2026-07-19T08:55:47-04:00
 ---
 
 # Ivory, FEP, and Open Genera VLM implementation layers
@@ -743,14 +743,14 @@ report or publish crash content merely to answer that question.
 | `:Show Status` | Show virtual-machine status | Read-only |
 | `:Clear Screen` | Erase the Cold Load display | Display-only |
 
-**Open question/TODO — exact runtime capture:** extend the computer-use harness
-window selector so an action can explicitly target the mapped Cold Load/VLM
-Debugger window instead of always preferring the main Genera window. In a fresh
-private session, pause with the verified `Halt Genera` form, capture `:Show Version`
-and `:Show Status`, then use `:Start` and verify the listener resumes. Record the
-ordered input ledger and review the specific image under the screenshot-publication
-policy before adding it. No tracked screenshot is substituted here because the
-current harness could not safely focus that window.
+**Open question/TODO — exact runtime capture:** the computer-use harness can now
+target the mapped Cold Load client exactly and fail closed on zero or ambiguous
+matches. In a fresh private session, pause with the verified `Halt Genera` form,
+target `--window-kind cold-load`, capture `:Show Version` and `:Show Status`, then
+use `:Start` and verify the listener resumes. Record the ordered input ledger and
+review the specific image under the screenshot-publication policy before adding it.
+No tracked screenshot is substituted here because that VLM Debugger command run has
+not yet been performed.
 
 ## Netboot, bus access, keyboard, and embedding
 
@@ -1065,8 +1065,8 @@ window—was not safely selectable through the current harness.
 
 ## Open questions and next evidence tasks
 
-1. **VLM Debugger runtime:** add explicit Cold Load window selection to the harness,
-   then verify `:Show Version`, `:Show Status`, and `:Start` with a fresh private VLOD.
+1. **VLM Debugger runtime:** use the harness's exact `cold-load` window target to
+   verify `:Show Version`, `:Show Status`, and `:Start` with a fresh private VLOD.
 2. **Screenshot publication:** review one minimal Cold Load/VLM Debugger capture and,
    if justified, add it with full portable provenance. Do not publish a gallery.
 3. **Physical IFEP variants:** obtain model-specific Ivory manuals and compare the

@@ -87,6 +87,15 @@ asset exclusion. MIT, LM-3, and the named contributors do not endorse this museu
   relationship reviewed on 2026-07-19. It does not establish staged button
   semantics, geometry, Undo, mutation, or source/build identity and is not a generic
   CADR illustration.
+- [`emergency-break-cold-load-evaluation.png`](emergency-break-cold-load-evaluation.png)
+  is also embedded in the [Emergency Break and degraded interaction paths
+  reimplementation
+  specification](../../emergency-break-and-degraded-interaction-paths-reimplementation-specification.md).
+  Its use there is limited to the System 303 cold-load breakpoint's primitive text
+  overlay, researcher-entered `(+ 40 2)` form and `42` result, saved-listener
+  relationship, and runtime/harness limitation reviewed on 2026-07-19. It does not
+  establish successful Resume delivery, every entry path, or general CADR screen
+  appearance and is not a generic Lisp Machine illustration.
 
 ## Capture catalog
 

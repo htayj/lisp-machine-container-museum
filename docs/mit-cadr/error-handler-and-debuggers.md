@@ -3,7 +3,7 @@ type: Historical Article
 title: The MIT CADR Error Handler and Window Debugger
 description: Source-, manual-, and runtime-grounded study of error dispatch, stack-frame debugging, conditions, commands, breakpoints, and the graphical debugger in public System 46 and maintained LM-3 System 303.
 tags: [mit-cadr, lm-3, error-handler, debugger, conditions, window-system]
-timestamp: 2026-07-18T05:35:54-04:00
+timestamp: 2026-07-19T08:40:05-04:00
 ---
 
 # The MIT CADR Error Handler and Window Debugger
@@ -29,6 +29,9 @@ The corresponding Symbolics generation is documented separately in
 [The Genera Debugger and Display Debugger](../genera/debugger-and-display-debugger.md).
 The degraded recovery path below Dynamic Windows is covered by
 [Emergency Break and the cold-load stream](../emergency-break-and-cold-load-stream.md).
+The complete release-selectable recovery and debugger-transition binding trees are
+normative in the [D04 reimplementation
+specification](../emergency-break-and-degraded-interaction-paths-reimplementation-specification.md).
 
 ## Evidence boundary
 
@@ -210,6 +213,12 @@ The manual's shorter summary omits several Control-Meta operations, but its
 long-form text explains the important argument/local locatives. Meta-R is an
 especially useful negative finding: the key is visibly reserved, the manual
 labels it nonworking, and the source body contains only a “write this” marker.
+The only argument characters are Control-, Meta-, or Control-Meta-modified decimal
+digits; there is no minus leaf. Digits accumulate in base ten even when the Lisp
+reader base is octal, and the value is cleared after the next command. Unmodified
+ordinary characters enter the form reader. Rubout retries at command boundary,
+Control-G throws to the debugger catcher through the I/O buffer, and Break can enter
+a nested break loop.
 
 ### Complete System 303 initial key dispatch
 
@@ -278,10 +287,20 @@ debugger opens.
 | Control-Quote | Evaluate in EH | evaluate in debugger's own stack group |
 | Control-Meta-Delta | Describe deeply | extended description of the last object |
 
-The topical Help dispatcher offers General, Information, Stack Frames,
-Stepping, Proceeding, Transferring, and Describe-command topics. Help P
-reprints the condition-specific proceed choices. Source adds this structure;
-the older System 46 handler prints one fixed help body.
+The topical Help dispatcher is a second-stage tree: `G/g` General; `I/i` or `E/e`
+Information; `F/f` Stack Frames; `S/s` Stepping; `P/p` or `X/x` Proceeding plus the
+current dynamic choices; `T/t` Transferring; and `D/d` or `C/c` Describe followed by
+one command character. Help or `?` prints the topics and remains in Help; Abort,
+Control-Z, or Control-G aborts it. The older System 46 handler instead prints one
+fixed help body.
+
+System 303's signed parser is intentionally nonconventional in the pinned source.
+Minus begins at `-1`, then a digit computes `digit + 10 * old`; minus followed by
+`3` therefore yields `-7`, not `-3`. A second minus beeps and preserves the prior
+argument. This exact arithmetic remains pending runtime confirmation and must not be
+normalized in a source-compatible implementation. The
+[D04 specification](../emergency-break-and-degraded-interaction-paths-reimplementation-specification.md#complete-system-303-initial-debugger-dispatch)
+records each command family's use or non-use of the resulting value.
 
 ## Traps, breakpoints, and mutation
 
@@ -335,6 +354,13 @@ some switch.” That source-only design note helps explain the embedded Lisp
 interactor and editor-like frame motion, but it does not establish that such an
 editor embodiment was ever shipped.
 
+Pointer-sensitive stack lines change the frame; generic values go to `*`; Inspector
+history can re-inspect or return a value; and argument/local presentations can
+replace live slots. The graphical interactor's Form key clears it, empty-boundary
+Rubout is ignored, and other input is a form or pointer blip. Its yes/no reader
+accepts `Y`, `y`, or Space and `N`, `n`, or Rubout respectively; menu `T` and `NIL`
+are equivalent.
+
 ## The System 303 window debugger
 
 The maintained interface keeps the same overall pane design but allocates a
@@ -366,6 +392,9 @@ Mouse behavior is source-explicit:
 - the Inspector pane's right gesture transfers an object into the handler;
 - argument and local values can be selected for replacement;
 - margin regions jump toward the top or bottom of the stack.
+
+The **Proceed** middle gesture is unbound; only left default-proceed and right
+dynamic-menu behavior are defined.
 
 The implementation preserves System 46's “editor top level” comment even though
 the shipped object remains a special-purpose constrained frame.
@@ -545,7 +574,7 @@ process remained.
 
 ## Sources
 
-Public links and revisions last verified 2026-07-18.
+Public links and revisions last verified through 2026-07-19.
 
 - MIT CADR System 46,
   [`LISPM; PKGDCL 230`](https://github.com/mietek/mit-cadr-system-software/blob/8e978d7d1704096a63edd4386a3b8326a2e584af/src/lispm/pkgdcl.230),

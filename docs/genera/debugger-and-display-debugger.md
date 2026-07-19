@@ -3,7 +3,7 @@ type: Historical Article
 title: The Genera Debugger and Display Debugger
 description: Evidence-bounded guide to Genera condition debugging, stack-frame evaluation, commands, traps, breakpoints, monitoring, and the pane-oriented Display Debugger.
 tags: [symbolics, genera, debugger, display-debugger, conditions, dynamic-windows]
-timestamp: 2026-07-18T05:35:54-04:00
+timestamp: 2026-07-19T08:40:05-04:00
 ---
 
 # The Genera Debugger and Display Debugger
@@ -53,10 +53,12 @@ to identify the local evidence.
 | `debugger/stepper.lisp.~7~` | 35,960 | `6e7bbdb140bcee4f8696457699d2b3b70fe67d0907d4fbab4259e68a87d1bc90` | stepping machinery |
 | `debugger/imonitor.lisp.~5~` | 75,854 | `19663258623c7010a9bf2a9bf11abd9899de1406e0775ad1d891aba606d68c9d` | monitored-location implementation |
 | `cp/debug-commands.lisp.~23~` | 37,591 | `a4ee47f2e64834cfb3a8a996b0fe505e9edf514191d7ef4effa7e7521ff32b67` | global breakpoint and source commands |
+| `cp/comtab.lisp.~103~` | 36,295 | `f60724c8e2526950000f090f2dae4745b3394079713b3601606be865c23b98e1` | command-table inheritance and Standard Arguments |
+| `cp/read-accelerated-command.lisp.~142~` | 37,639 | `8107cf4e993068344e624ec924c8d0cf0327158a927c1962666d22eb81494388` | prefix, Help, error and numeric-argument semantics |
 
 The downloaded reference PDF was 2,292,247 bytes with SHA-256
 `2c6e23e4a0f969cb7962b71f0ed0eb390b47e394195f6ed9e7a862ba33914d6f`.
-It was verified 2026-07-18. The purchased archive, world, extracted source, and
+It was verified through 2026-07-19. The purchased archive, world, extracted source, and
 raw screenshots remain untracked.
 
 ## From condition to debugger
@@ -119,9 +121,10 @@ reported with the runtime evidence.
 
 ## The standard Debugger interaction model
 
-The standard prompt is a right arrow. A colon starts a full CP command such as
-`:Show Backtrace`; an accelerator can invoke the same command directly; a Lisp
-form is evaluated in the selected frame. Output is presentation-sensitive, so
+The standard prompt is a right arrow. Colon or Meta-X starts a full CP command such
+as `:Show Backtrace`; an accelerator can invoke the same command directly; a Lisp
+form is evaluated in the selected frame. A numeric prefix on colon or Meta-X is an
+accelerator error because that entry accepts no argument. Output is presentation-sensitive, so
 stack frames, functions, values, and source objects can carry pointer gestures
 appropriate to their types.
 
@@ -212,7 +215,6 @@ commands that the printed alphabetical summary does not enumerate:
 | Source-visible control | Meaning |
 | --- | --- |
 | Meta-Shift-N / Meta-Shift-P | move next/previous while explicitly including invisible frames |
-| Control-Space | push or pop the current-frame selection PDL |
 | Control-Meta-Space | exchange current frame with the frame PDL |
 | Control-Shift-B / Meta-Shift-B | brief or invisible-frame backtrace variants |
 | Control-Shift-E | explicitly read and evaluate a form in the debugger |
@@ -221,6 +223,30 @@ commands that the printed alphabetical summary does not enumerate:
 | Control-X Control-R | show the `&rest` argument |
 | Control-X D | show compiled code |
 | End | leave the Display Debugger for the ordinary error context |
+
+Control-Space is an argument-class-sensitive tree rather than a generic toggle:
+
+```text
+Control-Space
+├─ no prefix -> push current frame
+├─ modified numeric 0 -> show frame PDL
+├─ exactly Control-U -> pop and select
+├─ exactly Control-U Control-U -> pop and discard
+└─ every other prefix, including typed modified 4 -> beep
+```
+
+The source distinguishes the `:control-u` argument class and value, so modified `4`
+is not equivalent to Control-U. Control-Meta-Space accepts no prefix and exchanges
+with the top saved frame; it does not rotate.
+
+The inherited numeric tree starts at four with repeatable Control-U, accepts
+Control-, Meta-, and Control-Meta-modified minus/digits for signed decimal, and the
+modified Infinity character for signed `2^40`. Unmodified digits, minus and Infinity
+begin Lisp-form input. Prefix state survives entry into Control-X. Control-X Help
+lists applicable continuations without executing one; an unknown continuation beeps,
+clears accelerator input and reports the undefined sequence. The complete Control-X
+tree and per-leaf argument semantics are specified in the
+[D04 recovery-path specification](../emergency-break-and-degraded-interaction-paths-reimplementation-specification.md#complete-genera-ordinary-debugger-command-surface).
 
 The source binds **Show Arglist** to Control-Shift-A, while Control-X Control-A
 invokes **Show Argument** with `:all`. The printed manual assigns Control-X
@@ -315,8 +341,9 @@ The right-button submenus are also source-complete:
 
 ### Pane presentations and pointer operations
 
-- Left on a backtrace frame makes it current; right asks for the complete
-  stack-frame gesture set.
+- Left on a backtrace frame makes it current; Shift-Left selects it with detailed
+  display; Middle shows its arguments. Right builds a menu from the translators
+  applicable to that exact presentation and context.
 - Proceed-option presentations invoke the selected proceed/restart directly.
 - Inspect-history entries can be selected for reexamination.
 - Source forms carry language-aware presentations when source information is
@@ -324,6 +351,15 @@ The right-button submenus are also source-complete:
 - Control-Meta-right on an argument or local value can replace the live slot.
 - The interactor accepts mouse-selected objects wherever the command's
   presentation type permits them.
+
+The application overlay composes with Dynamic Windows' complete 96-cell raw
+modifier/button map. The debugger-specific base stack-frame menu candidates include
+return, reinvoke, set/clear exit trap, and show function arglist. It is not correct to
+call the resulting Right menu closed: generic type/language translators and
+loaded-world or site extensions can add applicable entries. The base raw map,
+debugger-specific translator inventory, ordering requirement, and runtime overlay
+obligation are recorded in the
+[D04 specification](../emergency-break-and-degraded-interaction-paths-reimplementation-specification.md#source-bounded-genera-display-debugger-pointer-composition).
 
 The source's pane updater uses separate redisplay ticks for the backtrace,
 condition, proceed choices, source/code, arguments/locals, and inspect history.
@@ -503,6 +539,10 @@ than being inferred from shutdown behavior.
   evidence without redistributing it.
 - The Display Debugger manual reference does not fully describe its layout or
   gestures; those claims depend on local source and the bounded runtime check.
+- The debugger-specific translator base is enumerated, but inherited Dynamic
+  Windows, language/type, loaded-world, and site overlays can extend effective
+  Right menus. A live translator dump remains required before those menus can be
+  called closed.
 - The Show Arglist accelerator discrepancy requires a dedicated direct
   keystroke test before either mapping can be called runtime-confirmed.
 - Mutation, monitoring, breakpoints, traps, returns, and reinvocations are
@@ -513,12 +553,12 @@ than being inferred from shutdown behavior.
 
 ## Sources
 
-Public documentation link verified 2026-07-18.
+Public documentation link verified through 2026-07-19.
 
 - Symbolics,
   [*Program Development Utilities*, Genera 8](https://bitsavers.org/pdf/symbolics/software/genera_8/Program_Development_Utilities.pdf),
   printed pages 182–245, especially the overview, command descriptions, printed
   summary, and Debugger evaluation functions.
 - Licensed Genera 8.5 source files identified by filename, byte count, and hash
-  in the evidence table above; inspected locally 2026-07-18 and not
+  in the evidence table above; inspected locally through 2026-07-19 and not
   redistributed.

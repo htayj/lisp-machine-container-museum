@@ -3,7 +3,7 @@ type: Rights Review
 title: Publishing runtime screenshots for museum documentation
 description: Capture-specific U.S. copyright review and publication policy for CADR and Genera runtime screenshots used as historical evidence.
 tags: [screenshots, copyright, fair-use, preservation, cadr, genera]
-timestamp: 2026-07-19T05:20:04-04:00
+timestamp: 2026-07-19T08:55:47-04:00
 ---
 
 # Publishing runtime screenshots for museum documentation
@@ -55,8 +55,10 @@ The corresponding Genera review covered local sessions `zmacs-research`,
 `d22-runtime-compiler-genera-20260718`, and
 `d28-d29-ui-clim-20260718`, and `d35-hardcopy-20260718`, with the
 generation numbers recorded in the asset catalog, plus
-`d46-network-services-genera-20260718`, generation 2. All were captured on
-2026-07-18 from the same identified Genera 8.5 world. Thirty-one screens
+`d46-network-services-genera-20260718`, generation 2, and
+`d04-emergency-break-publication-20260719`, generation 1. The first sessions were
+captured on 2026-07-18 and the D04 session on 2026-07-19 from the same identified
+Genera 8.5 world. Thirty-two screens
 passed review for publication in the
 [curated Genera screenshot catalog](assets/genera-screenshots/index.md):
 
@@ -70,6 +72,7 @@ passed review for publication in the
 | `zmacs-buffer-list-context-menu.png` | Shows the contextual menu while the buffer list is displayed | Publish only for the observed context; the image alone does not prove that a row presentation owns the menu |
 | `dynamic-lisp-listener-multiple-values.png` | Shows the Listener printing two values from the researcher-entered form `(values 17 23)` | Publish beside analysis of Listener evaluation and multiple-value display; the startup notice is incidental context, not the publication purpose |
 | `system-menu.png` | Shows the observed three-column System Menu and its short functional labels | Publish beside the source/runtime menu comparison; the startup notice is incidental context, not the publication purpose |
+| `emergency-break-arithmetic-evaluation.png` | Shows the separately targeted cold-load client identifying Emergency Break and the cold-load breakpoint, then evaluating the researcher-entered form `(+ 40 2)` to `42` | Publish only beside the D04 recovery-console analysis and specification; do not reuse as a generic Genera or Lisp Machine illustration |
 | `inspector-list.png` | Shows the Inspector displaying the project-owned probe `'(alpha (beta . gamma) #(1 2 3))` | Publish beside analysis of Inspector panes, history, and the observed menu discrepancy; no licensed source is displayed |
 | `peek-processes.png` | Shows Peek's live process and timer headings without exposing a Help screen or choosing a process operation | Publish beside analysis of the Processes mode and the source-defined table structure |
 | `frame-up-split-layout.png` | Shows the researcher-created two-pane Frame-Up model and short Command Processor transcript after splitting the default pane | Publish beside the source/manual analysis of Frame-Up's pane model and horizontal-split semantics, including the Dynamic Windows program-framework analysis; no licensed source or Help prose is displayed |
@@ -99,8 +102,10 @@ information, blank forms, and researcher-entered text. Genera captures that reta
 contain the short release copyright and unconfigured-site notices that the world
 displayed before the documented interaction; those notices are retained because
 the surrounding Listener and menu geometry is part of the runtime evidence, not
-to republish the notices as standalone text. The Emergency Break capture additionally
-contains a short debugger announcement needed to identify the recovery path. They do
+to republish the notices as standalone text. The Genera Emergency Break capture
+instead contains only a short cold-load-stream announcement, package and breakpoint
+status, one recovery instruction, and the researcher-entered arithmetic probe needed
+to identify and verify the recovery path. They do
 not reproduce source files, fonts, a manual chapter, a demonstration image, or a
 useful substitute for the software. These reviewed complete states are the minimum
 needed to distinguish Zmail from Zwei Mail mode, to establish both the Presentation
@@ -172,6 +177,56 @@ remain source-, action-log-, trace-, or explicit-oracle-grounded. These three ex
 frames are the minimum reviewed images needed to make the D03 cross-release visual
 contract checkable. This paragraph approves no other screenshot for specification
 reuse.
+
+### D04 Emergency Break specification and Genera capture reviewed 2026-07-19
+
+The exact Genera `emergency-break-arithmetic-evaluation.png` file was reviewed for
+the first time, and the already-published CADR
+`emergency-break-cold-load-evaluation.png` file was separately reassessed for the
+[Emergency Break and degraded interaction paths reimplementation
+specification](emergency-break-and-degraded-interaction-paths-reimplementation-specification.md).
+The following four-factor conclusion is specific to those exact files on that D04
+page.
+
+1. **Purpose and character.** The D04 specification uses one observed recovery
+   frame from each runtime-observed system profile to criticize and explain how
+   interaction changes when the ordinary window substrate is unavailable. The
+   Genera frame verifies the separate cold-load client, Emergency Break and
+   breakpoint identity, cold-stream Break evaluation protocol, and
+   researcher-entered arithmetic result. The CADR frame verifies the materially
+   different primitive overlay and saved-listener relationship, including the
+   documented runtime limitation on Resume delivery.
+   This nonprofit historical and compatibility-analysis purpose is evidentiary, not
+   decorative or a substitute user interface. This factor strongly favors the two
+   reviewed uses.
+2. **Nature of the displayed work.** The Genera image is a sparse functional console:
+   a short recovery heading, package and breakpoint status, one short operational
+   instruction, the project-entered `(+ 40 2)` probe, `42`, a prompt, and otherwise
+   blank space. It contains no artwork, source, font sheet, Help page, manual prose,
+   user data, or third-party media. The CADR image likewise documents primitive
+   recovery text and the same synthetic probe over the functional saved screen. This
+   factor favors the reviewed uses, while recognizing that particular screen
+   expression may still be copyrighted.
+3. **Amount and substantiality.** D04 uses one still for each of its C303 and G85
+   runtime-observed profiles; no C46 runtime image is claimed. The complete
+   1024-by-768 Genera cold-load client is retained because its independent-client
+   boundary, position of the small text region, and overwhelming blank area are part
+   of the visual contract; nearly all pixels are empty and cropping to the text would
+   erase that evidence. The one existing CADR frame is needed to show the contrasting
+   overlay relationship. Neither image is part of a sequence or gallery, and the
+   pair is a minute portion of two large interactive systems. This factor favors the
+   reviewed uses.
+4. **Effect on the market.** Neither still can execute a break loop, provide the
+   licensed world or public load band, reproduce source or documentation, expose a
+   command corpus, or replace any software or screenshot-licensing product. Their
+   value comes from the surrounding provenance, source comparison, and conformance
+   analysis. This factor strongly favors the reviewed uses.
+
+On balance, the Genera image may be published and both exact images may be embedded
+in D04 under this case-specific fair-use rationale. The approval adds no pixels or
+licensed payloads, extends no repository license to either screen, and does not
+approve either file as a generic illustration, any additional screenshot, richer
+debugger or Help screens, or reuse outside the analyzed purpose.
 
 ## U.S. fair-use analysis
 

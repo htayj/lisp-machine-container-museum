@@ -96,8 +96,12 @@ as its Virtual Lisp Machine implementation hosted on Unix.
   documents Genera's execution-analysis tools, persistent callers database, complete
   command surfaces, and controlled runtime boundaries.
 - [Emergency Break and the cold-load stream](../emergency-break-and-cold-load-stream.md)
-  compares Genera's degraded recovery path with its MIT predecessors and records the
-  present runtime-verification blocker.
+  compares Genera's degraded recovery path with its MIT predecessors and records an
+  actual System Menu entry, cold-client evaluation, and return to the saved display.
+- [Emergency Break and degraded interaction paths reimplementation specification](../emergency-break-and-degraded-interaction-paths-reimplementation-specification.md)
+  defines the Genera 8.5 cold console, complete D04-owned source-bounded input trees,
+  exact debugger transition edges, recursive degradation, ownership, failure,
+  visual, and conformance contracts while preserving the licensed-evidence boundary.
 - [Zmacs in Symbolics Genera](zmacs.md) documents the ZWEI substrate, object
   model, Zmacs application, development features, modes, source/manual
   discrepancies, and isolated Genera 8.5 observations; its

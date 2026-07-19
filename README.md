@@ -410,32 +410,72 @@ private world could contain an explicitly saved in-guest state, which requires
 separate verification.
 
 Wait for the main client, capture it, and send input only after verifying the current
-screen:
+screen. `main` is the default target, but spelling it out makes a research transcript
+unambiguous:
 
 ```bash
-./scripts/genera-computer-use.sh wait --session research
+./scripts/genera-computer-use.sh wait --session research --window-kind main
 ./scripts/genera-computer-use.sh screenshot \
-  --session research --label initial-display
-./scripts/genera-computer-use.sh key --session research Return
-./scripts/genera-computer-use.sh type --session research 'text to type'
+  --session research --window-kind main --label initial-display
+./scripts/genera-computer-use.sh key \
+  --session research --window-kind main return
+./scripts/genera-computer-use.sh type \
+  --session research --window-kind main 'text to type'
 ```
 
 Open Genera changes X clients while moving from Cold Load to its main display. The
-harness rediscovers the current client rather than retaining the first window ID.
-Mouse coordinates therefore refer to the geometry reported for the currently
-selected window, not the fixed CADR dimensions:
+harness therefore requires an exact `--window-kind` target on `wait`, `key`, `type`,
+`mouse`, and `screenshot`. The choices are `main`, `cold-load`, `debugger`, and
+`genera-other`; omitted means `main`. It rediscovers candidates for every operation
+and fails closed when zero or more than one client has the requested kind. Commands,
+action records, and screenshot sidecars identify the selected X window by kind, ID,
+title, and geometry. Mouse coordinates therefore refer to that observed client's
+geometry, not the fixed CADR dimensions:
 
 ```bash
-./scripts/genera-computer-use.sh mouse --session research move 600 450
 ./scripts/genera-computer-use.sh mouse \
-  --session research click 600 450 --button 1
+  --session research --window-kind main move 600 450
+./scripts/genera-computer-use.sh mouse \
+  --session research --window-kind main click 600 450 --button 1
+```
+
+The preserved VLM Debugger normally uses the Cold Load client, so target it as
+`cold-load`. The `debugger` kind is a reserved title classifier for a distinct X
+client whose title explicitly contains `VLM Debugger`; D04 did not observe such a
+separate title and does not treat that selector as a verified VLM-debugger route.
+
+Portable Genera-key aliases are `select` (`F1`), `function` (`F3`), `suspend`
+(`F4`), `resume` (`F5`), `clear-input` (`F10`), `complete` (`F11`), `end`
+(`KP_End`), and `help` (`F12`). Existing aliases include `rubout`, `abort`, `super`,
+`return`/`enter`, `space`, and `escape`. These are host X-key translations; the
+meaning of a key still depends on the active Genera input context.
+
+For example, after choosing **Emergency Break** on the main System Menu, target the
+separate Cold Load client explicitly. The Cold Load reader activates a completed
+form with the Genera `End` key rather than Return:
+
+```bash
+./scripts/genera-computer-use.sh wait \
+  --session research --window-kind cold-load
+./scripts/genera-computer-use.sh screenshot \
+  --session research --window-kind cold-load --label emergency-break
+./scripts/genera-computer-use.sh type \
+  --session research --window-kind cold-load '(+ 40 2)'
+./scripts/genera-computer-use.sh key \
+  --session research --window-kind cold-load end
+./scripts/genera-computer-use.sh screenshot \
+  --session research --window-kind cold-load --label emergency-break-result
+./scripts/genera-computer-use.sh key \
+  --session research --window-kind cold-load resume
+./scripts/genera-computer-use.sh wait \
+  --session research --window-kind main
 ```
 
 Capture the resulting exact client window and stop the VLM:
 
 ```bash
 ./scripts/genera-computer-use.sh screenshot \
-  --session research --label after-input
+  --session research --window-kind main --label after-input
 ./scripts/genera-computer-use.sh stop --session research
 ```
 

@@ -102,7 +102,11 @@ machine-readable metadata layer while retaining ordinary Markdown as the source.
   lineage, inventories every control, and includes fresh runtime evidence.
 - [Emergency Break and the cold-load stream](emergency-break-and-cold-load-stream.md)
   explains the degraded recovery console in System 46, LM-3 System 303, and Genera,
-  including a fresh verified CADR evaluation and a reviewed runtime capture.
+  including verified System 303 and Genera evaluations and reviewed runtime captures.
+- [Emergency Break and degraded interaction paths reimplementation specification](emergency-break-and-degraded-interaction-paths-reimplementation-specification.md)
+  gives release-selectable cold-console, complete D04-owned input-tree, exact
+  debugger-transition, ownership, recursive-degradation, failure, visual, and
+  conformance contracts.
 - [Flavors, classes, CLOS, and the Flavor Examiner](flavors-clos-and-flavor-examiner.md)
   separates the CADR object facilities from Genera New Flavors and CLOS, inventories
   their inspection commands, and records implementation findings and live behavior.
