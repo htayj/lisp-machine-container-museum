@@ -82,8 +82,13 @@ machine-readable metadata layer while retaining ordinary Markdown as the source.
   303 implementations and verifies its live playfield through the isolated CADR
   harness.
 - [Directory, difference, and buffer editors](directory-difference-and-buffer-editors.md)
-  compares Dired, BDired, and Edit Buffers across the preserved systems, including
-  complete command inventories and implementation/runtime discrepancies.
+  compares Dired, BDired, Edit Buffers, List Buffers, Kill Or Save Buffers, and
+  Compare Directories across the preserved systems, including complete command
+  inventories and implementation/runtime discrepancies.
+- [Directory, difference, and buffer editors reimplementation specification](directory-difference-and-buffer-editors-reimplementation-specification.md)
+  defines System 46, System 303, and Genera 8.5 view models, complete effective
+  input and presentation trees, deferred-operation ordering, partial failures,
+  reviewed Edit Buffers visuals, protocol surfaces, and conformance tests.
 - [Help, self-documentation, and Document Examiner](help-self-documentation-and-document-examiner.md)
   connects editor and system Help to Genera's documentation browser, with complete
   controls, search behavior, source-only findings, and a reviewed live frame.
@@ -257,6 +262,11 @@ machine-readable metadata layer while retaining ordinary Markdown as the source.
   defines release-selectable semantic models, command loops, complete
   source-profile input trees and prefixes, files, modes, lifecycle, failure
   behavior, reviewed visuals, and conformance tests.
+- [Directory, difference, and buffer editors reimplementation
+  specification](directory-difference-and-buffer-editors-reimplementation-specification.md)
+  defines the Dired, BDired, Edit Buffers, List Buffers, Kill Or Save Buffers, and
+  Compare Directories reconstruction contracts without conflating their releases
+  or UI substrates.
 - [Operating Genera through the Xvfb computer-use harness](genera/genera-computer-use-harness.md)
   explains authenticated, network-isolated operation of a licensed world, exact-window
   evidence capture, and why an accepted shutdown confirmation currently ends in

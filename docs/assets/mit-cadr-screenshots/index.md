@@ -1,13 +1,13 @@
 # Curated MIT CADR runtime screenshots
 
-This directory contains nineteen reviewed runtime captures selected from eleven
-provenance-bearing System 303 sessions: eighteen exact full framebuffers and one
+This directory contains twenty reviewed runtime captures selected from twelve
+provenance-bearing System 303 sessions: nineteen exact full framebuffers and one
 documented crop that retains a complete application window. They are runtime observations, not
 manual illustrations and not claims about every CADR, application, or debugger release.
 
 ## Rights status
 
-These nineteen PNGs are included for the museum's criticism, comment, scholarship, and
+These twenty PNGs are included for the museum's criticism, comment, scholarship, and
 research under the fair-use limitation in
 [17 U.S.C. § 107](https://www.copyright.gov/title17/92chap1.html#107). This is an
 asset- and use-specific conclusion, not a statement that every screenshot of every
@@ -23,7 +23,7 @@ not automatically outside copyright merely because a researcher captured it. The
 publication basis here is the limited documentary use assessed below.
 
 The present use is narrowly documentary: each image appears beside analysis of the
-exact application or recovery state it proves; the set contains nineteen low-resolution still
+exact application or recovery state it proves; the set contains twenty low-resolution still
 frames from a much larger interactive system; the images cannot substitute for the
 software, load band, source, fonts, or manuals; and no market for licensing these
 System 303 observations was identified. The Ninth Circuit held the use of a handful of actual
@@ -107,10 +107,18 @@ asset exclusion. MIT, LM-3, and the named contributors do not endorse this museu
   transition reviewed on 2026-07-19. They establish no complete Help corpus,
   hidden command table, source-to-band identity, command semantics, timing,
   exact font, or general CADR pixel identity.
+- [`edit-buffers.png`](edit-buffers.png) is approved for the
+  [directory, difference, and buffer editors reimplementation
+  specification](../../directory-difference-and-buffer-editors-reimplementation-specification.md).
+  Its use is limited to the visible System 303 Edit Buffers heading, two buffer
+  rows, four action columns, read-only mode line, and `End`/`Abort` summary
+  reviewed on 2026-07-19. It does not prove the later mark transitions, the
+  reproduced `U` defect, command dispatch, destructive effects, Dired or BDired
+  behavior, or source-to-band identity.
 
 ## Capture catalog
 
-Eighteen files are exact 768 by 963 pixel grayscale framebuffers. `spacewar-game.png`
+Nineteen files are exact 768 by 963 pixel grayscale framebuffers. `spacewar-game.png`
 is a 768 by 770 crop of its exact framebuffer that retains the complete game window
 and removes only an unrelated split-screen debugger below it. The raw names below
 identify ignored local sidecars and captures retained in the session; no ignored
@@ -122,6 +130,7 @@ path is needed to render the museum pages.
 | [`zwei-help-menu.png`](zwei-help-menu.png) | `0008-zwei-help-menu.png` | 2026-07-18 00:33:03 | Press `Help`, then `Help`; the live documentation dispatcher lists its current choices | `e0d6bf39d9de90b8c94ba93aeb2a70bbe1bec1e8ebbefebf80ffa371ac420c48` | `b56f866686fe6414758656dff8b60f3657fc35aa63978f70402e34fb0b8cd83d` |
 | [`zmacs-text-mode.png`](zmacs-text-mode.png) | `0010-text-mode.png` | 2026-07-18 00:37:38 | Invoke `Meta-X Text Mode Return`; the mode line changes to `ZMACS (Text)` | `f96bf56b32e26334545e0c3b69c86f7eb8626e358d5d874d6f1ddad8d605a18c` | `7399f7f888fe8d7994c51dad2be0dc76d238694cc1ac395d1c54928575ee63cb` |
 | [`zmacs-lisp-mode.png`](zmacs-lisp-mode.png) | `0013-lisp-mode-confirmed.png` | 2026-07-18 00:47:12 | Invoke `Meta-X Lisp Mode Return`; the mode line returns to `ZMACS (LISP)` | `ccd97819c88c1cc4c9cc5acf017c54a5dd3dd551239ac5b8a1bdf433a4d7530c` | `5000ef126c07750a8e2107a95a6ad3574413eb68e72823cb1efb0f37cd1fe5a3` |
+| [`edit-buffers.png`](edit-buffers.png) | `0013-edit-buffers-list.png` | 2026-07-18 04:47:07 | Invoke the named `Edit Buffers` command after leaving the blocked Dired login path; the live editor displays two Zmacs buffers, four action columns, and the read-only Edit-Buffers mode line | `bfb96fecd7fc0bac92cc795a687eb0b1e938756fab07ccd9a3a28635f4453a0b` | `7e7e951204b44fe98b13b8c0d9e0bdc00fcbc25c4476e0ec74bf7650505a1be2` |
 | [`emergency-break-cold-load-evaluation.png`](emergency-break-cold-load-evaluation.png) | `0010-cold-load-evaluation.png` | 2026-07-18 04:18:01 | Enter the cold-load breakpoint from the listener and evaluate the synthetic form `(+ 40 2)`; the primitive display prints `42` over the saved listener screen | `e9af453164e75dccc90a4fe12a12b231e3308af9212b9c3b005a927e09f919ce` | `f3e531869cdc3255270cde0ce5f808ae738298fe14573673b609a62f56e4e161` |
 | [`lisp-listener-multiple-values.png`](lisp-listener-multiple-values.png) | `0005-listener-multiple-values.png` | 2026-07-18 04:03:57 | Evaluate the synthetic form `(values 7 8)`; the Listener prints both values on separate lines | `139d66a2ddc3230e46781610a079a0e0134bf440becaa665f9c2042d514d551c` | `428ce18e58cbda778a5e33e216f946ada4f8ef1a401961024b085e7f95b90b04` |
 | [`system-menu.png`](system-menu.png) | `0006-system-menu.png` | 2026-07-18 04:04:19 | Right click at the Listener; the live three-column System Menu appears with pointer documentation for **Attributes** | `2abdb00ff42c3d032744785b2964d144b62e468ea92815becb5f479d78519d82` | `8f1c1079bc16273526ce55958a563547d74fb873f852643b057b4d22fa99c77d` |
@@ -138,7 +147,7 @@ path is needed to render the museum pages.
 | [`doctor-conversation.png`](doctor-conversation.png) | `0015-doctor-clean-conversation.png` | 2026-07-18 12:49:46 | Load public `DOCTOR` and `DOCSCR` through the isolated FILE bridge, call `HACKS:DOCTOR`, clear old Listener output, and submit three synthetic preservation-history statements; the program displays three source-defined transformations and responses | `8b98e85838d96c5b86ff1e51d8174c963c9c81f8ea41e53161390e6856609e8e` | `cfc6572b2e0472bc784ff35a1b6ca8defa912ed78b9a2968af886db693e84391` |
 | [`qix-live.png`](qix-live.png) | `0027-qix-funcall-live.png` | 2026-07-18 12:54:29 | Load public `HAKDEF` and `QIX`, invoke `NQIX` in a fresh Listener, and allow the source-defined XOR trail to evolve before its any-key stop | `4c6d92f19027d7dd73a6934776d4e3361056bd7b006d8059277c5e47abd8131f` | `8f546c33f9036fb1e0d8447ff93e673f2137c3b2b94669efa1a9b8a0a715b273` |
 
-The PNG digest identifies the exact tracked file bytes. For the eighteen uncropped
+The PNG digest identifies the exact tracked file bytes. For the nineteen uncropped
 captures, the pixel digest in each original sidecar identifies normalized eight-bit
 RGB pixels and therefore remains stable across incidental PNG re-encoding. The
 Spacewar row records the separately computed decoded-pixel digest of the documented
@@ -172,6 +181,35 @@ evaluate an editor identity probe; evaluate `(ED T)`; insert the small
 invoke `Meta-X`; run `Text Mode`; invoke `Meta-X` again; and run `Lisp Mode`.
 The test definition was created for this observation and is not copied from an
 installed document or source file.
+
+### Directory and buffer-editor session
+
+| Item | Recorded value |
+| --- | --- |
+| Session | `d06-d07-20260718`, generation 1 |
+| Runtime interval | 2026-07-18 04:37:29–04:57:54 EDT |
+| Guest release | Experimental System 303.0; load band `System 303-0` |
+| Disk | Public base and private start SHA-256 `bb16e46ad81decfe1efe691d36b6aa4ce3fd4ffb82474365de3520989d397cb5`; public base unchanged at stop |
+| System source | Public Fossil check-in `4df393c68d7f083ce42d5c377039d26043cc18a9031ace28258dc97f4137eb91`; unchanged private tree SHA-256 `21f5215de973aa6ccbddb817f2d64edd95ee1014c3028a9b0711ea7c741b807e` |
+| Other public revisions | L `d1250f90044f09b6c92014a9aef65f9574e1bcbf8a7163004e53cc6dbed0f2d6`; `usim` `330d8248ec2e12af071e287920e681600f75df9ffd854aada5f8a64c9adad64d`; site `8f717978b458b40adf1e238aaf177f5bc54ef46881268e03b787ba57b0d30a0e`; Chaos `db2953fde68d726a605d1d1699bab6c926ef252bd4991f692bae6ee5a634764e` |
+| Emulator | Start and execution SHA-256 `707a77d23e28ea1c45ae0eb0145dc181fa7ba649b9defc30044d4f847ac2c5be` |
+| Machine artifacts | `promh.mcr` `2c667f99f014a7130a55b255d31df02588d9396beace78abfe9325269e4ff3e6`; `promh.sym` `e9e3dd6a541511dd9541ae96b99dae19cb185d8b79fa09959f21fa52224f233d`; `ucadr.sym` `9071decf16fa8f11d7970c4662db0d6e95600fe43ec86ac41c77b37dbd7caa2a` |
+| Toolchain | Repository Guix manifest SHA-256 `3adae999bbe420182f22adc2499fcc82449a46eaf580a362de9c0e718fa6b37d`; Guix channel commit `230aa373f315f247852ee07dff34146e9b480aec` |
+| Selected window | `LOCAL-CADR [running]`, XID 2097202, x=0, y=0, 768 by 963 |
+| Selected-capture sidecar | `0013-edit-buffers-list.json`, 4,398 bytes; SHA-256 `a28323cfc4befb56a759dde6ace034419aeede009f5332d6bda98ecd65dcc4c5` |
+| Run record | 6,768 bytes; SHA-256 `081809b1763e70cdfd37c77ef8e852ad1bbeabb8ee482dbbdf19d485d562651d` |
+| Shutdown | Clean: `forced_stop=false`, `state_may_be_incomplete=false`, `usim` and Xvfb exit status 0, public base disk unchanged |
+
+This is intermediate evidence from before the current structured CADR action-log
+layout. The sidecar correctly records capture-time hashes but does not contain the
+execution-time `usim` hash; the table joins that value from `run.json`. The retained
+ordered research transcript records this meaningful sequence: finish the date
+dialogue; evaluate `(ED T)`; invoke Dired; abort the unconfigured remote-file login
+path and decline its modified-buffer save; invoke the named `Edit Buffers` command;
+capture the initial two-row editor; show local Help; mark and unmark rows; exercise
+the combined kill/print `U` case; abort without executing pending actions; and stop
+cleanly. Only the initial Edit Buffers state is published. The Dired login prompt,
+Help prose, mark sequence, and defect frames remain local.
 
 ### Core environment session
 

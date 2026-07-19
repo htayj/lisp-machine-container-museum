@@ -3,7 +3,7 @@ type: Reimplementation Specification
 title: EINE, ZWEI, and Zmacs editor-family reimplementation specification
 description: A release-bounded reconstruction contract for EINE, ZWEI, and Zmacs, including their semantic text models, command loops, complete effective binding trees through normative companions, files, modes, redisplay, failure behavior, visible states, and conformance tests.
 tags: [lisp-machine, mit-cadr, lm-3, genera, eine, zwei, zmacs, editor, keybindings, reimplementation, specification]
-timestamp: 2026-07-19T12:26:08-04:00
+timestamp: 2026-07-19T13:47:58-04:00
 ---
 
 # EINE, ZWEI, and Zmacs editor-family reimplementation specification
@@ -169,6 +169,7 @@ is `7aefec316b32dac5ec42db1721655c010a14c394ecb2c9b7f03b42a7261ed8f5`.
 | `C46-BUILT` | `src/nzwei/nzwei.comdif` | 4,831 | `d1ae94ca60fccf8ff078b3a77a0e01f359fab10e40ded085f6342b9886c2a712` | change notes |
 | `C303-SRC` | `zwei/defs.lisp` | 42,164 | `1ce50e3cead80a98fdce3c64697cd25837888ce27dbf9d0b61e42dd60f4faefc` | semantic records and dynamic state |
 | `C303-SRC` | `zwei/comtab.lisp` | 64,703 | `5e54ab5e70fd7e2e6086fb16d8a83efe27d65173abeaa78e0825804b3866e600` | lookup, command loop and base tables |
+| `C303-SRC` | `zwei/macros.lisp` | 37,620 | `53636f531bc8563228f5e65820bd7c915f0242564443a55f4c2f09012c44a171` | dynamic suppression of synchronous TV interception during command reads |
 | `C303-SRC` | `zwei/screen.lisp` | 98,691 | `7de12b6477492a4d49ffb4a44edb997cfeceadfb2aa69ec0f471cc3206d82187` | window/editor lifecycle |
 | `C303-SRC` | `zwei/displa.lisp` | 88,539 | `0c3558d78f50e6337711c79142759886879d331d52fc2cdcb603e2a58bb663f3` | redisplay |
 | `C303-SRC` | `zwei/primit.lisp` | 44,003 | `c75513e9dbe055368c868dd26addf42acba2d8c47d83dbb612b13c1c6d7d84db` | lines, pointers, intervals and text mutation |
@@ -459,19 +460,25 @@ report an alias-cycle error without editing text.
 
 ### ZWEI/Zmacs precedence tree
 
-For `ED-Z303` and `ED-G85`, effective ordinary input is composed as follows:
+For `ED-Z303`, effective input depends first on the active reader. Genera MUST
+retain its own source-profile reader/interceptor distinction rather than inherit
+this System 303 detail merely because its table composition is similar:
 
 ~~~text
-TV keyboard ingress
-├─ Abort / Meta-Abort / Break / Meta-Break -> editor TV intercept tree
-├─ special window event -> editor object's special-event handler
-└─ ordinary keyboard or mouse character
-   └─ transient or task context, if active
-      └─ minor-mode overlay(s), in installed precedence order
-         └─ major-mode comtab
-            └─ Zmacs application comtab
-               └─ Standard ZWEI comtab
-                  └─ unbound
+TV input ingress
+└─ active input reader
+   ├─ ordinary command or prefix read under WITHOUT-IO-BUFFER-OUTPUT-FUNCTION
+   │  ├─ special window event -> editor object's special-event handler
+   │  └─ keyboard or mouse character, including Abort/Break family
+   │     └─ transient or task context, if active
+   │        └─ minor-mode overlay(s), in installed precedence order
+   │           └─ major-mode comtab
+   │              └─ Zmacs application comtab
+   │                 └─ Standard ZWEI comtab
+   │                    └─ unbound
+   └─ input read outside that dynamic suppression
+      ├─ Abort / Meta-Abort / Break / Meta-Break -> installed TV intercept tree
+      └─ other input -> reader-specific handling
 ~~~
 
 `Control-X` is a staged child tree:
@@ -498,22 +505,35 @@ A top-level override can therefore shadow the destination reached by an inherite
 alias. An explicit undefined sentinel is observably different from absence. Genera
 MUST retain the equivalent result even if represented differently.
 
-### TV-intercepted editor characters
+### Reader-context TV interception
 
-The later editor binds a TV interception list around the command loop:
+System 303 installs an editor TV interception list around the command loop, but
+that outer installation does **not** determine every input path. The
+`WITHOUT-IO-BUFFER-OUTPUT-FUNCTION` macro dynamically binds
+`TV:KBD-INTERCEPTED-CHARACTERS` to `NIL`; its source says this inhibits synchronous
+intercepted characters such as Break and Abort but does not affect asynchronous
+characters such as Control-Abort. Both the ordinary command read and the child
+prefix read use that wrapper.
 
-| Input | Intercept operation | Editor-owned consequence | Ordinary comtab consulted? |
-| --- | --- | --- | --- |
-| `Abort` | abort current computation | complete query/typeout as supported, then enter TV abort path | no |
-| `Meta-Abort` | abort all/stronger abort | complete query/typeout, then enter TV abort-all path | no |
-| `Break` | ordinary break | clear scheduler inhibition, enter break with editor-idle false; if returning outside recursive break/typeout, complete typeout and redisplay all windows | no |
-| `Meta-Break` | error break | analogous error-break entry and return redraw | no |
+| Reader context | Abort/Break-family behavior | Comtab consulted? |
+| --- | --- | --- |
+| ordinary top-level command read | synchronous interception is disabled for the read; the returned character follows mode, Zmacs and Standard lookup | yes |
+| child-prefix read | synchronous interception is disabled; the returned character follows the active prefix table and its parents | yes |
+| read outside the wrapper while the editor intercept list is installed | `Abort`, `Meta-Abort`, `Break`, or `Meta-Break` follows its installed TV/editor intercept operation | no for an intercepted character |
+| asynchronous Control-Abort | unaffected by the wrapper and remains a TV/substrate path | no editor comtab claim |
 
-Static comtab cells named `Break` or `Abort` remain evidence about table
-construction and contexts in which interception is absent or deliberately altered.
-They MUST NOT be presented as the effective top-level path when the TV intercept is
-installed. `ED-Z46` interception remains bounded to what its selected source
-actually shows; later behavior is not backported.
+The installed intercept operations retain their distinct consequences: Abort and
+Meta-Abort enter the corresponding abort paths; Break clears scheduler inhibition
+and enters the ordinary break path with editor-idle false; Meta-Break enters the
+error-break path. A returning Break completes typeout and redisplays editor windows
+except in the source-defined recursive/typeout cases.
+
+The Standard and local `Break` or `Abort` cells are therefore effective table facts
+for wrapped ordinary and prefix reads, not dead documentation. Unwrapped readers
+retain the interception branch. A conforming input graph MUST record which reader
+context produced a leaf. `ED-Z46` and `ED-G85` interception remain bounded to what
+their selected sources establish; this System 303 mechanism is not backported or
+forward-ported by assumption.
 
 ### Numeric arguments
 
@@ -639,11 +659,12 @@ comtab and mode-line state. It:
 2. begins delayed selection so the frame is not exposed in a half-redrawn state;
 3. derives the exposed window list and draws the mode line;
 4. flushes covering typeout where appropriate;
-5. installs the four editor TV intercepts;
+5. installs the four outer editor TV intercepts;
 6. resets command type, numeric state, mark-retention state and minibuffer-command
    state before a real command;
 7. clears prompts, redisplays all editor windows and refreshes the typein window;
-8. reads any keyboard, mouse or special event;
+8. reads any keyboard, mouse or special event while dynamically suppressing the
+   synchronous intercept list for this ordinary command read;
 9. sends special events to the editor object; a handled event during a numeric
    argument returns to input without consuming that argument;
 10. looks up and executes an ordinary character with command hooks;
@@ -1352,8 +1373,10 @@ behavior as a strengthening rather than attributing it to the historical source.
 
 Quit means leave the current editor invocation or select another activity according
 to profile/context. It is not necessarily process destruction. Standalone and
-recursive-edit tables have their own exits. Prefix Abort cancels the prefix and any
-keyboard macro in progress. TV Abort is intercepted above command lookup.
+recursive-edit tables have their own exits. In System 303, the wrapped prefix read
+lets a prefix-table `Abort` cancel the prefix and any keyboard macro in progress;
+an unwrapped synchronous read with the editor intercept installed takes the TV Abort
+path instead. Asynchronous Control-Abort remains outside that suppression.
 
 Before destructive exit with modified buffers, Zmacs enters the selected save/kill
 query. Canceling that query leaves the editor, buffers, locks and current selection
@@ -1498,9 +1521,10 @@ current pane.
 The companion Genera screenshots of the List Buffers report, generic bottom-line
 pointer documentation, and opened Operation menu remain cataloged D06 dependency
 evidence and are not needed to repeat D05's visual constraints. They do not prove a
-typed buffer-row presentation hit. No reviewed Genera Edit Buffers application
-capture currently exists; D06 retains both exact-hit and Edit Buffers runtime
-obligations.
+typed buffer-row presentation hit. D06 now includes a reviewed true Edit Buffers
+capture with a visible pending delete mark; an exact List Buffers row hit, Dired,
+and the Kill Or Save Buffers chooser remain D06 runtime obligations. D05 does not
+repeat the application-specific image.
 
 ### EINE and System 46 visual oracle
 
@@ -1521,7 +1545,7 @@ the fixed raster regions and record every discrepancy.
 | text topology | line array | linked lines/intervals in source-present ZWEI | linked lines, nodes and buffers | linked lines, nodes and Zmacs buffers |
 | moving pointer statuses | `TEMP`/`NORMAL`/`MOVES` | later ZWEI model | `NORMAL`/`MOVES` plus temporary pointers | equivalent later model |
 | key composition | four-row arrays, one prefix, named alist | comtab parent/aliases; incomplete Zmacs | mode -> Zmacs -> Standard; child prefix | same base pattern plus loaded/DW overlays |
-| top-level Abort/Break | source-profile EINE paths | release-specific source only | TV intercepts before comtab | TV/editor intercept layer plus Genera recovery |
+| Abort/Break ingress | source-profile EINE paths | release-specific source only | ordinary/prefix reads suppress synchronous TV intercepts and consult comtabs; unwrapped reads retain intercepts | Genera source-profile TV/editor intercept and recovery layers |
 | numeric modifiers | C/M/C-M families | C/M/C-M in preserved Standard | Super/Hyper families with strict `H-C--` hole | all 15 nonempty C/M/S/H combinations |
 | style model | raster font state | font-oriented characters | font-oriented commands | character styles and typein style |
 | file organization | file or definition-section style | source-present ZWEI; Zmacs incomplete | named/file buffers, sections/tags | richer file attributes, locks and Genera development integration |
@@ -1633,7 +1657,7 @@ membership, indexes, ticks and rendered logical rows.
 | `ED-K06` | enumerate System 46 Standard, prefix, completing-reader, ordinary minibuffer and recursive contexts over 160 × 16 cells | every fixed source cell, uppercase/Control indirection and parent result matches the companion; missing Zmacs blocks full-profile claim |
 | `ED-K07` | enumerate C303 Standard, Zmacs, mode and child tables over the exact finite domains | candidate order, generated lowercase/Hyper/Control alias path, local hit, parent path, hard undefined and unbound match companion |
 | `ED-K08` | test C303 `H-C--` and all modified digits | minus is unbound at that exact hole; Hyper-Control digits remain numeric |
-| `ED-K09` | inject Abort/Meta-Abort/Break/Meta-Break at C303 editor top level | TV intercept owns every path before comtab lookup |
+| `ED-K09` | inject Abort/Meta-Abort/Break/Meta-Break in C303 ordinary, child-prefix and unwrapped reader contexts; inject asynchronous Control-Abort separately | ordinary and prefix reads reach the effective comtab leaf; unwrapped synchronous reads reach the installed intercept; asynchronous Control-Abort is unaffected by the wrapper |
 | `ED-K10` | run C303 Read Function Name pointer hook | left returns immediately; right continues; invalid/nonempty cases fall to ordinary pointer logic |
 | `ED-K11` | enumerate C303 and G85 Help trees and `C-X Help`, beginning with fresh `Help Space`; in C303 also try `?` after entering Help | initial `B` substitution reprompts without explicit beep; every later repeat, stage, abort, invalid and `*` prefix-enumeration branch matches profile; C303 `?` beeps and re-prompts because its input reader cannot reach the command body's dead `?` test |
 | `ED-K12` | enumerate G85 fixed tables and all 15 numeric modifier states | exact base graph, argument transitions and child prefix mappings match companion |
@@ -1873,6 +1897,7 @@ underlying interfaces.
 - LM-3, [System 303 `zwei` tree at Fossil check-in
   `4df393c`](https://tumbleweed.nu/r/lm-3/tree/l/sys/zwei?ci=4df393c68d7f083ce42d5c377039d26043cc18a9031ace28258dc97f4137eb91),
   including [`comtab.lisp`](https://tumbleweed.nu/r/lm-3/file/l/sys/zwei/comtab.lisp?ci=4df393c68d7f083ce42d5c377039d26043cc18a9031ace28258dc97f4137eb91),
+  [`macros.lisp`](https://tumbleweed.nu/r/lm-3/file/l/sys/zwei/macros.lisp?ci=4df393c68d7f083ce42d5c377039d26043cc18a9031ace28258dc97f4137eb91),
   [`primit.lisp`](https://tumbleweed.nu/r/lm-3/file/l/sys/zwei/primit.lisp?ci=4df393c68d7f083ce42d5c377039d26043cc18a9031ace28258dc97f4137eb91),
   [`screen.lisp`](https://tumbleweed.nu/r/lm-3/file/l/sys/zwei/screen.lisp?ci=4df393c68d7f083ce42d5c377039d26043cc18a9031ace28258dc97f4137eb91),
   [`files.lisp`](https://tumbleweed.nu/r/lm-3/file/l/sys/zwei/files.lisp?ci=4df393c68d7f083ce42d5c377039d26043cc18a9031ace28258dc97f4137eb91),

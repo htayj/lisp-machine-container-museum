@@ -3,7 +3,7 @@ type: Rights Review
 title: Publishing runtime screenshots for museum documentation
 description: Capture-specific U.S. copyright review and publication policy for CADR and Genera runtime screenshots used as historical evidence.
 tags: [screenshots, copyright, fair-use, preservation, cadr, genera]
-timestamp: 2026-07-19T12:23:53-04:00
+timestamp: 2026-07-19T13:47:58-04:00
 ---
 
 # Publishing runtime screenshots for museum documentation
@@ -45,6 +45,7 @@ The following System 303 captures passed review and are published in the
 | `spacewar-game.png` | Shows the complete live Spacewar playfield after loading the public source and public `SHIP` sprite font, with both ships and the central sun | Publish only beside the source/runtime game analysis; the 768-by-770 crop removes an unrelated debugger and retains no source listing, Help prose, manual text, or proprietary Genera material |
 | `doctor-conversation.png` | Shows three responses from public CADR DOCTOR source to researcher-written statements about computer preservation and history | Publish only beside the source/runtime conversational analysis; no private conversation, substantial script corpus, manual prose, or licensed Genera material is displayed |
 | `qix-live.png` | Shows the public CADR `NQIX` implementation's evolving XOR line trail in the full Listener interior | Publish only beside analysis of QIX and the HACKS suite; the single functional state is not a general screenshot gallery or evidence that the other hardware-, color-, data-, or service-dependent demos ran |
+| `edit-buffers.png` | Shows the initial System 303 Edit Buffers list, four action columns, two session-local buffer names, and read-only mode line | Publish beside the D06 architecture and compatibility analysis; do not infer the later mark transitions, `U` defect, destructive effects, or Dired behavior from the image |
 
 The corresponding Genera review covered local sessions `zmacs-research`,
 `core-dossiers-20260718`, `layout-tools-20260718`,
@@ -56,9 +57,10 @@ The corresponding Genera review covered local sessions `zmacs-research`,
 `d28-d29-ui-clim-20260718`, and `d35-hardcopy-20260718`, with the
 generation numbers recorded in the asset catalog, plus
 `d46-network-services-genera-20260718`, generation 2, and
-`d04-emergency-break-publication-20260719`, generation 1. The first sessions were
-captured on 2026-07-18 and the D04 session on 2026-07-19 from the same identified
-Genera 8.5 world. Thirty-two screens
+`d04-emergency-break-publication-20260719`, generation 1, and
+`d06-edit-buffers-genera-20260719`, generation 1. The first sessions were
+captured on 2026-07-18 and the D04 and D06 sessions on 2026-07-19 from the same
+identified Genera 8.5 world. Thirty-three screens
 passed review for publication in the
 [curated Genera screenshot catalog](assets/genera-screenshots/index.md):
 
@@ -96,6 +98,7 @@ passed review for publication in the
 | `hardcopy-file-options.png` | Shows the complete typed Hardcopy File form and the exact six live format choices while no printer or request is selected | Publish the cropped form only beside analysis of the Hardcopy command and live registry; do not infer successful printer configuration or output from unsubmitted defaults |
 | `screen-hardcopy-options.png` | Shows the complete Screen hardcopy option form, including capture sources, cursor inclusion, destination, announcement, and shutter-trigger controls | Publish the cropped form only beside Function-Q analysis; do not infer that a capture, file write, or printer submission occurred |
 | `network-service-registry-disabled.png` | Shows a researcher-entered read-only report of server policy, 47 core registrations, and selected registered/enabled pairs, all disabled, with optional Domain and Site-NAMES contacts absent | Publish only beside analysis of service registration, enablement, and the base-world load boundary; no service output, configured site data, installed Help, or network transaction is shown |
+| `zmacs-edit-buffers-marked-delete.png` | Shows the true Edit Buffers application after exact recorded `Control-X Control-Shift-B` input and the visible `D` action produced by lowercase `d` | Publish beside D06 analysis of Edit Buffers' row/action model; no deletion was executed, and the image does not establish `Abort`, List Buffers, Dired, or source-to-world identity |
 
 These screens contain functional interface layout, short labels, status
 information, blank forms, and researcher-entered text. Genera captures that retain startup context also
@@ -260,6 +263,49 @@ source-to-band/world identity, hidden table or translator ownership, command
 effects, complete Help prose, timing, undo, file mutation, exact fonts, or pixel
 identity. This review approves no other D05 screenshot or generic reuse and
 extends no project license to the screen displays.
+
+### D06 Edit Buffers captures reviewed 2026-07-19
+
+The exact CADR `edit-buffers.png` and Genera
+`zmacs-edit-buffers-marked-delete.png` files were reviewed for the
+[directory, difference, and buffer editors reimplementation
+specification](directory-difference-and-buffer-editors-reimplementation-specification.md).
+This conclusion is limited to those two files on that scholarly page and the
+closely linked factual dossier.
+
+1. **Purpose and character.** D06 uses one runtime observation from each selected
+   runnable profile to criticize and explain a material implementation change:
+   System 303 exposes four independent action columns, while Genera exposes one
+   per-row action character. The images make that release-specific visual contract
+   independently checkable beside source, manual, and conformance analysis. They
+   are not decorative application portraits or operating substitutes. This factor
+   strongly favors the reviewed use.
+2. **Nature of the displayed work.** Both captures are sparse, predominantly
+   functional editor states: a heading, synthetic or default buffer names, status
+   columns, a cursor, scrollbar, mode line, and otherwise blank space. They contain
+   no source listing, artwork, user file, configured site data, third-party media,
+   font sheet, or Help/manual prose. This factor favors the reviewed use while
+   recognizing possible copyright in particular screen expression.
+3. **Amount and substantiality.** One complete client frame per runtime profile is
+   needed to preserve the relationship among heading, row model, action columns,
+   mode line, and surrounding blank editor geometry. D06 does not publish the CADR
+   Help screen, Dired login prompts, later mark/defect sequence, the Genera unmarked
+   baseline, or the post-alias diagnostic frame. Two stills are a minute portion of
+   the interactive systems and are not a navigable sequence. This factor favors the
+   reviewed use.
+4. **Effect on the market.** The two stills cannot execute Edit Buffers, perform a
+   buffer action, supply the public load band or licensed world, expose the binding
+   tables, reproduce documentation, or substitute for any software or licensed
+   publication. Their value comes from the museum's provenance and comparison.
+   This factor strongly favors the reviewed use.
+
+On balance, the two exact images may be published for this D06 evidentiary use.
+The review does not approve the local CADR Help or `U`-defect captures, any Genera
+List Buffers image as a substitute for Edit Buffers, a Dired login prompt as a
+directory-listing illustration, destructive action execution, bulk reuse, or a
+project license in either screen display. Pixels establish only the visible states;
+input dispatch and the Genera `d` transition additionally rely on the recorded
+action log, while the older CADR session remains explicitly intermediate evidence.
 
 ## U.S. fair-use analysis
 

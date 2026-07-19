@@ -118,6 +118,11 @@ the public LM-3 software and the `usim` emulator.
   defines the data, operation, complete input-tree, lifecycle, failure, visual,
   and conformance contracts for the public profiles without filling the missing
   System 46 Zmacs layer from a later release.
+- [Directory, difference, and buffer editors reimplementation
+  specification](../directory-difference-and-buffer-editors-reimplementation-specification.md)
+  defines the public System 46 Dired and maintained System 303 Dired, BDired,
+  Edit Buffers, List Buffers, and Kill Or Save Buffers profiles, including their
+  complete local and incorporated inherited inputs and partial-effect order.
 - [Operating CADR through the Xvfb computer-use harness](cadr-computer-use-harness.md)
   documents the sentinel-owned private-session architecture, hardened screenshot
   provenance, shared-executable verification, observed System 303 interactions, and

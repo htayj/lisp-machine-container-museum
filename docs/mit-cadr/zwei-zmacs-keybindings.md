@@ -1,9 +1,9 @@
 ---
 type: Reference
 title: MIT ZWEI and Zmacs keybindings
-description: Release-bounded effective-tree inventories of public System 46 ZWEI evidence and the fixed, intercepted, Help, pointer-hook, mode, and context layers in the pinned LM-3 System 303 ZWEI subsystem.
+description: Release-bounded effective-tree inventories of public System 46 ZWEI evidence and the fixed, reader-context interception, Help, pointer-hook, mode, and context layers in the pinned LM-3 System 303 ZWEI subsystem.
 tags: [mit-cadr, lm-3, zwei, zmacs, keybindings, reference]
-timestamp: 2026-07-19T12:26:08-04:00
+timestamp: 2026-07-19T13:47:58-04:00
 ---
 
 # MIT ZWEI and Zmacs keybindings
@@ -27,7 +27,7 @@ binding.
 - “Complete fixed source tree” means that every non-comment fixed entry or
   generated range in the named System 303 subsystem appears below, including
   subordinate input/search, stream, and application tables. This page also
-  specifies the source-visible TV intercepts, pointer hooks, Help subtrees and
+  specifies the source-visible reader-context TV interception, pointer hooks, Help subtrees and
   mode-composition algorithm. Dynamically loaded packages, patches, user
   initialization, and runtime mutation remain separately identified oracle
   layers; they are not silently included in the fixed-tree claim.
@@ -400,10 +400,27 @@ add to it:
 | `C-X` | Enter the Zmacs Control-X child table |
 | `Mouse-3-1` | Open the Zmacs editor menu |
 
-The editor menu is constructed from commands for argument lists, definition and
-caller navigation, sections and buffers, buffer review, screen splitting,
-compile/indent/uppercase/lowercase region operations, font changes, and mouse
-indentation.
+The editor menu has this exact source order:
+
+```text
+Mouse-3-1
+├─ Arglist
+├─ Edit Definition
+├─ List Callers
+├─ List Sections
+├─ List Buffers
+├─ Kill Or Save Buffers
+├─ Edit Buffers
+├─ Split Screen
+├─ Compile Region
+├─ Indent Region
+├─ Change Default Font
+├─ Change Font Region
+├─ Uppercase Region
+├─ Lowercase Region
+├─ Mouse Indent Rigidly
+└─ Mouse Indent Under
+```
 
 The Zmacs `Control-X` table inherits the standard prefix and supplies these
 editor-specific leaves:
@@ -701,26 +718,40 @@ record mode activation order, not merely the set of mode names.
 
 ## System 303 effective ingress and pointer overlays
 
-The fixed cells above are only one layer of the effective editor tree:
+The fixed cells above are only one layer of the effective editor tree. The active
+reader decides whether synchronous TV interception is enabled:
 
 ~~~text
 raw TV input
-├─ Abort      -> editor intercept -> TV Abort
-├─ Meta-Abort -> editor intercept -> TV Abort All
-├─ Break      -> editor intercept -> TV Break
-├─ Meta-Break -> editor intercept -> TV Error Break
-└─ other input
-   ├─ active dynamic mouse hook -> hook-owned pointer result
-   └─ mode table -> Zmacs table -> Standard table
-      └─ C-X: mode C-X -> Zmacs C-X -> Standard C-X
+└─ active input reader
+   ├─ ordinary command or child-prefix read under
+   │  WITHOUT-IO-BUFFER-OUTPUT-FUNCTION
+   │  ├─ active dynamic mouse hook -> hook-owned pointer result
+   │  └─ mode table -> Zmacs table -> Standard table
+   │     └─ C-X: mode C-X -> Zmacs C-X -> Standard C-X
+   │        (Abort/Meta-Abort/Break/Meta-Break are ordinary lookup candidates)
+   └─ read outside that dynamic suppression
+      ├─ Abort      -> editor intercept -> TV Abort
+      ├─ Meta-Abort -> editor intercept -> TV Abort All
+      ├─ Break      -> editor intercept -> TV Break
+      ├─ Meta-Break -> editor intercept -> TV Error Break
+      └─ other input -> reader-specific handling
 ~~~
 
-The ordinary editor installs the four TV intercepts around its command loop.
-Consequently the Standard `Break` and `Abort` cells remain table facts but are
-not the effective top-level path while interception is active. A returning
-Break completes typeout and redisplays editor windows unless the break remains
-recursive or the typeout window was selected. Abort paths complete query/typeout
-state before delegating to TV.
+The ordinary editor does install the four TV intercepts around its command loop.
+However, `WITHOUT-IO-BUFFER-OUTPUT-FUNCTION` dynamically binds
+`TV:KBD-INTERCEPTED-CHARACTERS` to `NIL`, explicitly inhibiting synchronous Break,
+Abort, and related interception. The ordinary command read and the child-prefix
+read both use this wrapper. Their Standard, local, or parent `Break` and `Abort`
+cells are therefore effective; a missing cell can still become undefined after
+normal parent lookup. A read outside the wrapper retains the installed intercept
+path. The wrapper does not affect asynchronous characters such as Control-Abort.
+
+On the intercept branch, a returning Break completes typeout and redisplays editor
+windows unless the break remains recursive or the typeout window was selected.
+Abort paths complete query/typeout state before delegating to TV. An effective-tree
+dump MUST attach the reader context to these leaves rather than globally placing
+the four intercepts either above or below every comtab.
 
 An absent comtab cell falls through to the parent. An explicit `:UNDEFINED`
 stops lookup. An alias restarts resolution from the original top table, so a
@@ -804,6 +835,7 @@ actions and evidentiary limits.
   and the [expected Zmacs tags](https://github.com/mietek/mit-cadr-system-software/blob/8e978d7d1704096a63edd4386a3b8326a2e584af/src/nzwei/nzwei.tags#L1592-L1674),
   revision `8e978d7`; verified 2026-07-18.
 - LM-3 System 303, [`comtab.lisp`](https://tumbleweed.nu/r/lm-3/file/l/sys/zwei/comtab.lisp?ci=4df393c68d7f083ce42d5c377039d26043cc18a9031ace28258dc97f4137eb91),
+  [`macros.lisp`](https://tumbleweed.nu/r/lm-3/file/l/sys/zwei/macros.lisp?ci=4df393c68d7f083ce42d5c377039d26043cc18a9031ace28258dc97f4137eb91),
   [`zmacs.lisp`](https://tumbleweed.nu/r/lm-3/file/l/sys/zwei/zmacs.lisp?ci=4df393c68d7f083ce42d5c377039d26043cc18a9031ace28258dc97f4137eb91),
   [`modes.lisp`](https://tumbleweed.nu/r/lm-3/file/l/sys/zwei/modes.lisp?ci=4df393c68d7f083ce42d5c377039d26043cc18a9031ace28258dc97f4137eb91),
   [`dired.lisp`](https://tumbleweed.nu/r/lm-3/file/l/sys/zwei/dired.lisp?ci=4df393c68d7f083ce42d5c377039d26043cc18a9031ace28258dc97f4137eb91),

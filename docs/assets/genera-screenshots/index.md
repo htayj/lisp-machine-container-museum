@@ -1,7 +1,7 @@
 # Curated Genera runtime screenshots
 
-This directory contains thirty-two narrowly selected screen captures used to document
-visible application behavior in the museum's Genera 8.5 world. Thirty are exact
+This directory contains thirty-three narrowly selected screen captures used to document
+visible application behavior in the museum's Genera 8.5 world. Thirty-one are exact
 byte-for-byte copies of captures produced by the Xvfb computer-use harness. The two
 Hardcopy images are documented crops of raw captures that remove an unrelated Listener
 and exploratory debugger state. The licensed world, raw sessions, JSON sidecars, logs,
@@ -9,7 +9,7 @@ and all other captures remain untracked.
 
 ## Rights basis and scope
 
-These thirty-two images were reviewed on 2026-07-18 and 2026-07-19 for their specific
+These thirty-three images were reviewed on 2026-07-18 and 2026-07-19 for their specific
 uses in the linked museum articles and specifications. They reproduce sparse,
 predominantly functional application screens in
 direct support of nonprofit historical criticism, comment, scholarship, and runtime
@@ -94,6 +94,15 @@ under applicable law.
   comtabs or translator ownership, command effects, source-to-world identity,
   exact fonts, timing, or general Genera pixel identity; startup text is
   incidental context.
+- [`zmacs-edit-buffers-marked-delete.png`](zmacs-edit-buffers-marked-delete.png)
+  is approved for the [directory, difference, and buffer editors
+  reimplementation
+  specification](../../directory-difference-and-buffer-editors-reimplementation-specification.md).
+  Its use is limited to the true Genera 8.5 Edit Buffers heading, action column,
+  buffer row, read-only mode line, and visible result of lowercase `d` reviewed
+  on 2026-07-19. It does not prove command dispatch beyond the recorded action,
+  deletion execution, `Abort` semantics, List Buffers presentation behavior,
+  Dired behavior, or source-to-world identity.
 
 ## Source sessions
 
@@ -112,6 +121,34 @@ under applicable law.
 | Isolation | Separate user, mount, network, PID, IPC, and hostname namespaces; no external route or guest-visible host file service; MIT-SHM live-verified absent |
 | Complete action log | 74 records: 37 intents and 37 linked outcomes; 35,050 bytes; SHA-256 `8f7ca2510a6f3cc74ee6d72cdd3b3fd875de2df48075e330993b5507a655d721` |
 | Final run record | 22,655 bytes; SHA-256 `7a372b6985f81cf2ad713dc89037177e0d411f266f4c3d17125838844284391a` |
+
+### Edit Buffers session
+
+| Field | Recorded value |
+| --- | --- |
+| Session | `d06-edit-buffers-genera-20260719`, generation 1 |
+| Run interval | 2026-07-19 12:30:11 through 12:32:01 EDT |
+| Licensed archive | `opengenera2.tar.bz2`, 206,213,430 bytes; SHA-256 `89fb3e76b91d612834f565834dea950b603acf8f9dbacacdd0b1c3c284a2d36e` |
+| Base and private world | `Genera-8-5.vlod`, 54,804,480 bytes; SHA-256 `a8ee5e86cc7e322f7385af3e0cd579d7650d4dcfc3ce328acbf8b25515dd0672` at start and stop |
+| VLM and debugger | VLM SHA-256 `9f5e18d5770f973879716182b6856ef5a8ee9d3b2bb907476ea0cf35986aa4c7`; debugger SHA-256 `2db918cfe8f35f52c7ff4b7695b0ecd3bb85e41a3327ea5a94874edf05edb54a` |
+| Compatibility and configuration at execution | `ifconfig-bypass.so` `f45f45461622975996ab41138f64bb84a4b17c51fba0dbb649208914898c26b7`; `x-compat.so` `acd71dbcb948f05b7fd2730b2b4706c08f16f46d792bd9aa6aa64370e855e4b1`; RFC 868 responder `cc3a2274149c5593b52e6608d732d4048518c766134df5e0f018746ad5cf98bb`; configuration `5ce6509f5adf2cf2d054d34eb4ba777ce462285b8cd9b01bc071bf819139e086` |
+| Harness | execution-time Python source SHA-256 `c47ca320afb058d802ebd469fd9183e60ce5106eea15044295e98412700a5fcc`; shell entrypoint `e10d07a1c745d37044f1a97903455d334d6dcdb0c1d0e6854598e10fab24fa05`; namespace helper `17a3e297930eef45a6f59a349f92ec1f6dc99b2c4d5caa2392dc0521636af01c`; VLM helper `cbf9ee0520b4892325266ed17afba8f1b663e7d266fea6d80de9cf98de17d2f8` |
+| Toolchain | `manifest.scm` SHA-256 `3adae999bbe420182f22adc2499fcc82449a46eaf580a362de9c0e718fa6b37d`; Guix revision `230aa373f315f247852ee07dff34146e9b480aec` |
+| Selected client | `Genera on DIS-LOCAL-HOST`, XID 4194310, 1200 by 900 pixels at client position `(72,55)` |
+| Isolation | Separate user, mount, network, PID, IPC, and hostname namespaces; no external route or guest-visible host file service; MIT-SHM and the reserved relay-extension name live-verified absent; both exact X relay substitutions and the one-shot RFC 868 reply observed |
+| Complete action log | 26 records: 13 intents and 13 linked outcomes; 13,240 bytes; SHA-256 `a6e95256eb5f29113b39c6a95954246d4d63785c3a700d8591b31947eda89fe5` |
+| Selected-capture sidecar | `0004-edit-buffers-delete-mark.json`, 13,753 bytes; SHA-256 `4ec46072af80c0f2b048c7e73a449bd4ea6076f8aac8ed6b575b30262be48016` |
+| Final run record | 26,188 bytes; SHA-256 `cd12c4a5b93b628835df86af5eef3c511c93fbbb205a955a401d19134a61f48b` |
+
+The ordered input was deliberately explicit. `Select E` entered Zmacs. The harness
+then recorded `keydown Control_L`, `keydown x`, `keyup x`, `keyup Control_L`,
+followed by `keydown Control_L`, `keydown Shift_L`, `keydown b`, `keyup b`,
+`keyup Shift_L`, and `keyup Control_L`. The resulting screen identified
+`Zmacs (Edit Buffers) *Edit-Buffers-1* (RO)`, which distinguishes this true
+`Control-X Control-Shift-B` application from the earlier List Buffers capture.
+Lowercase `d` then put `D` in the row's action column. A later dispatch of the
+harness's `abort` alias did not leave this mode and therefore supports no claim
+about Edit Buffers' Abort command; that later frame remains local.
 
 ### Core applications session
 
@@ -437,6 +474,7 @@ the final keystroke.
 | [Zmacs List Buffers report](zmacs-list-buffers.png) | `0016-zmacs-list-buffers.png` | `Control-X Control-B` opened List Buffers typeout; the visible legend says `+` identifies a new file or nonempty non-file buffer | 2026-07-18 00:19:28 EDT | 46 records; SHA-256 `4d0ae13df04c4c4f5c89c2453d4f013fdb9f6ad5b1da78df64b5950b5409bd27` |
 | [List Buffers pointer documentation](zmacs-list-buffers-pointer-documentation.png) | `0018-zmacs-buffer-entry-mouse-doc.png` | Pointer moves to `(65,48)` and then `(70,76)` while List Buffers is visible; the captured bottom line remains generic and does not prove a row-presentation hit | 2026-07-18 00:19:51 EDT | 50 records; SHA-256 `d84d95879b22ff53144746a18feb3e311eb52ae3bca5ab52366edf1fe3aa24d4` |
 | [List Buffers generic Operation menu](zmacs-list-buffers-generic-operation-menu.png) | `0019-zmacs-buffer-entry-menu-held.png` | Button 3 pressed while List Buffers was displayed; the visible menu contains generic Marking and Yanking, System, and Window operations and does not prove a row-presentation hit | 2026-07-18 00:20:05 EDT | 52 records; SHA-256 `ee7709dfed79a93b6a5ab8a7dd215e01b239b06a1b2ce8ec9ee2d6ab3ea97e65` |
+| [Zmacs Edit Buffers with a delete mark](zmacs-edit-buffers-marked-delete.png) | `0004-edit-buffers-delete-mark.png` | After the exact recorded `Control-X Control-Shift-B` chord opened Edit Buffers, lowercase `d` put `D` in the current row's action column; no marked action was executed | 2026-07-19 12:31:18 EDT | 24 records; SHA-256 `86718baaa5ec312c3e2422ddf886c98b299de7b3d6ac35a0458ecd9f103967f1` |
 | [Dynamic Lisp Listener multiple values](dynamic-lisp-listener-multiple-values.png) | `0002-listener-multiple-values.png` | Evaluate the project-owned form `(values 17 23)`; the Listener prints both values on separate lines | 2026-07-18 04:00:04 EDT | 2 records; SHA-256 `05564580417f9901acb71585872e56a8bf5fe0b4004f7e8251528b3d7c9506a2` |
 | [System Menu](system-menu.png) | `0004-system-menu.png` | Hold Shift and button 3 over the Listener; the observed three-column System Menu appears | 2026-07-18 04:00:48 EDT | 10 records; SHA-256 `0f09c1ed08ca140069792249c6a9235cc857277382605bc2152bf1e2c491012c` |
 | [Emergency Break arithmetic evaluation](emergency-break-arithmetic-evaluation.png) | `0005-emergency-break-arithmetic.png` | Select **Emergency Break** from the main client's System Menu; in the separately targeted `cold-load` client type `(+ 40 2)` and send End; the breakpoint prints `42` | 2026-07-19 08:15:35 EDT | 40 records; SHA-256 `f9e8fa29298c2d6c48f5a190bc6aadcebd353fcd941f8d1df8fe94ab03a74398` |
@@ -483,6 +521,7 @@ other transform.
 | `zmacs-list-buffers.png` | 3,473 | 1200 by 900 | `970c299ec6f091dd2895022bd24935abb897931110b592e8c3517cde6a936963` | `83a075cd975ab0acd61ecf357a3b577fa17fd734985d8452a8c766126da6ff82` |
 | `zmacs-list-buffers-pointer-documentation.png` | 3,073 | 1200 by 900 | `21bc8582103ceca9cb77b8c4201afb3f5795e4cb1346751141a55bb409fde3eb` | `2f02cae693e344712b4ab0b9d83cd24c23c1189e227764f21c535866856e9670` |
 | `zmacs-list-buffers-generic-operation-menu.png` | 3,658 | 1200 by 900 | `4aa320fc70babdaff198cccb13f64731780faf71ee07de6bd7da0badc090585f` | `57a71c53d12eac6afe5ac4697ffaa341570fce5e928322e4713ee547dfe3d256` |
+| `zmacs-edit-buffers-marked-delete.png` | 2,097 | 1200 by 900 | `72ab740da8adc1cbe6c1b784ece34679b5b21d12ad01a54a686d53badc1b1de0` | `61469b3f957c209b6860ef00c273393968fc0b735a49466ccce01b992b5ce133` |
 | `dynamic-lisp-listener-multiple-values.png` | 11,824 | 1200 by 900 | `39061d7b9ea5b55428020cfaf7558b5566c101ab56822cbd951905c520c3ebac` | `99003664b87974790051046a01a9579ffa77b48e25e2d7c406e7c87e42ee5c37` |
 | `system-menu.png` | 15,215 | 1200 by 900 | `e1a8a968d891e68e9f4315ee7d943d4b0b1fb70b103226402ba64d23f91a5d66` | `3a233d323b245d7d7da5587b014bd47ac12f29fa239972871c9f22e6b32358af` |
 | `emergency-break-arithmetic-evaluation.png` | 1,712 | 1024 by 768 | `b7edcce3ba94e9601335ac280438988d5ae40451c1f2235f2b5fe786f8736eb6` | `219c9bce8d7771553141df4873aced28255317f6e7b1cd9700c61ef5ac834445` |
@@ -525,6 +564,21 @@ The base and private world hashes remained identical. The harness did not invoke
 Genera's Save World and created no host-process checkpoint. Whether an independent
 in-guest save or checkpoint occurred remains unknown; no persistence claim is inferred
 from the screenshots.
+
+### Edit Buffers session
+
+The stop path observed the VLM prompt, sent confirmation, and observed cleanup
+progress, but did not record confirmation acceptance before the supervisor timeout.
+The bounded fallback then stopped the remaining processes. The final record is
+therefore `forced-stopped`, with `forced_stop=true`,
+`forced_after_confirmed_shutdown_stall=false`, `state_may_be_incomplete=true`, and
+`orderly_vlm_host_shutdown=false`. It must not be described as the separately
+confirmed Cold Load mutex stall seen in other runs.
+
+The private and base worlds remained byte-identical, and the private world did not
+change during the run. The harness invoked neither Save World nor a host-process
+checkpoint; `save_world_performed` and `guest_checkpoint_created` remain unknown.
+No marked buffer action was executed before shutdown, and no session process remained.
 
 ### Core applications session
 
@@ -677,6 +731,11 @@ The Emergency Break capture supports
 [Emergency Break and the cold-load stream](../../emergency-break-and-cold-load-stream.md)
 and [the D04 Emergency Break and degraded interaction paths
 specification](../../emergency-break-and-degraded-interaction-paths-reimplementation-specification.md).
+
+The Edit Buffers capture supports [Directory, difference, and buffer
+editors](../../directory-difference-and-buffer-editors.md) and the
+[D06 reimplementation
+specification](../../directory-difference-and-buffer-editors-reimplementation-specification.md).
 
 The later captures support
 [the Genera Debugger and Display Debugger](../../genera/debugger-and-display-debugger.md),

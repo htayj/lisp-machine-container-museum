@@ -115,6 +115,11 @@ as its Virtual Lisp Machine implementation hosted on Unix.
   defines the Genera 8.5 configured-source editor contract, complete fixed-tree
   boundary, installed-overlay oracle, lifecycle, failure behavior, visuals, and
   conformance tests while keeping licensed evidence local.
+- [Directory, difference, and buffer editors reimplementation
+  specification](../directory-difference-and-buffer-editors-reimplementation-specification.md)
+  defines Genera 8.5 Dired, Edit Buffers, List Buffers, Kill Or Save Buffers, and
+  Compare Directories as distinct ZWEI, TV, Dynamic Windows, and Command Processor
+  surfaces, with complete app-owned inputs and reviewed visual evidence.
 - [Operating Genera through the Xvfb computer-use harness](genera-computer-use-harness.md) -
   How authenticated, network-isolated private sessions turn real VLM keyboard,
   pointer, and screenshot observations into evidence without distributing licensed
