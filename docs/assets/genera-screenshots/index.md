@@ -114,6 +114,19 @@ under applicable law.
   on 2026-07-19. It does not prove command dispatch beyond the recorded action,
   deletion execution, `Abort` semantics, List Buffers presentation behavior,
   Dired behavior, or source-to-world identity.
+- [`zmail-reader-empty.png`](zmail-reader-empty.png) and
+  [`zmacs-text-mail-template.png`](zmacs-text-mail-template.png) are approved for
+  the [D08 ZMail and mail composition reimplementation
+  specification](../../zmail-and-mail-composition-reimplementation-specification.md).
+  The first use is limited to the visible empty summary/message arrangement,
+  20-cell main menu, and three short operational hints after local login. The
+  second is limited to the blank To/Subject template, body separator, and Text
+  Mail mode line that distinguish Zmacs composition from the reader; the residual
+  Zmail/dither region at right is incidental and does not specify a complete
+  application-frame geometry. Neither image establishes internal pane identity,
+  pointer or presentation dispatch, collection contents, draft ownership, command
+  effects, service configuration, background/load ordering, save or transport
+  success, source-to-world identity, exact fonts, or general Genera pixel identity.
 
 ## Source sessions
 
@@ -755,7 +768,9 @@ The later captures support
 [Trace, Stepper, breakpoints, and call analysis](../../trace-stepper-breakpoints-and-call-analysis.md).
 
 The Zmail and Presentation Inspector captures support
-[Zmail and mail composition](../../genera/zmail.md)
+[Zmail and mail composition](../../genera/zmail.md), the
+[D08 ZMail and mail composition reimplementation
+specification](../../zmail-and-mail-composition-reimplementation-specification.md),
 and [the Presentation Inspector](../../genera/presentation-inspector.md).
 
 The Converse and Notifications captures support

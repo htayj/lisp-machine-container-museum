@@ -77,6 +77,18 @@ the public LM-3 software and the `usim` emulator.
   composition integration, architecture, and exact base-band load boundary; its
   [command and keybinding companion](zmail-keybindings.md) inventories the complete
   audited command surface.
+- [ZMail filters, universes, and Profile semantics](zmail-filter-universe-profile-semantics.md)
+  specifies the public System 303 definition languages, persistence and failure
+  order, historical defects, and all 69 selected user-option declarations.
+- [ZMail named-command effect closure](../zmail-command-effect-closure.md) gives the
+  ordered applicability, mutations, delegation, partial failures, and ownership of
+  all 86 System 303 commands; [mail-file format semantics](../zmail-mail-file-format-semantics.md)
+  specifies the exact public parsers, serializers, properties, and damaged-input
+  behavior.
+- [D08 ZMail and mail composition reimplementation specification](../zmail-and-mail-composition-reimplementation-specification.md)
+  keeps System 46's composition-only implementation separate from the maintained
+  System 303 reader and composer, with exact effective input trees, mail-file and
+  submission ordering, partial failures, runtime blockers, and conformance tests.
 - [Converse, direct messages, and notifications](../converse-direct-messages-and-notifications.md)
   traces System 46 QSend into maintained System 303 Converse, SHOUT, and NOTIFY,
   inventories their controls, and records the exact tested-band load blocker.

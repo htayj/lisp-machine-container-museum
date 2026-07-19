@@ -68,6 +68,22 @@ as its Virtual Lisp Machine implementation hosted on Unix.
   reader, integrated Zmail drafts, Zmacs Text Mail mode, and background Mailer;
   its [command and binding companion](zmail-commands-and-bindings.md) inventories
   the release-bounded command surfaces.
+- [Zmail declared-build source manifest](zmail-declared-build-source-manifest.md)
+  records rights-safe metadata for all 47 selected source generations and defines
+  reproducible content and selection closure hashes without publishing source text.
+- [Zmail filters, universes, and Profile semantics](zmail-filter-universe-profile-semantics.md)
+  specifies the executable definition languages, persistence and failure order, and
+  all 81 textual user-option forms while keeping the 80 active forms distinct from
+  the one block-commented form.
+- [ZMail named-command effect closure](../zmail-command-effect-closure.md) gives the
+  ordered applicability, mutations, delegation, partial failures, and ownership of
+  all 152 clean-release completion candidates; [mail-file format semantics](../zmail-mail-file-format-semantics.md)
+  specifies exact recognition, parser, serializer, Directory, Text, and KBIN
+  boundaries without publishing licensed fixture bytes.
+- [D08 ZMail and mail composition reimplementation specification](../zmail-and-mail-composition-reimplementation-specification.md)
+  defines separate Genera 8.5 reader and Zmacs Text Mail targets, complete effective
+  keyboard, menu, pointer, presentation, and transient-context trees, persistence
+  and submission boundaries, reviewed visible states, and conformance tests.
 - [Converse, direct messages, and notifications](../converse-direct-messages-and-notifications.md)
   separates the conversation editor, one-shot and broadcast messages, central
   notification delivery, the Notifications activity, and their complete local

@@ -3,7 +3,7 @@ type: Artifact Analysis
 title: Compiled objects, QFASL, relocation, and UNFASL
 description: A source and runtime dossier on CADR QFASL and QFASL-REL, Genera L-BIN, their inspection tools, load-time effects, and realistic source-recovery limits.
 tags: [mit-cadr, lm-3, genera, qfasl, rel, l-bin, unfasl, unbin, compiled-code, preservation]
-timestamp: 2026-07-18T10:06:00-04:00
+timestamp: 2026-07-19T18:44:32-04:00
 ---
 
 # Compiled objects, QFASL, relocation, and UNFASL
@@ -379,6 +379,12 @@ too broad. Future application dossiers should cover `SYS:BIN` with data intercha
 `KBIN` with Zmail storage, and `C+LISP-SUPPORT` with embedding/RPC rather than
 claiming a common compiled-file lineage.
 
+The [D08 ZMail and mail-composition specification](zmail-and-mail-composition-reimplementation-specification.md#mail-file-and-persistence-contracts)
+now owns KBIN's application-level buffer registration, capability, host-recognition,
+reparse/upgrade boundary and licensed-oracle tests. It deliberately reserves exact
+KBIN bytes, so this correction does not turn KBIN into a closed compiled-object or
+redistributable-format claim.
+
 ## Practical recovery model
 
 ### Recoverable at high confidence
@@ -440,8 +446,9 @@ committing the proprietary result.
   narrower and should stay so.
 - **TODO:** Compare actual QFASL and REL outputs of the same small public source file
   to quantify which names, forms, and debug structures each retains.
-- **TODO:** Document Genera's separate `SYS:BIN`, Zmail `KBIN`, and embedding/RPC
-  octet-structure facilities in their correct application dossiers.
+- **TODO:** Complete exact byte-level specifications for Genera's separate `SYS:BIN`,
+  Zmail `KBIN`, and embedding/RPC octet-structure facilities. D08 now specifies
+  KBIN's application-level integration, while its licensed byte oracle remains open.
 - **TODO:** A high-confidence compiled-function decompiler would require complete
   instruction semantics, control/dataflow recovery, and tests against known source;
   neither `UNFASL` nor `UNBIN` supplies that transformation.

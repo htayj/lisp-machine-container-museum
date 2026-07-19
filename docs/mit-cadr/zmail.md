@@ -1,9 +1,9 @@
 ---
 type: Artifact Analysis
 title: ZMail on the MIT CADR and LM-3
-description: Source-, manual-, and runtime-grounded study of the ZWEI-based Lisp Machine mail reader, its message model, panes, filters, profiles, transports, and load-band boundary.
+description: Source-, manual-, and runtime-grounded study of the System 46 mail composer, maintained System 303 ZMail, and the tested 303-0 load-band boundary.
 tags: [mit-cadr, lm-3, zmail, mail, zwei, application, runtime]
-timestamp: 2026-07-18T04:03:04-04:00
+timestamp: 2026-07-19T18:44:32-04:00
 ---
 
 # ZMail on the MIT CADR and LM-3
@@ -14,12 +14,30 @@ message and summary panes, selectable window layouts, mail-file buffers, filters
 universes, keywords, reference-thread operations, a profile editor, drafts, multiple
 delivery paths, hardcopy, and a separate background process. Its effective command
 environment is documented in the [binding companion](zmail-keybindings.md).
+The normative, implementation-ready contract is the
+[ZMail and mail-composition reimplementation specification](../zmail-and-mail-composition-reimplementation-specification.md).
+The [filter, universe, Profile, and option companion](zmail-filter-universe-profile-semantics.md),
+[named-command effect closure](../zmail-command-effect-closure.md), and
+[mail-file format semantics](../zmail-mail-file-format-semantics.md) provide the
+exact finite and failure-order contracts behind this historical overview.
 
 The preserved evidence has an important boundary. The public System 46 snapshot does
 not contain the ZMail implementation used here. The maintained System 303 tree does,
 and the tested `303-0` load band lists **Mail** in the System Menu, but that base band
 does not have the `ZWEI:ZMAIL-FRAME` flavor loaded. Thus source presence and a static
 menu entry do not establish a runnable application in that exact unsited world.
+
+These are three selectable evidence profiles, not successive observations of one
+artifact:
+
+| Profile | What the evidence establishes | What it does not establish |
+| --- | --- | --- |
+| Public System 46 at Git `8e978d7` | ZWEI Mail major mode, standalone `MAIL` and `BUG`, draft template, and request-file writer | a full ZMail reader or the missing Zmacs key overlay |
+| Maintained System 303 at Fossil `4df393c` | readable ZMail reader/composer source and its source-visible algorithms | pristine historical provenance or residency in the tested band |
+| System `303-0` load band | a Mail System Menu entry, absent resident `ZWEI:ZMAIL-FRAME`, and a load attempt stopped at the unsited file-host boundary | a running reader, maintained-source residency, or application pixels |
+
+The ZMail 50/System 94 manual is a fourth, version-qualified intended-behavior
+witness. None of these profiles is silently substituted for another.
 
 ## Evidence sets
 
@@ -49,6 +67,11 @@ The principal files are:
 | `zmail/rfc733.lisp` | 39,136 | `ac6fdf35fbc4db9b270dd8eec4787193795eb67687dc21d046ff074052426f69` | RFC 733-era address and header parsing |
 | `file/zmail.lisp` | 1,255 | `9dc404499b5ff07b400c1739ccbf808b1ecea9e253966a2ae1760e0fcd6a17a9` | file-system integration loaded as part of ZMail |
 
+The active local-filesystem integration is `file/zmail.lisp`. Although selected by
+the system declaration, `zmail/lmfile.lisp` is entirely commented out. The separate
+`zmail/lm.lisp` is not selected at all, and its pathname defaults are therefore not
+part of the strict System 303 profile.
+
 The tree also contains the first-edition *ZMail Manual*, labeled ZMail 50 on
 System 94 and dated April 1983. Its 163,179-byte source has SHA-256
 `ac360407be2d99ffd3b80cbac0e823072366105b98808a94250b7182780017ba`.
@@ -66,6 +89,18 @@ or `ZMAIL-FRAME` implementation. ZWEI Mail mode and ZMail are therefore separate
 catalog entries: one edits outgoing mail text; the other manages mail stores and the
 complete reading/sending workflow.
 
+The System 46 composer is itself behaviorally substantial. It is a sparse ZWEI
+major mode: `Control-Altmode` and `End` send, `Control-]` exits while retaining the
+draft for later resumption, and `Tab` retains the parent tab-stop operation. A fresh
+entry clears and initializes the draft, while an argument retains its contents.
+Sending requires the literal body separator and at least one nonempty To recipient;
+Cc alone is insufficient. Recipient splitting is comma-based without quoted-comma
+syntax, surrounding spaces and tabs are removed, and one surrounding parenthesis
+pair is stripped. The writer opens its request stream before the empty-recipient
+check, so strict emulation must permit a rejected draft to leave partial request
+output. The command prose names `Control-G` as quit, but the executable table binds
+`Control-]`; the table is authoritative for this source profile.
+
 ## ZMail is a specialized ZWEI application
 
 ZMail uses ZWEI's editor closures, intervals, redisplay protocol, command tables,
@@ -81,6 +116,12 @@ composition while sharing editor state between the message, header, and draft-te
 windows. The code deliberately gives the three composition-related panes the same
 editor closure so commands can move among them without constructing unrelated editor
 sessions.
+
+The CADR interfaces here use ZWEI editor machinery and the TV window/event system.
+They are not CLIM applications: the selected system and application sources contain
+no CLIM application-frame or port dependency, and summary interaction is delivered
+as TV `SUMMARY-MOUSE` blips. Similar vocabulary such as frames, menus, and typed
+typeout items does not make this a CLIM or Dynamic Windows program.
 
 The frame also creates a separate `Zmail background` process. Its default priority is
 `-5`; request, response, and lock cells connect it to the foreground application.
@@ -140,6 +181,51 @@ The source retains RFC 733-specific parsing and offers header-output modes named
 RFC733, Network, ITS, and None. That is evidence for the era and interoperability
 targets of this source, not a claim that it implements every later Internet-mail
 standard.
+
+### Status vocabulary and parser ownership
+
+The executable System 303 old-mail-buffer state machine uses `NIL` for stable state
+and `:LOADING`, `:SAVING`, `:SAVING-REQUIRED`, and `:AWAITING-NEW-MAIL` while work is
+pending. New-mail/inbox work additionally uses `:NEW-MAIL`,
+`:LOADING-NEW-MAIL`, and `:AWAITING-SAVE`. A nearby source comment instead spells
+two states `:SAVE-REQUIRED` and `:AWAIT-NEW-MAIL`; those comment-only spellings are
+not executable status values.
+
+Header-parse ownership is claimed with an atomic `%STORE-CONDITIONAL` transition on
+the message's parse-state cell; it is not protected by the separate recursive
+disk-buffer lock. A source-visible failure edge remains important: a waiter sleeps
+for the owner to publish `T`, but an owner that unwinds restores `NIL`, so that waiter
+can remain asleep. This is a strict compatibility fault case, not a recommendation
+for a modern implementation; D08 defines a separately labeled safe extension which
+wakes the waiter with failure.
+
+### Registered System 303 mail-file formats
+
+The selected source registers six formats:
+
+| Format | Source-visible representation boundary |
+| --- | --- |
+| Rmail | ITS-style control-underscore message boundaries and whitespace handling |
+| Babyl | versions 4 and 5, with `*** EOOH ***` separating original and canonicalized headers; other versions enter a continuable-error path |
+| Tenex | date, decimal byte count, octal status, and malformed-record recovery |
+| Unix | candidate `From ` separators selected by weekday/date and adjacent-line heuristics; no general mboxrd unescape/escape pass |
+| VMS | formfeed/fixed-header or CHAOSMAIL-header variants |
+| Text | write-only export separated by the configured separator and excluded from supported input; a forced low-level read publishes consecutive nonblank lines separately, then faults on an initial/intervening blank line because the message start is null, despite an adjacent zero-message comment |
+
+This corrects two tempting inferences. The manual says VMS and Multics are
+unimplemented, while the maintained source implements VMS but not Multics. And the
+inactive `lm.lisp` file must not be used to invent a seventh strict-profile adapter
+or LM-host default. The active local-file integration chooses Babyl for ordinary
+local files.
+
+The Text result is another compatibility trap. Rejecting or clearly labeling an
+attempt to reopen an export matches the supported non-reparsable UI boundary. If a
+strict source profile exposes the low-level load anyway, executable control flow
+publishes one message for each consecutive nonblank line, but an initial or
+intervening blank/space-tab-only line reaches buffer-pointer construction with a null
+start and faults before publication. The adjacent comment instead predicts zero
+messages. The maintained source and its untested band behavior must remain separate
+until the forced-load runtime oracle records the exact condition and cleanup.
 
 ## Feature inventory
 
@@ -208,6 +294,21 @@ The transport menu is capability metadata in this audit. It does not prove that 
 SMTP server, Chaos mail server, or Ethernet interface was configured in the tested
 load band.
 
+The maintained source also fixes the send order, including its partial results.
+Headers are validated, a subject may be requested, and a message identifier is
+generated first. Requested FTo, FCC, and BFCC copies are then filed locally, with
+overlap precedence FTo over FCC over BFCC, *before* the network/file transport is
+called. Only transport success marks the draft sent and marks source messages
+Answered or Forwarded. A transport failure can therefore leave committed local
+copies and an unsent draft; retry can duplicate those copies. Visible and blind
+Chaos recipients use separate sessions, and direct Chaos submission proceeds per
+host, so earlier recipients or hosts may succeed before a later failure. The selected
+tree advertises Ethernet and SMTP-related choices but contains no active Ethernet
+sender and delegates SMTP outside the selected closure. They are unavailable without
+their providers, not aliases for another transport. An FTo-only draft can count as a
+successful local filing because file submission is a no-op when both To and Cc are
+empty.
+
 ### Profiles and self-description
 
 ZMail's profile editor exposes user options without requiring Lisp code. The source
@@ -217,12 +318,40 @@ Options cover layout, summary proportions, deletion direction, reply behavior,
 headers, file copies, templates, mail checking, saving, filtering, and mouse-button
 semantics.
 
+The selected `defs.lisp` contains exactly 69 active textual user-option forms. The
+[semantic companion](zmail-filter-universe-profile-semantics.md) records every
+name, type, default, applicability restriction, persistence class, update hook, and
+the source-visible filter/universe/Profile defects. That finite denominator excludes
+separately declared site, hardcopy, backup, and patch options.
+
 The command system is also self-describing. `?`, Help, `Meta-X`, `X`, `Meta-?`, and
 the named Apropos command reach different combinations of key help, full help,
 extended-command completion, and command-name searching. Menu buttons carry dynamic
 mouse documentation, and mode-line elements for keywords and scroll state are
 selectable. The implementation registers 86 distinct top-level ZMail command
 functions in the active source set; not all have a direct key.
+
+### Persistence and inbox failure boundaries
+
+System 303 does not wrap mail retrieval, merge, expunge, and save in one transaction.
+Strict compatibility preserves these source-visible orderings:
+
+1. An inbox source may be renamed before messages are read; a later parse or insert
+   failure leaves that renamed source as recovery evidence.
+2. Pending inbox files are deleted only after the destination mailbox save. A delete
+   error is printed, but the pending list is then cleared, so that process does not
+   automatically retry the deletion.
+3. Merge splices interval/node structures before updating message arrays; a failure
+   can expose a partially merged in-memory structure.
+4. Save All expunges every selected buffer before saving any buffer. A later save
+   failure follows already completed in-memory expunges.
+5. Expunge applies expiration deletion before its confirmation; declining the later
+   prompt need not undo those newly applied delete marks.
+6. A foreground/background save-finish edge can abort-close a `:SAVING` buffer and
+   leave status `NIL` instead of `:SAVING-REQUIRED`.
+
+A reconstruction may offer transactional behavior as an explicit safety extension,
+but that behavior is not the strict System 303 profile.
 
 ## Defaults and implementation findings not evident from a menu
 
@@ -286,7 +415,9 @@ application study.
 local file-host translations loaded, load ZMail without saving the world, open an
 empty or synthetic mail file containing no private correspondence, and capture the
 combined summary/message layout plus one draft-composition layout. Each selected
-image then needs the repository's capture-specific fair-use review before tracking.
+image then needs the repository's
+[capture-specific publication review](../screenshot-publication-rights-review.md)
+before tracking.
 
 ## Open questions
 
@@ -304,6 +435,9 @@ image then needs the repository's capture-specific fair-use review before tracki
 
 ## Sources
 
+- MIT CADR System 46
+  [`nzwei/dired.55`](https://github.com/mietek/mit-cadr-system-software/blob/8e978d7d1704096a63edd4386a3b8326a2e584af/src/nzwei/dired.55),
+  Mail major mode, entry functions, request grammar, and writer.
 - LM-3 System 303
   [`DEFSYSTEM ZMAIL`](https://tumbleweed.nu/r/sys/file?ci=4df393c68d7f083ce42d5c377039d26043cc18a9031ace28258dc97f4137eb91&name=sys%2Fsysdcl.lisp).
 - LM-3 System 303
@@ -312,10 +446,22 @@ image then needs the repository's capture-specific fair-use review before tracki
 - LM-3 System 303
   [`zmail/comnds.lisp`](https://tumbleweed.nu/r/sys/file?ci=4df393c68d7f083ce42d5c377039d26043cc18a9031ace28258dc97f4137eb91&name=zmail%2Fcomnds.lisp),
   command tables and command implementations.
+- LM-3 System 303
+  [`zmail/mail.lisp`](https://tumbleweed.nu/r/sys/file?ci=4df393c68d7f083ce42d5c377039d26043cc18a9031ace28258dc97f4137eb91&name=zmail%2Fmail.lisp),
+  draft, filing, send, and transport ordering.
+- LM-3 System 303
+  [`zmail/mfiles.lisp`](https://tumbleweed.nu/r/sys/file?ci=4df393c68d7f083ce42d5c377039d26043cc18a9031ace28258dc97f4137eb91&name=zmail%2Fmfiles.lisp),
+  save/inbox state, persistence ordering, and Text export.
+- LM-3 System 303
+  [`zmail/mfhost.lisp`](https://tumbleweed.nu/r/sys/file?ci=4df393c68d7f083ce42d5c377039d26043cc18a9031ace28258dc97f4137eb91&name=zmail%2Fmfhost.lisp),
+  Rmail, Babyl, Tenex, Unix, and VMS adapters.
+- LM-3 System 303
+  [`file/zmail.lisp`](https://tumbleweed.nu/r/sys/file?ci=4df393c68d7f083ce42d5c377039d26043cc18a9031ace28258dc97f4137eb91&name=file%2Fzmail.lisp),
+  active local-file integration.
 - Richard Stallman,
   [*ZMail Manual*, first edition](https://tumbleweed.nu/r/sys/file?ci=4df393c68d7f083ce42d5c377039d26043cc18a9031ace28258dc97f4137eb91&name=zmail%2Fmanual%2Fmanual.text),
   April 1983, ZMail 50/System 94 source.
 - [Operating CADR through the Xvfb computer-use harness](cadr-computer-use-harness.md),
   runtime method and provenance requirements.
 
-Last verified: 2026-07-18.
+Last verified: 2026-07-19.

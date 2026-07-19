@@ -3,7 +3,7 @@ type: Artifact Analysis
 title: Zmail and mail composition in Symbolics Genera
 description: Source-, manual-, help-, and runtime-grounded study of Genera 8.5 Zmail, its reader, composition editors, storage formats, transport boundary, and background work.
 tags: [genera, zmail, mail, zwei, application, source-code, runtime]
-timestamp: 2026-07-18T06:33:00-04:00
+timestamp: 2026-07-19T18:44:32-04:00
 ---
 
 # Zmail and mail composition in Symbolics Genera
@@ -21,7 +21,14 @@ word *Mail* in the interface. They nevertheless have different command loops,
 buffers, processes, and preservation boundaries. The
 [command and binding companion](zmail-commands-and-bindings.md) inventories the
 release-bounded top-level commands, direct keys, prefix keys, menu surfaces,
-draft-editor commands, and Zwei Mail-mode bindings.
+draft-editor commands, and Zwei Mail-mode bindings. The normative reconstruction
+contract is the
+[ZMail and mail-composition reimplementation specification](../zmail-and-mail-composition-reimplementation-specification.md).
+The [filter, universe, Profile, and option companion](zmail-filter-universe-profile-semantics.md),
+[named-command effect closure](../zmail-command-effect-closure.md), and
+[mail-file format semantics](../zmail-mail-file-format-semantics.md) supply the exact
+finite inventories, grammars, effect order, and failure prefixes behind this
+historical overview.
 
 ## Evidence and rights boundary
 
@@ -33,14 +40,18 @@ documentation payloads.
 
 | Portable artifact | Bytes | SHA-256 | Use in this study |
 | --- | ---: | --- | --- |
+| `sys.sct/zmail/patch/zmail.system-dir.~262~` | 8,075 | `27366e60fbc6760d2fa937008c9f1883549b6089786fbdfa7230557943d56383` | System 452.1 / Zmail 442.0 source-profile identity dated 1997-09-10 |
 | `sys.sct/zmail/system.lisp.~81~` | 5,673 | `7a76f3f99df71721376e5cddb247b616568ddbc420fa17cc13aa5fd3804be17b` | release system declaration and module boundary |
 | `sys.sct/zmail/definitions.lisp.~1552~` | 98,226 | `f5c96f713e3105acb78d1a79de3d0739afd361f297b3a9b6b647fd4638144aa6` | objects, command registration, menus, layouts, and options |
 | `sys.sct/zmail/top.lisp.~1561~` | 76,649 | `814f6571649adda39594b006cb9375f23c48f6d32da7bb158a0acefbdc09d089` | frame, panes, foreground loop, and background process |
 | `sys.sct/zmail/window.lisp.~1538~` | 60,659 | `4e81d597dbf3d6453ddad7efe70a9b2787fb8c8f9c586fd5116117feac535afc` | message and summary display behavior |
 | `sys.sct/zmail/commands.lisp.~1600~` | 120,174 | `4b00879c28268561def2e2ee34a34026f73aca9dc8f5a4cb6077a66af342adf1` | top-level keys, menus, Help, and message commands |
 | `sys.sct/zmail/collections.lisp.~1552~` | 123,015 | `96ec840410068e90b18d3008cecc346905c93af01bd2b1a2d8d73e79eb1ca345` | sequences, movement, sorting, deletion, and filing |
+| `sys.sct/zmail/headers.lisp.~1534~` | 66,205 | `6cd3f2217511c8a7d453806ef97d7cf7ad01c399b3affcfa32e9b69d8f796c49` | parse-state ownership and typed header nodes |
 | `sys.sct/zmail/filter.lisp.~1549~` | 99,538 | `368e8846de981b91fa4d5e03a6714bb9b2b6c009f6ebc8fb01b77a1a6a113cd0` | filters, survey, and temporary selections |
 | `sys.sct/zmail/universe.lisp.~1511~` | 55,488 | `2500d0ca328476e5e7cac343b7cf13cd01b64f1f61524fd47e4b09c87333c2a5` | multi-buffer search spaces |
+| `sys.sct/zmail/profile.lisp.~1517~` | 48,182 | `55af687c2b52606472544722a9ee5fd3a06534e5496dc5111baadeec84cfddd3` | Profile frame, button dispatch, and typed option editor |
+| `sys.sct/zmail/calendar.lisp.~1522~` | 63,648 | `56b4c387f6e8e0ee4d18a606de86b0604ef84ae1dcba1f991b00a18016dc763c` | calendar layouts and day/week/month translators |
 | `sys.sct/zmail/references.lisp.~1515~` | 51,440 | `db8288cedf8463e1a52aaad7e8766875e7c8b7461c1379d0783be06b412a2c37` | reference and conversation operations |
 | `sys.sct/zmail/mail.lisp.~1571~` | 152,833 | `6885d44e951270f9b9b4ebde5a2500fd674d4282599ba7c81e1fce017cb38c3a` | Zmail composition, replies, drafts, and sending policy |
 | `sys.sct/zmail/mail-files.lisp.~1566~` | 205,514 | `1ade0babfa463a4c2780165f64f59ce4d25191d93af7770f7bf571d440ef3648` | mail-file loading, saving, inboxes, and background saves |
@@ -50,18 +61,35 @@ documentation payloads.
 | `sys.sct/zmail/mail-access-paths.lisp.~1517~` | 18,387 | `85d12d2141a66feeb852ef2ccb9a5e0401f51e65b53336a3e697b4f22d7b9103` | transport access-path abstraction |
 | `sys.sct/zmail/smtp.lisp.~1537~` | 38,265 | `8f01f92630a0683b0ab25902b6dee6a1b4d936c2ebbd3e857f8ca89cf5471a0d` | SMTP client and server paths |
 | `sys.sct/zwei/mail.lisp.~38~` | 31,024 | `533278201f8538e9709cea2415491543bcc52a250c00acf9a387d391cd8ff93b` | Zmacs and standalone Zwei Mail mode |
+| `sys.sct/zwei/comtab.lisp.~589~` | 100,220 | `5101f5a25a7222d6d0f8f48401522fa418576eb27d145f659513eb80660ca2b1` | inherited ZWEI lookup, prefix, and undefined-key behavior |
+| `sys.sct/zwei/macros.lisp.~276~` | 71,023 | `c7db63e24f706e2fa102db25026a8556ebfbc950d18592c0817f7b48274ad59d` | presentation-to-editor-command registration semantics |
+| `sys.sct/sys2/string.lisp.~326~` | 94,076 | `d688c5011f5f6f194a8351da03ea2acbf43c50253ad5748653f374ebc925cec7` | exact `CHAR-MOUSE-EQUAL` identity comparison used by Filter and Universe naming |
 | `sys.sct/mailer/system.lisp.~76~` | 3,802 | `7e7a7aaaddd478a2da0b7a29ab811705b934e15df044d2106e92d4e780695fd9` | separate Mailer system declaration |
 | `sys.sct/mailer/toplevel.lisp.~1560~` | 44,419 | `c1c1fb9c67fabd03932cee1b21f0e18265ec0e70d3f02818e0e846a93b50777d` | separate delivery-process boundary |
 
-The Zmail system declaration resolves to 37 core Zmail Lisp files totaling
-1,781,224 bytes. A sorted portable manifest of logical pathname, byte size, and
-file SHA-256 has SHA-256
+An analytical 37-file Zmail application-core subset totals 1,781,224 bytes. A
+sorted portable manifest of logical pathname, byte size, and file SHA-256 has SHA-256
 `263df1e5a3329d60daf5cb5c931eb656c682cf405777a44a087601f582388e45`.
-Including the declared RTC dependency, the Converse subsystem, and all eight
-KBIN files gives 47 implementation files totaling 2,076,239 bytes; the analogous
-manifest has SHA-256
+The declared Zmail system actually serializes that core together with its RTC parser
+dependency, Converse, and all eight KBIN files. This exact 47-file build closure totals
+2,076,239 bytes; its manifest has SHA-256
 `327c325390e71dbc45ae8da530921134da2e524b0bc70503819d941ac2898eae`.
 The system declaration itself is metadata and is not included in either total.
+Behavioral conformance switches for KBIN or Converse do not change this historical
+build-graph fact. The
+[declared-build source manifest](zmail-declared-build-source-manifest.md) records
+every exact selected generation, size, and member hash, defines the canonical
+serialization, and adds generation-binding selection hashes
+`925a26d7f23c3eb8c40f39ddb2821b200f321860809169acc3b454eaefe293f8`
+for the analytical core and
+`d0b7ccf46f870005dcdfb676cf55cce6ba9ab6122f0d2bd7994de4ea70630306`
+for the full build.
+
+The patch directory identifies this inspected source profile as **System 452.1 /
+Zmail 442.0**. The runtime witness below identifies a Genera 8.5 world. No
+function-by-function comparison has yet proved that every selected source body is
+the bytecode resident in that world, so this article keeps the source profile and
+compiled-world observation distinct even where the visible behavior agrees.
 
 The ignored, non-evaluating source-Help extraction contains 522 candidate forms
 from 30 `zmail/` logical files. Of those, 150 are direct Zmail top-level command
@@ -85,7 +113,7 @@ corroboration.
 
 | Name in the system | What it is | What it is not |
 | --- | --- | --- |
-| Zmail | A Dynamic Windows application with message, summary, command, profile, filter, universe, calendar, and composition panes | Not simply a Zmacs buffer and not a delivery daemon |
+| Zmail | A ZWEI/TV application with message, summary, command, profile, filter, universe, calendar, and composition panes, plus selected Dynamic Windows/Command Processor presentation services | Not CLIM, not simply a Zmacs buffer, and not a delivery daemon |
 | Zmail Mail state | Zmail's integrated draft-composition state, entered by Mail, Reply, Forward, Redirect, Redistribute, Continue, and related operations | Not the ordinary Zmacs Mail minor mode, even though it uses Zwei editing commands |
 | Zwei Mail mode | A Text-mode-derived minor mode in a Zmacs special buffer, entered by Zmacs `Control-X M` or a standalone mail frame | Not a second mail reader; it calls Zmail's send machinery |
 | `Mail` activity alias | The activity name added to the same `Select M` entry whose primary label is `Zmail` | Not another frame or another implementation |
@@ -97,6 +125,21 @@ Zmacs buffer whose mode line read `Zmacs (Text Mail)`. Those are two interfaces
 to related machinery, not two names for one window.
 
 ## Architecture and data model
+
+### User-interface substrate and CLIM boundary
+
+Zmail is built from ZWEI editing streams and the TV window system. Genera 8.5
+also uses selected Dynamic Windows and Command Processor services for typed
+items such as paths, addresses, sequences, drafts, and calendar objects. The
+active summary rows are an older TV scroll-window path: they emit
+`SUMMARY-MOUSE` blips. A proposed conversion of those rows to Dynamic Windows
+presentations survives only in commented source and is not active behavior in
+this profile.
+
+The Zmail system declaration has no CLIM dependency, and the inspected source
+defines neither a CLIM application frame nor a CLIM port. A reimplementation may
+use CLIM internally, but the historical substrate described here is ZWEI + TV +
+selected Dynamic Windows/Command Processor facilities, not CLIM.
 
 ### One frame, two Zmail processes
 
@@ -112,6 +155,12 @@ and responses sent through a dedicated background I/O buffer. The background
 process handles queued file work, preloading, parsing, saving, and exposed-frame
 mail checks. This design lets long mail-file operations yield without making the
 interactive command loop itself the storage worker.
+
+Ordinary background requests are pushed onto the front of their queue and read
+from the front, so they run **last-in, first-out** despite a nearby source comment
+calling the queue FIFO. Preload requests alone are appended and therefore remain
+FIFO. Loading admits at most 20 messages per quantum; saving and parsing admit at
+most 10 each.
 
 ### Messages, buffers, sequences, filters, and universes
 
@@ -134,21 +183,32 @@ and conversation operations are not merely text edits. They update message and
 collection state, which is then persisted according to the active mail-file
 format.
 
+The Genera parse-state slot is not a simple Boolean. `NIL` means to use the
+owning buffer as format provenance; a message-buffer object names a specific
+provenance; `T` means successfully parsed; `:KILLED` means dead or errored unless
+a caller explicitly permits it; and an `SI:PROCESS` object owns a parse in progress
+while competing callers wait. Failure restores the prior `NIL` or buffer
+provenance rather than publishing `T`. A clone that collapses these states loses
+both parse ownership and the killed-message failure boundary.
+
 ### Panes and configurations
 
 The release defines panes for the summary, displayed message, headers, outgoing
 mail text, mode line, minibuffer, filter and universe controls, profile editor,
 ordinary and filtering command menus, and calendar views. Public configurations
-include Summary only, Both, Message only, Filtering commands, Summary/Message
-toggle, Send, Message without menu, Calendar, Month, Four weeks, Week, and Year.
-Internal reply, filter, universe, and profile layouts support particular command
-states.
+include Summary only, Both, two distinct entries whose visible label is
+`Message only`, Filtering commands, Summary/Message toggle, Send, Calendar,
+Month, Four weeks, Week, and Year. One `Message only` entry is the ordinary
+message layout; the other omits the command menu. The duplicate label is
+historical behavior, not a documentation typo. Internal reply, filter, universe,
+and profile layouts support particular command states.
 
 The normal initial view is Both: summary above, command menu in the middle, and
-message below. Summary rows are interactive presentations. Left selects a row;
-middle applies a profile-selected operation such as delete/undelete; right opens
-a conditional message menu. The exact menu and binding surfaces are in the
-[companion reference](zmail-commands-and-bindings.md#summary-presentations).
+message below. Summary rows are interactive TV `SUMMARY-MOUSE` blips, not Dynamic
+Windows presentations. Left selects a row; middle applies a profile-selected
+operation such as delete/undelete; right opens a conditional message menu. The
+exact menu and binding surfaces are in the
+[companion reference](zmail-commands-and-bindings.md#summary-tv-blips).
 
 ## Feature inventory
 
@@ -202,17 +262,57 @@ summary mouse behavior, and background work. Several menu commands use the
 profile's middle-button choice, next/previous policy, reply layout, pruning
 policy, and draft-ending policy rather than a fixed global rule.
 
+The selected sources contain 81 textual user-option forms: 80 active declarations
+and one declaration inside a block comment. The inactive form is evidence of an
+older path, not a runtime registration. The
+[semantic companion](zmail-filter-universe-profile-semantics.md) records every
+form's type, default, restriction, persistence and derived update behavior, plus the
+exact filter and universe definition languages and Profile save/compile/reset order.
+
 Zmail has its own Help, key self-documentation, Apropos, Describe Command, and
 extended-command reader. The command registry is populated when source files
 load and is mutable by patches, site files, profiles, and `Set Key`. The 152
 command names in the companion are therefore a clean-release denominator, not
 a promise that every configured site exposes an identical live registry.
 
+### Calendar and reminders are message views
+
+Calendar is not a separate appointment database. It projects ordinary Zmail
+messages whose parsed headers contain a Reminder-period or Start-date, optionally
+constrained by Expiration-date and Reminder-time. Every present constraint must
+pass and Period or Start must exist. Expiration is strict at the selected day's
+midnight. Start is tested only against the end of that day, so a start-only reminder
+continues to appear on later days unless another header limits it. Period
+expressions are expanded through the Time subsystem and cached with parsed header
+state.
+
+The source supplies Year, Month, Four Weeks, and Week frames. Year arranges twelve
+month panes in three rows of four and can XOR-highlight dates containing reminders;
+that highlighting is disabled by default. Month chooses a four-, five-, or six-row
+grid, Four Weeks fixes four rows, and Week shows seven day panes. Monday is the
+default first weekday. Day panes place holidays first, then stable-sort reminders
+by explicit time; the current message is bold with an arrow and holidays are italic.
+
+The Calendar command surface includes setting Start and Expiration on the current
+message, composing once-only or periodic reminders, adding a reminder from a
+selected day, and surveying a date. Dynamic Windows exposes Day, Month, and
+Week-containing-day presentations plus conversions from Day to midnight universal
+time and to a date-only reminder value. Calendar contributes five of Zmail's 37
+presentation-to-editor-command translators.
+
+An exact historical asymmetry is preserved in the
+[D08 specification](../zmail-and-mail-composition-reimplementation-specification.md):
+changing the Sunday/Monday option through the ordinary profile update recomputes
+Year, Month, and Four Weeks but omits an already displayed Week. The separate full
+recompute path includes Week. These source-derived populated layouts have not yet
+been exercised in the preserved 8.5 world, so their visual appearance remains an
+explicit runtime oracle rather than a guessed screenshot.
+
 ## Storage formats and mail files
 
 The Genera 8 manual says Zmail understands five mail-file formats: BABYL, RMAIL,
 KBIN, TENEX, and UNIX. The 8.5 source retains all five and registers two more
-selectable buffer representations:
+buffer representations:
 
 | Registered name | Representation established by source |
 | --- | --- |
@@ -222,17 +322,22 @@ selectable buffer representations:
 | Tenex | TOPS-20/MM-style representation |
 | Unix | conventional UNIX mailbox representation |
 | Directory | one message per file in a directory-backed mail buffer |
-| Text | messages separated by blank lines |
+| Text | output uses blank or configured separators; input is treated as one whole message; the representation is explicitly non-reparsable |
 
 This is a source/manual difference, not proof that all seven appeared in every
-runtime menu or were equally portable. The isolated runtime did not select an
-arbitrary-format file, so live menu membership remains a `TODO`. Directory and
-Text are storage representations; neither is a network transport.
+runtime menu or were equally portable. In particular, the arbitrary-format
+chooser filters out representations whose `mail-file-reparsable` predicate is
+false, so Text is deliberately absent even though it is registered. The isolated
+runtime did not open that chooser, so the exact live menu still remains a `TODO`.
+Directory and Text are storage representations; neither is a network transport.
 
 Format capabilities differ. Source methods decide which file options and
 message attributes can be saved, whether a file can be reparsed, how new-mail
-headers are recognized, and whether changes require a rewrite. Zmail therefore
-cannot safely treat all mail files as interchangeable bags of RFC 822 text.
+headers are recognized, and whether changes require a rewrite. Text is therefore
+an export/import surface, not a round-tripping Zmail mailbox: writing separates
+messages, while reading an arbitrary Text input constructs one message from the
+whole input. Zmail cannot safely treat all mail files as interchangeable bags of
+RFC 822 text.
 
 ## Sending, transport discovery, and the Mailer boundary
 
@@ -266,7 +371,10 @@ Source inspection establishes these implementation details:
   faster;
 - at least 12 free response-buffer entries and at least 25 percent of the
   response buffer reserved for the foreground;
-- background save and parse quanta of ten messages before yielding;
+- ordinary work is pushed and consumed at the queue front (LIFO), while preload
+  work alone is appended and consumed FIFO;
+- background load, save, and parse quanta of 20, 10, and 10 messages respectively
+  before yielding;
 - ordinary queued work can be allowed while the frame is deexposed, but periodic
   background mail checks have an additional explicit exposed-frame test;
 - periodic background mail checking and completing inbox reads in the
@@ -321,7 +429,21 @@ sending boundary, not a separate mail transport.
 ## Source findings not evident from the manual alone
 
 - The public manual's five mail-file formats are not the full 8.5 registration
-  set: Directory and Text are also registered by loaded Zmail source.
+  set: Directory and Text are also registered by loaded Zmail source. Text reads
+  an input as one message, is non-reparsable, and is filtered from the
+  arbitrary-format chooser.
+- The source profile is System 452.1 / Zmail 442.0. The runtime world is Genera
+  8.5, but exact source-to-resident-bytecode identity remains unproved.
+- Active summary interaction uses TV `SUMMARY-MOUSE` blips. The nearby Dynamic
+  Windows presentation rewrite is commented out, and Zmail is not a CLIM
+  application.
+- Ordinary background work is LIFO, despite a comment calling the queue FIFO;
+  preloads alone are FIFO. Load/save/parse quanta are 20/10/10 messages.
+- The two source configurations for ordinary message-only and message-only
+  without the command menu have the same visible label, `Message only`.
+- Parse state distinguishes inherited format provenance (`NIL`), explicit
+  message-buffer provenance, success (`T`), killed/error state (`:KILLED`), and
+  an `SI:PROCESS` object that owns parsing in progress.
 - The message and reply editors intentionally keep their extended-command and
   right-button menu lists synchronized, with one documented source exception:
   `Show Expanded Mailing List` is extended-command-only.
@@ -436,7 +558,9 @@ menu are for; the image is not evidence about populated-message rendering.
 
 The second capture is deliberately blank. Its documentary purpose is to prove that
 `Control-X M` creates a Zwei editing surface with a mail template and a distinct
-mode line, rather than selecting the full Zmail reader.
+mode line, rather than selecting the full Zmail reader. Residual Zmail pixels and
+the dithered area at the right are incidental state from the surrounding display;
+they do not specify the standalone editor's frame geometry.
 
 | Raw basename | Evidence purpose | Captured | Dimensions | PNG SHA-256 | Pixel SHA-256 | Action prefix | Sidecar |
 | --- | --- | --- | --- | --- | --- | --- | --- |
@@ -469,8 +593,9 @@ VLM processes were all absent after stop.
 
 ## Open questions
 
-- Which of Directory and Text appears in the arbitrary-format UI of this exact
-  world after a fully configured site login?
+- Does Directory appear in the arbitrary-format UI of this exact world after a
+  fully configured site login? Source proves that Text is filtered out as
+  non-reparsable, so Text is no longer part of this runtime question.
 - What live delivery choices appear when a legitimate store-and-forward service
   and file host are configured? The isolated museum session cannot answer this.
 - Does a hardware-faithful numeric prefix reselect the retained Mail buffer after
@@ -487,6 +612,6 @@ VLM processes were all absent after stop.
   printed pages 2426–2499 and the Zmail command dictionary; verified 2026-07-18.
 - Licensed local Genera 8.5 Zmail, Zwei Mail-mode, Mailer source, and inert
   source-Help extraction, artifact identities recorded above; inspected
-  2026-07-18.
+  2026-07-19.
 - Fresh `zmail-d08-genera-20260718` Genera Xvfb session, generation 1, input,
   image, isolation, and shutdown evidence recorded above; observed 2026-07-18.

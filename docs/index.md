@@ -101,7 +101,18 @@ machine-readable metadata layer while retaining ordinary Markdown as the source.
 - [Zmail on the MIT CADR/LM-3](mit-cadr/zmail.md) and
   [Zmail and mail composition in Genera](genera/zmail.md) document the two mail
   environments, complete release-bounded controls, composition modes, transport
-  boundaries, source findings, and safe runtime observations.
+  boundaries, source findings, and safe runtime observations. The
+  [Genera declared-build source manifest](genera/zmail-declared-build-source-manifest.md)
+  gives the rights-safe 47-member version/size/hash oracle. Exact companions close
+  the [named-command effects](zmail-command-effect-closure.md),
+  [mail-file grammars and failures](zmail-mail-file-format-semantics.md), and the
+  [System 303](mit-cadr/zmail-filter-universe-profile-semantics.md) and
+  [Genera](genera/zmail-filter-universe-profile-semantics.md) filter, universe,
+  Profile, and option semantics.
+- [ZMail and mail composition reimplementation specification](zmail-and-mail-composition-reimplementation-specification.md)
+  defines five separately selectable System 46, System 303, and Genera 8.5 reader
+  and composition targets, their complete effective input trees, persistence and
+  partial-failure order, reviewed visible states, and conformance tests.
 - [Converse, direct messages, and notifications](converse-direct-messages-and-notifications.md)
   compares QSend, Converse, SHOUT, network notices, central notification delivery,
   and the Notifications viewer, including complete controls and reviewed live states.

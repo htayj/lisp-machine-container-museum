@@ -3,7 +3,7 @@ type: Rights Review
 title: Publishing runtime screenshots for museum documentation
 description: Capture-specific U.S. copyright review and publication policy for CADR and Genera runtime screenshots used as historical evidence.
 tags: [screenshots, copyright, fair-use, preservation, cadr, genera]
-timestamp: 2026-07-19T16:48:57-04:00
+timestamp: 2026-07-19T18:44:32-04:00
 ---
 
 # Publishing runtime screenshots for museum documentation
@@ -350,6 +350,51 @@ behavior, command effects, boxed DEX menu cells, the 950-pixel threshold, Small 
 the pop-up Help frame, optional commands, richer documentation screens, the local
 System Help capture, bulk/generic reuse, or a project license in any screen display.
 The public CADR and licensed Genera artifact boundaries remain separate.
+
+### D08 ZMail and mail-composition captures reviewed 2026-07-19
+
+The exact Genera `zmail-reader-empty.png` and
+`zmacs-text-mail-template.png` files were separately reviewed for the
+[ZMail and mail composition reimplementation
+specification](zmail-and-mail-composition-reimplementation-specification.md).
+This conclusion is limited to those two files on that exact scholarly page.
+
+1. **Purpose and character.** D08 uses the empty reader to make the selected
+   Genera 8.5 Zmail layout and menu contract checkable, and the blank Text Mail
+   template to distinguish the separate Zmacs composition target from that reader.
+   The images sit beside source/runtime comparison, implementation criticism,
+   explicit nonclaims, and conformance tests. They are evidentiary research uses,
+   not decoration, advertising, an operating interface, or a mail-content gallery.
+   This factor strongly favors the reviewed use.
+2. **Nature of the displayed work.** Both captures are sparse, predominantly
+   functional interface states: empty panes, short labels and operational hints, a
+   blank To/Subject form, a body separator, and a mode line. They display no mail
+   message, recipient, source listing, artwork, third-party media, user data, font
+   sheet, or substantial Help/manual prose. This factor favors the reviewed use
+   while recognizing possible copyright in the particular screen expression and
+   the proprietary nature of the Genera runtime.
+3. **Amount and substantiality.** One complete 1200-by-900 state per target is the
+   minimum that preserves the reader's pane/menu relationship and the distinct
+   composition template and mode identity. D08 publishes no login, error, Help,
+   mail-content, service-configuration, send, save, or transport-result sequence.
+   The residual Zmail/dither region beside the Text Mail template is incidental and
+   is not used to claim complete frame geometry. Two stills are a minute portion of
+   the interactive system and are not a navigable substitute. This factor favors
+   the reviewed use.
+4. **Effect on the market.** The stills cannot read or send mail, execute commands,
+   supply the licensed world or source, reproduce the Help or manual corpus, expose
+   complete bindings, configure a site, or replace any software or screenshot-
+   licensing product. Their value comes from the museum's provenance, comparison,
+   and reconstruction tests. This factor strongly favors the reviewed use.
+
+On balance, these two exact images may be published on the D08 specification for
+the uses above. Pixels establish only the named visible relationships; entry,
+`Control-X M` dispatch, internal ownership, state transitions, failure order, and
+transport behavior rely on the recorded action log and source evidence or remain
+named runtime oracles. This paragraph approves no other D08 screenshot, message
+content, richer Help or error screen, interaction sequence, generic reuse, or
+project license in either screen display, and it does not merge the licensed
+Genera evidence boundary with public CADR or LM-3 materials.
 
 ## U.S. fair-use analysis
 
