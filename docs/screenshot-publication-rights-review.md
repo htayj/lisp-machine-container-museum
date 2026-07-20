@@ -3,7 +3,7 @@ type: Rights Review
 title: Publishing runtime screenshots for museum documentation
 description: Capture-specific U.S. copyright review and publication policy for CADR and Genera runtime screenshots used as historical evidence.
 tags: [screenshots, copyright, fair-use, preservation, cadr, genera]
-timestamp: 2026-07-19T18:44:32-04:00
+timestamp: 2026-07-19T20:08:26-04:00
 ---
 
 # Publishing runtime screenshots for museum documentation
@@ -395,6 +395,58 @@ named runtime oracles. This paragraph approves no other D08 screenshot, message
 content, richer Help or error screen, interaction sequence, generic reuse, or
 project license in either screen display, and it does not merge the licensed
 Genera evidence boundary with public CADR or LM-3 materials.
+
+### D09 Converse and Notifications captures reviewed 2026-07-19
+
+The exact Genera `converse-empty.png` and
+`notifications-synthetic-record.png` files were separately reviewed for the
+[Converse, direct messages, and Notifications reimplementation
+specification](converse-direct-messages-and-notifications-reimplementation-specification.md)
+and its substantive historical evidence dossier, [Converse, direct messages, and
+notifications on CADR and
+Genera](converse-direct-messages-and-notifications.md). This conclusion is limited to
+those two files on those two exact scholarly pages.
+
+1. **Purpose and character.** The two D09 pages use the untouched Converse frame to
+   make the selected Genera 8.5 editor entry state and structural layout checkable,
+   and the Notifications frame to distinguish the separate retained-history viewer
+   after a controlled `TV:NOTIFY` call. The images sit beside source/runtime
+   comparison, implementation criticism, exact input and state contracts, nonclaims,
+   and conformance tests. They are evidentiary research uses, not decoration,
+   advertising, an operating chat interface, or a message gallery. This factor
+   strongly favors the reviewed uses.
+2. **Nature of the displayed work.** Both captures are sparse and predominantly
+   functional. The first contains a blank `To:` template, structural separator,
+   scrollbar, cursor, and short mode-line directions. The second contains a title,
+   two-item functional menu, scrollbar, and one timestamped record whose substantive
+   text was written by this museum. Neither shows a real address or conversation,
+   source listing, artwork, third-party media, private data, font sheet, or
+   substantial Help/manual prose. This factor favors the reviewed use while
+   recognizing possible copyright in the particular screen expression and the
+   proprietary nature of the Genera runtime.
+3. **Amount and substantiality.** One complete 1200-by-900 state per visible D09
+   application is the minimum that preserves the relationship among the panes,
+   structural marks, menu, scrollbar, mode line, and surrounding blank space. D09
+   publishes no login, Help, real message, reply, delivery, failure, notification
+   pop-up, network, or interaction sequence. Two stills are a minute portion of the
+   interactive system and are not a navigable substitute. This factor favors the
+   reviewed use.
+4. **Effect on the market.** The stills cannot send or receive a message, provide
+   the licensed world or source, reproduce the Help or manual corpus, expose the
+   binding tables or protocol, configure a peer, or replace any software or
+   screenshot-licensing product. Their value comes from the museum's provenance,
+   comparison, and reconstruction tests. This factor strongly favors the reviewed
+   use.
+
+On balance, these two exact images may be published on the D09 specification and
+historical dossier for the uses above. Pixels establish only the named visible relationships and the
+presence of the researcher-authored record; selection, command dispatch, retention,
+delivery order, hidden object identity, polling, networking, and source-to-world
+identity rely on the recorded action log and source evidence or remain named runtime
+oracles. This paragraph approves no real message content, substantial Help, error or
+pop-up screen, additional interaction state, generic reuse, or project license in
+either screen display, and it does not merge the licensed Genera evidence boundary
+with public CADR or LM-3 materials.
 
 ## U.S. fair-use analysis
 

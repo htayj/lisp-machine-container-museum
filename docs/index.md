@@ -116,6 +116,12 @@ machine-readable metadata layer while retaining ordinary Markdown as the source.
 - [Converse, direct messages, and notifications](converse-direct-messages-and-notifications.md)
   compares QSend, Converse, SHOUT, network notices, central notification delivery,
   and the Notifications viewer, including complete controls and reviewed live states.
+- [Converse, direct messages, and Notifications reimplementation specification](converse-direct-messages-and-notifications-reimplementation-specification.md)
+  defines separate System 46 and maintained System 303 public-source profiles, a
+  System 452.1/Zmail 442.0 licensed-source profile, and a bounded Genera 8.5 System
+  452.22 runtime witness, with complete effective input trees through its normative
+  [CADR](mit-cadr/converse-direct-messaging-bindings-and-semantics.md) and
+  [Genera](genera/converse-notifications-bindings-and-semantics.md) companions.
 - [Screen Editor and Frame-Up](screen-editor-and-frame-up.md) distinguishes live
   window-hierarchy editing from Genera program-frame design, traces the Screen Editor
   lineage, inventories every control, and includes fresh runtime evidence.

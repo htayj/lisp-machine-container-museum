@@ -88,6 +88,15 @@ as its Virtual Lisp Machine implementation hosted on Unix.
   separates the conversation editor, one-shot and broadcast messages, central
   notification delivery, the Notifications activity, and their complete local
   controls, with fresh synthetic-data runtime evidence.
+- [Genera Converse and Notifications bindings and semantics](converse-notifications-bindings-and-semantics.md)
+  supplies the normative editor, pop-up, activity, Command Processor, delivery,
+  history, presentation, and failure contracts for the System 452.1/Zmail 442.0
+  source profile, separately compared with the bounded Genera 8.5 System 452.22
+  runtime witness.
+- [D09 Converse, direct messages, and Notifications reimplementation specification](../converse-direct-messages-and-notifications-reimplementation-specification.md)
+  defines the licensed-source and preserved-world profiles, exact effective input
+  boundaries, reviewed visible states, peer-network exclusions, and conformance
+  oracles.
 - [Inspector and Peek in Symbolics Genera](inspector-and-peek.md) inventories object
   browsing, mutation semantics, live status modes and menus, including source/runtime
   discrepancies and representative reviewed captures.

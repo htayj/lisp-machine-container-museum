@@ -127,6 +127,18 @@ under applicable law.
   pointer or presentation dispatch, collection contents, draft ownership, command
   effects, service configuration, background/load ordering, save or transport
   success, source-to-world identity, exact fonts, or general Genera pixel identity.
+- [`converse-empty.png`](converse-empty.png) and
+  [`notifications-synthetic-record.png`](notifications-synthetic-record.png) are
+  approved for the [D09 Converse, direct messages, and Notifications
+  reimplementation
+  specification](../../converse-direct-messages-and-notifications-reimplementation-specification.md)
+  and [historical evidence
+  dossier](../../converse-direct-messages-and-notifications.md).
+  Their use is limited to the blank Converse entry form and structural layout, and
+  the separate Notifications viewer containing one researcher-authored retained
+  record, reviewed on 2026-07-19. They do not establish message delivery, reply or
+  peer behavior, command dispatch beyond the action log, notification ordering or
+  timing, source-to-world identity, exact fonts, or general Genera pixel identity.
 
 ## Source sessions
 
@@ -324,10 +336,19 @@ handler-analysis page, not installed Help or a general handler database extract.
 | --- | --- |
 | Session | `d09-converse-notifications-genera-20260718`, generation 2 |
 | Run interval | 2026-07-18 06:39:03 through 06:42:39 EDT |
-| Licensed archive and world | Same identified archive and byte-identical 54,804,480-byte `Genera-8-5.vlod` base/private world as above |
-| Harness and isolation | Same pinned harness and namespace boundary as above |
+| Licensed archive and world | `opengenera2.tar.bz2`, 206,213,430 bytes, SHA-256 `89fb3e76b91d612834f565834dea950b603acf8f9dbacacdd0b1c3c284a2d36e`; base/private `Genera-8-5.vlod`, 54,804,480 bytes, SHA-256 `a8ee5e86cc7e322f7385af3e0cd579d7650d4dcfc3ce328acbf8b25515dd0672` at start and stop |
+| VLM and debugger | VLM 1,533,760 bytes, execution SHA-256 `9f5e18d5770f973879716182b6856ef5a8ee9d3b2bb907476ea0cf35986aa4c7`; debugger 346,880 bytes, SHA-256 `2db918cfe8f35f52c7ff4b7695b0ecd3bb85e41a3327ea5a94874edf05edb54a` |
+| Compatibility binaries and configuration | ifconfig preload 15,248 bytes, execution SHA-256 `f45f45461622975996ab41138f64bb84a4b17c51fba0dbb649208914898c26b7`; X preload 21,280 bytes, execution SHA-256 `acd71dbcb948f05b7fd2730b2b4706c08f16f46d792bd9aa6aa64370e855e4b1`; private `.VLM` 285 bytes, execution SHA-256 `5ce6509f5adf2cf2d054d34eb4ba777ce462285b8cd9b01bc071bf819139e086` |
+| Harness sources | Python harness SHA-256 `bc9276ac766913bc15018dd334a2a2704ae5a926e1fcbc30ccfcff08af8cb48a`; Guix shell entrypoint `e10d07a1c745d37044f1a97903455d334d6dcdb0c1d0e6854598e10fab24fa05`; namespace helper `17a3e297930eef45a6f59a349f92ec1f6dc99b2c4d5caa2392dc0521636af01c`; VLM helper `cbf9ee0520b4892325266ed17afba8f1b663e7d266fea6d80de9cf98de17d2f8` |
+| Preload and responder sources | ifconfig source SHA-256 `a4d126dbb6fd6f4903835bbb41c39652cfc53c91e942267dc9166c1c938c36e7`; X-compatibility source `4db1dee8e71d5ddc5cfd8289ecc3607738370ac97f856853786cfe713e94e392`; RFC 868 source/private/execution hash `cc3a2274149c5593b52e6608d732d4048518c766134df5e0f018746ad5cf98bb` |
+| Toolchain | Guix manifest SHA-256 `3adae999bbe420182f22adc2499fcc82449a46eaf580a362de9c0e718fa6b37d`; Guix channel commit `230aa373f315f247852ee07dff34146e9b480aec`; Python 3.11.14, Bubblewrap 0.11.0, Xorg server 21.1.21, GCC 15.2.0, ImageMagick 6.9.13-5 |
+| Sandbox and network | Bubblewrap separate user, mount, network, PID, IPC, and hostname namespaces; read-only Guix store/helpers/private X socket; writable private runtime; host root/session metadata/unrelated sockets hidden; route-free `tun0` at guest `10.0.0.2/24` and host `10.0.0.1/24`; no default/external route or host file service |
+| X server and relay proof | Xvfb launched with MIT-SHM disabled and live-verified absent; replacement extension live-verified absent; the exact eight-byte GrabServer/GetModifierMapping relay substitution and exact 148-byte SetModifierMapping relay substitution were both observed before `running`; nonmatching writes remained delegated byte-for-byte |
+| RFC 868 proof | One raw-Ethernet request/reply; evidence SHA-256 `dfda6dea0f6b27fed3ad07ef600e6ff27ee07f71644bed22052538ad78122e3f`; completion SHA-256 `8838c53eec5e8b5e895961b8b398da29c89c8e108ba3f4a805cd04cf1d250a29`; responder exit status 0 |
+| Selected client | Main window `Genera on DIS-LOCAL-HOST`, XID 4194310, 1200 by 900 pixels at client position `(72,55)` |
 | Complete action log | 14 records; 6,881 bytes; SHA-256 `742d8554f5273038b99e555d1262afbbbdb4dc2f0096f2a55f1357d7827eec03` |
 | Final run record | 26,055 bytes; SHA-256 `1ffacb2809fa4aee90e12fb7ff65413d1e443e0471adc82e1af2265743ad15f7` |
+| Shutdown and persistence | Prompt observed, `yes` sent and accepted, cleanup progress observed, then forced after the confirmed Cold Load mutex stall; `forced_stop=true`, `state_may_be_incomplete=true`, orderly host shutdown false; harness invoked no Save World/checkpoint, private/base world remained unchanged, guest Save World/checkpoint status unknown |
 
 The ordered interaction logged in locally; selected the empty Converse activity;
 opened its local Help for analysis; selected the initially empty Notifications
@@ -774,7 +795,9 @@ specification](../../zmail-and-mail-composition-reimplementation-specification.m
 and [the Presentation Inspector](../../genera/presentation-inspector.md).
 
 The Converse and Notifications captures support
-[Converse, direct messages, and notifications](../../converse-direct-messages-and-notifications.md).
+[Converse, direct messages, and notifications](../../converse-direct-messages-and-notifications.md)
+and the [D09 reimplementation
+specification](../../converse-direct-messages-and-notifications-reimplementation-specification.md).
 
 The Namespace Editor capture supports
 [Genera Namespace administration and editor](../../genera/namespace-administration-and-editor.md).

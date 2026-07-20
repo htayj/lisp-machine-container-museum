@@ -92,6 +92,13 @@ the public LM-3 software and the `usim` emulator.
 - [Converse, direct messages, and notifications](../converse-direct-messages-and-notifications.md)
   traces System 46 QSend into maintained System 303 Converse, SHOUT, and NOTIFY,
   inventories their controls, and records the exact tested-band load blocker.
+- [CADR direct-messaging bindings and semantics](converse-direct-messaging-bindings-and-semantics.md)
+  supplies the normative System 46 and System 303 effective input trees, command
+  effects, history rules, network adapters, defects, and failure order for D09.
+- [D09 Converse, direct messages, and Notifications reimplementation specification](../converse-direct-messages-and-notifications-reimplementation-specification.md)
+  keeps public System 46 QSend, maintained System 303 Converse, and the tested
+  System 303-0 loaded-world boundary separate, with explicit peer and screenshot
+  oracles.
 - [SUPDUP, Telnet, and the Genera Terminal program](../network-terminal-applications.md)
   documents the CADR two-process NVT architecture, complete Network-key controls,
   SUPDUP/Telnet protocol behavior, and the later Genera redesign.
