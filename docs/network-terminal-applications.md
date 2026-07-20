@@ -3,15 +3,17 @@ type: Museum Article
 title: SUPDUP, Telnet, and the Genera Terminal program
 description: Source-, help-, manual-, and runtime-grounded study of the MIT CADR network virtual terminals and their substantially redesigned Symbolics Genera descendant.
 tags: [lisp-machine, mit-cadr, lm-3, genera, supdup, telnet, terminal, networking]
-timestamp: 2026-07-18T05:55:12-04:00
+timestamp: 2026-07-19T21:25:12-04:00
 ---
 
 # SUPDUP, Telnet, and the Genera Terminal program
 
 The CADR `SUPDUP` system and Genera's **Terminal** program solve the same user
 problem—interactive remote login—but they are not merely two skins over one terminal
-emulator. System 303 has separate Supdup and Telnet window flavors built on a shared
-two-process network-virtual-terminal core. Genera 8.5 turns that design into one
+emulator. Maintained System 303 source has separate Supdup and Telnet window flavors
+built on a shared two-process network-virtual-terminal core, although the preserved
+`System 303-0` band does not expose the maintained source's Create-menu registrations.
+Genera 8.5 turns that design into one
 protocol-composed Terminal activity: the network service chooses a login protocol,
 filter chains translate input and output, and a selectable terminal simulator handles
 the final display language.
@@ -23,10 +25,18 @@ adding Dynamic Windows scrollback and marking, keyword-controlled connection set
 Command Processor commands, journal files, kill-ring transfer, and pluggable Glass
 TTY, Ambassador, Imlac, and VT100 simulation.
 
-No successful remote session is asserted yet. The preserved machines are deliberately
-network-isolated, and neither was pointed at an uncontrolled peer. Initial application
-entry and disconnected behavior can be verified safely; end-to-end negotiation and
-display behavior require a deterministic peer inside the disposable network namespace.
+No successful remote session is asserted. The preserved machines are deliberately
+network-isolated, and neither was pointed at an uncontrolled peer. Genera application
+entry and its disconnected state were verified directly. The CADR run verified the
+base band's missing S/T keys and reached only explicitly source-injected Supdup and
+Telnet shells, not a pristine loaded application. End-to-end negotiation and display
+behavior require deterministic peers inside the disposable network namespaces.
+
+The implementation-ready contract is the
+[network terminal applications reimplementation specification](network-terminal-applications-reimplementation-specification.md),
+with exact [CADR](mit-cadr/supdup-telnet-bindings-and-protocol-semantics.md) and
+[Genera](genera/terminal-bindings-protocols-and-simulators.md) companions. This page
+remains the shorter historical dossier.
 
 ## Evidence and release boundary
 
@@ -34,10 +44,12 @@ This article distinguishes three source generations:
 
 | Boundary | Evidence used | What it establishes |
 | --- | --- | --- |
-| Public MIT System 46 | Recovered Help-bearing source contexts from `lmio/supdup.196`, `lmwin/supdup.105`, and `lmio1/escape.6` | Early NVT identity, Network-key commands, separate/bound entry points, and the old Escape-N selection path |
+| Public MIT System 46 | Selected `lmwin/supdup.105`, with `lmio/supdup.196` and `lmio1/escape.6` retained as separately labeled shadow-lineage evidence | The selected LMWIN NVT and, separately, the older Escape-N lineage; the files are not averaged into one release profile |
 | Public maintained LM-3 System 303 | Fossil check-in [`4df393c68d7f083ce42d5c377039d26043cc18a9031ace28258dc97f4137eb91`](https://tumbleweed.nu/r/sys/info/4df393c68d7f083ce42d5c377039d26043cc18a9031ace28258dc97f4137eb91), especially [`window/supdup.lisp`](https://tumbleweed.nu/r/sys/file?ci=4df393c68d7f083ce42d5c377039d26043cc18a9031ace28258dc97f4137eb91&name=window%2Fsupdup.lisp), `window/sysmen.lisp`, and `sys/sysdcl.lisp` | The complete maintained CADR architecture, controls, SUPDUP/Telnet engines, and registered system boundary |
 | Licensed Genera 8.5 media | Local `og2/sys.sct/network/telnet.lisp.~1600~`, installed Network User's Guide and keyboard documentation, and the isolated VLM world | Terminal's activity identity, commands, protocols, simulator stack, documented UI, and the exact base-world runtime boundary |
 
+The selected System 46 `lmwin/supdup.105` is 45,341 bytes with SHA-256
+`71e93d749b5a0857ef04a79d0258df30119961d7e5e20837169aecd3024806fb`.
 The maintained `window/supdup.lisp` is 110,143 bytes with SHA-256
 `e329911a2860d69976890f05c4a1c5fbf69f44b7831cb9fd72fe07fa81e28ca4`.
 The locally inspected Genera source file is 142,464 bytes with SHA-256
@@ -67,13 +79,18 @@ protocol declarations, and terminal-simulator flavors.
 
 ### Entry points and window reuse
 
-System 303 registers `SUPDUP` as a declared system and provides these user-visible
+The selected public System 46 LMWIN implementation registers System-S for Supdup,
+System-T for Telnet, and both names in its Create menu. The separate LMIO/LMIO1
+Escape-N dispatcher described below is an older shadow lineage and is not silently
+added to that selected profile.
+
+Maintained System 303 declares the `SUPDUP` system and provides these source-visible
 paths:
 
 | Entry | Result |
 | --- | --- |
-| System-key **S** or System Menu **Supdup** | Select or create a separate Supdup window |
-| System-key **T** or System Menu **Telnet** | Select or create a separate Telnet window |
+| System Menu Create **Supdup** | Select or create a separate Supdup window when the subsystem is loaded |
+| System Menu Create **Telnet** | Select or create a separate Telnet window when the subsystem is loaded |
 | `(SUPDUP path mode)` | Choose separate-window or bound-window operation according to `mode` |
 | `(TELNET path mode)` | Telnet equivalent of `SUPDUP` |
 | `SUPDUP-SEPARATE`, `TELNET-SEPARATE` | Reuse a connected window when called without a path; otherwise reuse an idle window or create one |
@@ -85,12 +102,19 @@ window. The distinction is architectural, not just geometry: bound operation bor
 the current process and substitutes its overlay for the caller's window, while a
 separate window owns its normal type-in and type-out processes.
 
-The System 46 Escape-N dispatcher exposed a more numerical policy: no argument found
-or made Supdup; argument 1 found or made Telnet; 2 made a new Supdup; 3 made a new
-Telnet; and a precomma argument selected which existing instance to find. That exact
+The current maintained file has no System-S or System-T registration. The preserved
+base band's live System Help likewise listed Top-L, E, I, L, and P but not S or T.
+An earlier maintained `supdup.lisp.322` did register S/T, so that is a versioned
+lineage difference rather than permission to add the keys to the selected current
+source profile.
+
+The older System 46 LMIO Escape-N dispatcher exposed a numerical policy: no argument
+or zero found or made Supdup; argument 1 selected Telnet; 2 made a new Supdup; 3 made
+a new Telnet; and a list/precomma argument selected an existing instance. That exact
 dispatcher is recovered in the public
 [on-line Help corpus](assets/mit-cadr-online-help/source/lmio1/escape.6.help.lisp).
-It is historical evidence, not a claim that System 303 retains the same Escape-N UI.
+It is shadow-lineage evidence, not part of the selected System 46 LMWIN implementation
+and not a claim that System 303 retains the same Escape-N UI.
 
 ### Shared two-process architecture
 
@@ -184,7 +208,7 @@ code positions:
 | Regions and attributes | scroll region up/down, black-on-white/reverse attribute, reset |
 | Notification | terminal bell with repeated-beep coalescing |
 | Graphics | SUPDUP graphics protocol with move, limit, physical/virtual coordinates, XOR/IOR, line, point, rectangle, string, bit pattern, run drawing, and screen erase |
-| Historical display compatibility | GT40 display lists and blinking, ARDS long/short vectors, and SUDS-related local editing/display machinery |
+| Historical display compatibility | GT40 display lists and blinking, ARDS long/short vectors, and optional SUDS-related local editing/display machinery |
 | Unsupported slots | explicit no-operations preserve protocol position without inventing behavior |
 
 Function keys and bucky bits are translated into the ITS 12-bit character space.
@@ -202,6 +226,12 @@ Two implementation limits are not evident from the small Help table:
 Character insertion/deletion capability is also not always advertised. It is enabled
 for system types such as WAITS and Multics where the remote implementation needs or
 benefits from it; otherwise the source favors faster output over the extra capability.
+
+The default maintained `SUPDUP-FLAVOR` is ordinary `SUPDUP`. Recording and local
+editing are alternate flavor behavior selected only when that flavor variable is
+changed; their presence in the file does not make them defaults. GT40 and ARDS also
+retain partly global state, so separate windows can interfere in ways the small Help
+surface does not disclose.
 
 ### Telnet behavior
 
@@ -228,11 +258,13 @@ UI support, not a general presentation system.
 ### Maintained-tree variants that are not separate applications
 
 `window/telnet-code.lisp` and `window/telnet-front-hack.lisp` are source-present
-compatibility experiments. The former adds a special four-byte Lisp-machine character
-stream and a Telnet server/client flavor override. The latter is a nearly complete
-copy of `supdup.lisp` with compatibility edits and the same extra server/front-end
-work. Neither is declared as a second user application in the `SUPDUP` system. Their
-presence documents an integration branch, not a third terminal product.
+compatibility experiments. The former contains the special four-byte Lisp-machine
+character stream and server/client override. The latter is a divergent copy of the
+current Supdup/Telnet implementation: it defaults overprint true, uses older syntax
+and `:characters nil`, and adds direct raw-Telnet output wrappers. It does not carry
+the four-byte server work. Neither file is selected by the declared `SUPDUP` system
+or registered as another user application. Their presence documents experimental
+integration branches, not a third terminal product.
 
 ## Symbolics Genera 8.5
 
@@ -240,9 +272,12 @@ presence documents an integration branch, not a third terminal product.
 
 Genera registers the official activity and Create-menu name **Terminal**, adds
 `Select T`, and creates an `NVT-WINDOW`. The source explicitly says “NVT” is too
-specialist for the public name. Repeated remote-login requests can reuse an idle
-Terminal window; a window counts as in use when it already has a network stream or a
-pending connection target.
+specialist for the public name. The entry routes do not share one allocator: Create
+always makes and selects a fresh window; Select T uses the generic activity-selection
+policy and Control-Select T forces creation; Peek and direct remote-login requests
+scan the previously selected array and reserve the first idle Terminal, creating one
+only if none qualifies. A window counts as in use when it already has a network
+stream or a pending connection target.
 
 The live release inventories establish all three registrations in the inspected
 world:
@@ -334,30 +369,60 @@ commands that nevertheless exist in the table: Receive File, Set Output Recordin
 Set Local Echoing, and the parser-only Connect command. A complete source audit must
 therefore not equate Network-Help's curated list with the full command table.
 
+The exact connected Network reader has 63 normalized fixed accelerator cells: 37
+Standard Arguments cells, 12 unshifted argument cells, three full-command cells, and
+11 Terminal-local cells. It compares letters case-insensitively. Fixed bindings win
+before the configurable literal-escape test, so changing the escape to A, colon, a
+digit/argument key, or another fixed cell does not override that command. Rubout
+normally cancels, but becomes literal when it is the configured escape. Help alone
+reprompts; unknown input beeps, clears the pending argument, reports, and reprompts.
+
+Only Network-M accepts a numeric argument among local leaves: absent toggles, zero
+disables, and every nonzero value including a negative one enables. The source reader
+holds a `(kind,value)` pair, initially `(nil,1)`: minus resets it to `(:sign,-1)`,
+Control-U replaces the kind and multiplies the current value by four, Infinity uses
+`2^40 * signum(value)`, and the first digit after any nondigit kind replaces the
+magnitude using `signum(value)`. Consequently Control-U then minus resets to -1,
+zero then Infinity stays zero, and minus-0 followed by another digit becomes positive.
+The disconnected Connect prompt, extended commands, pathname/format arguments, and
+Network-X are separate CP/Input Editor or Accepting Values contexts with their own
+complete inherited trees. The
+[Genera companion](genera/terminal-bindings-protocols-and-simulators.md) is the
+normative exhaustive inventory.
+
 ### Dynamic Windows behavior and pointer controls
 
-With output recording enabled, the manual documents this complete pointer surface:
+With output recording enabled, the manual documents a small user-facing subset. The
+effective surface is larger because the Terminal participates in the Dynamic Windows
+96-cell pointer resolver and conditional handler registries:
 
 | Gesture | Effect |
 | --- | --- |
 | Control-Left drag | Mark and underline a region |
-| Control-Right | Open the Marking and Yanking menu |
-| menu **Yank Marked Text** | Send marked text as Terminal input |
-| menu **Push marked text on kill ring** | Save the region for Terminal or editor use |
-| menu **Hardcopy marked text** | Print the marked region |
+| Control-Shift-Middle over a word | Mark that word |
 | Control-Middle over a word | Send that word as input |
+| Control-Right | Open the applicable Marking and Yanking menu |
+| menu **Yank Marked Text** | Send marked text as Terminal input |
+| menu **Yank From Kill Ring** | Send the selected shared kill-ring entry |
+| menu **Save Marked Text** | Push marked text to the shared kill ring |
+| menu **Unmark** / conditional clear and extend actions | Update the selected marked region |
+| conditional **Hardcopy marked text** | Print the marked region when Hardcopy and a route are resident |
+| conditional **Pick up image from screen** | Image Substrate global handler; source-visible but exact world residency is unverified |
 | scroll bar | Navigate recorded input/output history when the active protocol/simulator permits it |
 
-The Terminal does not attach application object presentation types to remote text and
-does not support the usual Super/Meta Dynamic Windows gestures. Its input loop does
-create a narrow `TERMINAL-INPUT` context so selected recorded text can be converted
-back into characters. This reconciles the source with the manual: marked-text
-transfer is present, but semantic object presentations are not.
+The Terminal does not attach semantic application-object presentation types to remote
+text. Its input loop does create a narrow `TERMINAL-INPUT` context so selected
+recorded text can be converted back into characters, and its prompts, Help, commands,
+typed arguments, and Accepting Values panel use Command Processor/Dynamic Windows
+presentations. This reconciles the source with the manual: semantic remote objects are
+absent, but presentation-based control paths are not.
 
-History depth is protocol-dependent. Telnet and CTERM can retain the full recording.
-SUPDUP, 3600-LOGIN, and VT100 simulation expose only one screenful because remote
-cursor addressing and destructive screen operations make arbitrary historical
-scrollback misleading.
+The Release 7 manual describes protocol-dependent history depth: Telnet and CTERM can
+retain the full recording, while SUPDUP, 3600-LOGIN, and VT100 simulation expose only
+one screenful because remote cursor addressing and destructive operations make deeper
+scrollback misleading. The selected readable source and System 452.22 runtime have
+not yet confirmed those exact per-protocol limits; they remain the normative
+specification's `TODO-ORACLE-G-HISTORY-*`, not a source/runtime fact.
 
 ### Login protocols and filter composition
 
@@ -385,12 +450,18 @@ Four simulator types are registered in this source boundary:
 | Glass TTY | Plain control-character interpretation, wrapping, tabbing, bell, CR/LF/backspace, and character output |
 | Imlac | Imlac escape handling with selected SUPDUP display operations |
 | Ambassador | ANSI-derived simulator with Ambassador-specific escape operations and line movement |
-| VT100 | ANSI-derived simulator with VT100 keypad/function translation, cursor and erase controls, modes, scrolling regions, line insert/delete, and terminal reports |
+| VT100 | ANSI-derived selected subset with four arrow-key input translations, cursor/erase operations, selected modes and regions; keypad state is written but not consumed, and broad function/report support is not implemented |
 
-The shared ANSI simulator parses ESC and CSI parameter sequences, selects character
-sets, controls cursor position and erasure, and sets character attributes. Ambassador
-and VT100 specialize that base. Simulator choice can be a host default or a connection
-option and can be changed while connected through Set Terminal Simulator Type.
+The shared ANSI simulator parses a selected ESC/CSI subset, selects character sets,
+controls cursor position and erasure, and sets character attributes. Unsupported
+sequences are consumed. SGR examines only the first parameter; blink state is stored
+but has no selected drawing branch. VT100 adds only the four directional input
+translations to ESC `[A` through `[D`. ESC `=` and `>` mutate a keypad-mode slot that
+the selected source never reads; device reports, cursor-position reports, broad
+keypad/function translation, and many ANSI/VT52 operations remain unimplemented
+comments. Ambassador and VT100 specialize the base without filling those gaps.
+Simulator choice can be a host default or a connection option and can be changed
+while connected through Set Terminal Simulator Type.
 
 ### SUPDUP and Telnet compatibility retained inside Genera
 
@@ -429,40 +500,78 @@ through the same state block.
 
 ## Runtime verification
 
-### What can be tested without a peer
+### CADR source-injected shell evidence
 
-Safe runtime work can verify:
+![A sparse MIT CADR Supdup window with a white terminal surface and the bottom label “Supdup 1 -- not connected”.](assets/mit-cadr-screenshots/supdup-disconnected.png)
 
-- System 303 Supdup and Telnet entry, disconnected labels, host prompt, local Help,
-  window reuse, and cancellation;
-- Genera `Select T`, the Standard Terminal frame, host/options parser, available
-  protocol and simulator completion choices, and nonconnecting exit; and
-- exact menu, command, and option appearance for this world.
+*Runtime observation: a maintained-source Supdup window injected into the isolated
+System 303-0 band, captured 2026-07-19. It establishes only the source-injected
+full-screen surface, who-line relationship, and disconnected label. It is not
+a pristine base-band application claim. Underlying software and display material
+remain the property of their respective rightsholders; reproduced for criticism,
+scholarship, and historical documentation under 17 U.S.C. section 107. No affiliation
+or endorsement is implied.*
 
-### What requires a deterministic isolated peer
+![A sparse MIT CADR Telnet shell with a white terminal surface and bottom label “Telnet 2 -- not connected”.](assets/mit-cadr-screenshots/telnet-disconnected.png)
 
-The following remain `TODO` until a peer is installed inside the same throwaway
-network namespace:
+*Runtime observation: an explicitly constructed maintained-source Telnet shell in
+the same session. Its process slots were deliberately NIL after ordinary
+`TELNET-SEPARATE` exposed a source/band initialization mismatch. It proves the
+distinct label and shared static window structure only, not process or connection
+behavior. Underlying software and display material remain the property of their
+respective rightsholders; reproduced for criticism, scholarship, and historical
+documentation under 17 U.S.C. section 107. No affiliation or endorsement is implied.*
 
-- successful Chaos SUPDUP and Telnet connection establishment;
-- Telnet IAC negotiation and local/remote echo transitions;
-- SUPDUP terminal-variable exchange and display effect execution;
-- interrupt, logout, More, literal escape, wallpaper, and disconnect behavior while
+Exact image identities, run provenance, and the reconstructed ordered input sequence
+are in the [curated CADR asset catalog](assets/mit-cadr-screenshots/index.md#d10-network-terminal-source-injection-session).
+Publication is limited by the [D10 capture-specific rights
+review](screenshot-publication-rights-review.md#d10-network-terminal-captures-reviewed-2026-07-19).
+
+The fresh run first proved that live System Help contains no S/T registration. The
+base band reported older compiled definitions from `SYS: WINDOW; SUPDUP`, while the
+pinned maintained file had to be loaded through the private FILE bridge and accepted
+redefinitions. The resulting Supdup type-in process encountered the isolated absent-
+peer/path boundary. Ordinary maintained-source Telnet creation then encountered an
+unbound process slot, which is why the second image is explicitly a static shell
+witness. The run stopped cleanly with the base disk unchanged. There is no configured
+System 46 band, so its runtime appearance remains a named blocker.
+
+### Genera disconnected state
+
+![The Genera 8.5 Terminal activity with a left scrollbar, the prompt “Connect: (the name of a host)”, bottom label “Terminal 1”, and a blank display.](assets/genera-screenshots/terminal-disconnected.png)
+
+*Runtime observation: Genera 8.5/System 452.22 immediately after local login and
+`Select T`, captured 2026-07-19. It establishes the exact prompt, initial label,
+scrollbar, blank surface, who-line, and relative geometry only. Underlying Symbolics
+software and display material remain the property of their respective rightsholders;
+reproduced for criticism, scholarship, and historical documentation under 17 U.S.C.
+section 107. No affiliation or endorsement is implied.*
+
+The live prompt contradicts the manual's nearby wording, and the rendered label is
+exactly `Terminal 1`. The pixels cannot reveal the hidden label tag or establish when
+source-profile label recomputation occurred; that relationship remains an oracle.
+The capture contains no Help/manual prose, source, peer data, artwork, or private
+content. A later raw Network-Help capture remains ignored. Exact provenance is in the
+[curated Genera asset catalog](assets/genera-screenshots/index.md#d10-terminal-disconnected-state-session),
+under the same [D10 rights decision](screenshot-publication-rights-review.md#d10-network-terminal-captures-reviewed-2026-07-19).
+
+### What still requires deterministic isolated peers
+
+The following remain explicit oracles:
+
+- successful native Chaos SUPDUP and gateway Telnet connection establishment;
+- Telnet first-IAC and steady-state negotiation, binary and echo transitions;
+- SUPDUP terminal-variable exchange and every display/graphics effector;
+- interrupt, logout, More, literal escape, wallpaper and disconnect behavior while
   connected;
-- protocol-specific history limits and simulator output; and
-- send/receive file behavior using disposable, project-owned data.
+- protocol-specific history limits and simulator output;
+- send/receive file behavior using disposable project-owned data; and
+- exact source-to-compiled-world identity for both tested bands.
 
-The peer must expose no host route, credentials, real login service, or licensed
-payload. A scripted byte-level server can make negotiation reproducible and record
-exact traffic without pretending to be an historical ITS, TOPS-20, or Unix system.
-
-### Screenshot status
-
-`TODO`: publish one reviewed initial System 303 NVT frame and one reviewed Genera
-Terminal frame after fresh isolated sessions. A connected-frame screenshot should be
-added only when the deterministic peer exists and the image proves a claim that the
-initial frame cannot. Full Help prose and long remote transcripts should remain raw,
-ignored evidence unless a separate capture-specific review establishes necessity.
+Each peer must live inside the throwaway namespace, expose no external route, real
+credentials, or uncontrolled login service, and record both byte directions. It must
+not pretend that a protocol test fixture is an historical ITS, TOPS-20, Unix, VMS, or
+Symbolics site.
 
 ## Preservation notes
 
@@ -485,6 +594,14 @@ recast the protocols as composable filters beneath one user-facing Terminal prog
 - Locally inspected Genera 8.5 `og2/sys.sct/network/telnet.lisp.~1600~`, identified by size and SHA-256 above.
 - Locally recovered installed Network User's Guide topic `doc/installed-440/netio/netio1`, 10,688 bytes after text normalization, SHA-256 `172e25d09c4a94aba0e74b20afe2098139ab77bbebe3499fd83083995aac3fef`.
 - Locally recovered installed keyboard topic `doc/installed-440/lms/lms5`, 32,831 bytes after text normalization, SHA-256 `12cc014888759edb02a506da346803e05f2b6f758959a1f0a0d8ac690bfdbd1d`.
+- RFC Editor primary protocol cross-checks: [SUPDUP RFC 734](https://www.rfc-editor.org/rfc/rfc734.html),
+  [Telnet SUPDUP option RFC 736](https://www.rfc-editor.org/rfc/rfc736.html),
+  [SUPDUP graphics RFC 746](https://www.rfc-editor.org/rfc/rfc746.html),
+  [SUPDUP extensions RFC 747](https://www.rfc-editor.org/rfc/rfc747.html),
+  [SUPDUP-OUTPUT RFC 749](https://www.rfc-editor.org/rfc/rfc749.html), and
+  [Telnet RFC 854](https://www.rfc-editor.org/rfc/rfc854.html). These define
+  standards vocabulary; the selected implementation source determines historical
+  compatibility behavior.
 - [MIT CADR and LM-3 software catalog](mit-cadr/software-areas-and-applications.md) and [Genera 8.5 software catalog](genera/software-areas-and-applications.md), for registration and release reconciliation.
 
-Last verified: 2026-07-18.
+Last verified: 2026-07-19.

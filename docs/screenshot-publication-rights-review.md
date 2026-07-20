@@ -3,7 +3,7 @@ type: Rights Review
 title: Publishing runtime screenshots for museum documentation
 description: Capture-specific U.S. copyright review and publication policy for CADR and Genera runtime screenshots used as historical evidence.
 tags: [screenshots, copyright, fair-use, preservation, cadr, genera]
-timestamp: 2026-07-19T20:08:26-04:00
+timestamp: 2026-07-19T21:25:12-04:00
 ---
 
 # Publishing runtime screenshots for museum documentation
@@ -60,9 +60,11 @@ generation numbers recorded in the asset catalog, plus
 `d04-emergency-break-publication-20260719`, generation 1, and
 `d06-edit-buffers-genera-20260719`, generation 1. The first sessions were
 captured on 2026-07-18 and the D04 and D06 sessions on 2026-07-19 from the same
-identified Genera 8.5 world. Thirty-three screens
-passed review for publication in the
-[curated Genera screenshot catalog](assets/genera-screenshots/index.md):
+identified Genera 8.5 world. This earlier set of thirty-three screens passed review
+for publication in the
+[curated Genera screenshot catalog](assets/genera-screenshots/index.md). The
+separately reviewed D10 Terminal capture below brings the current catalog total to
+thirty-four:
 
 | Curated capture | Documentary purpose | Conclusion |
 | --- | --- | --- |
@@ -447,6 +449,62 @@ oracles. This paragraph approves no real message content, substantial Help, erro
 pop-up screen, additional interaction state, generic reuse, or project license in
 either screen display, and it does not merge the licensed Genera evidence boundary
 with public CADR or LM-3 materials.
+
+### D10 network-terminal captures reviewed 2026-07-19
+
+The exact CADR `supdup-disconnected.png` and `telnet-disconnected.png` files and
+Genera `terminal-disconnected.png` file were separately reviewed for the
+[network terminal applications reimplementation
+specification](network-terminal-applications-reimplementation-specification.md) and
+the substantive historical dossier [SUPDUP, Telnet, and the Genera Terminal
+program](network-terminal-applications.md). The Genera image was also reviewed for
+its same limited evidentiary use in the normative [System 452.1 Terminal
+companion](genera/terminal-bindings-protocols-and-simulators.md). This conclusion is
+limited to those exact image-and-page combinations and to the caveated claims stated
+there.
+
+1. **Purpose and character.** D10 uses the two CADR images to show the distinct
+   source-injected Supdup and static Telnet shell labels and their shared TV
+   full-screen relationship while criticizing the mismatch among maintained source,
+   compiled band, and obsolete System-key documentation. It uses the Genera image to
+   establish the live/manual prompt discrepancy, initial label, scrollbar and chrome.
+   The stills sit beside release profiles, source/runtime criticism, complete input
+   and protocol contracts, failure semantics, nonclaims and conformance tests. They
+   are evidentiary research uses, not decoration, advertising, a remote-login service
+   or a terminal gallery. This factor strongly favors the reviewed uses.
+2. **Nature of the displayed work.** All three frames are sparse and predominantly
+   functional. The CADR images show blank white terminal surfaces, two short labels,
+   the generic who-line, and a visible text cursor in the Telnet shell only. The
+   Genera image adds one short functional host
+   prompt, a scrollbar and label. None shows Help/manual prose, source, a peer
+   transcript, credentials, artwork, third-party media, private data, a font sheet or
+   a successful connection. This factor favors the reviewed use while recognizing
+   possible copyright in the particular screen expression and the proprietary nature
+   of the Genera runtime.
+3. **Amount and substantiality.** One complete frame for each distinct shell is the
+   minimum that preserves each terminal surface, bottom label and who-line, the
+   Telnet shell's visible text cursor, and the Genera scrollbar/prompt relationships.
+   D10 publishes no login exchange,
+   Help, options panel, negotiation, remote output, error sequence, file transfer or
+   interaction gallery. Three inert stills are a minute portion of the systems and
+   cannot reproduce their interactive behavior. This factor favors the reviewed use.
+4. **Effect on the market.** The stills cannot open a connection, emulate a terminal,
+   provide the source/load band/VLOD/manual, reveal the binding or protocol tables,
+   or replace any software or screenshot-licensing product. Their value comes from
+   the museum's provenance, comparison and reconstruction analysis. This factor
+   strongly favors publication.
+
+On balance, these exact three images may be published on the D10 specification and
+historical dossier for the uses above, and the exact Genera image may additionally
+be published on the named normative Genera companion for the same bounded use. The
+CADR images establish only explicitly
+source-injected/static shell appearance; they do not establish clean application
+loading, process startup, a host prompt, connection or source-to-band identity. The
+Genera image establishes only the initial disconnected visible state. This review
+approves no Help or options screen, connected peer content, error/debugger capture,
+future interaction sequence, generic reuse, or project license in the displayed
+material. MIT, LM-3, Symbolics and their contributors/rightsholders are identified
+for historical attribution only; no affiliation or endorsement is implied.
 
 ## U.S. fair-use analysis
 

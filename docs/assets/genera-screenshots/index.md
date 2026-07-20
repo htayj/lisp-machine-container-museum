@@ -1,7 +1,7 @@
 # Curated Genera runtime screenshots
 
-This directory contains thirty-three narrowly selected screen captures used to document
-visible application behavior in the museum's Genera 8.5 world. Thirty-one are exact
+This directory contains thirty-four narrowly selected screen captures used to document
+visible application behavior in the museum's Genera 8.5 world. Thirty-two are exact
 byte-for-byte copies of captures produced by the Xvfb computer-use harness. The two
 Hardcopy images are documented crops of raw captures that remove an unrelated Listener
 and exploratory debugger state. The licensed world, raw sessions, JSON sidecars, logs,
@@ -9,7 +9,7 @@ and all other captures remain untracked.
 
 ## Rights basis and scope
 
-These thirty-three images were reviewed on 2026-07-18 and 2026-07-19 for their specific
+These thirty-four images were reviewed on 2026-07-18 and 2026-07-19 for their specific
 uses in the linked museum articles and specifications. They reproduce sparse,
 predominantly functional application screens in
 direct support of nonprofit historical criticism, comment, scholarship, and runtime
@@ -139,6 +139,17 @@ under applicable law.
   record, reviewed on 2026-07-19. They do not establish message delivery, reply or
   peer behavior, command dispatch beyond the action log, notification ordering or
   timing, source-to-world identity, exact fonts, or general Genera pixel identity.
+- [`terminal-disconnected.png`](terminal-disconnected.png) is approved for the
+  [D10 network terminal applications reimplementation
+  specification](../../network-terminal-applications-reimplementation-specification.md)
+  and [historical dossier](../../network-terminal-applications.md), and normative
+  [System 452.1 Terminal
+  companion](../../genera/terminal-bindings-protocols-and-simulators.md). Its use is
+  limited to the live `Connect: (the name of a host)` prompt, initial `Terminal 1`
+  label, blank terminal surface, left scrollbar, who-line and relative geometry
+  reviewed on 2026-07-19. It does not establish completion choices, connection,
+  negotiation, command dispatch, scrollback, simulators, source-to-world identity,
+  exact fonts, or general Genera pixel identity.
 
 ## Source sessions
 
@@ -503,6 +514,32 @@ intent has a linked successful XTEST-dispatch outcome. The screenshot proves the
 displayed breakpoint state and evaluation; source and the ordered record, rather than
 the still alone, ground entry and return semantics.
 
+### D10 Terminal disconnected-state session
+
+| Field | Recorded value |
+| --- | --- |
+| Session | `d10-network-terminal-genera-20260719`, generation 1 |
+| Run interval | 2026-07-19 20:18:06 through 20:38:02 EDT |
+| Licensed archive | `opengenera2.tar.bz2`, 206,213,430 bytes; SHA-256 `89fb3e76b91d612834f565834dea950b603acf8f9dbacacdd0b1c3c284a2d36e` |
+| Base and private world | `Genera-8-5.vlod`, 54,804,480 bytes; SHA-256 `a8ee5e86cc7e322f7385af3e0cd579d7650d4dcfc3ce328acbf8b25515dd0672` at start and stop; private world never diverged |
+| VLM and debugger | VLM, 1,533,760 bytes, SHA-256 `9f5e18d5770f973879716182b6856ef5a8ee9d3b2bb907476ea0cf35986aa4c7`; debugger, 346,880 bytes, SHA-256 `2db918cfe8f35f52c7ff4b7695b0ecd3bb85e41a3327ea5a94874edf05edb54a` |
+| Harness sources | Python harness SHA-256 `c47ca320afb058d802ebd469fd9183e60ce5106eea15044295e98412700a5fcc`; shell entrypoint `e10d07a1c745d37044f1a97903455d334d6dcdb0c1d0e6854598e10fab24fa05`; namespace helper `17a3e297930eef45a6f59a349f92ec1f6dc99b2c4d5caa2392dc0521636af01c`; VLM helper `cbf9ee0520b4892325266ed17afba8f1b663e7d266fea6d80de9cf98de17d2f8` |
+| Compatibility/configuration | `ifconfig-bypass.so` SHA-256 `f45f45461622975996ab41138f64bb84a4b17c51fba0dbb649208914898c26b7`; `x-compat.so` `acd71dbcb948f05b7fd2730b2b4706c08f16f46d792bd9aa6aa64370e855e4b1`; configuration `5ce6509f5adf2cf2d054d34eb4ba777ce462285b8cd9b01bc071bf819139e086` |
+| RFC 868 responder | source SHA-256 `cc3a2274149c5593b52e6608d732d4048518c766134df5e0f018746ad5cf98bb`; request/reply evidence `9163230e81e79c3aacde0feec0696d27492c9cbdd35fff720fe0a201d3f37f0c`; completion `a66cdf575a8dfb03d0163ddaeab89d2f9c049b3c00ad510b0f0413855983ef00`; reply frame `fc78c98de8206205493d91250425dc5caadf53a7e824b98043f487f050909a68`; responder exit status 0 |
+| Toolchain and isolation | Guix manifest SHA-256 `3adae999bbe420182f22adc2499fcc82449a46eaf580a362de9c0e718fa6b37d`, channel `230aa373f315f247852ee07dff34146e9b480aec`; separate user, mount, network, PID, IPC and hostname namespaces; no external/default route or guest-visible file service; MIT-SHM and reserved relay-extension name live-verified absent; both exact X relay substitutions observed |
+| Selected client | kind `main`, `Genera on DIS-LOCAL-HOST`, XID 2097158, 1200 by 900 at `(72,55)` |
+| Capture and sidecar | `0003-terminal-disconnected.png`, 1,364 bytes; sidecar 13,757 bytes, SHA-256 `0dd4484920d5e20fa96f11ea4e30dba32c9823e170a9422cb20ed09eb1ad1e9b` |
+| Action prefix at capture | 4 records, SHA-256 `e0cdc56994bf9a29b69d4c5f08391df47821eeec0ff418d11f5561bc2437dc52` |
+| Complete action log | 6 records: three intents and three linked successful outcomes; 3,158 bytes; SHA-256 `96928167fa6e35b4810ad2bfe6c9c9fdd639be084c09e44df8ac902266b84d83` |
+| Final run record | 26,230 bytes; SHA-256 `dff005f4dfd273ccdb95bff977bdea5750765af25ff79aa4ac6e697129087b3c` |
+| Publication boundary | The exact PNG alone passed the image- and D10-use-specific fair-use review. Licensed world, raw captures, Help screen, sidecar, action log and session remain ignored; no repository-wide license extends to the displayed third-party screen. |
+
+The ordered interaction completed the local non-network login, invoked `Select T`,
+captured the untouched Terminal frame, and later pressed Network-Help solely to verify
+the live command surface. The Help frame contains licensed prose and remains ignored.
+The capture proves the prompt, initial label, blank surface, scrollbar, who-line and
+geometry only. The isolated namespace exposed no peer or external route.
+
 Each screenshot sidecar captured the prefix of the action log that existed when the
 PNG was installed. Counts below include both the recorded intent and its linked
 outcome, so six records represent three attempted actions. The sidecar's prefix hash
@@ -546,6 +583,7 @@ the final keystroke.
 | [Hardcopy File options](hardcopy-file-options.png) | `0006-hardcopy-file-form.png` | Invoke the read-only `Hardcopy File` form after enumerating live defaults and formats; crop its complete 625-by-264-pixel form before aborting without a request | 2026-07-18 09:20:54 EDT | 18 records; SHA-256 `75cc5ff5fde85e9f63f0c60c808dd86410772db12d7f017562c37cd2157fbf50` |
 | [Screen hardcopy options](screen-hardcopy-options.png) | `0008-screen-hardcopy-form.png` | Invoke numeric-argument screen hardcopy; crop the complete option form before aborting without capture or output | 2026-07-18 09:21:27 EDT | 24 records; SHA-256 `4afccf9b2c4beb16863839e7c1a6c180f1078b1f636343dfb1c2fc882dc0969c` |
 | [Disabled network-service registry](network-service-registry-disabled.png) | `0001-service-registry.png` | Read the two policy variables, count 47 registrations, and print selected registered/enabled pairs; every selected service is disabled and optional Domain/Site-NAMES contacts are absent | 2026-07-18 10:58:40 EDT | 2 records; SHA-256 `6594cfb4374da911d4d97874aac1d4a81a0a86b556cbb18f7d8fe392e0627be1` |
+| [Terminal disconnected state](terminal-disconnected.png) | `0003-terminal-disconnected.png` | Complete local login and invoke `Select T`; the untouched Terminal displays `Connect: (the name of a host)`, `Terminal 1`, a blank output surface, left scrollbar and who-line before any peer or Help interaction | 2026-07-19 20:18:51 EDT | 4 records; SHA-256 `e0cdc56994bf9a29b69d4c5f08391df47821eeec0ff418d11f5561bc2437dc52` |
 
 ## Image identities
 
@@ -593,6 +631,7 @@ other transform.
 | `hardcopy-file-options.png` | 5,013 | 625 by 264 | `a75bfa31f5782ec688517827faf667aa45b4e16ffa7cf14bee151a04d3f0d6bc` | `5d792ad595418506a03da00fcc036ccc40931d35c6adcef173a5fb1e978a49ca` |
 | `screen-hardcopy-options.png` | 3,747 | 1134 by 157 | `e683fad45a0567fa1e9fbb89e1e9b09dd6c2d1fad30686bdb6d08f6f6ca7eefe` | `5be6ac1ec1c7dbd4add570a921a759220e9a6f17fac8a0df2b9f75b4d490c974` |
 | `network-service-registry-disabled.png` | 12,950 | 1200 by 900 | `ad1298d44c6adb84b8114b7e7eff261fe949292d58dd92e89e994b7f5c40a6a2` | `9524047c4186bcbdbbca9ecdaa4472cbb32e8631cbc295a629d933d2a96a3743` |
+| `terminal-disconnected.png` | 1,364 | 1200 by 900 | `767a9da73f8ec9c24b778cca9337a1f4cfcd66ed69527f48ac6a79edd4b2616c` | `33a071812b9d5467d9b94df81cc367a3012f1f88c778a464c31359174feddbca` |
 
 ## Shutdown and persistence results
 
@@ -758,6 +797,21 @@ record marks the unsaved Lisp state discarded. These facts establish the bounded
 publication observation and lack of world-file mutation, not a general persistence
 claim.
 
+### D10 Terminal session
+
+The shutdown prompt was observed, `yes` was sent and accepted, and cleanup progress
+was observed before the reproduced Cold Load channel mutex stall required bounded
+host termination. The final record sets `forced_stop=true`,
+`forced_after_confirmed_shutdown_stall=true`, `state_may_be_incomplete=true`,
+`orderly_vlm_host_shutdown=false`, and `unsaved_lisp_state_discarded=true`; the
+launcher return code is 137. This was not an orderly VLM host shutdown.
+
+The private world remained byte-identical to the base world. The harness did not
+invoke Save World or create a host-process checkpoint. `save_world_performed` and
+`guest_checkpoint_created` remain unknown except for those negative harness facts.
+The selected screenshot precedes the later raw Help probe and establishes only the
+initial disconnected state.
+
 See [Zmacs in Symbolics Genera](../../genera/zmacs.md) for the behavior these images
 support and [the Genera computer-use harness](../../genera/genera-computer-use-harness.md)
 for the capture and isolation model.
@@ -798,6 +852,12 @@ The Converse and Notifications captures support
 [Converse, direct messages, and notifications](../../converse-direct-messages-and-notifications.md)
 and the [D09 reimplementation
 specification](../../converse-direct-messages-and-notifications-reimplementation-specification.md).
+
+The Terminal capture supports the
+[network terminal dossier](../../network-terminal-applications.md) and
+[D10 reimplementation specification](../../network-terminal-applications-reimplementation-specification.md),
+including its normative [Genera Terminal
+companion](../../genera/terminal-bindings-protocols-and-simulators.md).
 
 The Namespace Editor capture supports
 [Genera Namespace administration and editor](../../genera/namespace-administration-and-editor.md).

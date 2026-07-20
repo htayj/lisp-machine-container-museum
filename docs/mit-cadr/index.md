@@ -102,6 +102,13 @@ the public LM-3 software and the `usim` emulator.
 - [SUPDUP, Telnet, and the Genera Terminal program](../network-terminal-applications.md)
   documents the CADR two-process NVT architecture, complete Network-key controls,
   SUPDUP/Telnet protocol behavior, and the later Genera redesign.
+- [CADR Supdup and Telnet bindings and protocol semantics](supdup-telnet-bindings-and-protocol-semantics.md)
+  supplies D10's normative System 46 and maintained System 303 profiles, complete
+  effective keyboard/pointer trees, lifecycle and parser order, exact SUPDUP/Telnet
+  byte/effect contracts, defects, source-injected visual boundary, and tests.
+- [D10 network terminal applications reimplementation specification](../network-terminal-applications-reimplementation-specification.md)
+  integrates those public CADR profiles with the separately bounded Genera Terminal
+  profiles without treating the maintained tree as the tested base band.
 - [Network services and site utilities](../network-services-and-site-utilities.md)
   inventories the System 46 and live System 303 Chaos contacts, Hostat/Finger,
   EFTP entry points, security-sensitive EVAL/Telnet/remote-disk services, MIT-local

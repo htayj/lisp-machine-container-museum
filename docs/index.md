@@ -256,6 +256,12 @@ machine-readable metadata layer while retaining ordinary Markdown as the source.
 - [SUPDUP, Telnet, and the Genera Terminal program](network-terminal-applications.md)
   traces the network-terminal architecture from CADR NVT windows to Genera's
   protocol/filter/simulator stack and inventories every local command and option.
+- [Network terminal applications reimplementation specification](network-terminal-applications-reimplementation-specification.md)
+  defines separately selectable System 46, maintained System 303, Genera selected-
+  source/manual, and Genera 8.5 runtime profiles, with complete effective input trees
+  through its normative [CADR](mit-cadr/supdup-telnet-bindings-and-protocol-semantics.md)
+  and [Genera](genera/terminal-bindings-protocols-and-simulators.md) companions,
+  exact connection/protocol/failure contracts, and reviewed disconnected visuals.
 - [Network services and site utilities](network-services-and-site-utilities.md)
   compares the CADR Chaos service sets and MIT-local utilities with Genera's generic
   server framework, complete FTP/TFTP/DNS/Finger/TCP surfaces, security defaults,

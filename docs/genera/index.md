@@ -41,6 +41,13 @@ as its Virtual Lisp Machine implementation hosted on Unix.
 - [SUPDUP, Telnet, and the Genera Terminal program](../network-terminal-applications.md)
   inventories Terminal's commands, connection controls, Dynamic Windows gestures,
   login protocols, simulators, and CADR lineage.
+- [Genera Terminal bindings, protocols, and simulators](terminal-bindings-protocols-and-simulators.md)
+  supplies D10's normative complete effective Network/CP/Input Editor/Accepting
+  Values/pointer tree, ordered connection and teardown state, exact filter and
+  simulator semantics, source defects, runtime boundary, and tests.
+- [D10 network terminal applications reimplementation specification](../network-terminal-applications-reimplementation-specification.md)
+  keeps the licensed System 452.1 selected source, Release 7 manual and Genera 8.5
+  System 452.22 runtime witness separate from public CADR profiles.
 - [Network services and site utilities](../network-services-and-site-utilities.md)
   inventories the generic server registry and trust policy, Finger and Show Users,
   complete FTP/TFTP/DNS/TCP diagnostic surfaces, and the exact all-disabled

@@ -1,13 +1,13 @@
 # Curated MIT CADR runtime screenshots
 
-This directory contains twenty reviewed runtime captures selected from twelve
-provenance-bearing System 303 sessions: nineteen exact full framebuffers and one
+This directory contains twenty-two reviewed runtime captures selected from thirteen
+provenance-bearing System 303 sessions: twenty-one exact full framebuffers and one
 documented crop that retains a complete application window. They are runtime observations, not
 manual illustrations and not claims about every CADR, application, or debugger release.
 
 ## Rights status
 
-These twenty PNGs are included for the museum's criticism, comment, scholarship, and
+These twenty-two PNGs are included for the museum's criticism, comment, scholarship, and
 research under the fair-use limitation in
 [17 U.S.C. § 107](https://www.copyright.gov/title17/92chap1.html#107). This is an
 asset- and use-specific conclusion, not a statement that every screenshot of every
@@ -23,7 +23,7 @@ not automatically outside copyright merely because a researcher captured it. The
 publication basis here is the limited documentary use assessed below.
 
 The present use is narrowly documentary: each image appears beside analysis of the
-exact application or recovery state it proves; the set contains twenty low-resolution still
+exact application or recovery state it proves; the set contains twenty-two low-resolution still
 frames from a much larger interactive system; the images cannot substitute for the
 software, load band, source, fonts, or manuals; and no market for licensing these
 System 303 observations was identified. The Ninth Circuit held the use of a handful of actual
@@ -122,10 +122,21 @@ asset exclusion. MIT, LM-3, and the named contributors do not endorse this museu
   reviewed on 2026-07-19. It does not prove the later mark transitions, the
   reproduced `U` defect, command dispatch, destructive effects, Dired or BDired
   behavior, or source-to-band identity.
+- [`supdup-disconnected.png`](supdup-disconnected.png) and
+  [`telnet-disconnected.png`](telnet-disconnected.png) are approved for the
+  [D10 network terminal applications reimplementation
+  specification](../../network-terminal-applications-reimplementation-specification.md)
+  and [historical dossier](../../network-terminal-applications.md). Their use is
+  limited to the distinct maintained-source Supdup label and explicitly constructed
+  static Telnet label and text cursor, shared full-screen TV surface, and who-line
+  relationship reviewed on 2026-07-19. Both followed source injection into a mismatched base band;
+  they do not establish clean loading, process startup, a host prompt, connection,
+  command dispatch, source-to-band identity, System 46 appearance, or general CADR
+  pixel identity.
 
 ## Capture catalog
 
-Nineteen files are exact 768 by 963 pixel grayscale framebuffers. `spacewar-game.png`
+Twenty-one files are exact 768 by 963 pixel grayscale framebuffers. `spacewar-game.png`
 is a 768 by 770 crop of its exact framebuffer that retains the complete game window
 and removes only an unrelated split-screen debugger below it. The raw names below
 identify ignored local sidecars and captures retained in the session; no ignored
@@ -153,8 +164,10 @@ path is needed to render the museum pages.
 | [`spacewar-game.png`](spacewar-game.png) | `0031-spacewar-game-started.png`, cropped `768x770+0+0` | 2026-07-18 12:15:26 | Load the public System 303 Spacewar source and `SHIP` font through the isolated FILE bridge, call `SPACEWAR:INIT`, and press left Control at its start gate; the live playfield shows both ships and the sun | `c61ba8b27ae2bc50e50de89ea58b35e8825d96fc5daebc24cc2244f2417584c6` | `fadbc91f7c98825bf1dac2d8a100e9992f6933e934ec58503ad0dff5e8d9cff9` |
 | [`doctor-conversation.png`](doctor-conversation.png) | `0015-doctor-clean-conversation.png` | 2026-07-18 12:49:46 | Load public `DOCTOR` and `DOCSCR` through the isolated FILE bridge, call `HACKS:DOCTOR`, clear old Listener output, and submit three synthetic preservation-history statements; the program displays three source-defined transformations and responses | `8b98e85838d96c5b86ff1e51d8174c963c9c81f8ea41e53161390e6856609e8e` | `cfc6572b2e0472bc784ff35a1b6ca8defa912ed78b9a2968af886db693e84391` |
 | [`qix-live.png`](qix-live.png) | `0027-qix-funcall-live.png` | 2026-07-18 12:54:29 | Load public `HAKDEF` and `QIX`, invoke `NQIX` in a fresh Listener, and allow the source-defined XOR trail to evolve before its any-key stop | `4c6d92f19027d7dd73a6934776d4e3361056bd7b006d8059277c5e47abd8131f` | `8f546c33f9036fb1e0d8447ff93e673f2137c3b2b94669efa1a9b8a0a715b273` |
+| [`supdup-disconnected.png`](supdup-disconnected.png) | `0020-supdup-connect-prompt.png` | 2026-07-19 20:34:35 | After loading the exact maintained public source through the isolated FILE bridge, select the resulting Supdup window; the source-injected shell shows its disconnected label and shared TV surface without the expected host prompt | `52c53d7b51c3298a7eb037c815bbbb6c76dcfd19dd54ebf3549abb1e16bead02` | `3205f9174f16cdda83ce66ba03778e2452b9ee5f04c56411f83613ee1996e9e8` |
+| [`telnet-disconnected.png`](telnet-disconnected.png) | `0025-telnet-disconnected-shell.png` | 2026-07-19 20:37:03 | Explicitly construct and select a maintained-source Telnet window with NIL process slots after ordinary creation exposed a source/band initialization mismatch; the static shell shows the distinct disconnected label only | `310c63af5118102151afe2e9dd7025f2ddf564f34fb999762fee247aeb1dd802` | `bf54d03936d07b0c74d3071f124f53d7f923f3969ac75371ec172b61d3b7b6d9` |
 
-The PNG digest identifies the exact tracked file bytes. For the nineteen uncropped
+The PNG digest identifies the exact tracked file bytes. For the twenty-one uncropped
 captures, the pixel digest in each original sidecar identifies normalized eight-bit
 RGB pixels and therefore remains stable across incidental PNG re-encoding. The
 Spacewar row records the separately computed decoded-pixel digest of the documented
@@ -446,6 +459,70 @@ and post-exit frames remain local. No licensed Genera payload, manual page, sour
 listing, private conversation, network peer, or external hardware appears in the
 published images.
 
+### D10 network-terminal source-injection session
+
+| Item | Recorded value |
+| --- | --- |
+| Session | `d10-network-terminal-cadr-20260719`, generation 1 |
+| Runtime interval | 2026-07-19 20:18:02–20:37:43 EDT |
+| Guest release | Experimental System 303.0; load band `System 303-0` |
+| Disk | Public base and private start SHA-256 `bb16e46ad81decfe1efe691d36b6aa4ce3fd4ffb82474365de3520989d397cb5`; public base unchanged at stop |
+| Public revisions | System `4df393c68d7f083ce42d5c377039d26043cc18a9031ace28258dc97f4137eb91`; L `d1250f90044f09b6c92014a9aef65f9574e1bcbf8a7163004e53cc6dbed0f2d6`; `usim` `330d8248ec2e12af071e287920e681600f75df9ffd854aada5f8a64c9adad64d`; site `8f717978b458b40adf1e238aaf177f5bc54ef46881268e03b787ba57b0d30a0e`; Chaos `db2953fde68d726a605d1d1699bab6c926ef252bd4991f692bae6ee5a634764e` |
+| Private source trees | System `21f5215de973aa6ccbddb817f2d64edd95ee1014c3028a9b0711ea7c741b807e`; site `adbb720339db225e6635977a869cf3f3d50b507e614b37a976f4a6548d212a81`; Chaos `34ab197641aae909e9a224edc307020fddec263e732207a74573d51dac0daa87`; all unchanged since copy |
+| Emulator | Start and execution SHA-256 `707a77d23e28ea1c45ae0eb0145dc181fa7ba649b9defc30044d4f847ac2c5be` |
+| Machine artifacts | `promh.mcr` `2c667f99f014a7130a55b255d31df02588d9396beace78abfe9325269e4ff3e6`; `promh.sym` `e9e3dd6a541511dd9541ae96b99dae19cb185d8b79fa09959f21fa52224f233d`; `ucadr.sym` `9071decf16fa8f11d7970c4662db0d6e95600fe43ec86ac41c77b37dbd7caa2a` |
+| Toolchain and window | Guix manifest SHA-256 `3adae999bbe420182f22adc2499fcc82449a46eaf580a362de9c0e718fa6b37d`, channel `230aa373f315f247852ee07dff34146e9b480aec`; `LOCAL-CADR [running]`, XID 2097202, 768 by 963 at `(0,0)` |
+| Supdup raw/sidecar | `0020-supdup-connect-prompt.png`, 985 bytes, PNG/pixel hashes in the catalog; sidecar 4,438 bytes, SHA-256 `244ed5b6c81790dfd00d39438bded3acea6124bf01cac62fcfe7305b072c3c52` |
+| Telnet raw/sidecar | `0025-telnet-disconnected-shell.png`, 1,003 bytes, PNG/pixel hashes in the catalog; sidecar 4,442 bytes, SHA-256 `e5b78a6bfe6d2a244da3d3955f3d2f9f325a672bc110e4f4db7f4343f1d95cea` |
+| Curated transformation | None; both tracked PNGs are exact copies of their raw captures |
+| Run record | 6,999 bytes; SHA-256 `6b5e4ce28ae58c4a0acf51e77e381b4abc33e26875abc89201112a7bb66a12b4` |
+| Shutdown | Clean: `forced_stop=false`, `state_may_be_incomplete=false`, `usim` and Xvfb exit status 0, public base disk unchanged |
+
+The CADR harness generation predates the Genera-style action ledger, so the two
+capture sidecars do not contain keystroke records. The ordered input was reconstructed
+from the retained execution record and the timestamped intermediate frames. In
+portable guest notation it was:
+
+1. Submit `n`, `n`; attempt System-S; submit a third `n` to finish the cold-start
+   date/time questions; attempt System-S again; then invoke System-Help and dismiss it
+   with Space. Neither System-S attempt selected a terminal.
+2. Evaluate `(make-system 'supdup)`, observe the isolated `AMS-BRIDGE-1` FILE-host
+   failure, and invoke Abort.
+3. Evaluate exactly
+   `(load (fs:make-pathname :host "LOCAL-BRIDGE" :raw-directory '("tree" "window") :raw-name "supdup" :raw-type "lisp"))`.
+   The bridge-login reader received, in order, `museum `, a single space, `museum `,
+   `museum`, `tay`, and `tay `, each activated with Return. These are literal
+   throwaway local-bridge inputs, not reusable credentials.
+4. Answer the first source redefinition query with `y` and the second with `p`
+   (Proceed), then wait for the pathname result.
+5. Evaluate `(fboundp 'supdup:supdup-separate)`, then
+   `(supdup:supdup-separate)`. After the source-injected Supdup window appears, press
+   Return and capture `0020-supdup-connect-prompt.png`.
+6. Press Network-Q, then System-L; invoke Abort at the resulting Listener error.
+   Evaluate `(fboundp 'supdup:telnet-separate)`, then
+   `(supdup:telnet-separate)`, which reaches the unbound `TYPEIN-PROCESS` condition.
+7. Invoke Abort and evaluate exactly
+   `(let ((w (tv:make-window 'supdup:telnet :typein-process nil :typeout-process nil))) (send w :expose nil :clean) (send w :select) w)`.
+   The final `:select` message is the selection input; after five seconds, capture
+   `0025-telnet-disconnected-shell.png` without further guest input.
+
+This sequence is documentary provenance, not a recommended operating recipe. It
+deliberately preserves the failed load, repeated local-bridge login prompts,
+redefinition decisions, background Supdup error, and Telnet construction workaround
+that bound the two images' claims.
+
+The ordered documentary interaction completed cold boot; displayed live System Help,
+which contained no S/T entries; attempted ordinary subsystem loading and recorded its
+isolated FILE-host failure; loaded the exact public `window/supdup.lisp` through the
+private `LOCAL-BRIDGE` using raw lowercase pathname components; accepted the reported
+redefinitions; verified the Supdup and Telnet entry function cells; selected the
+source-injected Supdup window; returned to the Listener; observed the ordinary Telnet
+creation's unbound process slot; and explicitly constructed a Telnet window with NIL
+process slots solely to record its static disconnected shell. The published images
+therefore do not imply that the source loaded cleanly, that the expected host prompt
+ran, or that a peer was contacted. The relevant Lisp source is public, but the
+capture-specific fair-use review still governs the selected screen pixels.
+
 See [ZWEI and Zmacs on the MIT CADR and LM-3](../../mit-cadr/zwei-and-zmacs.md)
 for the behavioral analysis and
 [the CADR computer-use harness](../../mit-cadr/cadr-computer-use-harness.md)
@@ -476,6 +553,10 @@ The Spacewar capture supports
 
 The Doctor and QIX captures support [DOCTOR](../../mit-cadr/doctor.md) and the
 [CADR HACKS suite](../../mit-cadr/cadr-hacks-display-sound-and-novelty-suite.md).
+
+The source-injected Supdup and Telnet shells support the
+[network terminal dossier](../../network-terminal-applications.md) and
+[D10 reimplementation specification](../../network-terminal-applications-reimplementation-specification.md).
 
 The same core-environment captures support [the Lisp Listener](../../mit-cadr/lisp-listener.md),
 the [D01 Listener specification](../../lisp-listeners-reimplementation-specification.md),
