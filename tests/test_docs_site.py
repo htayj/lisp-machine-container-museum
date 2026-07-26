@@ -76,6 +76,15 @@ class DocsSiteTests(unittest.TestCase):
         self.assertIn("color: var(--paper)", pointer)
         self.assertIn("background: var(--ink)", pointer)
 
+    def test_site_preserves_intrinsic_raster_image_dimensions(self) -> None:
+        css = (REPOSITORY / "site" / "style.css").read_text(encoding="utf-8")
+        image_rule = css.split(".museum-article img {", 1)[1].split("}", 1)[0]
+        self.assertIn("width: auto", image_rule)
+        self.assertIn("max-width: none", image_rule)
+        self.assertIn("height: auto", image_rule)
+        self.assertIn("image-rendering: pixelated", image_rule)
+        self.assertNotIn("max-width: min(", image_rule)
+
     def test_rewrite_markdown_links_preserves_fragments_and_external_links(self) -> None:
         source = (
             '<a href="../genera/index.md#articles">Genera</a>'

@@ -3,7 +3,7 @@ type: Preservation Note
 title: Publishing the museum documentation site
 description: Build, visual-profile, interaction, font-provenance, validation, and GitHub Pages publication contract for the Lisp Machine Museum knowledge base.
 tags: [documentation, github-pages, genera, fonts, preservation]
-timestamp: 2026-07-26T11:23:00-04:00
+timestamp: 2026-07-26T11:25:00-04:00
 ---
 
 # Publishing the museum documentation site
@@ -91,6 +91,15 @@ visual-viewport resize, the site divides their one-, two-, and three-pixel perio
 the current device-pixel ratio and visual-viewport scale. Browser zoom therefore
 changes the layout scale without enlarging or shrinking the stipple cells. The CSS
 declarations retain a one-CSS-pixel fallback for operation without JavaScript.
+
+## Raster evidence sizing
+
+Article images render at their intrinsic pixel dimensions. The stylesheet does not
+fit a wide image to the article or viewport; the existing document-pane overflow
+provides horizontal scrolling instead. This keeps each source pixel one CSS pixel
+at the base page scale and avoids unequal resampling of one-bit text, rules, and
+stipple patterns. An image may be enlarged only through a separately specified
+integer scale; the default site profile performs no enlargement.
 
 ## Static build
 

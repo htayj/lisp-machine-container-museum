@@ -351,7 +351,8 @@ kbd {
 
 .museum-article img {
   display: block;
-  max-width: min(100%, 960px);
+  width: auto;
+  max-width: none;
   height: auto;
   margin: 12px 0 5px;
   border: 1px solid var(--ink);

@@ -3,7 +3,7 @@ type: Editorial Guide
 title: CADR and Genera interface style guide
 description: Evidence-grounded visual, typographic, interaction, and web implementation guidance for recreating MIT CADR and Symbolics Genera interface styles without importing a generic retro aesthetic.
 tags: [mit-cadr, lm-3, genera, interface-design, web-design, typography, dynamic-windows, tv]
-timestamp: 2026-07-26T11:22:00-04:00
+timestamp: 2026-07-26T11:24:00-04:00
 ---
 
 # CADR and Genera interface style guide
@@ -134,6 +134,12 @@ For an exact-pixel presentation:
 - use square joins and caps unless a source-grounded component says otherwise; and
 - repaint transient highlights reversibly or from retained state rather than
   accumulating alpha overlays.
+
+Apply the same rule to historical screenshots and other one-bit raster evidence.
+Render them at their intrinsic pixel dimensions or at an explicitly chosen integer
+multiple. Do not fit them proportionally to a narrower content column: that makes
+source pixels unequal and introduces artifacts in bitmap text and stipples. A
+narrow viewport should scroll the unscaled image.
 
 For an accessible responsive website, use the same grid inside components but let
 the page reflow. Historical screen dimensions are reference compositions, not a
