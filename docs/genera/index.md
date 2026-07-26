@@ -226,6 +226,11 @@ as its Virtual Lisp Machine implementation hosted on Unix.
 - [Formatting, spelling, and text production utilities](../formatting-spelling-and-text-production-utilities.md)
   - `FORMAT`, presentation-aware `FQUERY`, the grinder, dribbling, Zmacs spelling,
   Sage, character styles, fonts, and document-production commands in Genera 8.5.
+- [Inks, faces, and character styles in Symbolics Genera](inks-faces-and-character-styles.md)
+  - Separates semantic family/face/size styles and per-device raster-font resolution
+  from native ALUs, colors, stipples, and CLIM designs; documents merging,
+  persistence, Zmacs, screen, printer, and programming customization with a reviewed
+  runtime prompt.
 - [Concordia, structured documentation, and book design](../concordia-document-and-book-design.md)
   - NSage records and `.sab` serialization, structural editing, Page Previewer,
   book-design inheritance and Browser, complete 74/26/11 command surfaces,

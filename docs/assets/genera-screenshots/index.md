@@ -1,7 +1,7 @@
 # Curated Genera runtime screenshots
 
-This directory contains thirty-four narrowly selected screen captures used to document
-visible application behavior in the museum's Genera 8.5 world. Thirty-two are exact
+This directory contains thirty-five narrowly selected screen captures used to document
+visible application behavior in the museum's Genera 8.5 world. Thirty-three are exact
 byte-for-byte copies of captures produced by the Xvfb computer-use harness. The two
 Hardcopy images are documented crops of raw captures that remove an unrelated Listener
 and exploratory debugger state. The licensed world, raw sessions, JSON sidecars, logs,
@@ -9,8 +9,9 @@ and all other captures remain untracked.
 
 ## Rights basis and scope
 
-These thirty-four images were reviewed on 2026-07-18 and 2026-07-19 for their specific
-uses in the linked museum articles and specifications. They reproduce sparse,
+These thirty-five images were reviewed on 2026-07-18, 2026-07-19, and 2026-07-26
+for their specific uses in the linked museum articles and specifications. They
+reproduce sparse,
 predominantly functional application screens in
 direct support of nonprofit historical criticism, comment, scholarship, and runtime
 verification. The repository-wide
@@ -46,6 +47,14 @@ additional permission from this project beyond rights they may independently hav
 under applicable law.
 
 ## Approved specification uses
+
+- [`zmacs-character-style-prompt.png`](zmacs-character-style-prompt.png) is embedded
+  only in [Inks, faces, and character styles in Symbolics
+  Genera](../../genera/inks-faces-and-character-styles.md). Its use is limited to
+  the visible Zmacs buffer, test text, mode line, and live `Change style of character
+  to [default NIL.NIL.NIL]:` prompt reviewed on 2026-07-26. It does not establish
+  every completion, menu, device-font mapping, successful mutation, persistence
+  path, source-to-world identity, exact font identity, or general Genera appearance.
 
 - [`dynamic-lisp-listener-multiple-values.png`](dynamic-lisp-listener-multiple-values.png)
   is also embedded in the [Lisp Listeners and editable input reimplementation
@@ -168,6 +177,31 @@ under applicable law.
 | Isolation | Separate user, mount, network, PID, IPC, and hostname namespaces; no external route or guest-visible host file service; MIT-SHM live-verified absent |
 | Complete action log | 74 records: 37 intents and 37 linked outcomes; 35,050 bytes; SHA-256 `8f7ca2510a6f3cc74ee6d72cdd3b3fd875de2df48075e330993b5507a655d721` |
 | Final run record | 22,655 bytes; SHA-256 `7a372b6985f81cf2ad713dc89037177e0d411f266f4c3d17125838844284391a` |
+
+### Character-style prompt session
+
+| Field | Recorded value |
+| --- | --- |
+| Session | `ink-face-20260726`, generation 1 |
+| Run interval | 2026-07-26 07:25:57 through 07:30:39 EDT |
+| Licensed archive | `opengenera2.tar.bz2`, 206,213,430 bytes; SHA-256 `89fb3e76b91d612834f565834dea950b603acf8f9dbacacdd0b1c3c284a2d36e` |
+| Base and private world | `Genera-8-5.vlod`, 54,804,480 bytes; SHA-256 `a8ee5e86cc7e322f7385af3e0cd579d7650d4dcfc3ce328acbf8b25515dd0672` at start and stop |
+| VLM and debugger | VLM SHA-256 `9f5e18d5770f973879716182b6856ef5a8ee9d3b2bb907476ea0cf35986aa4c7`; debugger SHA-256 `2db918cfe8f35f52c7ff4b7695b0ecd3bb85e41a3327ea5a94874edf05edb54a` |
+| Compatibility and configuration at execution | `ifconfig-bypass.so` `f45f45461622975996ab41138f64bb84a4b17c51fba0dbb649208914898c26b7`; `x-compat.so` `acd71dbcb948f05b7fd2730b2b4706c08f16f46d792bd9aa6aa64370e855e4b1`; RFC 868 responder `cc3a2274149c5593b52e6608d732d4048518c766134df5e0f018746ad5cf98bb`; configuration `5ce6509f5adf2cf2d054d34eb4ba777ce462285b8cd9b01bc071bf819139e086` |
+| Harness | execution-time Python source SHA-256 `c47ca320afb058d802ebd469fd9183e60ce5106eea15044295e98412700a5fcc`; shell entrypoint `e10d07a1c745d37044f1a97903455d334d6dcdb0c1d0e6854598e10fab24fa05` |
+| Toolchain | `manifest.scm` SHA-256 `3adae999bbe420182f22adc2499fcc82449a46eaf580a362de9c0e718fa6b37d`; Guix revision `230aa373f315f247852ee07dff34146e9b480aec` |
+| Selected client | `Genera on DIS-LOCAL-HOST`, XID 4194310, 1200 by 900 pixels at client position `(72,55)` |
+| Isolation | Separate user, mount, network, PID, IPC, and hostname namespaces; no external route or guest-visible host file service; MIT-SHM and the reserved relay-extension name live-verified absent; both exact X relay substitutions and the one-shot RFC 868 reply observed |
+| Complete action log | 18 records: nine intents and nine linked successful dispatch outcomes; 9,184 bytes; SHA-256 `10ca9183792ce2930cf59261d454040e4bf1031caf8509bc38281b4a61b563d3` |
+| Selected-capture sidecar | `0004-change-typein-style-mod2.json`, 13,723 bytes; SHA-256 `1c58bda1943b5987096b76da4537fd669cb3b19be91e9128ea9ef1710bdce3bd` |
+| Final run record | 25,777 bytes; SHA-256 `32a4ec00b82dbd0de5ead349842ccabc173c35beaa4be2bd2fc5d002dbc948c8` |
+
+The ordered interaction selected Zmacs, inserted the researcher-authored line
+`Plain text, then styled text`, recorded one semantic key probe that Zmacs reported
+as undefined, and then dispatched `Control` plus the X `mod2` path and `J`. The
+selected capture is the resulting style prompt. This proves that visible prompt in
+this world; it does not prove that the host chord is a portable physical-keyboard
+recipe or that later exploratory input changed a style successfully.
 
 ### Edit Buffers session
 
@@ -557,6 +591,7 @@ the final keystroke.
 | [List Buffers pointer documentation](zmacs-list-buffers-pointer-documentation.png) | `0018-zmacs-buffer-entry-mouse-doc.png` | Pointer moves to `(65,48)` and then `(70,76)` while List Buffers is visible; the captured bottom line remains generic and does not prove a row-presentation hit | 2026-07-18 00:19:51 EDT | 50 records; SHA-256 `d84d95879b22ff53144746a18feb3e311eb52ae3bca5ab52366edf1fe3aa24d4` |
 | [List Buffers generic Operation menu](zmacs-list-buffers-generic-operation-menu.png) | `0019-zmacs-buffer-entry-menu-held.png` | Button 3 pressed while List Buffers was displayed; the visible menu contains generic Marking and Yanking, System, and Window operations and does not prove a row-presentation hit | 2026-07-18 00:20:05 EDT | 52 records; SHA-256 `ee7709dfed79a93b6a5ab8a7dd215e01b239b06a1b2ce8ec9ee2d6ab3ea97e65` |
 | [Zmacs Edit Buffers with a delete mark](zmacs-edit-buffers-marked-delete.png) | `0004-edit-buffers-delete-mark.png` | After the exact recorded `Control-X Control-Shift-B` chord opened Edit Buffers, lowercase `d` put `D` in the current row's action column; no marked action was executed | 2026-07-19 12:31:18 EDT | 24 records; SHA-256 `86718baaa5ec312c3e2422ddf886c98b299de7b3d6ac35a0458ecd9f103967f1` |
+| [Zmacs character-style prompt](zmacs-character-style-prompt.png) | `0004-change-typein-style-mod2.png` | After selecting Zmacs and entering a researcher-owned test line, dispatch the style command through the recorded X `mod2` path; the live prompt shows the null style default | 2026-07-26 07:29:29 EDT | 10 records; SHA-256 `aaf6f0f6e7352a031efb93b60232e540195dbcc2852968ea5bb1842bbd5d1866` |
 | [Dynamic Lisp Listener multiple values](dynamic-lisp-listener-multiple-values.png) | `0002-listener-multiple-values.png` | Evaluate the project-owned form `(values 17 23)`; the Listener prints both values on separate lines | 2026-07-18 04:00:04 EDT | 2 records; SHA-256 `05564580417f9901acb71585872e56a8bf5fe0b4004f7e8251528b3d7c9506a2` |
 | [System Menu](system-menu.png) | `0004-system-menu.png` | Hold Shift and button 3 over the Listener; the observed three-column System Menu appears | 2026-07-18 04:00:48 EDT | 10 records; SHA-256 `0f09c1ed08ca140069792249c6a9235cc857277382605bc2152bf1e2c491012c` |
 | [Emergency Break arithmetic evaluation](emergency-break-arithmetic-evaluation.png) | `0005-emergency-break-arithmetic.png` | Select **Emergency Break** from the main client's System Menu; in the separately targeted `cold-load` client type `(+ 40 2)` and send End; the breakpoint prints `42` | 2026-07-19 08:15:35 EDT | 40 records; SHA-256 `f9e8fa29298c2d6c48f5a190bc6aadcebd353fcd941f8d1df8fe94ab03a74398` |
@@ -605,6 +640,7 @@ other transform.
 | `zmacs-list-buffers-pointer-documentation.png` | 3,073 | 1200 by 900 | `21bc8582103ceca9cb77b8c4201afb3f5795e4cb1346751141a55bb409fde3eb` | `2f02cae693e344712b4ab0b9d83cd24c23c1189e227764f21c535866856e9670` |
 | `zmacs-list-buffers-generic-operation-menu.png` | 3,658 | 1200 by 900 | `4aa320fc70babdaff198cccb13f64731780faf71ee07de6bd7da0badc090585f` | `57a71c53d12eac6afe5ac4697ffaa341570fce5e928322e4713ee547dfe3d256` |
 | `zmacs-edit-buffers-marked-delete.png` | 2,097 | 1200 by 900 | `72ab740da8adc1cbe6c1b784ece34679b5b21d12ad01a54a686d53badc1b1de0` | `61469b3f957c209b6860ef00c273393968fc0b735a49466ccce01b992b5ce133` |
+| `zmacs-character-style-prompt.png` | 1,545 | 1200 by 900 | `e83d3cd7c59bdae6c6b3d2054af57602aa2f9e99cb07378ac497ca1755bbcf09` | `67474be07dd5519bc7f1935deb084ccf18b0855087a5e9c5eb77747e84cfbf7e` |
 | `dynamic-lisp-listener-multiple-values.png` | 11,824 | 1200 by 900 | `39061d7b9ea5b55428020cfaf7558b5566c101ab56822cbd951905c520c3ebac` | `99003664b87974790051046a01a9579ffa77b48e25e2d7c406e7c87e42ee5c37` |
 | `system-menu.png` | 15,215 | 1200 by 900 | `e1a8a968d891e68e9f4315ee7d943d4b0b1fb70b103226402ba64d23f91a5d66` | `3a233d323b245d7d7da5587b014bd47ac12f29fa239972871c9f22e6b32358af` |
 | `emergency-break-arithmetic-evaluation.png` | 1,712 | 1024 by 768 | `b7edcce3ba94e9601335ac280438988d5ae40451c1f2235f2b5fe786f8736eb6` | `219c9bce8d7771553141df4873aced28255317f6e7b1cd9700c61ef5ac834445` |
@@ -648,6 +684,19 @@ The base and private world hashes remained identical. The harness did not invoke
 Genera's Save World and created no host-process checkpoint. Whether an independent
 in-guest save or checkpoint occurred remains unknown; no persistence claim is inferred
 from the screenshots.
+
+### Character-style prompt session
+
+The shutdown prompt was observed, `yes` was sent and accepted, and cleanup progress
+was visible before the known Cold Load channel mutex stall required bounded host
+termination. The final record sets `forced_stop=true`,
+`forced_after_confirmed_shutdown_stall=true`, `state_may_be_incomplete=true`, and
+`orderly_vlm_host_shutdown=false`.
+
+The private world remained byte-identical to the base world. The harness invoked
+neither Save World nor a process checkpoint; `save_world_performed` and
+`guest_checkpoint_created` remain unknown, the unsaved editor state was discarded,
+and no session process remained.
 
 ### Edit Buffers session
 
@@ -815,6 +864,10 @@ initial disconnected state.
 See [Zmacs in Symbolics Genera](../../genera/zmacs.md) for the behavior these images
 support and [the Genera computer-use harness](../../genera/genera-computer-use-harness.md)
 for the capture and isolation model.
+
+The character-style prompt supports
+[Inks, faces, and character styles in Symbolics
+Genera](../../genera/inks-faces-and-character-styles.md).
 
 The core-session captures support [the Dynamic Lisp Listener](../../genera/dynamic-lisp-listener.md),
 the [D01 Listener specification](../../lisp-listeners-reimplementation-specification.md),

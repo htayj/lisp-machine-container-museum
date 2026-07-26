@@ -3,7 +3,7 @@ type: Rights Review
 title: Publishing runtime screenshots for museum documentation
 description: Capture-specific U.S. copyright review and publication policy for CADR and Genera runtime screenshots used as historical evidence.
 tags: [screenshots, copyright, fair-use, preservation, cadr, genera]
-timestamp: 2026-07-19T21:25:12-04:00
+timestamp: 2026-07-26T07:35:00-04:00
 ---
 
 # Publishing runtime screenshots for museum documentation
@@ -58,13 +58,15 @@ The corresponding Genera review covered local sessions `zmacs-research`,
 generation numbers recorded in the asset catalog, plus
 `d46-network-services-genera-20260718`, generation 2, and
 `d04-emergency-break-publication-20260719`, generation 1, and
-`d06-edit-buffers-genera-20260719`, generation 1. The first sessions were
+`d06-edit-buffers-genera-20260719`, generation 1, plus
+`ink-face-20260726`, generation 1. The first sessions were
 captured on 2026-07-18 and the D04 and D06 sessions on 2026-07-19 from the same
-identified Genera 8.5 world. This earlier set of thirty-three screens passed review
+identified Genera 8.5 world; the character-style session used that same identified
+world on 2026-07-26. This earlier set of thirty-three screens passed review
 for publication in the
 [curated Genera screenshot catalog](assets/genera-screenshots/index.md). The
-separately reviewed D10 Terminal capture below brings the current catalog total to
-thirty-four:
+separately reviewed D10 Terminal capture and the 2026-07-26 character-style prompt
+bring the current catalog total to thirty-five:
 
 | Curated capture | Documentary purpose | Conclusion |
 | --- | --- | --- |
@@ -101,6 +103,7 @@ thirty-four:
 | `screen-hardcopy-options.png` | Shows the complete Screen hardcopy option form, including capture sources, cursor inclusion, destination, announcement, and shutter-trigger controls | Publish the cropped form only beside Function-Q analysis; do not infer that a capture, file write, or printer submission occurred |
 | `network-service-registry-disabled.png` | Shows a researcher-entered read-only report of server policy, 47 core registrations, and selected registered/enabled pairs, all disabled, with optional Domain and Site-NAMES contacts absent | Publish only beside analysis of service registration, enablement, and the base-world load boundary; no service output, configured site data, installed Help, or network transaction is shown |
 | `zmacs-edit-buffers-marked-delete.png` | Shows the true Edit Buffers application after exact recorded `Control-X Control-Shift-B` input and the visible `D` action produced by lowercase `d` | Publish beside D06 analysis of Edit Buffers' row/action model; no deletion was executed, and the image does not establish `Abort`, List Buffers, Dired, or source-to-world identity |
+| `zmacs-character-style-prompt.png` | Shows a sparse Zmacs buffer containing researcher-authored text and the live `Change style of character to [default NIL.NIL.NIL]:` prompt | Publish only beside analysis of the semantic character-style system and its editor customization path; it does not establish completion choices, a successful style mutation, font identity, or general Genera appearance |
 
 These screens contain functional interface layout, short labels, status
 information, blank forms, and researcher-entered text. Genera captures that retain startup context also
@@ -130,6 +133,22 @@ The Genera full-Help and command-list captures were not approved as a bulk
 publication set. A particular screen containing more installed explanatory
 prose can still receive a separate review when the prose itself is necessary to
 an article's analysis, but convenience or visual interest is not enough.
+
+### Character-style prompt reviewed 2026-07-26
+
+The exact `zmacs-character-style-prompt.png` capture was reviewed for
+[Inks, faces, and character styles in Symbolics
+Genera](genera/inks-faces-and-character-styles.md). Its purpose is scholarly and
+transformative: it makes the source-derived distinction between semantic styles and
+concrete fonts checkable against one live editor state. The display is predominantly
+functional—a blank editor surface, one researcher-written test line, a mode line,
+and a short generated prompt—and contains no source, manual or Help prose, extracted
+font sheet, artwork, or user data. One full client frame is used because the editor,
+prompt, mode line, and who-line relationship are the visible claim; no interaction
+sequence or gallery is published. The image cannot substitute for Genera, its
+licensed media, documentation, font assets, or editor functionality. All four
+section 107 factors therefore support this limited use. This conclusion does not
+approve the other raw captures from the session or decorative reuse.
 
 ### Reimplementation-specification reuse reviewed 2026-07-19
 

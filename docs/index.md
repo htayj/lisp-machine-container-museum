@@ -245,6 +245,10 @@ machine-readable metadata layer while retaining ordinary Markdown as the source.
   distinguishes indexed and direct color, inventories the complete Color Editor and
   Palette interactions, and analyzes the CADR color substrate plus COLORHACK,
   COLXOR, and CAFE without inventing lineage.
+- [Inks, faces, and character styles in Symbolics Genera](genera/inks-faces-and-character-styles.md)
+  explains semantic family/face/size styles, per-device raster-font mapping, Zmacs
+  and hardcopy customization, native colors and stipples, and the distinct CLIM ink
+  model with source and runtime evidence.
 - [Images, drawing primitives, and visual-asset substrates](images-drawing-and-visual-asset-substrates.md)
   maps Genera's BITBLT, Dynamic Windows drawing, image objects and formats,
   compression, FrameThrower hardware, and complete installed asset census while
