@@ -3,7 +3,7 @@ type: Editorial Guide
 title: CADR and Genera interface style guide
 description: Evidence-grounded visual, typographic, interaction, and web implementation guidance for recreating MIT CADR and Symbolics Genera interface styles without importing a generic retro aesthetic.
 tags: [mit-cadr, lm-3, genera, interface-design, web-design, typography, dynamic-windows, tv]
-timestamp: 2026-07-26T10:15:00-04:00
+timestamp: 2026-07-26T11:22:00-04:00
 ---
 
 # CADR and Genera interface style guide
@@ -322,8 +322,11 @@ The System 303 capture separates three bottom functions:
 3. a status line showing user, keyboard/process context, and other state.
 
 Do not compress these into a floating toast. Use stable horizontal bands. Reverse
-video is appropriate for a selected/status band when it matches the chosen
-application profile.
+video is appropriate only where it matches the chosen release and band. In the
+reviewed System 303 capture, both who-line rows use ordinary black-on-white video.
+In the reviewed Genera 8.5 captures, the pointer-documentation row is white on black
+and the status row immediately beneath it returns to black on white. Do not apply
+the Genera documentation row's reverse video to the complete who-line region.
 
 ### Scrollbars and cursors
 
@@ -715,13 +718,18 @@ pattern assets.
 .lm-who-line {
   display: grid;
   grid-template-rows: 1lh 1lh;
-  color: #fff;
-  background: #000;
+  color: var(--ink);
+  background: var(--paper);
 }
 
 .lm-who-line > * {
   overflow: hidden;
   white-space: nowrap;
+}
+
+[data-lm-profile="genera"] .lm-who-line__documentation {
+  color: var(--paper);
+  background: var(--ink);
 }
 
 [data-lm-profile="cadr"] {

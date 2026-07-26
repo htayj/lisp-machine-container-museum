@@ -3,7 +3,7 @@ type: Preservation Note
 title: Publishing the museum documentation site
 description: Build, visual-profile, interaction, font-provenance, validation, and GitHub Pages publication contract for the Lisp Machine Museum knowledge base.
 tags: [documentation, github-pages, genera, fonts, preservation]
-timestamp: 2026-07-26T11:21:00-04:00
+timestamp: 2026-07-26T11:23:00-04:00
 ---
 
 # Publishing the museum documentation site
@@ -23,7 +23,8 @@ captures behind that guide:
 - square, one-pixel framed program and pane boundaries;
 - one-bit black-on-white typography using Genera font families;
 - a title/status pane, display pane, command pane, narrow scroll margin, and
-  permanent two-line bottom status area;
+  permanent two-line bottom status area whose pointer-documentation row is
+  white-on-black and whose lower status row is black-on-white;
 - textual presentations rather than colored link badges;
 - a transient titled, three-column System Menu with a hard 50%-gray stippled
   lower-right shadow;

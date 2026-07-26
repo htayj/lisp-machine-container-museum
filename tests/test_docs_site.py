@@ -67,6 +67,15 @@ class DocsSiteTests(unittest.TestCase):
             'window.visualViewport?.addEventListener("resize"', javascript
         )
 
+    def test_site_uses_genera_split_who_line_polarity(self) -> None:
+        css = (REPOSITORY / "site" / "style.css").read_text(encoding="utf-8")
+        who_line = css.split(".who-line {", 1)[1].split("}", 1)[0]
+        pointer = css.split(".pointer-documentation {", 1)[1].split("}", 1)[0]
+        self.assertIn("color: var(--ink)", who_line)
+        self.assertIn("background: var(--paper)", who_line)
+        self.assertIn("color: var(--paper)", pointer)
+        self.assertIn("background: var(--ink)", pointer)
+
     def test_rewrite_markdown_links_preserves_fragments_and_external_links(self) -> None:
         source = (
             '<a href="../genera/index.md#articles">Genera</a>'

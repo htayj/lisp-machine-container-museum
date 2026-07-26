@@ -440,8 +440,8 @@ input[type="search"]::-webkit-search-cancel-button {
 .who-line {
   display: grid;
   grid-template-rows: 21px 21px;
-  color: var(--paper);
-  background: var(--ink);
+  color: var(--ink);
+  background: var(--paper);
   font-size: 11px;
 }
 
@@ -456,7 +456,8 @@ input[type="search"]::-webkit-search-cancel-button {
 }
 
 .pointer-documentation {
-  border-bottom: 1px solid var(--paper);
+  color: var(--paper);
+  background: var(--ink);
   font-family: "Genera JESS", "Genera CPTFONT", monospace;
   font-size: 13px;
 }
