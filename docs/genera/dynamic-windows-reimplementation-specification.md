@@ -3,7 +3,7 @@ type: Reimplementation Specification
 title: Symbolics Genera Dynamic Windows reimplementation specification
 description: A reconstruction-grade D0-D4 semantic and behavioral specification of Genera's presentation substrate, typed input and output, handlers, commands, formatted output, redisplay, graphics, program frameworks, and reusable clients, with D5 reserved for exact historical source compatibility.
 tags: [genera, dynamic-windows, presentations, command-processor, reimplementation, specification, preservation]
-timestamp: 2026-07-19T10:35:00-04:00
+timestamp: 2026-07-26T20:15:00-04:00
 ---
 
 # Symbolics Genera Dynamic Windows reimplementation specification
@@ -126,6 +126,7 @@ exact Genera TV parity beyond that boundary remains out of scope and `TODO-RUNTI
 | Output and redisplay | Formatted-output, displayed-presentation, Dynamic Window, and redisplay modules | Base world retains presentation-sensitive output histories and redisplay machinery | Presentation Inspector, Display Debugger, Frame-Up, Inspector, and Accepting Values redraw semantic output | `G8-MAN`, `UIST89` |
 | Frameworks and panes | Framework generator, pane registry, Accepting Values, layout designer | Numerous resident applications are concrete program frameworks | Frame-Up split a pane and returned; standalone Set GC Options form accepted navigation and pointer abort | `G8-MAN` |
 | Graphics | Graphics generics, patterns, raster mixin, viewport operations, graphing, binary graphics | Resident drawing applications and display programs use the facilities | Graphic and raster applications, Frame-Up model, and presentation highlighting draw in the live world | `G8-MAN`; later source extends the paper-era account |
+| Viewport-aware margins | Ragged-border predicates, horizontal and vertical raster renderers, margin allocation, scroll-position invalidation, and standard pane compositions | The reviewed Debugger/Listener capture shows one active top edge; an active side edge remains `TODO-RUNTIME` | No manual claim is required for the source-profile contract |
 
 The world/compiled column is established by resident behavior and introspection of the
 preserved world, not by extracting proprietary machine code into the repository.
@@ -148,6 +149,7 @@ into the running world.
 | Commands | `cp/comtab.lisp.~103~:55-423`; `cp/command-processor.lisp.~318~:532-2596`; `cp/read-accelerated-command.lisp.~142~:55-831`; `cp/substrate-commands.lisp.~6~:99-299` | Resident listeners/frameworks exercise commands; the selected prefix and argument grammar is source-grounded, while loaded-table conflicts and prefix-Help presentation remain `TODO-RUNTIME` | `G8-MAN` Command Processor chapters; `UIST89` application construction |
 | Formatted output/redisplay | `formatted-output.lisp.~397~:76-2681`; `redisplay.lisp.~185~:57-2590` | Visible framework redisplay is `G85-RUN`; two-pass counters and pixel-copy ordering are `TODO-RUNTIME` | `G8-MAN` output, replay, and incremental-redisplay chapters |
 | Graphics | `graphics-flavors.lisp.~21~:59-192`; `graphics-generics.lisp.~246~:123-4005`; `raster-graphics-mixin.lisp.~157~:57-2393`; `define-viewport-graphics-operation.lisp.~62~:57-1459` | Live clients draw and highlight; primitive edge/raster cases are `TODO-RUNTIME` | `G8-MAN` graphics overview/dictionary; the later source exceeds `UIST89`'s paper-era account |
+| Viewport-aware ragged margins | `dynamic-window-mixins.lisp.~204~:1260-1405,2808-2852`; `dynamic-window.lisp.~625~:3082-3089`; `dynamic-window-flavors.lisp.~29~:157-171` | A top ragged edge and straight sides are visible in `debugger-dynamic-choices.png`; active left/right states remain `TODO-RUNTIME` | Source-profile rule; see the [ragged-border analysis](ragged-window-borders.md) |
 | Frameworks/panes/activities | `program-framework-panes.lisp.~32~:58-459`; `define-program-framework.lisp.~332~:55-340,1106-1233,1343-1426,1726-1789`; `window/activities.lisp.~35~:65-554` | Frame-Up split-pane session is `G85-RUN`; exhaustive pane/lifecycle behavior is `TODO-RUNTIME` | `G8-MAN` framework and pane chapters |
 | Accepting Values/FQUERY/clients | `accept-values.lisp.~244~:105-1797`; `io1/fquery.lisp.~104~:55-327`; selected client modules | GC options is `G85-RUN`; the complete standalone and optional pane binding maps are source-grounded, while their exhaustive loaded-world exercise and generic menu/reorder/alter clients are `TODO-RUNTIME` | `G8-MAN` Accepting Values and query facilities |
 
@@ -1617,6 +1619,7 @@ DynamicWindowState {
   command_table_environment
   highlight_and_mouse_documentation_state
   graphics_medium_or_raster_adapter
+  ragged_margin_state = {left, top, right, bottom}
 }
 ```
 
@@ -1658,6 +1661,49 @@ box declares or can convert from its space. Scroll and pane movement translate b
 pointer hit testing transforms into the space in which the recorded operation was
 defined. Hardcopy may invert the vertical axis without changing the logical
 presentation geometry.
+
+### Viewport-aware ragged margins
+
+For a Dynamic Window with the ragged-border margin component, each edge MUST remain
+a straight rule when no retained extent continues beyond that edge and MUST become
+the repeating ragged rule when its predicate is true:
+
+```text
+left   = viewport.left > 0
+top    = secondary_viewport_exists OR viewport.top > 0
+right  = viewport.right < maximum_x_position
+bottom = secondary_viewport_exists OR viewport.bottom < maximum_y_position
+```
+
+The four values are independent except for the secondary-viewport rule, which forces
+both top and bottom true. The component MUST allocate and draw top and bottom.
+Left and right MUST also be allocated and drawn by default, but an application MAY
+disable that pair with the selected profile's `horizontal-too` option. Disabling the
+pair does not change the continuation predicates themselves.
+
+The horizontal and vertical ragged paths have a ten-device-pixel period. A strict
+visual implementation MUST preserve the selected source's right alignment for a
+partial horizontal period and bottom alignment for a partial vertical period. The
+configured thickness defaults to two pixels; allocation adds two pixels for the
+diagonal excursion. A false edge uses the same allocated margin and a straight
+filled rule rather than collapsing the margin.
+
+After viewport movement, the component MUST compare all enabled edge predicates with
+its cached state. It MUST erase the old form and draw the new form only for edges
+whose predicate changed. This update is margin raster output, not retained Dynamic
+Window output; it MUST NOT add presentation or redisplay records. If the pane is
+unavailable for drawing during a failed scroll, the backend MUST leave it marked for
+a complete margin repaint rather than commit cached state that disagrees with the
+visible edge. The last sentence is `INFERRED` recovery policy; the source establishes
+the ordinary erase/draw order but not a portable host failure protocol.
+
+**Evidence:** `G85-SRC`,
+`dynamic-window-mixins.lisp.~204~:1260-1405,2808-2852`,
+`dynamic-window.lisp.~625~:3082-3089`, and
+`dynamic-window-flavors.lisp.~29~:157-171`. The reviewed
+`debugger-dynamic-choices.png` is `G85-RUN` for one top-ragged, side-straight state.
+The [ragged-border analysis](ragged-window-borders.md) records the broader caller
+inventory and exact screenshot boundary. Active side edges remain `TODO-RUNTIME`.
 
 ### Process ownership, locks, and callbacks
 
@@ -2594,6 +2640,7 @@ provenance described below.
 | `DW-F11` | Default pane configuration | Omitted configuration places every declared pane in a vertical column and binds inferred role streams |
 | `DW-F12` | Activity reuse | Compatible existing frame is selected without destructive reinitialization |
 | `DW-F13` | Remote/plain stream | Typed input/query semantics degrade textually without fabricated spatial facilities |
+| `DW-F14` | Ragged margin state | Synthetic vertical and horizontal extents exercise all 16 four-edge predicate combinations allowed without a secondary viewport, both forced horizontal edges with a secondary viewport, the top/bottom-only option, straight-to-ragged and ragged-to-straight redraws, ten-pixel phase anchoring, and absence of presentation/output-history records from margin drawing |
 
 ### D4 client tests
 
@@ -2706,6 +2753,10 @@ claim.
   assuming spatial Dynamic Window operations.
 - `TODO-RUNTIME`: compare graphics transforms, raster edge rules, clipping,
   history-only/direct modes, mutable raster replay, and binary-graphics framing.
+- `TODO-RUNTIME`: create a synthetic horizontally oversized Dynamic Window and
+  capture right-only, left-and-right, and left-only ragged side states with exact
+  viewport coordinates and margin configuration; then exercise a secondary viewport
+  to confirm the source-defined forced top-and-bottom state.
 - `TODO-RUNTIME`: measure output-history reclamation and global handler-cache behavior
   to determine which `UIST89` limitations remain in System 452.22.
 - The D5 public API manifest and all `pending` selected-module entries in the coverage
@@ -2733,7 +2784,7 @@ The following are metadata for licensed local evidence; the files remain untrack
 | `sys.sct/dynamic-windows/define-type.lisp.~8~` | 43,218 | `f7505ed64460c90361b2cdfc09e2a96667dc1381a76270301233aa88573e4046` | Type-definition interface |
 | `sys.sct/dynamic-windows/define-handler.lisp.~12~` | 25,689 | `00d7c33ea97a342ff53877b8c33106f2b1730bb0fd86963d1a086e4bac883ab0` | Handler-definition interface |
 | `sys.sct/dynamic-windows/dynamic-input.lisp.~498~` | 55,058 | `a79805ece6844ccb568ecf97e2d818a0c6095e539e51fbf74423944a32b6dd8f` | Input contexts and typed interaction |
-| `sys.sct/dynamic-windows/dynamic-window-mixins.lisp.~204~` | 139,058 | `d1c9db01f37982f10efdd5f7f21dff938a437c4b1f80633c04054158be87a482` | Selected-window-sensitive presentation click routing |
+| `sys.sct/dynamic-windows/dynamic-window-mixins.lisp.~204~` | 139,058 | `d1c9db01f37982f10efdd5f7f21dff938a437c4b1f80633c04054158be87a482` | Selected-window-sensitive presentation click routing; ragged-margin rendering, allocation, state change, and presets |
 | `sys.sct/dynamic-windows/basic-handlers.lisp.~30~` | 58,716 | `3a85f039dbeb76b65401c0f88f1b1712cf9961645aee6f82c5bfb04c14c4303d` | Generic presentation, menu, marking, window-operation, and System Menu handlers |
 | `sys.sct/dynamic-windows/handler-debug.lisp.~33~` | 13,058 | `ff2081af4ac6b0c4c41446b2f12de971e6f16b8197cd8005a204bfca5c04007a` | Presentation-debugging gesture and menu handlers |
 | `sys.sct/dynamic-windows/presentation-inspector.lisp.~4053~` | 45,825 | `9f20e13acd39201e73fee30d6890275aaf9d0b745f6b2089dfad0e05869f494d` | Eight selected handler definitions/nine records plus local inspector commands; runtime screenshot proves only the exercised inspector path |
@@ -2758,6 +2809,7 @@ The following are metadata for licensed local evidence; the files remain untrack
 | `sys.sct/dynamic-windows/formatted-output.lisp.~397~` | 108,448 | `7317eee2b94d185f6f3ca51feed57a4adec7594760a81c17f7b55b043bb67de0` | Formatted output |
 | `sys.sct/dynamic-windows/redisplay.lisp.~185~` | 113,947 | `61134f02a3491966b3f45199af264e622b2004feccc3c2e3263e9866a99b699e` | Incremental redisplay |
 | `sys.sct/dynamic-windows/dynamic-window.lisp.~625~` | 177,680 | `92e9322d4e04020d014055ab452036ff7df2adfe13570eb8c99c02e369de55ca` | Dynamic Window stream/output history |
+| `sys.sct/dynamic-windows/dynamic-window-flavors.lisp.~29~` | 7,154 | `50fd3a8d734f63cdac289bac286056ade066a594039fe9dfd15402eefd7d1279` | Default Dynamic Window margin composition |
 | `sys.sct/dynamic-windows/graphics-flavors.lisp.~21~` | 6,763 | `afc6cdf307fd60d2df8f66fe498faa876a19720b0afd80a1854350c58a7036ae` | Drawing state |
 | `sys.sct/dynamic-windows/graphics-generics.lisp.~246~` | 182,943 | `76d11cb53809b2b96a07ed654fa57a63f52676a789978396e05a2b03d69576cd` | Graphics protocol/transforms/primitives |
 | `sys.sct/dynamic-windows/raster-graphics-mixin.lisp.~157~` | 118,783 | `c78ca3292c788f46a0fefdcd5f2f86357498dc48b7b583eef717831728024c09` | Raster execution and clipping |
@@ -2794,4 +2846,4 @@ provenance without exposing machine-specific paths.
   [Screen Editor and Frame-Up](../screen-editor-and-frame-up.md), and
   [Genera computer-use harness](genera-computer-use-harness.md).
 
-Last verified: 2026-07-19.
+Last verified: 2026-07-26.

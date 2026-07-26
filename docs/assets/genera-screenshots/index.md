@@ -86,6 +86,13 @@ changed-region optimization.
   prompt, cursor, who-line, and value-line ordering reviewed on 2026-07-19; the
   startup notice remains incidental context and the image is not a generic Genera
   illustration.
+- [`debugger-dynamic-choices.png`](debugger-dynamic-choices.png) is also embedded in
+  [Ragged window borders in Symbolics Genera](../../genera/ragged-window-borders.md).
+  Its additional use is limited to the visible top ragged edge, straight side edges,
+  left and bottom scroll margins, and bottom label surrounding the synthetic
+  Debugger/Listener state reviewed on 2026-07-18 and re-reviewed on 2026-07-26. The
+  image does not establish an active side-ragged state, the loaded source identity,
+  every viewport transition, or general Genera appearance.
 - [`system-menu.png`](system-menu.png) is also embedded in the [program selection,
   activities, and window management reimplementation
   specification](../../program-selection-activities-and-window-management-reimplementation-specification.md).

@@ -23,6 +23,10 @@ as its Virtual Lisp Machine implementation hosted on Unix.
   defines a reconstruction-grade contract for presentations, typed input, handlers,
   commands, output histories, formatted layout, redisplay, frameworks, panes, and
   reusable clients, with evidence status and conformance tests for each layer.
+- [Ragged window borders in Symbolics Genera](ragged-window-borders.md) explains the
+  top, bottom, left, and right zig-zag continuation indicators, their viewport
+  predicates, raster construction, standard margin compositions, application use,
+  reviewed visible evidence, and open side-edge runtime oracle.
 - [Dynamic Lisp Listener in Symbolics Genera](dynamic-lisp-listener.md) documents
   the evaluation loop, Command Processor, Input Editor, presentations, complete
   configured base bindings, history timing, and fresh Genera 8.5 behavior.

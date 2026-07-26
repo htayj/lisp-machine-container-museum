@@ -3,7 +3,7 @@ type: Guided Tour
 title: Finding your way around Genera 8.5
 description: Beginner orientation to Genera activities, Dynamic Windows, presentations, mouse gestures, Select keys, the System Menu, Command Processor, and first core workflows.
 tags: [genera, tour, manual, navigation, activities, presentations, system-menu]
-timestamp: 2026-07-26T19:20:00-04:00
+timestamp: 2026-07-26T20:15:00-04:00
 ---
 
 # Finding your way around Genera 8.5
@@ -127,6 +127,15 @@ document position, and button gestures provide movement with semantics owned by 
 window. Exact button and double-click behavior varies by scroll-window family. Do not
 infer modern “drag the thumb” behavior where the historical program defines a
 different mouse protocol.
+
+Watch the pane rule as well as the scrollbar. A `/\/\/\` top or bottom edge means
+that retained output continues beyond that edge (or that the pane is using a
+secondary viewport). Genera also has left and right versions for horizontal
+continuation; they are uncommon in ordinary text because the pane often has no
+horizontal offset or overflow. A straight edge means that continuation predicate is
+false, not that this pane uses a different decorative theme. See
+[Ragged window borders](../../genera/ragged-window-borders.md) for the four exact
+states and a reviewed example.
 
 ## Safe exploration boundaries
 

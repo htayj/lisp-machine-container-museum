@@ -68,6 +68,10 @@ machine-readable metadata layer while retaining ordinary Markdown as the source.
   specifies typed presentations, input contexts and handlers, commands, output
   histories, formatted layout, redisplay, frameworks, panes, and reusable clients
   against the preserved source tree, world, runtime, manuals, and 1989 paper.
+- [Ragged window borders in Symbolics Genera](genera/ragged-window-borders.md)
+  identifies the zig-zag edges as four-way viewport-continuation indicators,
+  including the less commonly seen left and right forms, their exact selected-source
+  contract, application inventory, and reviewed runtime evidence.
 - [RPC, embedding, UX, and Macintosh integration](rpc-embedding-ux-and-macintosh-integration.md)
   traces the public CADR UNIX-interface boundary through Genera's typed RPC/XDR
   layers, host embedding, UX services, MacIvory and Macintosh integrations, and

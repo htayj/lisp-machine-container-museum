@@ -3,7 +3,7 @@ type: Historical Article
 title: The Genera Debugger and Display Debugger
 description: Evidence-bounded guide to Genera condition debugging, stack-frame evaluation, commands, traps, breakpoints, monitoring, and the pane-oriented Display Debugger.
 tags: [symbolics, genera, debugger, display-debugger, conditions, dynamic-windows]
-timestamp: 2026-07-19T08:40:05-04:00
+timestamp: 2026-07-26T20:15:00-04:00
 ---
 
 # The Genera Debugger and Display Debugger
@@ -423,10 +423,13 @@ state was changed by the form. A later clean `:Abort` returned to
 ![The Genera 8.5 ordinary Debugger displaying the synthetic Museum debugger probe condition, its selected command-loop frame, and two condition-specific restart choices.](../assets/genera-screenshots/debugger-dynamic-choices.png)
 
 *Runtime observation: this exact Genera 8.5 display records the ordinary
-Debugger before any proceed or mutation on 2026-07-18. It is published as the
-minimum visual evidence for its live condition choices and text-oriented frame
-view; Symbolics retains interests in the licensed historical software, and
-inclusion implies no endorsement.*
+Debugger before any proceed or mutation on 2026-07-18. The Dynamic Lisp Listener's
+top edge is visibly ragged while its side edges remain straight, a bounded runtime
+example of the [viewport-continuation border](ragged-window-borders.md). It is
+published as the minimum visual evidence for those visible claims and the
+Debugger's live condition choices and text-oriented frame view; Symbolics retains
+interests in the licensed historical software, and inclusion implies no
+endorsement.*
 
 ### Display Debugger entry caveat and live layout
 

@@ -3,7 +3,7 @@ type: Museum Guide
 title: Dynamic Windows and presentation-based interaction
 description: A source-, manual-, paper-, and runtime-grounded study of Genera's typed presentations, input contexts, handlers, command tables, output history, redisplay, program frameworks, and their CADR antecedents.
 tags: [genera, dynamic-windows, presentations, user-interface, command-processor, mit-cadr]
-timestamp: 2026-07-19T12:23:53-04:00
+timestamp: 2026-07-26T20:15:00-04:00
 ---
 
 # Dynamic Windows and presentation-based interaction
@@ -63,6 +63,23 @@ interface names, counts, hashes, and original analysis; it does not reproduce so
 listings or substantial Help prose. The runtime images are exact stills separately
 reviewed for their stated evidentiary uses. Raw captures and session state remain
 ignored.
+
+## Ragged borders communicate viewport continuation
+
+The zig-zag edge on a Dynamic Window is not generic chrome. The selected source
+defines independent left, top, right, and bottom predicates from the viewport
+coordinates and retained maximum extents. Top and bottom also become ragged when a
+secondary viewport exists. A rotated vertical renderer supplies the left and right
+forms, and side drawing is enabled by default, although most text panes do not
+horizontally pan far enough to display it.
+
+The margin component caches those four states and redraws only an edge whose state
+changes after scrolling. That makes the pattern part of Dynamic Windows' live
+output-history navigation language: it signals unseen retained space without
+becoming part of the output history or a presentation. The detailed
+[ragged-border study](genera/ragged-window-borders.md) gives the exact predicates,
+ten-pixel raster construction, standard margin compositions, caller inventory,
+reviewed runtime example, and the still-open side-edge runtime oracle.
 
 ## The model in one interaction
 

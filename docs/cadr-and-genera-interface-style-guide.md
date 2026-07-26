@@ -3,7 +3,7 @@ type: Editorial Guide
 title: CADR and Genera interface style guide
 description: Evidence-grounded visual, typographic, interaction, and web implementation guidance for recreating MIT CADR and Symbolics Genera interface styles without importing a generic retro aesthetic.
 tags: [mit-cadr, lm-3, genera, interface-design, web-design, typography, dynamic-windows, tv]
-timestamp: 2026-07-26T19:45:00-04:00
+timestamp: 2026-07-26T20:15:00-04:00
 ---
 
 # CADR and Genera interface style guide
@@ -500,6 +500,23 @@ The enclosing TV window may add:
 
 Do not apply every decoration to every surface. The live System Menu has a shadow;
 the underlying Listener is a framed application surface, not another floating card.
+
+The `/\/\/\` edge seen on some Dynamic Windows panes is a **ragged border**, and it
+has a specific meaning: retained content continues beyond that viewport edge. Top
+and bottom report vertical continuation; left and right report horizontal
+continuation. The side renderer exists and is enabled by default, but it is less
+often visible because ordinary text panes commonly remain at horizontal origin zero
+and do not overflow their right edge. A source-visible Notifications configuration
+turns the side pair off explicitly.
+
+Do not place the pattern on all four edges as decoration. Start with straight rules,
+then make only the edge whose overflow predicate is true ragged. Use the source
+profile's ten-pixel repeat at native or integer-scaled pixels; do not let browser
+zoom resample a bitmap border independently of the pane. Preserve partial-repeat
+phase at the right for horizontal edges and at the bottom for vertical edges. The
+complete predicates, drawing contract, application inventory, and reviewed
+horizontal example are in
+[Ragged window borders in Symbolics Genera](genera/ragged-window-borders.md).
 
 ### Dynamic Windows menus
 
