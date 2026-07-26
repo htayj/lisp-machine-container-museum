@@ -1,8 +1,8 @@
 # Curated Genera runtime screenshots
 
 This directory contains thirty-five narrowly selected screen captures used to document
-visible application behavior in the museum's Genera 8.5 world, plus one two-frame
-teaching animation assembled from two complete reviewed captures. Thirty-three stills are exact
+visible application behavior in the museum's Genera 8.5 world, plus twelve short
+teaching animations assembled from complete reviewed captures. Thirty-three stills are exact
 byte-for-byte copies of captures produced by the Xvfb computer-use harness. The two
 Hardcopy images are documented crops of raw captures that remove an unrelated Listener
 and exploratory debugger state. The licensed world, raw sessions, JSON sidecars, logs,
@@ -49,27 +49,26 @@ under applicable law.
 
 ## Approved specification uses
 
-- The [Genera Tour orientation](../../tour/genera/orientation.md) may use
-  `dynamic-lisp-listener-multiple-values.png` and `open-system-menu.gif`; its
-  [application atlas](../../tour/genera/applications.md) may use
-  `document-examiner-initial.png` and `accepting-values-gc-options.png`. These uses
-  are limited to teaching the visible Listener, Shift-Right menu result, Document
-  Examiner layout, and presentation-based form language beside substantive,
-  release-bounded explanation. The GIF alternates the complete reviewed Listener
-  and System Menu captures with 2.4-second pauses. It is expressly a comparison of
+- The [linear Genera working-session tour](../../tour/genera/guided-session.md),
+  [orientation](../../tour/genera/orientation.md), and
+  [application atlas](../../tour/genera/applications.md) may use the reviewed
+  stills and twelve animations cataloged below. These uses are limited to teaching
+  the exact visible Listener, System Menu, Zmacs, Help, buffer-presentation,
+  character-style, Document Examiner, Presentation Inspector, Frame-Up, Debugger,
+  Accepting Values, compiler, communications, and administration states beside
+  substantive release-bounded explanation. Each GIF is expressly a comparison of
   separately captured states, not a real-time sequence, and adds no screen pixels,
   licensed prose, or intermediate-state claim.
 
-For that animation specifically, the purpose is nonprofit instruction and criticism
-of the verified Shift-Right System Menu result; the displayed Listener and menu are
-predominantly functional; two complete frames are the minimum that preserves the
-screen/menu relationship without inventing an intermediate sequence; and the inert
-4.8-second loop cannot select an activity, operate Genera, or substitute for the
-world, source, documentation, fonts, or a license. Those four factors support the
-same limited fair-use conclusion as the source stills.
-`scripts/build-tour-animations.sh` assembles the tracked sources with ImageMagick
-7.1.2-27, exact per-frame delay 240 centiseconds, infinite loop, and lossless
-changed-region optimization.
+For these animations specifically, the purpose is nonprofit instruction and
+criticism of verified gestures, activity selections, and context changes; the
+displayed material is predominantly functional; two or three complete frames are
+the minimum needed to preserve each relationship; and the inert loops cannot select
+an activity, operate Genera, or substitute for the world, source, documentation,
+fonts, or a license. Those four factors support the same limited fair-use conclusion
+as the source stills. `scripts/build-tour-animations.sh` verifies every source-frame
+digest and assembles the tracked sources with ImageMagick 7.1.2-27, exact per-frame
+delay 240 centiseconds, infinite loop, and lossless changed-region optimization.
 
 - [`zmacs-character-style-prompt.png`](zmacs-character-style-prompt.png) is embedded
   only in [Inks, faces, and character styles in Symbolics
@@ -665,6 +664,39 @@ the final keystroke.
 | [Disabled network-service registry](network-service-registry-disabled.png) | `0001-service-registry.png` | Read the two policy variables, count 47 registrations, and print selected registered/enabled pairs; every selected service is disabled and optional Domain/Site-NAMES contacts are absent | 2026-07-18 10:58:40 EDT | 2 records; SHA-256 `6594cfb4374da911d4d97874aac1d4a81a0a86b556cbb18f7d8fe392e0627be1` |
 | [Terminal disconnected state](terminal-disconnected.png) | `0003-terminal-disconnected.png` | Complete local login and invoke `Select T`; the untouched Terminal displays `Connect: (the name of a host)`, `Terminal 1`, a blank output surface, left scrollbar and who-line before any peer or Help interaction | 2026-07-19 20:18:51 EDT | 4 records; SHA-256 `e0cdc56994bf9a29b69d4c5f08391df47821eeec0ff418d11f5561bc2437dc52` |
 | [Open System Menu teaching loop](open-system-menu.gif) | Derived from tracked `dynamic-lisp-listener-multiple-values.png` and `system-menu.png` | Alternate the two complete reviewed states with 2.4-second pauses; no resize, crop, annotation, or synthesized intermediate frame | Rebuilt 2026-07-26 | GIF SHA-256 `946bb4b482cf3ed4688ff30058e80ad91555916c0a352a4690c069a423137d9f`; source-frame provenance is retained in their rows above |
+| [Select Editor teaching loop](select-editor.gif) | Derived from `dynamic-lisp-listener-multiple-values.png` and `zmacs-two-window-layout.png` | Compare the Listener with the reviewed `Select E` result; no creation/reuse-policy branch or transition timing claimed | Rebuilt 2026-07-26 | GIF SHA-256 `5dfd2153b5e6069ca139a525cd047f9ca00dc877cfc9d7179579017a3c7032cf`; source provenance is retained above |
+| [Open Zmacs Help teaching loop](open-zmacs-help.gif) | Derived from `zmacs-two-window-layout.png` and `zmacs-help-dispatcher.png` | Teach the visible contextual Help result; no dispatcher timing or omitted prompt claimed | Rebuilt 2026-07-26 | GIF SHA-256 `047c2e91b301198e628c084bb711cfb9af9b088c2001e04b5b97d7a6b69cef3a`; source provenance is retained above |
+| [Open Zmacs Editor menu teaching loop](open-zmacs-editor-menu.gif) | Derived from `zmacs-two-window-layout.png` and `zmacs-editor-menu.png` | Teach the visible menu result without claiming pointer motion, timing, or every item action | Rebuilt 2026-07-26 | GIF SHA-256 `c4c0a3154333c9c8523260569849e2e9d4efc72e9ef2a15f38886a0a8c18d553`; source provenance is retained above |
+| [Buffer presentation operation teaching loop](operate-on-buffer.gif) | Derived from `zmacs-list-buffers.png`, `zmacs-list-buffers-pointer-documentation.png`, and `zmacs-list-buffers-generic-operation-menu.png` | Teach base, pointer-documentation, and operation-menu states for the verified buffer presentation; pointer path and menu latency omitted | Rebuilt 2026-07-26 | GIF SHA-256 `7078fc95e4459a00dbe10329da248804f790dbfd5dca3feff36ec656b0e1f45d`; source provenance is retained above |
+| [Character-style prompt teaching loop](prompt-character-style.gif) | Derived from `zmacs-two-window-layout.png` and `zmacs-character-style-prompt.png` | Teach the visible start of the style input transaction; no successful change or device mapping claimed | Rebuilt 2026-07-26 | GIF SHA-256 `ef2e1f7f7ee9dd17754eea78eec02da621c9088796eb77cce6afe3b25d9c6a15`; source provenance is retained above |
+| [Select Document Examiner teaching loop](select-document-examiner.gif) | Derived from `dynamic-lisp-listener-multiple-values.png` and `document-examiner-initial.png` | Compare the Listener with the reviewed `Select D` result without reproducing installed documentation prose | Rebuilt 2026-07-26 | GIF SHA-256 `8419674976ebfc7599c0e9609389e0e434f4c47e5ad31cc36b589f0ca22875d2`; source provenance is retained above |
+| [Inspect presentation teaching loop](inspect-presentation.gif) | Derived from `presentation-inspector-integer.png` and `presentation-inspector-handler-report.png` | Teach the verified integer-presentation and handler-report states; command-entry timing and further pages omitted | Rebuilt 2026-07-26 | GIF SHA-256 `c840e7f559f08a5812a2f2ba4ddde66ebe484924b906c21c42fe5746b63b0ef3`; source provenance is retained above |
+| [Frame-Up reshape teaching loop](reshape-screen.gif) | Derived from `dynamic-lisp-listener-multiple-values.png` and `frame-up-split-layout.png` | Compare the Listener with the reviewed split result; pointer motion and intermediate geometry omitted | Rebuilt 2026-07-26 | GIF SHA-256 `7871e601aa145f0fe46980af109bd4f9608ef9af039a930d5f975dd44d043d29`; source provenance is retained above |
+| [Enter Debugger teaching loop](enter-debugger.gif) | Derived from `dynamic-lisp-listener-multiple-values.png` and `debugger-dynamic-choices.png` | Compare ordinary input with the reviewed synthetic Debugger state; no universal restart-choice claim | Rebuilt 2026-07-26 | GIF SHA-256 `053cc4078c7269ed6406ee03977649098cc1736977d2a7849964c82579b82064`; source provenance is retained above |
+| [Accepting Values teaching loop](open-gc-options.gif) | Derived from `dynamic-lisp-listener-multiple-values.png` and `accepting-values-gc-options.png` | Teach the visible GC-options form without claiming an option change or collector effect | Rebuilt 2026-07-26 | GIF SHA-256 `1a0d8b25581bcd8594c48a43f1f1285cb9b8fec272bc6674e90d2abf81c85248`; source provenance is retained above |
+| [Compiler tools teaching loop](macroexpand-and-disassemble.gif) | Derived from `dynamic-lisp-listener-multiple-values.png` and `compiler-macroexpand-disassembly.png` | Compare the Listener with the verified synthetic macroexpansion/disassembly result; intermediate command entry omitted | Rebuilt 2026-07-26 | GIF SHA-256 `3addc1be4fad9a517fccd8342801c97fed6a35098b464f9663f25a135a7823f4`; source provenance is retained above |
+
+## Tour animation identities
+
+All twelve files use a 1200-by-900 logical canvas, infinite looping, and
+240-centisecond delays on every frame. ImageMagick's lossless changed-region
+optimization may store later GIF frames as smaller rectangles while preserving that
+logical canvas.
+
+| Animation | Bytes | Frames | GIF SHA-256 |
+| --- | ---: | ---: | --- |
+| `open-system-menu.gif` | 54,613 | 2 | `946bb4b482cf3ed4688ff30058e80ad91555916c0a352a4690c069a423137d9f` |
+| `select-editor.gif` | 52,328 | 2 | `5dfd2153b5e6069ca139a525cd047f9ca00dc877cfc9d7179579017a3c7032cf` |
+| `open-zmacs-help.gif` | 12,753 | 2 | `047c2e91b301198e628c084bb711cfb9af9b088c2001e04b5b97d7a6b69cef3a` |
+| `open-zmacs-editor-menu.gif` | 17,877 | 2 | `c4c0a3154333c9c8523260569849e2e9d4efc72e9ef2a15f38886a0a8c18d553` |
+| `operate-on-buffer.gif` | 15,321 | 3 | `7078fc95e4459a00dbe10329da248804f790dbfd5dca3feff36ec656b0e1f45d` |
+| `prompt-character-style.gif` | 13,789 | 2 | `ef2e1f7f7ee9dd17754eea78eec02da621c9088796eb77cce6afe3b25d9c6a15` |
+| `select-document-examiner.gif` | 61,889 | 2 | `8419674976ebfc7599c0e9609389e0e434f4c47e5ad31cc36b589f0ca22875d2` |
+| `inspect-presentation.gif` | 30,911 | 2 | `c840e7f559f08a5812a2f2ba4ddde66ebe484924b906c21c42fe5746b63b0ef3` |
+| `reshape-screen.gif` | 53,142 | 2 | `7871e601aa145f0fe46980af109bd4f9608ef9af039a930d5f975dd44d043d29` |
+| `enter-debugger.gif` | 57,157 | 2 | `053cc4078c7269ed6406ee03977649098cc1736977d2a7849964c82579b82064` |
+| `open-gc-options.gif` | 64,063 | 2 | `1a0d8b25581bcd8594c48a43f1f1285cb9b8fec272bc6674e90d2abf81c85248` |
+| `macroexpand-and-disassemble.gif` | 56,811 | 2 | `3addc1be4fad9a517fccd8342801c97fed6a35098b464f9663f25a135a7823f4` |
 
 ## Image identities
 

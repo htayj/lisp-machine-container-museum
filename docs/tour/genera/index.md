@@ -1,43 +1,46 @@
 # Tour of Symbolics Genera
 
-This tour uses the licensed **Genera 8.5, System 452.22** base world exercised through
+Begin with [**A working session in Symbolics Genera**](guided-session.md). It is the
+primary tour: one continuous, screenshot-rich story in which you use the Dynamic
+Lisp Listener and Command Processor, open the System Menu, move into Zmacs, ask for
+Help, operate on presentations, consult Document Examiner, inspect objects, reshape
+the screen, debug a condition, edit typed options, use compiler tools, and visit
+communications and administration activities.
+
+The tour uses the licensed **Genera 8.5, System 452.22** base world exercised through
 the isolated Genera Xvfb harness. The world is deliberately not configured as a
 Symbolics site: external routing and guest-visible file service are absent, and
-server names or menu entries therefore do not prove a working network service.
+registered programs or service declarations do not prove working remote services.
 
-## Your first hour
+## Choose how to read
 
-1. Learn the [screen, mouse, keyboard, presentation, and activity language](orientation.md).
-2. Evaluate a harmless expression in the Dynamic Lisp Listener.
-3. open the System Menu and distinguish selecting a window from starting a program.
-4. use `Select E` to reach the Editor and ask for Zmacs Help.
-5. use `Select D`, `Select I`, and `Select P` to visit Document Examiner, Inspector,
-   and Peek.
-6. Visit the [application atlas](applications.md) for mail, terminals, development
-   tools, administration, and optional products.
+1. [**Start the linear guided session**](guided-session.md) if this is your first
+   visit. Read it from top to bottom.
+2. Keep [Genera orientation](orientation.md) open as a compact reference for frame
+   regions, presentations, Select gestures, mouse buttons, Help, and Abort.
+3. Use the [application atlas](applications.md) after the story when you need the
+   exhaustive D01-D60 catalogue, optional-product boundaries, or a direct route to
+   a dossier.
 
-![Genera 8.5 Dynamic Lisp Listener displaying a form and three returned values.](../../assets/genera-screenshots/dynamic-lisp-listener-multiple-values.png)
+The atlas is intentionally not the main tour. It accounts for media-only products,
+unloaded systems, site services, destructive administration, and facilities whose
+runtime state cannot be demonstrated honestly in this world.
 
-*Runtime observation: the Genera 8.5 Dynamic Lisp Listener in the inspected base
-world. The image establishes the framed interactor, scrollbar, prompt and value
-ordering, and bottom status regions. It does not establish a configured site or
-every Genera release. Symbolics does not endorse this project.*
+## The story's route
 
-## The central idea: semantic interaction
+```text
+Dynamic Lisp Listener and Command Processor
+  → System Menu and activities
+  → Zmacs modes, Help, menus, buffers, and styles
+  → Document Examiner and typed presentations
+  → Inspector and Frame-Up
+  → Debugger and Accepting Values
+  → compiler and Flavor tools
+  → Terminal, Zmail, Converse, and Notifications
+  → Namespace and service administration boundaries
+```
 
-Genera often remembers what displayed text *means*. A pathname, command name, class,
-or object can be a **presentation**: moving the pointer over it changes the
-pointer-documentation line, and clicking may offer operations appropriate to that
-object. This is more than a hyperlink and more than a conventional widget. The
-current input context decides which translations are available.
+Short teaching GIFs illustrate the transitions and key gestures. They use complete
+reviewed frames and slow pauses; captions distinguish them from real-time recordings.
 
-Activities are similarly richer than modern process-launcher entries. `Select E`
-asks the activity machinery to find an appropriate Editor window or create one
-according to its policy. It does not necessarily start a fresh application.
-
-## Application coverage
-
-The [application atlas](applications.md) covers every Genera-relevant member of the
-D01-D60 catalog, including optional products that are present only as media, source,
-installed documentation, or declarations. Those entries explain the exact boundary
-instead of turning catalog presence into a runnable-world claim.
+[Begin: A working session in Symbolics Genera →](guided-session.md)

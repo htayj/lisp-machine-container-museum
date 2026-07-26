@@ -1,42 +1,46 @@
 # Tour of the MIT CADR / LM-3 environment
 
-This tour uses the preserved **System 303-0** load band exercised through the isolated
-CADR Xvfb harness. System 46 source is used to explain earlier lineage, but a gesture
-described as hands-on belongs to System 303 unless the text says otherwise.
+Begin with [**A working session on the MIT CADR**](guided-session.md). It is the
+primary tour: one continuous, screenshot-rich story in which you use the Listener,
+open the System menu, edit and ask for Help in Zmacs, inspect an object, watch
+processes in Peek, examine screen layout, trace and debug a function, visit terminal
+applications, use compiler tools, and finish with demonstrations and the emergency
+path.
 
-## Your first hour
+The tour uses the preserved **System 303-0** load band exercised through the isolated
+CADR Xvfb harness. System 46 and LM-3 source explain lineage and hidden behavior, but
+a step described as hands-on belongs to the inspected System 303 profile unless the
+text says otherwise.
 
-1. Learn the [screen, mouse, keyboard, and navigation language](orientation.md).
-2. Evaluate a harmless expression in the Lisp Listener.
-3. Open the System menu and notice the three different kinds of operation.
-4. Select Zmacs, create a scratch buffer, and ask for editor Help.
-5. Inspect a small Lisp object, then use Peek to observe processes.
-6. Visit the [application atlas](applications.md) to choose a deeper route.
+## Choose how to read
 
-![System 303 Lisp Listener showing one input form and its multiple returned values.](../../assets/mit-cadr-screenshots/lisp-listener-multiple-values.png)
+1. [**Start the linear guided session**](guided-session.md) if this is your first
+   visit. Read it from top to bottom.
+2. Keep [System 303 orientation](orientation.md) open as a compact reference for
+   screen regions, mouse buttons, System selection, Help, and Abort.
+3. Use the [application atlas](applications.md) after the story when you need an
+   exhaustive D01-D60 catalogue, preservation boundaries, or a direct route to a
+   dossier.
 
-*Runtime observation: the System 303 Lisp Listener after evaluating a
-researcher-entered form. The image establishes the main text area, mode line,
-input cursor, and bottom who-line arrangement; it does not claim that every listener
-release has identical geometry. MIT and the named contributors do not endorse this
-project.*
+The atlas is intentionally not the main tour. It accounts for infrastructure,
+unavailable products, destructive tools, and hardware-dependent programs that
+cannot be folded honestly into a first-person runnable story.
 
-## What makes this interface different
+## The story's route
 
-The screen is usually owned by one selected full-screen window. Other programs may
-still exist but be deexposed. You bring them forward with the System menu or a
-registered System-key selection gesture. Menus and the two-line area at the bottom
-tell you what a pointer button or current mode will do; watch them rather than
-expecting modern tooltips.
+```text
+Listener
+  → System menu
+  → Zmacs modes and Help
+  → Inspector and Peek
+  → Screen Editor
+  → Trace and Error Handler
+  → terminals and compiler tools
+  → QIX, Doctor, and Spacewar
+  → Emergency Break as a recovery boundary
+```
 
-The CADR keyboard has Control, Meta, Super, and Hyper modifiers. Do not treat Super
-and Hyper as decorative “extra Meta” keys: applications assign them distinct command
-families. The [complete modifier audits](../../mit-cadr/index.md#modifier-key-audits)
-are the reference when a tour uses one.
+Short teaching GIFs illustrate the transitions and key gestures. They use complete
+reviewed frames and slow pauses; captions distinguish them from real-time recordings.
 
-## Application coverage
-
-The [application atlas](applications.md) covers every CADR-relevant member of the
-D01-D60 catalog. A few facilities are source-visible but not runnable in this band;
-the atlas identifies those as boundaries and routes you to the source-grounded
-dossier rather than inventing a screen.
+[Begin: A working session on the MIT CADR →](guided-session.md)

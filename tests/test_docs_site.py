@@ -239,6 +239,12 @@ ENDFONT
             self.assertIn(f"Built {expected_pages} museum pages", result.stdout)
             self.assertTrue((output / "index.html").is_file())
             self.assertTrue((output / "tour" / "index.html").is_file())
+            self.assertTrue(
+                (output / "tour" / "mit-cadr" / "guided-session.html").is_file()
+            )
+            self.assertTrue(
+                (output / "tour" / "genera" / "guided-session.html").is_file()
+            )
             self.assertTrue((output / "genera" / "index.html").is_file())
             self.assertTrue((output / "mit-cadr" / "index.html").is_file())
             self.assertTrue((output / "style.css").is_file())
@@ -260,6 +266,19 @@ ENDFONT
                     / "open-system-menu.gif"
                 ).is_file()
             )
+            for relative in (
+                "assets/mit-cadr-screenshots/open-system-menu.gif",
+                "assets/mit-cadr-screenshots/open-zmacs-help.gif",
+                "assets/mit-cadr-screenshots/open-screen-editor.gif",
+                "assets/mit-cadr-screenshots/enter-error-handler.gif",
+                "assets/genera-screenshots/select-editor.gif",
+                "assets/genera-screenshots/open-zmacs-help.gif",
+                "assets/genera-screenshots/operate-on-buffer.gif",
+                "assets/genera-screenshots/select-document-examiner.gif",
+                "assets/genera-screenshots/inspect-presentation.gif",
+                "assets/genera-screenshots/open-gc-options.gif",
+            ):
+                self.assertTrue((output / relative).is_file(), relative)
             self.assertNotIn(
                 'href="genera/index.md"',
                 (output / "index.html").read_text(encoding="utf-8"),

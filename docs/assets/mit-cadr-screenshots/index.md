@@ -2,8 +2,8 @@
 
 This directory contains twenty-two reviewed runtime captures selected from thirteen
 provenance-bearing System 303 sessions—twenty-one exact full framebuffers and one
-documented crop that retains a complete application window—plus one two-frame
-teaching animation assembled from two of those exact captures. They are runtime observations, not
+documented crop that retains a complete application window—plus nine short
+teaching animations assembled from those exact captures. They are runtime observations, not
 manual illustrations and not claims about every CADR, application, or debugger release.
 
 ## Rights status
@@ -67,26 +67,27 @@ asset exclusion. MIT, LM-3, and the named contributors do not endorse this museu
 
 ## Approved specification uses
 
-- The [System 303 Tour orientation](../../tour/mit-cadr/orientation.md) may use
-  `lisp-listener-multiple-values.png`, `system-menu.png`, and
-  `zmacs-mode-switch.gif`; its [application atlas](../../tour/mit-cadr/applications.md)
-  may use `inspector-list.png` and `spacewar-game.png`. These uses are limited to
-  teaching the visible Listener, System Menu, Zmacs mode-line transition, Inspector
-  list, and Spacewar playfield beside substantive release-bounded explanation. The
-  GIF alternates the complete reviewed `zmacs-text-mode.png` and
-  `zmacs-lisp-mode.png` frames with 2.4-second pauses. It is explicitly labeled a
-  two-state teaching loop, not a real-time recording, and adds no screen pixels,
-  licensed prose, or intermediate-state claim.
+- The [linear System 303 working-session tour](../../tour/mit-cadr/guided-session.md),
+  [orientation](../../tour/mit-cadr/orientation.md), and
+  [application atlas](../../tour/mit-cadr/applications.md) may use the reviewed
+  stills and nine animations cataloged below. These uses are limited to teaching
+  the exact visible Listener, System Menu, Zmacs, Help, Inspector, Peek, Screen
+  Editor, trace, Error Handler, Emergency Break, terminal, compiler, Flavor, and
+  demonstration states beside substantive release-bounded explanation. Every GIF
+  alternates complete reviewed source frames with 2.4-second pauses. Each is labeled
+  a selected-state teaching loop, not a real-time recording, and adds no screen
+  pixels, licensed prose, or intermediate-state claim.
 
-For that animation specifically, the purpose is nonprofit instruction and criticism
-of how a verified named-command gesture changes editor state; the displayed material
-is a predominantly functional editor surface; two complete frames are the minimum
-that preserves the mode-line relationship and surrounding context; and the inert
-4.8-second loop cannot edit text, execute a command, or substitute for the software,
-band, source, font, or manual. Those four factors support the same limited fair-use
-conclusion as the source stills. `scripts/build-tour-animations.sh` assembles the
-tracked sources with ImageMagick 7.1.2-27, exact per-frame delay 240 centiseconds,
-infinite loop, and lossless changed-region optimization.
+For these animations specifically, the purpose is nonprofit instruction and
+criticism of verified gestures, activity selections, and context changes; the
+displayed material is predominantly functional; two or three complete frames are
+the minimum needed to preserve each before/after relationship; and the inert loops
+cannot edit text, execute commands, inspect objects, recover a machine, or substitute
+for the software, band, source, font, or manual. Those four factors support the same
+limited fair-use conclusion as the source stills.
+`scripts/build-tour-animations.sh` verifies every source-frame digest and assembles
+the tracked sources with ImageMagick 7.1.2-27, exact per-frame delay 240
+centiseconds, infinite loop, and lossless changed-region optimization.
 
 - [`lisp-listener-multiple-values.png`](lisp-listener-multiple-values.png) is also
   embedded in the [Lisp Listeners and editable input reimplementation
@@ -196,6 +197,14 @@ path is needed to render the museum pages.
 | [`supdup-disconnected.png`](supdup-disconnected.png) | `0020-supdup-connect-prompt.png` | 2026-07-19 20:34:35 | After loading the exact maintained public source through the isolated FILE bridge, select the resulting Supdup window; the source-injected shell shows its disconnected label and shared TV surface without the expected host prompt | `52c53d7b51c3298a7eb037c815bbbb6c76dcfd19dd54ebf3549abb1e16bead02` | `3205f9174f16cdda83ce66ba03778e2452b9ee5f04c56411f83613ee1996e9e8` |
 | [`telnet-disconnected.png`](telnet-disconnected.png) | `0025-telnet-disconnected-shell.png` | 2026-07-19 20:37:03 | Explicitly construct and select a maintained-source Telnet window with NIL process slots after ordinary creation exposed a source/band initialization mismatch; the static shell shows the distinct disconnected label only | `310c63af5118102151afe2e9dd7025f2ddf564f34fb999762fee247aeb1dd802` | `bf54d03936d07b0c74d3071f124f53d7f923f3969ac75371ec172b61d3b7b6d9` |
 | [`zmacs-mode-switch.gif`](zmacs-mode-switch.gif) | Derived from tracked `zmacs-text-mode.png` and `zmacs-lisp-mode.png` | Rebuilt 2026-07-26 | Alternate the two complete mode states with 2.4-second pauses; no resize, crop, annotation, or synthesized intermediate frame | `e65442288831d0dd83fb56e922f961dbc27e72ac74e9f7ae1372064e913114ae` | Source frame pixel hashes are the two hashes cataloged above |
+| [`open-system-menu.gif`](open-system-menu.gif) | Derived from `lisp-listener-multiple-values.png` and `system-menu.png` | Rebuilt 2026-07-26 | Teach the visible result of Right over the Listener; no pointer path, timing, or intermediate menu state claimed | `7ce6e08854a2e605aebec104c21713cce5eae087e5ba20b44d5d1b11a8e154b3` | Source frame pixel hashes are cataloged above |
+| [`open-zmacs-help.gif`](open-zmacs-help.gif) | Derived from `zmacs-lisp-buffer.png` and `zwei-help-menu.png` | Rebuilt 2026-07-26 | Teach the visible contextual Help result; no dispatcher timing or omitted prompt claimed | `68e93e43f32e7a27490848130b4848aca6eba13207eddf342653564fe0dd6d78` | Source frame pixel hashes are cataloged above |
+| [`select-inspector.gif`](select-inspector.gif) | Derived from `lisp-listener-multiple-values.png` and `inspector-list.png` | Rebuilt 2026-07-26 | Compare the Listener with the reviewed Inspector result for synthetic data; no arbitrary-object transition claimed | `e39e4d010300d32f0a8b0b8147b755985196edc909a3d5f522d543b8974af432` | Source frame pixel hashes are cataloged above |
+| [`select-peek.gif`](select-peek.gif) | Derived from `lisp-listener-multiple-values.png` and `peek-processes.png` | Rebuilt 2026-07-26 | Compare the Listener with Peek's reviewed process mode; no other Peek mode or mutation claimed | `7fcd6cd37f55cb446f38f21486e6a52a71f1f829030e3e4d58e49ff29887a42e` | Source frame pixel hashes are cataloged above |
+| [`open-screen-editor.gif`](open-screen-editor.gif) | Derived from `system-menu.png` and `screen-editor-menu.png` | Rebuilt 2026-07-26 | Teach the visible **Edit Screen** menu result without performing a layout mutation | `dbf63a976c5d81db0ee00d78278be4e758f9eeb519deff0a168803c7ee92da53` | Source frame pixel hashes are cataloged above |
+| [`trace-a-function.gif`](trace-a-function.gif) | Derived from `lisp-listener-multiple-values.png` and `trace-step-and-who-calls.png` | Rebuilt 2026-07-26 | Compare the Listener with the reviewed synthetic trace/step/who-calls result; intermediate command entry and timing omitted | `210ffe445be14d62a05e807453833be02a99e8edb3554ccaf143f4f06a43b2b0` | Source frame pixel hashes are cataloged above |
+| [`enter-error-handler.gif`](enter-error-handler.gif) | Derived from `lisp-listener-multiple-values.png` and `error-handler-dynamic-choices.png` | Rebuilt 2026-07-26 | Compare ordinary input with the reviewed synthetic Error Handler state; no universal recovery-choice claim | `d306694f0e969caa154ea9b6a0078c8084a4464e7f6687c993c6bb5ae6b36db4` | Source frame pixel hashes are cataloged above |
+| [`enter-emergency-break.gif`](enter-emergency-break.gif) | Derived from `lisp-listener-multiple-values.png` and `emergency-break-cold-load-evaluation.png` | Rebuilt 2026-07-26 | Contrast the ordinary Listener with the degraded cold-load evaluator; no claim that entry is harmless in arbitrary state | `bb6bf18c57a19cd55c3814a840bd1da39cedc4a3e6b5e4c459f1fa7540cd5d0a` | Source frame pixel hashes are cataloged above |
 
 The PNG digest identifies the exact tracked file bytes. For the twenty-one uncropped
 captures, the pixel digest in each original sidecar identifies normalized eight-bit
@@ -205,6 +214,24 @@ crop; its raw sidecar instead records raw PNG digest
 `550d87596d4cc2efd1be24ab58f8955dedf509d9b8515ee98e4492fc2d577f91`
 and raw pixel digest
 `356fb32cb25aae5b83aa324cecc4d508900a8accf0217aabd3f7e9eee82a96a5`.
+
+## Tour animation identities
+
+All nine files use a 768-by-963 logical canvas, infinite looping, and 240-centisecond
+delays on every frame. ImageMagick's lossless changed-region optimization may store
+later GIF frames as smaller rectangles while preserving that logical canvas.
+
+| Animation | Bytes | Frames | GIF SHA-256 |
+| --- | ---: | ---: | --- |
+| `zmacs-mode-switch.gif` | 5,599 | 2 | `e65442288831d0dd83fb56e922f961dbc27e72ac74e9f7ae1372064e913114ae` |
+| `open-system-menu.gif` | 13,101 | 2 | `7ce6e08854a2e605aebec104c21713cce5eae087e5ba20b44d5d1b11a8e154b3` |
+| `open-zmacs-help.gif` | 11,985 | 2 | `68e93e43f32e7a27490848130b4848aca6eba13207eddf342653564fe0dd6d78` |
+| `select-inspector.gif` | 20,727 | 2 | `e39e4d010300d32f0a8b0b8147b755985196edc909a3d5f522d543b8974af432` |
+| `select-peek.gif` | 25,884 | 2 | `7fcd6cd37f55cb446f38f21486e6a52a71f1f829030e3e4d58e49ff29887a42e` |
+| `open-screen-editor.gif` | 18,167 | 2 | `dbf63a976c5d81db0ee00d78278be4e758f9eeb519deff0a168803c7ee92da53` |
+| `trace-a-function.gif` | 15,638 | 2 | `210ffe445be14d62a05e807453833be02a99e8edb3554ccaf143f4f06a43b2b0` |
+| `enter-error-handler.gif` | 13,367 | 2 | `d306694f0e969caa154ea9b6a0078c8084a4464e7f6687c993c6bb5ae6b36db4` |
+| `enter-emergency-break.gif` | 17,898 | 2 | `bb6bf18c57a19cd55c3814a840bd1da39cedc4a3e6b5e4c459f1fa7540cd5d0a` |
 
 ## Session provenance
 

@@ -314,6 +314,28 @@ kbd {
   padding: 1px 10px;
 }
 
+.museum-article details {
+  max-width: 88ch;
+  margin: 6px 0;
+  border: 1px solid var(--ink);
+}
+
+.museum-article summary {
+  cursor: pointer;
+  padding: 3px 5px;
+  font-family: "Genera JESS", "Genera CPTFONT", monospace;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.museum-article details[open] summary {
+  border-bottom: 1px solid var(--ink);
+}
+
+.museum-article details img {
+  margin: 5px;
+}
+
 .museum-article pre {
   max-width: 100%;
   overflow: auto;

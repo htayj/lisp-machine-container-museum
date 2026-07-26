@@ -3,7 +3,7 @@ type: Rights Review
 title: Publishing runtime screenshots for museum documentation
 description: Capture-specific U.S. copyright review and publication policy for CADR and Genera runtime screenshots used as historical evidence.
 tags: [screenshots, copyright, fair-use, preservation, cadr, genera]
-timestamp: 2026-07-26T10:15:00-04:00
+timestamp: 2026-07-26T23:30:00-04:00
 ---
 
 # Publishing runtime screenshots for museum documentation
@@ -697,6 +697,43 @@ assembly command and tool, frame delays, loop behavior, animation digest, and ex
 instructional claim. An animation remains disallowed when it becomes a bulk
 interaction sequence, reproduces substantial Help or manual text, or functions as a
 decorative reel.
+
+#### Linear-tour teaching loops reviewed 2026-07-26
+
+The linear CADR and Genera working-session tours use **nine CADR** and **twelve
+Genera** short teaching loops. One loop in each set predates the linear narrative;
+the remaining loops are new combinations of already reviewed, tracked full-screen
+states. Each animation has two frames except the three-state Genera buffer-
+presentation loop. Every frame pauses for 240 centiseconds and the sequence repeats.
+There are no synthesized intermediate screens, annotations, crops, resizing, or
+licensed manual/documentation pages.
+
+The image- and use-specific conclusions are recorded in the
+[CADR asset catalog](assets/mit-cadr-screenshots/index.md#tour-animation-identities)
+and
+[Genera asset catalog](assets/genera-screenshots/index.md#tour-animation-identities).
+Those catalogs name the source frames, exact instructional claim, byte count, canvas,
+frame count, digest, builder, and sequence limitation for every loop.
+
+The four-factor assessment remains bounded:
+
+1. **Purpose and character:** each loop accompanies nonprofit historical
+   explanation of a specific gesture, activity selection, context change, or
+   recovery state. It is evidence inside a sequential lesson, not entertainment,
+   decoration, or a substitute interface.
+2. **Nature:** the selected screens are predominantly functional program,
+   development-tool, menu, form, or diagnostic displays. The set excludes artwork,
+   user documents, mail content, and substantial Help or Document Examiner prose.
+3. **Amount:** two or three complete low-resolution states are used because the
+   surrounding frame, mode line, pointer documentation, and pane relationship are
+   part of the instructional claim. The loops omit motion and all intermediate
+   operation states and are a minute fraction of either interactive system.
+4. **Market effect:** an inert selected-state comparison cannot execute a command,
+   edit data, inspect a live object, connect to a service, recover a machine, or
+   substitute for the software, world/load band, manuals, fonts, or licensed media.
+
+This review does not authorize turning the source stills into arbitrary animations,
+adding more frames without review, or extracting the GIFs as a decorative gallery.
 
 ## Exclusions and enhanced review
 

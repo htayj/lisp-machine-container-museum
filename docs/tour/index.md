@@ -5,42 +5,48 @@ elsewhere explains and specifies the systems; the Tour teaches you how to sit do
 one, understand what the screen is saying, move between programs, and try the major
 facilities without assuming prior Lisp-machine experience.
 
-## Choose a system
+## Choose a story
 
-- [MIT CADR / LM-3 tour](mit-cadr/index.md) starts with the System 303 environment
-  running on the CADR emulator. It introduces the TV window system, the System menu,
-  Lisp Listener, Zmacs, Inspector, Peek, debuggers, network terminals, and the
-  preserved demonstrations.
-- [Symbolics Genera tour](genera/index.md) starts with the Genera 8.5 world running
-  on the Open Genera VLM. It introduces activities, Dynamic Windows, presentations,
-  the three mouse buttons, the Select key, Command Processor, Zmacs, Document
-  Examiner, mail, diagnostic tools, and optional products.
+- [**A working session on the MIT CADR**](mit-cadr/guided-session.md) follows one
+  first-time user from the Listener through Zmacs, Help, Inspector, Peek, layout,
+  tracing, debugging, terminals, compiler tools, demonstrations, and recovery.
+- [**A working session in Symbolics Genera**](genera/guided-session.md) follows one
+  first-time user through activities, the Command Processor, Zmacs, presentations,
+  Document Examiner, Inspector, Frame-Up, Debugger, Accepting Values, development
+  tools, communications, and administration.
 
 The two systems are related but not interchangeable. CADR's System 303 software is a
 maintained descendant of the MIT Lisp Machine environment. Genera 8.5 is a later
 Symbolics system with activities, the Command Processor, and Dynamic Windows layered
 over evolved TV facilities. Each tour names its exact profile when behavior differs.
 
-## How to use the Tour
+## Stories first, references second
 
-Read the orientation chapter first, then follow the first-hour route. Each application
-atlas accounts for the complete 60-area catalog:
+Read a guided session linearly. Concepts are introduced when the story first needs
+them, and each stable layout or interaction change is accompanied by a reviewed
+still or short teaching animation.
 
+Afterward, use the compact orientations and application atlases as references:
+
+- [CADR orientation](mit-cadr/orientation.md)
 - [CADR application atlas](mit-cadr/applications.md)
+- [Genera orientation](genera/orientation.md)
 - [Genera application atlas](genera/applications.md)
 
-A **Try it** instruction was verified against source, manuals, or the preserved
-runtime identified on the page. A **Boundary** note means the preserved environment
-cannot safely or honestly demonstrate that path. Follow those boundaries: many
-network, printer, tape, disk-repair, and hardware-diagnostic commands were designed
-for a configured machine room, not a disposable emulator.
+The atlases remain complete because not every catalog area makes sense as a visible
+stop in a user story. A **Try it** instruction was verified against source, manuals,
+or the preserved runtime identified on the page. A **Boundary** note means the
+preserved environment cannot safely or honestly demonstrate that path. Many network,
+printer, tape, disk-repair, and hardware-diagnostic commands were designed for a
+configured machine room, not a disposable emulator.
 
 ## Reading the pictures
 
 The stills and animations are evidence, not decoration. Captions identify the system,
-state, and action they establish. A two-state animation deliberately pauses on the
-before and after screens; it teaches a gesture but does not claim to preserve
-real-time latency or every intermediate redisplay.
+state, and action they establish. Two- and three-state teaching loops deliberately
+pause on complete reviewed screens; they teach a gesture, selection result, or
+context change but do not claim to preserve real-time latency, pointer motion, or
+every intermediate redisplay.
 
 The images have individual publication reviews. They do not distribute the software,
 fonts, documentation corpus, world image, or load band, and they are excluded from

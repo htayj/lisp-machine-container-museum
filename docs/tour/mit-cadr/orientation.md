@@ -3,7 +3,7 @@ type: Guided Tour
 title: Finding your way around System 303
 description: Beginner orientation to the CADR screen, TV windows, mouse buttons, System selection, Help, Abort, and the first Listener and Zmacs workflows.
 tags: [mit-cadr, lm-3, tour, manual, navigation, system-menu, zmacs]
-timestamp: 2026-07-26T19:20:00-04:00
+timestamp: 2026-07-26T23:30:00-04:00
 ---
 
 # Finding your way around System 303
@@ -129,6 +129,7 @@ effects before an abort.
 
 ## Where to go next
 
+- [Continue into the linear CADR working session](guided-session.md)
 - [CADR application atlas](applications.md)
 - [System Menu and System selection evidence](../../mit-cadr/system-menu-and-select.md)
 - [ZWEI and Zmacs](../../mit-cadr/zwei-and-zmacs.md)

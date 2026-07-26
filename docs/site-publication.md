@@ -3,7 +3,7 @@ type: Preservation Note
 title: Publishing the museum documentation site
 description: Build, visual-profile, interaction, font-provenance, validation, and GitHub Pages publication contract for the Lisp Machine Museum knowledge base.
 tags: [documentation, github-pages, genera, fonts, preservation]
-timestamp: 2026-07-26T22:40:00-04:00
+timestamp: 2026-07-26T23:30:00-04:00
 ---
 
 # Publishing the museum documentation site
@@ -72,9 +72,12 @@ usable when scripting is disabled.
 Tour animations are tracked evidence assets, copied without resampling along with
 the reviewed stills. CSS leaves every raster image at its intrinsic dimensions, so a
 narrow document pane scrolls rather than fractionally shrinking bitmap lettering.
-The two initial teaching loops use complete native-size frames and slow pauses; their
-captions and asset catalogs state that they are comparisons rather than real-time
-screen recordings.
+The nine CADR and twelve Genera teaching loops use two or three complete native-size
+frames and slow pauses; their captions and asset catalogs state that they are
+selected-state comparisons rather than real-time screen recordings.
+The linear working-session pages show the loops in narrative order. The application
+atlases repeat a smaller key-and-gesture subset inside square, collapsed disclosure
+rows so the exhaustive tables remain scannable.
 
 The active margin follows the historical role rather than merely drawing a browser
 scrollbar. Genera margin scrollbars divide into start, shaft, car, and end hit

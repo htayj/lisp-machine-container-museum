@@ -3,7 +3,7 @@ type: Editorial Guide
 title: Writing and research guide
 description: Conventions for evidence-based, preservation-conscious knowledge-base and guided-tour documentation in the repository's OKF bundle.
 tags: [documentation, okf, preservation, research]
-timestamp: 2026-07-19T04:36:35-04:00
+timestamp: 2026-07-26T23:30:00-04:00
 ---
 
 # Writing and research guide
@@ -73,6 +73,14 @@ artifact, not necessarily every release or every Lisp machine.
 The `docs/tour/` collection is the beginner-facing manual layer. It complements the
 evidence dossiers; it does not replace or weaken them.
 
+- Make the primary tour for each system a **linear user story**, not a list of
+  catalogue links. Give the reader a small, loosely connected task and introduce
+  screen language, gestures, concepts, and applications when the story first needs
+  them. End each step by making clear what the reader has learned.
+- Keep the exhaustive application atlas as a separate reference layer. The story
+  should visit the runnable and visually instructive core; the atlas must still
+  account for every D01-D60 area, including infrastructure, unavailable products,
+  destructive tools, and hardware-dependent paths.
 - Begin with what the reader sees and what to do next. Define unfamiliar Lisp-machine
   vocabulary at first use.
 - Give exact entry gestures and a safe first exercise. Say whether a gesture creates
@@ -94,6 +102,9 @@ evidence dossiers; it does not replace or weaken them.
 - Keep animation loops brief and narrowly tied to the instruction. Do not publish
   bulk interaction recordings, substantial Help text, licensed prose, artwork, or a
   decorative screen reel.
+- Repeat the most useful key and gesture loops in an **Animated gesture guide**
+  section of the relevant application atlas, so the narrative remains readable while
+  the atlas remains useful as a quick control reference.
 - Put reviewed CADR animations with the CADR screenshot assets and reviewed Genera
   animations with the Genera screenshot assets. Preserve intrinsic raster dimensions
   in the published site; never resample bitmap text to a fractional size.

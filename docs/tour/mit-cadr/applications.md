@@ -3,7 +3,7 @@ type: Guided Tour
 title: MIT CADR and LM-3 application atlas
 description: Beginner-facing, D01-D60-complete tour map for opening, safely trying, or understanding the runtime boundary of every CADR and LM-3 software area.
 tags: [mit-cadr, lm-3, tour, manual, applications, catalog]
-timestamp: 2026-07-26T19:35:00-04:00
+timestamp: 2026-07-26T23:30:00-04:00
 ---
 
 # MIT CADR and LM-3 application atlas
@@ -13,8 +13,35 @@ would I use it for, how should I first approach it, and can the preserved System
 303-0 band demonstrate it honestly?** “Read” is a real tour outcome when the area is
 infrastructure, destructive, hardware-dependent, or absent from this band.
 
-Start with [System 303 orientation](orientation.md). Follow the linked dossier before
-using a facility on valuable guest state.
+Start with the linear [working-session tour](guided-session.md), then return here
+when you want direct access by software area. Follow the linked dossier before using
+a facility on valuable guest state.
+
+## Animated gesture guide
+
+These slow loops are compact reminders for interactions introduced in the linear
+story. Each alternates complete reviewed states and does not claim real-time timing
+or omitted intermediate redisplay.
+
+<details>
+<summary>Open the System menu: Right over the client</summary>
+<img src="../../assets/mit-cadr-screenshots/open-system-menu.gif" alt="Listener and System menu teaching loop.">
+</details>
+
+<details>
+<summary>Change Zmacs mode: Meta-X Text Mode or Meta-X Lisp Mode</summary>
+<img src="../../assets/mit-cadr-screenshots/zmacs-mode-switch.gif" alt="Zmacs Text and Lisp mode teaching loop.">
+</details>
+
+<details>
+<summary>Ask Zmacs for contextual Help: Help twice</summary>
+<img src="../../assets/mit-cadr-screenshots/open-zmacs-help.gif" alt="Zmacs and ZWEI Help teaching loop.">
+</details>
+
+<details>
+<summary>Enter Screen Editor: System menu, then Edit Screen</summary>
+<img src="../../assets/mit-cadr-screenshots/open-screen-editor.gif" alt="System menu and Screen Editor teaching loop.">
+</details>
 
 ## Everyday environment: D01-D16
 

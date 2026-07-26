@@ -3,7 +3,7 @@ type: Guided Tour
 title: Finding your way around Genera 8.5
 description: Beginner orientation to Genera activities, Dynamic Windows, presentations, mouse gestures, Select keys, the System Menu, Command Processor, and first core workflows.
 tags: [genera, tour, manual, navigation, activities, presentations, system-menu]
-timestamp: 2026-07-26T20:15:00-04:00
+timestamp: 2026-07-26T23:30:00-04:00
 ---
 
 # Finding your way around Genera 8.5
@@ -147,6 +147,7 @@ private disposable world and their dossier's failure-ordering guidance.
 
 ## Where to go next
 
+- [Continue into the linear Genera working session](guided-session.md)
 - [Genera application atlas](applications.md)
 - [Activities, Select keys, and System Menu evidence](../../genera/activities-and-system-menu.md)
 - [Genera Zmacs](../../genera/zmacs.md)

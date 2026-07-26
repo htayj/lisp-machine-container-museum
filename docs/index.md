@@ -17,9 +17,9 @@ machine-readable metadata layer while retaining ordinary Markdown as the source.
 
 ## Collections
 
-- [Guided tour](tour/index.md) - A beginner-facing manual for learning the UI
-  language, moving between activities, and trying the applications in CADR and
-  Genera, with reviewed runtime views and short interaction animations.
+- [Guided tour](tour/index.md) - Linear beginner stories for learning the UI
+  language while moving through CADR and Genera applications, with reviewed runtime
+  views, many short interaction animations, and separate exhaustive atlases.
 - [Symbolics Genera and Open Genera](genera/index.md) - The later Symbolics system,
   its Virtual Lisp Machine, and preserved Open Genera artifacts.
 - [MIT CADR and LM-3](mit-cadr/index.md) - The earlier public MIT Lisp Machine
