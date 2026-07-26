@@ -535,11 +535,11 @@ kbd {
 }
 
 .ragged-edge--top {
-  top: 20px;
+  top: 19px;
 }
 
 .ragged-edge--bottom {
-  bottom: 14px;
+  bottom: 13px;
   transform: scaleY(-1);
 }
 
@@ -557,11 +557,11 @@ kbd {
 }
 
 .ragged-edge--left {
-  left: var(--document-left);
+  left: calc(var(--document-left) - 1px);
 }
 
 .ragged-edge--right {
-  right: 0;
+  right: -1px;
   transform: scaleX(-1);
 }
 

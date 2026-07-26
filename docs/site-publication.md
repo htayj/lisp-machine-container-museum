@@ -101,8 +101,9 @@ edge; the side pair does the same for horizontal overflow. The ten-device-pixel
 repeat remains device-pixel anchored through zoom. This is functional window
 decoration, not a permanent zigzag ornament. An opaque paper-colored strip erases
 the ordinary straight rule under each active ragged edge before the zigzag is
-drawn; this makes the state-dependent decoration replace the rule instead of
-overprinting it.
+drawn. The strip extends one CSS rule-width across the grid or outer-frame boundary;
+stopping at the containing block's inner edge leaves an adjacent solid line. This
+makes the state-dependent decoration replace the rule instead of overprinting it.
 
 ## Genera font publication boundary
 

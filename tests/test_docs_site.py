@@ -102,6 +102,10 @@ class DocsSiteTests(unittest.TestCase):
         self.assertIn(".ragged-edge.is-active", css)
         ragged = css.split(".ragged-edge {", 1)[1].split("}", 1)[0]
         self.assertIn("background-color: var(--paper)", ragged)
+        self.assertIn("top: 19px", css)
+        self.assertIn("bottom: 13px", css)
+        self.assertIn("left: calc(var(--document-left) - 1px)", css)
+        self.assertIn("right: -1px", css)
 
     def test_site_uses_native_size_genera_heading_fonts(self) -> None:
         self.assertIn("hl14b.bdf", BUILDER.FONT_SELECTION)

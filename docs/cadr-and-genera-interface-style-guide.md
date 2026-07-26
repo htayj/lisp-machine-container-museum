@@ -532,9 +532,10 @@ zoom resample a bitmap border independently of the pane. Preserve partial-repeat
 phase at the right for horizontal edges and at the bottom for vertical edges. The
 ragged renderer replaces the ordinary straight rule on that edge. In a layered web
 implementation, first cover or omit the straight rule beneath the active ragged
-strip, then draw the zigzag; a transparent zigzag laid over the rule incorrectly
-shows both borders at once. Restore the straight rule when the continuation
-predicate becomes false. The
+strip, including the rule's boundary pixel, then draw the zigzag. A transparent
+zigzag laid over the rule, or a mask that stops at the inside of the containing
+block, incorrectly shows both borders at once. Restore the straight rule when the
+continuation predicate becomes false. The
 complete predicates, drawing contract, application inventory, and reviewed
 horizontal example are in
 [Ragged window borders in Symbolics Genera](genera/ragged-window-borders.md).
