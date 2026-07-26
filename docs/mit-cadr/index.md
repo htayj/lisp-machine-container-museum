@@ -142,6 +142,12 @@ the public LM-3 software and the `usim` emulator.
   maintained System 303 implementation, and verified runtime behavior; its
   [binding companion](zwei-zmacs-keybindings.md) gives release-bounded effective
   trees.
+- [Uses of the Super modifier](super-modifier-uses.md) aggregates established
+  System 46/System 303 Super roles by application, including numeric arguments,
+  dynamic debugger choices, ZMail, Spacewar, and modifier-normalizing boundaries.
+- [Uses of the Hyper modifier](hyper-modifier-uses.md) aggregates established
+  Hyper roles by application, including editor aliases and arguments, C navigation,
+  ZMail address units, Inspector mutation, Spacewar, and negative protocol mappings.
 - [EINE, ZWEI, and Zmacs editor-family reimplementation
   specification](../eine-zwei-and-zmacs-editor-family-reimplementation-specification.md)
   defines the data, operation, complete input-tree, lifecycle, failure, visual,

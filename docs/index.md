@@ -283,6 +283,14 @@ machine-readable metadata layer while retaining ordinary Markdown as the source.
   editor lineage, separates reusable ZWEI machinery from the Zmacs application,
   and links the code- and runtime-grounded feature and keybinding references for
   both preserved systems.
+- [Super modifier uses on CADR/LM-3](mit-cadr/super-modifier-uses.md) and
+  [Hyper modifier uses on CADR/LM-3](mit-cadr/hyper-modifier-uses.md) aggregate
+  public-source roles, ignored/normalized paths, and application-local conventions
+  across the selected System 46 and System 303 profiles.
+- [Super modifier uses in Genera](genera/super-modifier-uses.md) and
+  [Hyper modifier uses in Genera](genera/hyper-modifier-uses.md) provide the
+  corresponding Genera 8.5 application-by-application catalogs, including inherited
+  Dynamic Windows behavior and optional, compiled, and inactive evidence boundaries.
 - [EINE, ZWEI, and Zmacs editor-family reimplementation
   specification](eine-zwei-and-zmacs-editor-family-reimplementation-specification.md)
   defines release-selectable semantic models, command loops, complete

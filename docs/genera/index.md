@@ -145,6 +145,13 @@ as its Virtual Lisp Machine implementation hosted on Unix.
   live-world oracle, while the [named-command audit](zmacs-named-commands.md) records the
   counts, categories, and installation semantics of 277 source candidates
   without publishing the exact licensed-source inventory.
+- [Uses of the Super modifier](super-modifier-uses.md) aggregates active,
+  inherited, normalized, compiled, and inactive Super uses by application across
+  Zmacs, Dynamic Windows, development tools, document and engineering products,
+  the debugger, and Macintosh integration.
+- [Uses of the Hyper modifier](hyper-modifier-uses.md) aggregates Hyper uses by
+  application across Zmacs arguments, Zmail addresses, NS engineering gestures,
+  CL-HTTP, low-level keyboard handling, and explicit unbound or commented cases.
 - [EINE, ZWEI, and Zmacs editor-family reimplementation
   specification](../eine-zwei-and-zmacs-editor-family-reimplementation-specification.md)
   defines the Genera 8.5 configured-source editor contract, complete fixed-tree
