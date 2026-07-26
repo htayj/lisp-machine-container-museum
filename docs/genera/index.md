@@ -231,6 +231,11 @@ as its Virtual Lisp Machine implementation hosted on Unix.
   from native ALUs, colors, stipples, and CLIM designs; documents merging,
   persistence, Zmacs, screen, printer, and programming customization with a reviewed
   runtime prompt.
+- [Gray patterns, textures, and stipples in Symbolics Genera](gray-patterns-and-stipples.md)
+  - Gives exact `#`/`.` diagrams for all twelve TV grays, twenty-five active named
+  textures, and six inactive historical candidates; also specifies all nine dynamic
+  pattern roles, density, storage, selection, customization, uses, and runtime
+  reachability evidence.
 - [Concordia, structured documentation, and book design](../concordia-document-and-book-design.md)
   - NSage records and `.sab` serialization, structural editing, Page Previewer,
   book-design inheritance and Browser, complete 74/26/11 command surfaces,

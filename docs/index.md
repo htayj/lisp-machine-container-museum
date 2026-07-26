@@ -249,6 +249,11 @@ machine-readable metadata layer while retaining ordinary Markdown as the source.
   explains semantic family/face/size styles, per-device raster-font mapping, Zmacs
   and hardcopy customization, native colors and stipples, and the distinct CLIM ink
   model with source and runtime evidence.
+- [Gray patterns, textures, and stipples in Symbolics Genera](genera/gray-patterns-and-stipples.md)
+  renders all twelve TV gray masks, twenty-five active textures, and six inactive
+  candidates as exact `#`/`.` periods; it also documents all nine dynamic pattern
+  roles, density, storage, device selection, customization, application use, runtime
+  reachability, and preservation boundaries.
 - [Images, drawing primitives, and visual-asset substrates](images-drawing-and-visual-asset-substrates.md)
   maps Genera's BITBLT, Dynamic Windows drawing, image objects and formats,
   compression, FrameThrower hardware, and complete installed asset census while

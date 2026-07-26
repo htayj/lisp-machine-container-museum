@@ -3,7 +3,7 @@ type: Historical Article
 title: Inks, faces, and character styles in Symbolics Genera
 description: An evidence-based guide to Genera's semantic character styles, device-font resolution, Zmacs customization, native raster drawing state, and separate CLIM ink model.
 tags: [genera, fonts, character-styles, inks, graphics, zmacs, dynamic-windows, clim]
-timestamp: 2026-07-26T07:35:00-04:00
+timestamp: 2026-07-26T08:03:00-04:00
 ---
 
 # Inks, faces, and character styles in Symbolics Genera
@@ -168,6 +168,36 @@ These are established uses in the selected source. They are not a claim that eve
 application uses each style or that the table is an exhaustive inventory of every
 literal style form in all optional products.
 
+## Relationship to Emacs faces and themes
+
+Genera has some of the mechanisms that an Emacs user would associate with faces,
+but it does not combine them into one equivalent global face/theme facility.
+
+The closest correspondence is:
+
+| Emacs-like concept | Closest Genera mechanism | Important difference |
+| --- | --- | --- |
+| semantic text appearance | interned character style plus an application role variable | a Genera style contains family, face, and size, not foreground, background, underline, box, stipple, and the other properties commonly grouped into an Emacs face |
+| inheritance or overlay | `MERGE-CHARACTER-STYLES` and nested `WITH-CHARACTER-STYLE` forms | merging is component-wise over the three typographic components; there is no general named-face inheritance graph in the selected implementation |
+| terminal/display adaptation | per-device character-style-to-font mappings | this is a strong Genera feature: the same semantic style can resolve to different screen, printer, NSage, or Macintosh fonts |
+| user customization of roles | screen options, Zmacs defaults, printer attributes, init-file variables, and application-specific heading/emphasis variables | customization is distributed among subsystems rather than collected in one theme object |
+| foreground/background styling | native colors, ALUs, stipples and patterns, or CLIM inks | these are separate drawing state and are not attributes of a native Genera character style |
+
+Thus a variable such as a Joshua heading style or a who-line documentation style is
+functionally close to a named semantic face role: application code refers to the
+role and a user or site can replace its character-style value. Pane and application
+defaults provide another level of indirection. But many applications instead embed
+literal styles, and the selected source shows no system-wide theme package that
+atomically remaps a common catalog of roles.
+
+In particular, Genera's literal `face` field is narrower than “face” in modern
+Emacs terminology. It is the second member of `(family, face, size)`, normally a
+font variant such as roman, bold, italic, bold-italic, or condensed. Changing that
+field does not itself change ink, background, border, stipple, or window decoration.
+A coordinated visual theme is possible through init-file and subsystem
+customization, but it is a collection of settings rather than one first-class
+theme definition in the selected Genera 8.5 evidence.
+
 ## User customization
 
 ### Zmacs text
@@ -288,6 +318,10 @@ The selected source defines 37 active named stipples:
   lines; and
 - decorative/geometric patterns: bricks, half-bricks, double-bricks, tiles, hearts,
   small and large diamonds, parquet, weave8, weave8b, and filled diamonds.
+
+The twelve gray masks, their exact `#`/`.` periods, computed densities, selection
+rules, customization paths, and source-established uses are cataloged separately in
+[Gray patterns and stipples in Symbolics Genera](gray-patterns-and-stipples.md).
 
 A stipple records name, density, and X phase. Named registries support lookup, and
 gray selection chooses a nearest density. The broader pattern protocol includes
