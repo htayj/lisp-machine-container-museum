@@ -3,7 +3,7 @@ type: Rights Review
 title: Publishing runtime screenshots for museum documentation
 description: Capture-specific U.S. copyright review and publication policy for CADR and Genera runtime screenshots used as historical evidence.
 tags: [screenshots, copyright, fair-use, preservation, cadr, genera]
-timestamp: 2026-07-26T07:35:00-04:00
+timestamp: 2026-07-26T10:15:00-04:00
 ---
 
 # Publishing runtime screenshots for museum documentation
@@ -180,6 +180,29 @@ layout identity and persistence; those claims remain action-log-, source-, or
 runtime-trace-grounded. These two exact frames are the minimum reviewed images needed
 to make the release-specific visual contract checkable. This paragraph approves no
 other screenshot for specification reuse.
+
+### Interface style-guide reuse reviewed 2026-07-26
+
+The exact CADR and Genera `system-menu.png` files and the exact Genera
+`accepting-values-gc-options.png` file were separately reassessed for the
+[CADR and Genera interface style guide](cadr-and-genera-interface-style-guide.md).
+The guide uses the two System Menu frames for direct cross-system criticism of
+visible typography, popup density, columns, current-item outlines, frame/status
+relationships, and the release-specific absence or presence of a hard lower-right
+shadow. It uses the Accepting Values frame to make the source-grounded Genera form
+language—textual grouping, indentation, inline alternatives, face changes, printed
+actions, and stable pointer documentation—visually checkable. The current GC values
+are explicitly excluded from the claim.
+
+No new pixels, crop, interaction sequence, source, Help prose, manual text, artwork,
+or extracted font asset is added. These three sparse functional frames are the
+minimum needed for the article's comparison; the surrounding Listener and startup
+text is incidental context. The images cannot substitute for the systems, font
+packages, documentation, or operational UI. Their use is analytical and
+instructional rather than decorative: the guide expressly forbids treating them as
+templates, wallpapers, or a general gallery. The capture-specific conclusions above
+therefore support this additional scholarly use. This paragraph approves no other
+screenshot or reuse.
 
 ### D03 Screen Editor and Frame-Up specification reuse reviewed 2026-07-19
 

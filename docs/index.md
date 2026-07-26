@@ -24,6 +24,13 @@ machine-readable metadata layer while retaining ordinary Markdown as the source.
 
 ## Start here
 
+- [CADR and Genera interface style guide](cadr-and-genera-interface-style-guide.md)
+  turns source, preserved-font, and reviewed runtime evidence into separate,
+  release-profiled visual, typographic, layout, and interaction guidance for
+  recreating either system without importing a generic retro aesthetic.
+- [Publishing the museum documentation site](site-publication.md) records the
+  Genera-profile static build, interaction model, public font boundary, visual
+  validation, and GitHub Pages deployment contract.
 - [Software areas and programs of the MIT CADR and Symbolics Genera](lisp-machine-software-catalog.md)
   maps the listeners, editors, mail and communication tools, development
   environments, services, language products, system facilities, and demonstrations,

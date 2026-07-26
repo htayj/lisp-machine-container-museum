@@ -5,6 +5,10 @@ the public LM-3 software and the `usim` emulator.
 
 ## Articles
 
+- [CADR and Genera interface style guide](../cadr-and-genera-interface-style-guide.md)
+  provides a source- and runtime-grounded CADR visual profile, contrasts it with
+  Genera without averaging the systems, and links the public System 46 font
+  reproductions.
 - [Software areas and applications on the MIT CADR and LM-3](software-areas-and-applications.md)
   provides a release-bounded census of interactive applications, programming tools,
   services, storage and network facilities, engineering software, and games, plus

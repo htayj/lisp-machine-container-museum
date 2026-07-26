@@ -11,6 +11,28 @@ Historical, architectural, and artifact research lives in the
 [museum knowledge base](docs/index.md). It includes the current analysis of
 [Open Genera VLOD world files](docs/genera/world-loads-and-vlod.md).
 
+The same canonical Markdown is published as a Genera-profile GitHub Pages site:
+
+<https://htayj.github.io/lisp-machine-container-museum/>
+
+Build the site locally with Pandoc and the pinned public Genera Fonts release:
+
+```bash
+curl -L --fail \
+  https://github.com/htayj/genera-fonts/releases/download/v0.1.1/Genera-fonts-latin-v0.1.1.tar.gz \
+  -o /tmp/Genera-fonts-latin-v0.1.1.tar.gz
+echo "a72cfaa9ed6c418ba751d4a32d3cf715b1b3e6edd44acdc144f297d0c915b3cf  /tmp/Genera-fonts-latin-v0.1.1.tar.gz" \
+  | sha256sum --check
+python3 scripts/build-docs-site.py \
+  --font-archive /tmp/Genera-fonts-latin-v0.1.1.tar.gz
+python3 -m http.server 8000 --directory _site
+```
+
+The generated `_site/` tree is ignored. The Pages workflow builds it from `docs/`
+and does not commit generated HTML or Genera font data to this repository. See
+[Publishing the museum documentation site](docs/site-publication.md) for the
+interface behavior, font provenance, build boundary, and validation procedure.
+
 ## What you need
 
 - Guix installed and working on the host

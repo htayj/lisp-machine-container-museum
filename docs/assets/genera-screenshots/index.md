@@ -72,6 +72,21 @@ under applicable law.
   not prove target-window, registry, callback, destructive-operation, or saved-layout
   state; the startup notice remains incidental context, and the image is not a generic
   Genera illustration.
+- [`system-menu.png`](system-menu.png) is also embedded in the [CADR and Genera
+  interface style guide](../../cadr-and-genera-interface-style-guide.md). Its use
+  there is limited to criticism and implementation guidance about the visible title,
+  columns, type hierarchy, current-item outline, border, hard lower-right shadow,
+  framed Listener, scrollbar, label, and bottom status relationship reviewed on
+  2026-07-26. It is not a decorative design asset and does not establish hidden menu
+  behavior, exact unmeasured dimensions, or general Genera appearance.
+- [`accepting-values-gc-options.png`](accepting-values-gc-options.png) is also
+  embedded in the [CADR and Genera interface style
+  guide](../../cadr-and-genera-interface-style-guide.md). Its use there is limited
+  to criticism and implementation guidance about the visible textual grouping,
+  indentation, inline alternatives, bold current choices, italic constraints,
+  printed action presentations, and bottom pointer documentation reviewed on
+  2026-07-26. Its volatile values are not treated as release defaults or
+  configuration advice, and it is not a decorative form template.
 - [`screen-editor-menu.png`](screen-editor-menu.png) and
   [`frame-up-split-layout.png`](frame-up-split-layout.png) are also embedded in the
   [Screen Editor and Frame-Up layout design reimplementation

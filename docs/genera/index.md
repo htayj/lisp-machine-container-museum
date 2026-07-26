@@ -5,6 +5,10 @@ as its Virtual Lisp Machine implementation hosted on Unix.
 
 ## Articles
 
+- [CADR and Genera interface style guide](../cadr-and-genera-interface-style-guide.md)
+  provides a source- and runtime-grounded Genera visual profile, contrasts it with
+  CADR without averaging the systems, and links the public Genera 8.5 font
+  reproduction and its publication boundary.
 - [Software areas, applications, and programs in the inspected Genera 8.5 environment](software-areas-and-applications.md)
   catalogs the live activity, Select-key, System Menu, and command-area registries;
   all 98 live loaded-system names; the base release roster; all 133

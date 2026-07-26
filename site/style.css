@@ -1,0 +1,728 @@
+:root {
+  --paper: #fff;
+  --ink: #000;
+  --rule: 1px;
+  --status-height: 42px;
+  --command-height: 31px;
+  --header-height: 28px;
+  color-scheme: light;
+  font-synthesis: none;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+::selection {
+  color: var(--paper);
+  background: var(--ink);
+}
+
+html,
+body {
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  overflow: hidden;
+  color: var(--ink);
+  background: var(--paper);
+}
+
+body {
+  font-family: "Genera CPTFONT", ui-monospace, "Courier New", monospace;
+  font-size: 12px;
+  line-height: 1.25;
+}
+
+button,
+input {
+  color: inherit;
+  font: inherit;
+}
+
+button {
+  border: 1px solid var(--ink);
+  border-radius: 0;
+  background: var(--paper);
+  padding: 2px 7px;
+}
+
+button:hover,
+button:focus-visible,
+a:focus-visible {
+  outline: 1px solid var(--ink);
+  outline-offset: 1px;
+}
+
+a {
+  color: inherit;
+  text-decoration-thickness: 1px;
+  text-underline-offset: 2px;
+}
+
+.skip-link {
+  position: fixed;
+  z-index: 100;
+  top: -40px;
+  left: 4px;
+  border: 1px solid;
+  background: #fff;
+  padding: 5px 8px;
+}
+
+.skip-link:focus {
+  top: 4px;
+}
+
+.machine-screen {
+  display: grid;
+  width: 100%;
+  height: 100%;
+  grid-template-rows: var(--header-height) minmax(0, 1fr) var(--command-height) var(--status-height);
+  background: var(--paper);
+}
+
+.machine-header {
+  display: grid;
+  grid-template-columns: auto auto 1fr auto;
+  align-items: center;
+  gap: 9px;
+  border-bottom: 1px solid var(--ink);
+  padding: 2px 5px;
+  font-family: "Genera JESS", "Genera CPTFONT", monospace;
+  font-size: 13px;
+  white-space: nowrap;
+}
+
+.system-key,
+.search-key {
+  padding: 1px 7px;
+}
+
+.machine-name {
+  font-weight: 700;
+  text-decoration: none;
+}
+
+.activity-name {
+  overflow: hidden;
+  text-align: center;
+  font-style: italic;
+  text-overflow: ellipsis;
+}
+
+.program-frame {
+  display: grid;
+  min-height: 0;
+  grid-template-columns: 226px minmax(0, 1fr) 16px;
+  grid-template-rows: 20px minmax(0, 1fr);
+  border: 1px solid var(--ink);
+  margin: 4px 5px 3px;
+}
+
+.program-label {
+  grid-column: 1 / -1;
+  border-bottom: 1px solid var(--ink);
+  padding: 1px 5px;
+  font-family: "Genera JESS", "Genera CPTFONT", monospace;
+  font-size: 13px;
+  font-style: italic;
+  text-align: center;
+}
+
+.navigator-pane {
+  min-width: 0;
+  overflow: auto;
+  border-right: 1px solid var(--ink);
+  scrollbar-width: none;
+}
+
+.pane-title {
+  border-bottom: 1px solid var(--ink);
+  padding: 3px 5px 2px;
+  font-family: "Genera Swiss", "Genera JESS", sans-serif;
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.navigator-list {
+  display: grid;
+}
+
+.navigator-item {
+  border-bottom: 1px solid transparent;
+  padding: 5px 7px;
+  text-decoration: none;
+}
+
+.navigator-item:hover,
+.navigator-item:focus-visible,
+.navigator-item.is-current {
+  border-color: var(--ink);
+  outline: 0;
+}
+
+.navigator-item.is-current {
+  font-weight: 700;
+}
+
+.navigator-help {
+  margin: 14px 7px;
+  border-top: 1px solid;
+  padding-top: 6px;
+  font-size: 11px;
+}
+
+.navigator-help p {
+  margin: 2px 0;
+}
+
+kbd,
+code,
+pre {
+  font-family: "Genera CPTFONT", ui-monospace, monospace;
+}
+
+kbd {
+  border: 1px solid;
+  padding: 0 2px;
+  font-weight: 400;
+}
+
+.document-pane {
+  min-width: 0;
+  min-height: 0;
+  overflow: auto;
+  outline: 0;
+  scrollbar-width: none;
+  scroll-behavior: auto;
+}
+
+.breadcrumb-pane {
+  position: sticky;
+  z-index: 2;
+  top: 0;
+  border-bottom: 1px solid var(--ink);
+  background: var(--paper);
+  padding: 3px 7px;
+  font-family: "Genera JESS", "Genera CPTFONT", monospace;
+  font-size: 13px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.breadcrumb-pane a {
+  text-decoration: none;
+}
+
+.breadcrumb-separator {
+  margin: 0 5px;
+}
+
+.museum-article {
+  max-width: 1040px;
+  padding: 11px 20px 28px;
+}
+
+.museum-article > :first-child {
+  margin-top: 0;
+}
+
+.museum-article h1,
+.museum-article h2,
+.museum-article h3,
+.museum-article h4 {
+  font-family: "Genera Swiss", "Genera JESS", sans-serif;
+  line-height: 1.05;
+}
+
+.museum-article h1 {
+  margin: 8px 0 14px;
+  border-bottom: 2px solid var(--ink);
+  padding-bottom: 4px;
+  font-size: 20px;
+}
+
+.museum-article h2 {
+  margin: 22px 0 8px;
+  border-bottom: 1px solid var(--ink);
+  padding-bottom: 2px;
+  font-size: 16px;
+}
+
+.museum-article h3 {
+  margin: 17px 0 6px;
+  font-size: 14px;
+  font-style: italic;
+}
+
+.museum-article h4 {
+  margin: 14px 0 5px;
+  font-size: 13px;
+}
+
+.museum-article p,
+.museum-article ul,
+.museum-article ol {
+  max-width: 88ch;
+}
+
+.museum-article p {
+  margin: 7px 0;
+}
+
+.museum-article ul,
+.museum-article ol {
+  margin: 6px 0;
+  padding-left: 24px;
+}
+
+.museum-article li {
+  margin: 2px 0;
+}
+
+.museum-article a {
+  font-weight: 700;
+}
+
+.museum-article a:hover,
+.museum-article a:focus-visible {
+  color: var(--paper);
+  background: var(--ink);
+  outline: 0;
+  text-decoration: none;
+}
+
+.museum-article blockquote {
+  max-width: 86ch;
+  margin: 10px 0 10px 10px;
+  border-left: 4px double var(--ink);
+  padding: 1px 10px;
+}
+
+.museum-article pre {
+  max-width: 100%;
+  overflow: auto;
+  border: 1px solid var(--ink);
+  background:
+    linear-gradient(var(--paper), var(--paper)) padding-box,
+    repeating-linear-gradient(135deg, #000 0 1px, #fff 1px 3px) border-box;
+  padding: 8px 10px;
+  font-size: 12px;
+  line-height: 1.25;
+  tab-size: 2;
+}
+
+.museum-article :not(pre) > code {
+  border: 1px solid;
+  padding: 0 2px;
+}
+
+.museum-article table {
+  width: max-content;
+  min-width: min(100%, 500px);
+  max-width: 100%;
+  margin: 10px 0 14px;
+  border-collapse: collapse;
+  font-size: 11px;
+}
+
+.museum-article th,
+.museum-article td {
+  border: 1px solid var(--ink);
+  padding: 3px 5px;
+  text-align: left;
+  vertical-align: top;
+}
+
+.museum-article th {
+  font-family: "Genera JESS", "Genera CPTFONT", monospace;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.museum-article img {
+  display: block;
+  max-width: min(100%, 960px);
+  height: auto;
+  margin: 12px 0 5px;
+  border: 1px solid var(--ink);
+  image-rendering: pixelated;
+}
+
+.museum-article em {
+  font-family: "Genera Dutch", "Genera CPTFONT", serif;
+}
+
+.document-footer {
+  border-top: 1px solid var(--ink);
+  padding: 5px 20px 15px;
+  font-size: 11px;
+}
+
+.scroll-margin {
+  display: grid;
+  grid-template-rows: 16px 1fr 16px;
+  border-left: 1px solid var(--ink);
+}
+
+.scroll-margin button {
+  overflow: hidden;
+  border: 0;
+  padding: 0;
+  font-size: 9px;
+  line-height: 14px;
+}
+
+.scroll-shaft {
+  position: relative;
+  overflow: hidden;
+  border-top: 1px solid;
+  border-bottom: 1px solid;
+  background:
+    repeating-conic-gradient(#000 0 25%, #fff 0 50%) 0 0 / 2px 2px;
+}
+
+#scroll-car {
+  position: absolute;
+  top: 0;
+  right: 2px;
+  left: 2px;
+  min-height: 12px;
+  border: 1px solid var(--ink);
+  background: var(--paper);
+}
+
+.command-pane {
+  display: grid;
+  grid-template-columns: auto minmax(100px, 1fr) auto minmax(0, 2fr);
+  align-items: center;
+  gap: 5px;
+  border-top: 1px solid var(--ink);
+  padding: 3px 6px;
+  font-family: "Genera JESS", "Genera CPTFONT", monospace;
+  font-size: 13px;
+}
+
+.command-pane input,
+.search-query input {
+  min-width: 0;
+  border: 0;
+  border-bottom: 1px solid var(--ink);
+  border-radius: 0;
+  outline: 0;
+  background: transparent;
+  padding: 1px 3px;
+}
+
+input[type="search"]::-webkit-search-cancel-button {
+  appearance: none;
+}
+
+#command-hint {
+  overflow: hidden;
+  font-family: "Genera Dutch", "Genera CPTFONT", serif;
+  font-size: 11px;
+  font-style: italic;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.who-line {
+  display: grid;
+  grid-template-rows: 21px 21px;
+  color: var(--paper);
+  background: var(--ink);
+  font-size: 11px;
+}
+
+.pointer-documentation,
+.machine-status {
+  display: flex;
+  align-items: center;
+  gap: 13px;
+  overflow: hidden;
+  padding: 2px 7px;
+  white-space: nowrap;
+}
+
+.pointer-documentation {
+  border-bottom: 1px solid var(--paper);
+  font-family: "Genera JESS", "Genera CPTFONT", monospace;
+  font-size: 13px;
+}
+
+.machine-status span:nth-child(2) {
+  flex: 1;
+}
+
+.transient-layer {
+  position: fixed;
+  z-index: 20;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  background: transparent;
+}
+
+.transient-layer[hidden] {
+  display: none;
+}
+
+.genera-menu,
+.search-window,
+.help-window {
+  position: relative;
+  max-width: calc(100vw - 30px);
+  border: 1px solid var(--ink);
+  background: var(--paper);
+}
+
+.genera-menu::after,
+.search-window::after,
+.help-window::after {
+  position: absolute;
+  z-index: -1;
+  content: "";
+  top: 5px;
+  right: -6px;
+  bottom: -6px;
+  left: 5px;
+  background:
+    repeating-conic-gradient(#000 0 25%, transparent 0 50%) 0 0 / 2px 2px;
+}
+
+.genera-menu-title {
+  border-bottom: 1px solid var(--ink);
+  padding: 3px 7px 2px;
+  font-family: "Genera JESS", "Genera CPTFONT", monospace;
+  font-size: 14px;
+  font-style: italic;
+  text-align: center;
+}
+
+.menu-columns {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(150px, 1fr));
+  gap: 1px;
+}
+
+.menu-columns section {
+  display: grid;
+  align-content: start;
+  padding: 3px;
+}
+
+.menu-columns section + section {
+  border-left: 1px solid var(--ink);
+}
+
+.menu-columns h2 {
+  margin: 0 0 3px;
+  font-family: "Genera Swiss", "Genera JESS", sans-serif;
+  font-size: 13px;
+  text-align: center;
+}
+
+.menu-columns a,
+.menu-columns button {
+  min-height: 22px;
+  border: 1px solid transparent;
+  background: transparent;
+  padding: 3px 6px;
+  font-family: "Genera JESS", "Genera CPTFONT", monospace;
+  font-size: 13px;
+  text-align: center;
+  text-decoration: none;
+}
+
+.menu-columns a:hover,
+.menu-columns a:focus-visible,
+.menu-columns button:hover,
+.menu-columns button:focus-visible {
+  border-color: var(--ink);
+  outline: 0;
+}
+
+.search-window {
+  width: min(720px, calc(100vw - 30px));
+}
+
+.search-query {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  align-items: center;
+  gap: 6px;
+  border-bottom: 1px solid;
+  padding: 7px;
+}
+
+.search-results {
+  min-height: 190px;
+  max-height: min(56vh, 460px);
+  overflow: auto;
+  padding: 4px;
+}
+
+.search-result {
+  display: grid;
+  border: 1px solid transparent;
+  padding: 4px 6px;
+  text-decoration: none;
+}
+
+.search-result strong {
+  font-family: "Genera JESS", "Genera CPTFONT", monospace;
+  font-size: 13px;
+}
+
+.search-result span {
+  overflow: hidden;
+  font-size: 11px;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.search-result.is-selected,
+.search-result:hover,
+.search-result:focus-visible {
+  border-color: var(--ink);
+  outline: 0;
+}
+
+.search-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  border-top: 1px solid;
+  padding: 5px 7px;
+}
+
+.help-window {
+  width: min(600px, calc(100vw - 30px));
+  padding-bottom: 8px;
+}
+
+.help-window > :not(.genera-menu-title) {
+  margin-right: 10px;
+  margin-left: 10px;
+}
+
+.help-window table {
+  border-collapse: collapse;
+}
+
+.help-window th,
+.help-window td {
+  border: 1px solid;
+  padding: 3px 5px;
+  text-align: left;
+}
+
+.noscript-note {
+  position: fixed;
+  z-index: 50;
+  right: 10px;
+  bottom: 50px;
+  max-width: 500px;
+  border: 1px solid;
+  background: white;
+  padding: 8px;
+}
+
+@media (max-width: 760px) {
+  :root {
+    --header-height: 27px;
+    --command-height: 50px;
+  }
+
+  .machine-header {
+    grid-template-columns: auto 1fr auto;
+  }
+
+  .activity-name {
+    display: none;
+  }
+
+  .program-frame {
+    grid-template-columns: minmax(0, 1fr) 14px;
+  }
+
+  .navigator-pane {
+    display: none;
+  }
+
+  .document-pane {
+    grid-column: 1;
+  }
+
+  .scroll-margin {
+    grid-column: 2;
+  }
+
+  .museum-article {
+    padding: 8px 10px 24px;
+  }
+
+  .museum-article table {
+    display: block;
+    overflow-x: auto;
+  }
+
+  .command-pane {
+    grid-template-columns: auto 1fr auto;
+    grid-template-rows: 22px 18px;
+  }
+
+  #command-hint {
+    grid-column: 1 / -1;
+  }
+
+  .menu-columns {
+    grid-template-columns: 1fr;
+    max-height: 75vh;
+    overflow: auto;
+  }
+
+  .menu-columns section + section {
+    border-top: 1px solid var(--ink);
+    border-left: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  * {
+    scroll-behavior: auto !important;
+  }
+}
+
+@media print {
+  html,
+  body {
+    height: auto;
+    overflow: visible;
+  }
+
+  .machine-screen {
+    display: block;
+  }
+
+  .machine-header,
+  .navigator-pane,
+  .scroll-margin,
+  .command-pane,
+  .who-line {
+    display: none;
+  }
+
+  .program-frame {
+    display: block;
+    border: 0;
+    margin: 0;
+  }
+
+  .document-pane {
+    overflow: visible;
+  }
+}

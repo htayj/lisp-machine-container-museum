@@ -79,6 +79,13 @@ asset exclusion. MIT, LM-3, and the named contributors do not endorse this museu
   surrounding screen relationship reviewed on 2026-07-19. It does not prove
   target-window, registry, callback, destructive-operation, or saved-layout state
   and is not a generic CADR illustration.
+- [`system-menu.png`](system-menu.png) is also embedded in the [CADR and Genera
+  interface style guide](../../cadr-and-genera-interface-style-guide.md). Its use
+  there is limited to criticism and implementation guidance about the visible sparse
+  popup, three-column organization, heading and item typography, current-item
+  outline, surrounding Listener, mode line, and two-row who-line relationship
+  reviewed on 2026-07-26. It is not a decorative design asset and does not establish
+  hidden menu behavior, exact unmeasured dimensions, or general CADR appearance.
 - [`screen-editor-menu.png`](screen-editor-menu.png) is also embedded in the
   [Screen Editor and Frame-Up layout design reimplementation
   specification](../../screen-editor-and-frame-up-layout-design-reimplementation-specification.md).

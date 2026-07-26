@@ -1,9 +1,9 @@
 ---
 type: Preservation Note
 title: Extracting resident fonts from a Genera world
-description: Reproducible local extraction of resident Genera 8.5 screen fonts into BDF, normalized records, and specimen sheets without redistributing licensed assets.
+description: Reproducible local extraction of resident Genera 8.5 screen fonts, with the direct licensed-world workflow separated from the public bounded font reproduction.
 tags: [genera, open-genera, vlod, fonts, preservation]
-timestamp: 2026-07-16T15:15:02-04:00
+timestamp: 2026-07-26T10:15:00-04:00
 ---
 
 # Extracting resident fonts from a Genera world
@@ -16,11 +16,19 @@ world. For the inspected Genera 8.5 base world it finds 89 distinct font objects
 separate symbol walk finds 90 bindings because `TV:*DEFAULT-FONT*` and
 `FONTS:CPTFONT` point to the same object.
 
-The recovered BDF files, normalized JSON records, and PNG specimen sheets remain
-derivative copies of licensed Symbolics material. They are generated under
-`build/fonts/genera/`, which is ignored by Git, and must not be committed or
-redistributed. The extractor contains no font bitmaps and is the preservation
-deliverable that can be shared.
+This repository's direct licensed-world extraction products are generated under
+`build/fonts/genera/`, which is ignored by Git, and must not be committed here. The
+extractor contains no font bitmaps and remains the tracked re-extraction deliverable.
+
+A separate public [Genera Fonts
+repository](https://github.com/htayj/genera-fonts/tree/892fa057622389b43cdd8f725dc5a2384ab656f8)
+publishes a closed font-only reproduction of the same 89 resident objects as raw and
+Unicode BDF, Unicode-derived OTB, normalized records, and specimens. It excludes the
+VLOD, supplied Genera BFD/BDF files, source, executable code, manuals, Help, and
+unrelated heap data. Its `NOTICE.md` states the U.S. “typeface as typeface”
+publication basis and separates the historical glyph-shape payload from the
+BSD-licensed project tooling. Use that reviewed corpus, not this repository's local
+`build/` intermediates, when a public font package is needed.
 
 ## Reproduce the extraction
 
@@ -193,6 +201,9 @@ For the complete evidence-graded inventory, see the
   “Font Support in the Genera X Client,” for the supplied X BDF fonts.
 - X Consortium, [*Glyph Bitmap Distribution Format 2.1*](https://www.x.org/releases/X11R7.0/doc/PDF/bdf.pdf),
   for the public BDF interchange format.
+- [Genera Fonts](https://github.com/htayj/genera-fonts/tree/892fa057622389b43cdd8f725dc5a2384ab656f8),
+  commit `892fa057622389b43cdd8f725dc5a2384ab656f8`, for the closed public
+  89-font reproduction, conversion pipeline, provenance, and publication notice.
 - Licensed Genera 8.5 source inspected locally, identified without quotation or
   redistribution: `sys.sct/io1/lfont-defs.lisp.~2~`,
   `sys.sct/io1/bfd.lisp.~135~`, `sys.sct/io1/bfd-misc.lisp.~1521~`, and
@@ -200,4 +211,4 @@ For the complete evidence-graded inventory, see the
   `sys.sct/hardcopy/postscript.lisp.~1681~` for built-in, bitmap-downloadable, and
   outline-downloadable hardcopy font handling.
 
-Last verified: 2026-07-16.
+Last verified: 2026-07-26.

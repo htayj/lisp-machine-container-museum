@@ -18,3 +18,4 @@
 /build/.genera-computer-use-vlm.lock
 /build/genera-probe-*/
 __pycache__/
+/_site/

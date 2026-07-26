@@ -3,7 +3,7 @@ type: Artifact Analysis
 title: Genera 8.5 resident font catalog
 description: Evidence-graded inventory of all 89 distinct fonts resident in the inspected Genera 8.5 base world, with unknown application uses left as TODO.
 tags: [genera, open-genera, fonts, catalog, preservation]
-timestamp: 2026-07-16T12:29:47-04:00
+timestamp: 2026-07-26T10:15:00-04:00
 ---
 
 # Genera 8.5 resident font catalog
@@ -140,9 +140,13 @@ is the lowercase font object name plus `.png`; `SWISS12-CCAPS`, for example, bec
 `swiss12-ccaps.png`. Sheets label character codes in octal and mark each decoded
 baseline with a pale horizontal line.
 
-The PNGs are intentionally absent from this repository. They contain rendered copies
-of licensed glyphs, so even the visual catalog remains a local research output rather
-than a public museum asset.
+The direct licensed-world PNGs remain intentionally absent from this repository and
+under ignored `build/fonts/genera/`. The separate public [Genera Fonts specimen
+gallery](https://github.com/htayj/genera-fonts/blob/892fa057622389b43cdd8f725dc5a2384ab656f8/SPECIMENS.md)
+provides one deterministic specimen for each of the same 89 resident objects under
+that repository's bounded U.S. “typeface as typeface” publication notice. This
+separation keeps the local extraction rule intact while providing a reviewed public
+visual/font reproduction.
 
 ## Limits and next research steps
 

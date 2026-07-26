@@ -1,0 +1,151 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="@@DESCRIPTION@@">
+  <title>@@TITLE@@ — Lisp Machine Museum</title>
+  <link rel="icon" href="data:,">
+  <link rel="stylesheet" href="@@ROOT@@assets/fonts/fonts.css">
+  <link rel="stylesheet" href="@@ROOT@@style.css">
+  <script>document.documentElement.classList.add("has-js")</script>
+</head>
+<body data-root="@@ROOT@@">
+  <a class="skip-link" href="#museum-document">Skip to documentation</a>
+  <div class="machine-screen">
+    <header class="machine-header">
+      <button class="system-key" id="system-key" type="button"
+        aria-haspopup="dialog" aria-controls="system-menu"
+        data-pointer-doc="Display the museum System Menu.">System</button>
+      <a class="machine-name" href="@@ROOT@@index.html"
+        data-pointer-doc="Return to the Lisp Machine Museum.">Lisp Machine Museum</a>
+      <span class="activity-name">Documentation Examiner</span>
+      <button class="search-key" id="search-key" type="button"
+        aria-haspopup="dialog" aria-controls="search-panel"
+        data-pointer-doc="Search every published museum document.">Search</button>
+    </header>
+
+    <div class="program-frame">
+      <div class="program-label">Genera Museum Documentation</div>
+      <aside class="navigator-pane" aria-label="Museum sections">
+        <div class="pane-title">Museum Topics</div>
+        <nav class="navigator-list">
+          @@NAVIGATION@@
+        </nav>
+        <div class="navigator-help">
+          <p><strong>Keyboard:</strong></p>
+          <p><kbd>/</kbd> Search</p>
+          <p><kbd>?</kbd> Help</p>
+          <p><kbd>Esc</kbd> Abort</p>
+          <p><kbd>Home</kbd> Top</p>
+        </div>
+      </aside>
+
+      <main class="document-pane" id="museum-document" tabindex="-1">
+        <div class="breadcrumb-pane">@@BREADCRUMBS@@</div>
+        <article class="museum-article">
+          @@BODY@@
+        </article>
+        <footer class="document-footer">
+          <a href="@@SOURCE_URL@@" data-pointer-doc="Open the canonical Markdown source on GitHub.">Source: docs/@@SOURCE_PATH@@</a>
+        </footer>
+      </main>
+      <div class="scroll-margin" aria-hidden="true">
+        <button id="scroll-top" type="button" tabindex="-1">▲</button>
+        <div class="scroll-shaft"><span id="scroll-car"></span></div>
+        <button id="scroll-bottom" type="button" tabindex="-1">▼</button>
+      </div>
+    </div>
+
+    <form class="command-pane" id="command-form">
+      <label for="command-input">Command:</label>
+      <input id="command-input" name="command" autocomplete="off" spellcheck="false"
+        aria-describedby="command-hint">
+      <button type="submit">Execute</button>
+      <span id="command-hint">Try “search window system”, “open genera”, or “help”.</span>
+    </form>
+
+    <footer class="who-line">
+      <div class="pointer-documentation" id="pointer-documentation" aria-live="polite">
+        Select a presentation or enter a command.
+      </div>
+      <div class="machine-status">
+        <span>MUSEUM:</span>
+        <span>Genera 8.5 visual profile</span>
+        <span id="clock">--:--</span>
+        <span>Run</span>
+      </div>
+    </footer>
+  </div>
+
+  <div class="transient-layer" id="system-menu" role="dialog" aria-modal="true"
+    aria-labelledby="system-menu-title" hidden>
+    <div class="genera-menu">
+      <div class="genera-menu-title" id="system-menu-title">Museum System Menu</div>
+      <div class="menu-columns">
+        <section>
+          <h2>Collections</h2>
+          <a href="@@ROOT@@genera/index.html">Genera</a>
+          <a href="@@ROOT@@mit-cadr/index.html">MIT CADR</a>
+          <a href="@@ROOT@@software-application-dossiers.html">Applications</a>
+        </section>
+        <section>
+          <h2>Reference</h2>
+          <a href="@@ROOT@@cadr-and-genera-interface-style-guide.html">Style Guide</a>
+          <a href="@@ROOT@@reimplementation-specification-coverage.html">Specifications</a>
+          <a href="@@ROOT@@screenshot-publication-rights-review.html">Evidence Rights</a>
+        </section>
+        <section>
+          <h2>Operation</h2>
+          <button type="button" data-action="search">Search</button>
+          <button type="button" data-action="help">Help</button>
+          <button type="button" data-action="abort">Abort</button>
+        </section>
+      </div>
+    </div>
+  </div>
+
+  <div class="transient-layer" id="search-panel" role="dialog" aria-modal="true"
+    aria-labelledby="search-title" hidden>
+    <div class="search-window">
+      <div class="genera-menu-title" id="search-title">Select Documentation</div>
+      <label class="search-query">
+        Search words:
+        <input id="search-input" type="search" autocomplete="off" spellcheck="false">
+      </label>
+      <div id="search-results" class="search-results" role="listbox"
+        aria-label="Matching museum documents"></div>
+      <div class="search-actions">
+        <button type="button" data-action="abort">Abort</button>
+        <span>Enter selects; ↑ and ↓ move; Escape aborts.</span>
+      </div>
+    </div>
+  </div>
+
+  <div class="transient-layer" id="help-panel" role="dialog" aria-modal="true"
+    aria-labelledby="help-title" hidden>
+    <div class="help-window">
+      <div class="genera-menu-title" id="help-title">Documentation Examiner Help</div>
+      <p>This site presents the museum’s canonical Markdown as a Genera-profile
+      Documentation Examiner. Links are typed presentations; pointing at or focusing
+      one updates the documentation line at the bottom of the screen.</p>
+      <table>
+        <tbody>
+          <tr><th><kbd>/</kbd></th><td>Search documentation</td></tr>
+          <tr><th><kbd>?</kbd></th><td>Show this Help window</td></tr>
+          <tr><th><kbd>Escape</kbd></th><td>Abort a transient operation</td></tr>
+          <tr><th><kbd>Home</kbd></th><td>Move to the beginning of the document</td></tr>
+          <tr><th>System</th><td>Open the transient three-column System Menu</td></tr>
+        </tbody>
+      </table>
+      <button type="button" data-action="abort">End</button>
+    </div>
+  </div>
+
+  <noscript>
+    <p class="noscript-note">JavaScript is disabled. All documents and navigation
+    remain available; transient menus, search, and pointer documentation do not.</p>
+  </noscript>
+  <script src="@@ROOT@@site.js" defer></script>
+</body>
+</html>

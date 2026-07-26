@@ -3,7 +3,7 @@ type: Artifact Analysis
 title: MIT CADR font sources and recovery
 description: Source-first recovery of the public MIT CADR bitmap fonts into inspectable BDF files and font-sheet images.
 tags: [mit-cadr, fonts, source-recovery, preservation]
-timestamp: 2026-07-17T01:17:24-04:00
+timestamp: 2026-07-26T10:15:00-04:00
 ---
 
 # MIT CADR font sources and recovery
@@ -22,6 +22,15 @@ Against revision `8e978d7d1704096a63edd4386a3b8326a2e584af` of the public
 the default extraction emits 150 font artifacts representing 88 logical names. The
 difference is intentional: 62 source variants have materially different glyphs or
 metrics and are preserved separately rather than silently collapsed.
+
+The later dedicated public [CADR Fonts
+pipeline](https://github.com/htayj/CADR-fonts/tree/97722fa9fc687a3f72e4583acf64dd1721840ec7)
+supersedes this museum-local 150-artifact build for public installation and release.
+It corrects the AST raster-height model for `BUG`: the 32-row authored AST form and
+33-row `BUG-KST` form are retained as distinct artifacts, giving 151 source
+artifacts. It also keeps a separate inertly decoded 49-QFASL runtime profile and
+publishes source/runtime Unicode BDF and OTB packages. The source and resident
+profiles must not be collapsed when selecting a font for an exact interface target.
 
 These outputs are normalized preservation derivatives. They retain character codes,
 declared metrics, and every recoverable set pixel, including pixels outside some
@@ -240,4 +249,4 @@ a particular AST, KST, or Alto variant.
   a running System 46 image. That would test the complete historical compilation and
   loading path, but it is not required to recover the public glyph data.
 
-Last verified: 2026-07-17.
+Last verified: 2026-07-26.
