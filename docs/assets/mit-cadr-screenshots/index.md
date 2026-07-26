@@ -1,8 +1,9 @@
 # Curated MIT CADR runtime screenshots
 
 This directory contains twenty-two reviewed runtime captures selected from thirteen
-provenance-bearing System 303 sessions: twenty-one exact full framebuffers and one
-documented crop that retains a complete application window. They are runtime observations, not
+provenance-bearing System 303 sessions—twenty-one exact full framebuffers and one
+documented crop that retains a complete application window—plus one two-frame
+teaching animation assembled from two of those exact captures. They are runtime observations, not
 manual illustrations and not claims about every CADR, application, or debugger release.
 
 ## Rights status
@@ -65,6 +66,27 @@ The surrounding catalog metadata and original museum prose are not subject to th
 asset exclusion. MIT, LM-3, and the named contributors do not endorse this museum.
 
 ## Approved specification uses
+
+- The [System 303 Tour orientation](../../tour/mit-cadr/orientation.md) may use
+  `lisp-listener-multiple-values.png`, `system-menu.png`, and
+  `zmacs-mode-switch.gif`; its [application atlas](../../tour/mit-cadr/applications.md)
+  may use `inspector-list.png` and `spacewar-game.png`. These uses are limited to
+  teaching the visible Listener, System Menu, Zmacs mode-line transition, Inspector
+  list, and Spacewar playfield beside substantive release-bounded explanation. The
+  GIF alternates the complete reviewed `zmacs-text-mode.png` and
+  `zmacs-lisp-mode.png` frames with 2.4-second pauses. It is explicitly labeled a
+  two-state teaching loop, not a real-time recording, and adds no screen pixels,
+  licensed prose, or intermediate-state claim.
+
+For that animation specifically, the purpose is nonprofit instruction and criticism
+of how a verified named-command gesture changes editor state; the displayed material
+is a predominantly functional editor surface; two complete frames are the minimum
+that preserves the mode-line relationship and surrounding context; and the inert
+4.8-second loop cannot edit text, execute a command, or substitute for the software,
+band, source, font, or manual. Those four factors support the same limited fair-use
+conclusion as the source stills. `scripts/build-tour-animations.sh` assembles the
+tracked sources with ImageMagick 7.1.2-27, exact per-frame delay 240 centiseconds,
+infinite loop, and lossless changed-region optimization.
 
 - [`lisp-listener-multiple-values.png`](lisp-listener-multiple-values.png) is also
   embedded in the [Lisp Listeners and editable input reimplementation
@@ -173,6 +195,7 @@ path is needed to render the museum pages.
 | [`qix-live.png`](qix-live.png) | `0027-qix-funcall-live.png` | 2026-07-18 12:54:29 | Load public `HAKDEF` and `QIX`, invoke `NQIX` in a fresh Listener, and allow the source-defined XOR trail to evolve before its any-key stop | `4c6d92f19027d7dd73a6934776d4e3361056bd7b006d8059277c5e47abd8131f` | `8f546c33f9036fb1e0d8447ff93e673f2137c3b2b94669efa1a9b8a0a715b273` |
 | [`supdup-disconnected.png`](supdup-disconnected.png) | `0020-supdup-connect-prompt.png` | 2026-07-19 20:34:35 | After loading the exact maintained public source through the isolated FILE bridge, select the resulting Supdup window; the source-injected shell shows its disconnected label and shared TV surface without the expected host prompt | `52c53d7b51c3298a7eb037c815bbbb6c76dcfd19dd54ebf3549abb1e16bead02` | `3205f9174f16cdda83ce66ba03778e2452b9ee5f04c56411f83613ee1996e9e8` |
 | [`telnet-disconnected.png`](telnet-disconnected.png) | `0025-telnet-disconnected-shell.png` | 2026-07-19 20:37:03 | Explicitly construct and select a maintained-source Telnet window with NIL process slots after ordinary creation exposed a source/band initialization mismatch; the static shell shows the distinct disconnected label only | `310c63af5118102151afe2e9dd7025f2ddf564f34fb999762fee247aeb1dd802` | `bf54d03936d07b0c74d3071f124f53d7f923f3969ac75371ec172b61d3b7b6d9` |
+| [`zmacs-mode-switch.gif`](zmacs-mode-switch.gif) | Derived from tracked `zmacs-text-mode.png` and `zmacs-lisp-mode.png` | Rebuilt 2026-07-26 | Alternate the two complete mode states with 2.4-second pauses; no resize, crop, annotation, or synthesized intermediate frame | `e65442288831d0dd83fb56e922f961dbc27e72ac74e9f7ae1372064e913114ae` | Source frame pixel hashes are the two hashes cataloged above |
 
 The PNG digest identifies the exact tracked file bytes. For the twenty-one uncropped
 captures, the pixel digest in each original sidecar identifies normalized eight-bit

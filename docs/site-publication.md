@@ -3,7 +3,7 @@ type: Preservation Note
 title: Publishing the museum documentation site
 description: Build, visual-profile, interaction, font-provenance, validation, and GitHub Pages publication contract for the Lisp Machine Museum knowledge base.
 tags: [documentation, github-pages, genera, fonts, preservation]
-timestamp: 2026-07-26T11:29:00-04:00
+timestamp: 2026-07-26T19:50:00-04:00
 ---
 
 # Publishing the museum documentation site
@@ -32,6 +32,11 @@ captures behind that guide:
 - context-sensitive pointer and focus documentation in the bottom line; and
 - responsive rearrangement that preserves the same roles rather than introducing
   mobile cards or navigation chrome.
+
+The left navigator calls the canonical collection **Knowledge Base** and gives the
+beginner manual its own **Tour** topic. Tour breadcrumbs retain both levels, for
+example `Knowledge Base › Tour › Genera › Finding your way around Genera 8.5`;
+technical Genera and MIT CADR collections remain separate peers.
 
 There are no CRT scanlines, glow, green phosphor, rounded cards, pill controls,
 blurred shadows, wallpaper, or generic arcade typography.
@@ -63,6 +68,13 @@ Pointing at or focusing a link, button, or input updates the stable bottom
 documentation line. Keyboard and pointer users receive the same description.
 JavaScript is progressive: canonical page links and the collection indexes remain
 usable when scripting is disabled.
+
+Tour animations are tracked evidence assets, copied without resampling along with
+the reviewed stills. CSS leaves every raster image at its intrinsic dimensions, so a
+narrow document pane scrolls rather than fractionally shrinking bitmap lettering.
+The two initial teaching loops use complete native-size frames and slow pauses; their
+captions and asset catalogs state that they are comparisons rather than real-time
+screen recordings.
 
 The active margin follows the historical role rather than merely drawing a browser
 scrollbar. Genera margin scrollbars divide into start, shaft, car, and end hit

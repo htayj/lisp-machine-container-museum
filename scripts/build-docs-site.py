@@ -169,9 +169,14 @@ def run_pandoc(source: Path, docs_root: Path) -> str:
 
 
 def navigation(root: str, relative_source: PurePosixPath) -> str:
-    section = relative_source.parts[0] if len(relative_source.parts) > 1 else "museum"
+    section = (
+        relative_source.parts[0]
+        if len(relative_source.parts) > 1
+        else "knowledge-base"
+    )
     items = [
-        ("Museum", "index.html", section == "museum"),
+        ("Knowledge Base", "index.html", section == "knowledge-base"),
+        ("Tour", "tour/index.html", section == "tour"),
         ("Genera", "genera/index.html", section == "genera"),
         ("MIT CADR", "mit-cadr/index.html", section == "mit-cadr"),
         ("Applications", "software-application-dossiers.html", False),
@@ -188,8 +193,21 @@ def navigation(root: str, relative_source: PurePosixPath) -> str:
 
 
 def breadcrumbs(root: str, relative_source: PurePosixPath, title: str) -> str:
-    crumbs = [f'<a href="{root}index.html">Museum</a>']
-    if len(relative_source.parts) > 1:
+    crumbs = [f'<a href="{root}index.html">Knowledge Base</a>']
+    if relative_source.parts[0] == "tour":
+        if relative_source != PurePosixPath("tour/index.md"):
+            crumbs.append(f'<a href="{root}tour/index.html">Tour</a>')
+        if len(relative_source.parts) > 2:
+            subsection = relative_source.parts[1]
+            label = {"genera": "Genera", "mit-cadr": "MIT CADR"}.get(
+                subsection, subsection.replace("-", " ").title()
+            )
+            if relative_source.name != "index.md":
+                crumbs.append(
+                    f'<a href="{root}tour/{subsection}/index.html">'
+                    f"{html.escape(label)}</a>"
+                )
+    elif len(relative_source.parts) > 1:
         section = relative_source.parts[0]
         label = {"genera": "Genera", "mit-cadr": "MIT CADR"}.get(
             section, section.replace("-", " ").title()

@@ -2,7 +2,7 @@
 okf_version: "0.1"
 ---
 
-# Lisp Machine Museum knowledge base
+# Lisp Machine knowledge base
 
 This is the durable research and interpretation layer of the repository. It records
 what the preserved systems are, how their artifacts work, and what we learn while
@@ -17,6 +17,9 @@ machine-readable metadata layer while retaining ordinary Markdown as the source.
 
 ## Collections
 
+- [Guided tour](tour/index.md) - A beginner-facing manual for learning the UI
+  language, moving between activities, and trying the applications in CADR and
+  Genera, with reviewed runtime views and short interaction animations.
 - [Symbolics Genera and Open Genera](genera/index.md) - The later Symbolics system,
   its Virtual Lisp Machine, and preserved Open Genera artifacts.
 - [MIT CADR and LM-3](mit-cadr/index.md) - The earlier public MIT Lisp Machine

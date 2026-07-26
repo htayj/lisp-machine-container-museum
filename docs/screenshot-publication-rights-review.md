@@ -682,6 +682,22 @@ underlying interface or displayed software. The asset catalog should state
 that boundary so downstream users do not mistake repository access for a
 general reuse license.
 
+### Short teaching animations
+
+A guided-tour animation receives the same image- and use-specific review as a still,
+plus review of the sequence itself. It must state whether it is a real-time capture,
+selected frames from one interaction, or a teaching loop made from separately
+captured states. The published caption must not imply unrecorded timing, pointer
+motion, intermediate redisplay, or command effects.
+
+The preferred keybinding illustration is two or three complete, already reviewed
+frames with a slow pause on each state. Preserve the source pixels and canvas; do not
+fractionally rescale bitmap fonts or patterns. Record the source-frame identities,
+assembly command and tool, frame delays, loop behavior, animation digest, and exact
+instructional claim. An animation remains disallowed when it becomes a bulk
+interaction sequence, reproduces substantial Help or manual text, or functions as a
+decorative reel.
+
 ## Exclusions and enhanced review
 
 Do not use this policy to publish:

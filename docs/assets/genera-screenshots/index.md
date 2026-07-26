@@ -1,7 +1,8 @@
 # Curated Genera runtime screenshots
 
 This directory contains thirty-five narrowly selected screen captures used to document
-visible application behavior in the museum's Genera 8.5 world. Thirty-three are exact
+visible application behavior in the museum's Genera 8.5 world, plus one two-frame
+teaching animation assembled from two complete reviewed captures. Thirty-three stills are exact
 byte-for-byte copies of captures produced by the Xvfb computer-use harness. The two
 Hardcopy images are documented crops of raw captures that remove an unrelated Listener
 and exploratory debugger state. The licensed world, raw sessions, JSON sidecars, logs,
@@ -47,6 +48,28 @@ additional permission from this project beyond rights they may independently hav
 under applicable law.
 
 ## Approved specification uses
+
+- The [Genera Tour orientation](../../tour/genera/orientation.md) may use
+  `dynamic-lisp-listener-multiple-values.png` and `open-system-menu.gif`; its
+  [application atlas](../../tour/genera/applications.md) may use
+  `document-examiner-initial.png` and `accepting-values-gc-options.png`. These uses
+  are limited to teaching the visible Listener, Shift-Right menu result, Document
+  Examiner layout, and presentation-based form language beside substantive,
+  release-bounded explanation. The GIF alternates the complete reviewed Listener
+  and System Menu captures with 2.4-second pauses. It is expressly a comparison of
+  separately captured states, not a real-time sequence, and adds no screen pixels,
+  licensed prose, or intermediate-state claim.
+
+For that animation specifically, the purpose is nonprofit instruction and criticism
+of the verified Shift-Right System Menu result; the displayed Listener and menu are
+predominantly functional; two complete frames are the minimum that preserves the
+screen/menu relationship without inventing an intermediate sequence; and the inert
+4.8-second loop cannot select an activity, operate Genera, or substitute for the
+world, source, documentation, fonts, or a license. Those four factors support the
+same limited fair-use conclusion as the source stills.
+`scripts/build-tour-animations.sh` assembles the tracked sources with ImageMagick
+7.1.2-27, exact per-frame delay 240 centiseconds, infinite loop, and lossless
+changed-region optimization.
 
 - [`zmacs-character-style-prompt.png`](zmacs-character-style-prompt.png) is embedded
   only in [Inks, faces, and character styles in Symbolics
@@ -634,6 +657,7 @@ the final keystroke.
 | [Screen hardcopy options](screen-hardcopy-options.png) | `0008-screen-hardcopy-form.png` | Invoke numeric-argument screen hardcopy; crop the complete option form before aborting without capture or output | 2026-07-18 09:21:27 EDT | 24 records; SHA-256 `4afccf9b2c4beb16863839e7c1a6c180f1078b1f636343dfb1c2fc882dc0969c` |
 | [Disabled network-service registry](network-service-registry-disabled.png) | `0001-service-registry.png` | Read the two policy variables, count 47 registrations, and print selected registered/enabled pairs; every selected service is disabled and optional Domain/Site-NAMES contacts are absent | 2026-07-18 10:58:40 EDT | 2 records; SHA-256 `6594cfb4374da911d4d97874aac1d4a81a0a86b556cbb18f7d8fe392e0627be1` |
 | [Terminal disconnected state](terminal-disconnected.png) | `0003-terminal-disconnected.png` | Complete local login and invoke `Select T`; the untouched Terminal displays `Connect: (the name of a host)`, `Terminal 1`, a blank output surface, left scrollbar and who-line before any peer or Help interaction | 2026-07-19 20:18:51 EDT | 4 records; SHA-256 `e0cdc56994bf9a29b69d4c5f08391df47821eeec0ff418d11f5561bc2437dc52` |
+| [Open System Menu teaching loop](open-system-menu.gif) | Derived from tracked `dynamic-lisp-listener-multiple-values.png` and `system-menu.png` | Alternate the two complete reviewed states with 2.4-second pauses; no resize, crop, annotation, or synthesized intermediate frame | Rebuilt 2026-07-26 | GIF SHA-256 `946bb4b482cf3ed4688ff30058e80ad91555916c0a352a4690c069a423137d9f`; source-frame provenance is retained in their rows above |
 
 ## Image identities
 
@@ -658,6 +682,7 @@ other transform.
 | `zmacs-character-style-prompt.png` | 1,545 | 1200 by 900 | `e83d3cd7c59bdae6c6b3d2054af57602aa2f9e99cb07378ac497ca1755bbcf09` | `67474be07dd5519bc7f1935deb084ccf18b0855087a5e9c5eb77747e84cfbf7e` |
 | `dynamic-lisp-listener-multiple-values.png` | 11,824 | 1200 by 900 | `39061d7b9ea5b55428020cfaf7558b5566c101ab56822cbd951905c520c3ebac` | `99003664b87974790051046a01a9579ffa77b48e25e2d7c406e7c87e42ee5c37` |
 | `system-menu.png` | 15,215 | 1200 by 900 | `e1a8a968d891e68e9f4315ee7d943d4b0b1fb70b103226402ba64d23f91a5d66` | `3a233d323b245d7d7da5587b014bd47ac12f29fa239972871c9f22e6b32358af` |
+| `open-system-menu.gif` | 54,613 | 1200 by 900 canvas, two frames | `946bb4b482cf3ed4688ff30058e80ad91555916c0a352a4690c069a423137d9f` | Source frame pixel hashes are retained in their rows above |
 | `emergency-break-arithmetic-evaluation.png` | 1,712 | 1024 by 768 | `b7edcce3ba94e9601335ac280438988d5ae40451c1f2235f2b5fe786f8736eb6` | `219c9bce8d7771553141df4873aced28255317f6e7b1cd9700c61ef5ac834445` |
 | `inspector-list.png` | 3,471 | 1200 by 900 | `f58fc2395aae855c5db1fe42752684d200373afb3fa8be6e13334c6835514234` | `17201261652263d7f8474829636ca6dc003d7c75f88cf98ca32ce3ab75413ba6` |
 | `peek-processes.png` | 9,715 | 1200 by 900 | `495197133b56601af46a6bda975643d46a3de66fe17eca927969c66ad3a65920` | `b44a3d83b78d71591adbad3896280b8d1ef573586dd17b31db46db0f42ddd02d` |

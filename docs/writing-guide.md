@@ -1,7 +1,7 @@
 ---
 type: Editorial Guide
 title: Writing and research guide
-description: Conventions for evidence-based, preservation-conscious museum documentation in the repository's OKF bundle.
+description: Conventions for evidence-based, preservation-conscious knowledge-base and guided-tour documentation in the repository's OKF bundle.
 tags: [documentation, okf, preservation, research]
 timestamp: 2026-07-19T04:36:35-04:00
 ---
@@ -67,6 +67,36 @@ Use only the sections a topic needs, usually in this order:
 
 Label inference as inference. A local observation proves something about the inspected
 artifact, not necessarily every release or every Lisp machine.
+
+## Guided-tour pages
+
+The `docs/tour/` collection is the beginner-facing manual layer. It complements the
+evidence dossiers; it does not replace or weaken them.
+
+- Begin with what the reader sees and what to do next. Define unfamiliar Lisp-machine
+  vocabulary at first use.
+- Give exact entry gestures and a safe first exercise. Say whether a gesture creates
+  a new activity, selects an existing window, changes a mode, or invokes a transient
+  command.
+- Use the release profile named by the page. Do not silently combine System 46,
+  maintained System 303, and Genera 8.5 behavior.
+- Link each tour stop to its evidence dossier. When a program is unavailable,
+  hardware-dependent, service-dependent, destructive, or source-only, explain that
+  boundary instead of writing a fictional hands-on sequence.
+- Account for every D01-D60 application area in the tour atlas, including areas that
+  are infrastructure rather than independently launchable programs.
+- Prefer one reviewed still for a stable layout and a short animation for a
+  transition or key gesture. An animation must have the same capture-specific
+  review, provenance, attribution, and license exclusion as a still.
+- State whether an animation is a real-time sequence, selected frames from one
+  recorded interaction, or a teaching loop made from separately captured before and
+  after states. Never imply timing or intermediate behavior that was not recorded.
+- Keep animation loops brief and narrowly tied to the instruction. Do not publish
+  bulk interaction recordings, substantial Help text, licensed prose, artwork, or a
+  decorative screen reel.
+- Put reviewed CADR animations with the CADR screenshot assets and reviewed Genera
+  animations with the Genera screenshot assets. Preserve intrinsic raster dimensions
+  in the published site; never resample bitmap text to a fractional size.
 
 ## Source selection
 

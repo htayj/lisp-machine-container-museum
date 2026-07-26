@@ -207,6 +207,7 @@ ENDFONT
             self.assertEqual(generated_pages, expected_pages)
             self.assertIn(f"Built {expected_pages} museum pages", result.stdout)
             self.assertTrue((output / "index.html").is_file())
+            self.assertTrue((output / "tour" / "index.html").is_file())
             self.assertTrue((output / "genera" / "index.html").is_file())
             self.assertTrue((output / "mit-cadr" / "index.html").is_file())
             self.assertTrue((output / "style.css").is_file())
@@ -218,6 +219,14 @@ ENDFONT
                     / "assets"
                     / "genera-screenshots"
                     / "system-menu.png"
+                ).is_file()
+            )
+            self.assertTrue(
+                (
+                    output
+                    / "assets"
+                    / "genera-screenshots"
+                    / "open-system-menu.gif"
                 ).is_file()
             )
             self.assertNotIn(

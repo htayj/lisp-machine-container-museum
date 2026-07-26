@@ -3,7 +3,7 @@ type: Editorial Guide
 title: CADR and Genera interface style guide
 description: Evidence-grounded visual, typographic, interaction, and web implementation guidance for recreating MIT CADR and Symbolics Genera interface styles without importing a generic retro aesthetic.
 tags: [mit-cadr, lm-3, genera, interface-design, web-design, typography, dynamic-windows, tv]
-timestamp: 2026-07-26T11:28:00-04:00
+timestamp: 2026-07-26T19:45:00-04:00
 ---
 
 # CADR and Genera interface style guide
@@ -873,6 +873,30 @@ current state rather than silently doing nothing. A modern implementation can us
 - `aria-live` error text.
 
 Never use screen shake or a long blocking animation.
+
+### Documentary keybinding animations
+
+An instructional site may animate a verified key or pointer transition even though
+decorative animation is outside both historical profiles. Keep that documentary
+layer visually subordinate:
+
+- use complete native-resolution runtime frames at their original pixel size or an
+  integer multiple;
+- pause long enough to inspect the before and after states instead of simulating
+  smooth modern motion;
+- name the exact chord in adjacent selectable text rather than painting a modern
+  keycap overlay over the historical screen;
+- distinguish real-time recordings from teaching loops assembled from selected
+  frames;
+- never invent pointer trajectories, redisplay timing, or intermediate screens; and
+- honor reduced-motion preferences by exposing the same states as ordinary stills
+  or text.
+
+Do not fractionally scale GIF frames. Optimized GIF subrectangles may encode only
+changed pixels after the first frame, but their logical canvas must retain the exact
+runtime dimensions. The publication and rights rules remain those of
+[the screenshot review](screenshot-publication-rights-review.md), not those of
+decorative web animation.
 
 ## Responsive layout and accessibility
 
