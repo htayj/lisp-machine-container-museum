@@ -514,6 +514,7 @@ kbd {
   z-index: 4;
   display: none;
   pointer-events: none;
+  background-color: var(--paper);
 }
 
 .ragged-edge.is-active {

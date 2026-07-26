@@ -3,7 +3,7 @@ type: Preservation Note
 title: Publishing the museum documentation site
 description: Build, visual-profile, interaction, font-provenance, validation, and GitHub Pages publication contract for the Lisp Machine Museum knowledge base.
 tags: [documentation, github-pages, genera, fonts, preservation]
-timestamp: 2026-07-26T22:20:00-04:00
+timestamp: 2026-07-26T22:40:00-04:00
 ---
 
 # Publishing the museum documentation site
@@ -99,7 +99,10 @@ The document viewport also exposes Dynamic Windows continuation state. A ragged
 top or bottom edge appears only while more document content exists beyond that
 edge; the side pair does the same for horizontal overflow. The ten-device-pixel
 repeat remains device-pixel anchored through zoom. This is functional window
-decoration, not a permanent zigzag ornament.
+decoration, not a permanent zigzag ornament. An opaque paper-colored strip erases
+the ordinary straight rule under each active ragged edge before the zigzag is
+drawn; this makes the state-dependent decoration replace the rule instead of
+overprinting it.
 
 ## Genera font publication boundary
 
@@ -217,7 +220,8 @@ checked:
   one-device-pixel patterned cables, eight-pixel-minimum cars, line and page
   movement, proportional dragging, and keyboard movement;
 - correct top/right/bottom/left ragged-edge transitions after vertical and
-  horizontal scrolling;
+  horizontal scrolling, with each active zigzag replacing rather than overlapping
+  the straight edge;
 - the narrow layout, narrow System Menu, command area, active scroll margin, and
   document-pane-contained horizontal overflow for unscaled raster evidence; and
 - the browser console for font, JavaScript, and asset errors.

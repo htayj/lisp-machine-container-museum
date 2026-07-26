@@ -3,7 +3,7 @@ type: Editorial Guide
 title: CADR and Genera interface style guide
 description: Evidence-grounded visual, typographic, interaction, and web implementation guidance for recreating MIT CADR and Symbolics Genera interface styles without importing a generic retro aesthetic.
 tags: [mit-cadr, lm-3, genera, interface-design, web-design, typography, dynamic-windows, tv]
-timestamp: 2026-07-26T22:20:00-04:00
+timestamp: 2026-07-26T22:40:00-04:00
 ---
 
 # CADR and Genera interface style guide
@@ -530,6 +530,11 @@ then make only the edge whose overflow predicate is true ragged. Use the source
 profile's ten-pixel repeat at native or integer-scaled pixels; do not let browser
 zoom resample a bitmap border independently of the pane. Preserve partial-repeat
 phase at the right for horizontal edges and at the bottom for vertical edges. The
+ragged renderer replaces the ordinary straight rule on that edge. In a layered web
+implementation, first cover or omit the straight rule beneath the active ragged
+strip, then draw the zigzag; a transparent zigzag laid over the rule incorrectly
+shows both borders at once. Restore the straight rule when the continuation
+predicate becomes false. The
 complete predicates, drawing contract, application inventory, and reviewed
 horizontal example are in
 [Ragged window borders in Symbolics Genera](genera/ragged-window-borders.md).
@@ -1129,7 +1134,8 @@ implementation-significant errors or omissions:
 - display headings should select resident `SWISS20` or `HL14` objects instead of
   enlarging `HL12`; and
 - ragged borders are state-dependent continuation indicators on all four possible
-  viewport edges, not decorative horizontal trim.
+  viewport edges that replace the corresponding straight rule, not decorative
+  horizontal trim or a transparent overlay on a second border.
 
 The who-line polarity, scrollbar placement, hard System Menu shadow, named font
 roles, intrinsic raster-image rule, device-pixel stipple rule, and distinction
