@@ -13,6 +13,10 @@
   const horizontalScrollCar = document.getElementById("horizontal-scroll-car");
   const scrollLeftButton = document.getElementById("scroll-left");
   const scrollRightButton = document.getElementById("scroll-right");
+  const raggedTop = document.querySelector(".ragged-edge--top");
+  const raggedRight = document.querySelector(".ragged-edge--right");
+  const raggedBottom = document.querySelector(".ragged-edge--bottom");
+  const raggedLeft = document.querySelector(".ragged-edge--left");
   const clock = document.getElementById("clock");
   const commandForm = document.getElementById("command-form");
   const commandInput = document.getElementById("command-input");
@@ -81,7 +85,7 @@
     const maximum = documentPane.scrollHeight - documentPane.clientHeight;
     const available = scrollShaft.clientHeight;
     const ratio = Math.min(1, documentPane.clientHeight / documentPane.scrollHeight);
-    const carHeight = Math.min(available, Math.max(12, Math.round(available * ratio)));
+    const carHeight = Math.min(available, Math.max(8, Math.round(available * ratio)));
     const top = maximum <= 0 ? 0 : Math.round((available - carHeight) * documentPane.scrollTop / maximum);
     scrollGeometry = { available, carHeight, top };
     scrollCar.style.height = `${carHeight}px`;
@@ -101,7 +105,7 @@
     );
     const carWidth = Math.min(
       horizontalAvailable,
-      Math.max(12, Math.round(horizontalAvailable * horizontalRatio)),
+      Math.max(8, Math.round(horizontalAvailable * horizontalRatio)),
     );
     const left = horizontalMaximum <= 0
       ? 0
@@ -127,6 +131,18 @@
     horizontalScrollShaft.setAttribute(
       "aria-valuetext",
       `${horizontalPercentage}% across document`,
+    );
+
+    const epsilon = 1;
+    raggedTop.classList.toggle("is-active", documentPane.scrollTop > epsilon);
+    raggedBottom.classList.toggle(
+      "is-active",
+      documentPane.scrollTop < maximum - epsilon,
+    );
+    raggedLeft.classList.toggle("is-active", documentPane.scrollLeft > epsilon);
+    raggedRight.classList.toggle(
+      "is-active",
+      documentPane.scrollLeft < horizontalMaximum - epsilon,
     );
   }
 

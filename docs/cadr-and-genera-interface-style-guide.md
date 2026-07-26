@@ -3,7 +3,7 @@ type: Editorial Guide
 title: CADR and Genera interface style guide
 description: Evidence-grounded visual, typographic, interaction, and web implementation guidance for recreating MIT CADR and Symbolics Genera interface styles without importing a generic retro aesthetic.
 tags: [mit-cadr, lm-3, genera, interface-design, web-design, typography, dynamic-windows, tv]
-timestamp: 2026-07-26T20:15:00-04:00
+timestamp: 2026-07-26T22:20:00-04:00
 ---
 
 # CADR and Genera interface style guide
@@ -365,20 +365,27 @@ their vertical scrolling margin on the left of the pane it controls. Do not move
 bar to the browser-conventional right edge merely because the implementation uses
 HTML.
 
-Dynamic Windows source assigns `50%-GRAY` to the shaft and `33%-GRAY` to the car.
-Use their exact minimal cells, with no interpolated scaling:
+The selected Dynamic Windows source gives a default 14-pixel margin: two pixels of
+outside whitespace, a 10-pixel elevator strip, and two more pixels of whitespace.
+The two end targets are empty 10-by-10 one-pixel outlined boxes, not arrow icons.
+Inside the central strip, the source draws two one-pixel cables at its outer edges
+with `50%-GRAY`; the space between them remains white. The car has a one-pixel
+outline, a `33%-GRAY` interior, and a minimum length of eight pixels along its axis.
+Use the exact minimal stipple cells with no interpolated scaling:
 
 ```text
-50%-GRAY shaft    33%-GRAY car
+50%-GRAY cable    33%-GRAY car
 .#                #..
 #.                .#.
                   ..#
 ```
 
 The cells are periodic masks: phase and drawing ALU still matter in a historical
-raster implementation. For a monochrome web reproduction, repeat these matrices
-from the top-left of each margin region, keep their cells anchored to device pixels
-through zoom, and retain the car's one-pixel black outline.
+raster implementation. For a monochrome web reproduction, repeat the cable pattern
+along only the two cable lines, keep its cell anchored to device pixels through
+zoom, and retain the car's one-pixel black outline. Filling the complete shaft with
+a checkerboard or placing modern triangles in the end boxes changes the observed
+visual grammar.
 
 Text cursors and blinkers are rectangular raster objects. A block or thin rectangle
 that follows the current character cell is more authentic than a glowing caret.
@@ -469,6 +476,15 @@ than substituting a generic pixel font. Its publication notice relies on the U.S
 “typeface as typeface” rule and deliberately separates the historical font-shape
 payload from the BSD-licensed project tooling.
 
+Choose an actual resident size instead of enlarging a smaller bitmap to fill a
+different historical role. In the selected resident profile, `CPTFONT` is a
+12-pixel cell, `JESS13` a 13-pixel font, `HL12` a 14-pixel cell, `HL14` a
+15-pixel cell, and `SWISS20` a 20-pixel cell. Thus a 20-pixel sans-serif display
+heading should use `SWISS20`, not scale `HL12` to 20 CSS pixels. Use the matching
+bold or italic raster object rather than browser synthesis. This rule preserves
+resident design sizes; it does not imply that every Genera application used these
+five fonts in these exact web roles.
+
 The reproduction repository is the public distribution path. This repository still
 keeps its direct licensed-world extraction products under ignored
 `build/fonts/genera/`; do not copy those local intermediates into `docs/` or a web
@@ -495,7 +511,7 @@ The enclosing TV window may add:
 - one or more functional decoration rules;
 - a narrow scroll margin;
 - a bottom label;
-- a gray-patterned shaft or deexposed area; and
+- gray-patterned scroll cables, car, or deexposed area; and
 - a lower-right drop shadow for a temporary menu.
 
 Do not apply every decoration to every surface. The live System Menu has a shadow;
@@ -678,7 +694,7 @@ including hatches, rain, tracks, dashes, bricks, tiles, hearts, diamonds, parque
 and weaves. Use them sparingly for:
 
 - drop shadows;
-- scroll shafts and cars;
+- scroll cables and cars;
 - disabled or deexposed regions;
 - diagram fill;
 - selection feedback; and
@@ -727,7 +743,7 @@ unmeasured historical constants.
 | menu type | `MEDFNT`-class fixed raster | JESS/SWISS-style proportional raster |
 | primary rules | one pixel | one pixel, sometimes nested by frame role |
 | corner radius | zero | zero |
-| ordinary popup shadow | none in the observed System Menu | hard lower-right stippled shadow |
+| reviewed System Menu shadow | none in the observed CADR menu | hard lower-right stippled shadow in the observed Genera menu |
 | current menu item | one-pixel outline | one-pixel outline |
 | inactive/gray treatment | named one-bit stipple | denser gray library plus named texture registry |
 | status/help | two-row who-line region | bottom pointer-documentation and status region |
@@ -1024,6 +1040,8 @@ Avoid these shortcuts:
 
 - [ ] Are body, menu, heading, label, and status roles distinct?
 - [ ] Are raster fonts placed at integer coordinates?
+- [ ] Does each large text role use a native resident size rather than a
+  fractionally scaled smaller bitmap?
 - [ ] Is font synthesis disabled where exact variants exist?
 - [ ] Does the font package match the selected source/runtime and raw/Unicode
   profile?
@@ -1036,6 +1054,10 @@ Avoid these shortcuts:
 - [ ] Are corners square?
 - [ ] Are windows and menus content-sized rather than card-sized?
 - [ ] Are labels, scroll margins, and who-line regions inside the layout model?
+- [ ] Do Genera margin bars use empty outlined end boxes, two patterned cables,
+  and the outlined patterned car rather than a filled modern scrollbar track?
+- [ ] Are ragged viewport edges shown only for the continuation predicates that
+  are currently true?
 
 ### Interaction
 
@@ -1079,18 +1101,42 @@ and project-license exclusions are in the
 [Genera](assets/genera-screenshots/index.md) screenshot catalogs and the
 [publication rights review](screenshot-publication-rights-review.md).
 
-Under the current U.S. Copyright Office rule, “typeface as typeface” is not subject
-to copyright, and Circular 33 says copyright generally does not protect typeface,
-font, lettering, or mere variations of typographic ornamentation. A computer program
-that generates a typeface can be a separate copyrightable work. The two public font
-repositories therefore document the provenance and publication basis of their
-bounded font payloads separately from the licenses on their tooling. This is
-U.S.-specific and not legal advice; contract restrictions, trademarks, and non-U.S.
-law remain separate questions.
+The current U.S. Copyright Office regulation lists “typeface as typeface” among
+material not subject to copyright. Circular 33 likewise says typeface and mere
+variations of typographic ornamentation or lettering are not copyrightable, while
+noting that original separable pictorial or graphic decoration can present a
+different case. A computer program that generates a typeface can also be a separate
+copyrightable work. The two public font repositories therefore document the
+provenance and publication basis of their bounded font payloads separately from the
+licenses on their tooling. This is U.S.-specific and not legal advice; software,
+contract restrictions, trademarks, separable artwork, and non-U.S. law remain
+separate questions.
 
 Names and marks such as Symbolics and Genera may raise trademark questions separate
 from copyright. Identify the historical reference without implying vendor
 sponsorship or presenting the implementation as an official surviving product.
+
+## Final audit disposition
+
+The 2026-07-26 final audit reread the guide against its pinned CADR and Genera
+source companions, the resident-font catalogs, and the reviewed System Menu,
+Document Examiner, Listener, and Accepting Values captures. It corrected four
+implementation-significant errors or omissions:
+
+- a Genera margin shaft has two one-pixel patterned cables with white between,
+  rather than a completely stippled track;
+- its end targets are empty outlined boxes rather than modern arrow glyphs;
+- display headings should select resident `SWISS20` or `HL14` objects instead of
+  enlarging `HL12`; and
+- ragged borders are state-dependent continuation indicators on all four possible
+  viewport edges, not decorative horizontal trim.
+
+The who-line polarity, scrollbar placement, hard System Menu shadow, named font
+roles, intrinsic raster-image rule, device-pixel stipple rule, and distinction
+between CADR TV, Genera TV/Dynamic Windows, and CLIM remain supported within the
+explicit profiles above. No profile-wide dimension is inferred from a single
+application where the guide lacks comparative measurements. The following open
+questions therefore remain limitations rather than silently guessed constants.
 
 ## Open questions
 
@@ -1101,8 +1147,8 @@ sponsorship or presenting the implementation as an official surviving product.
   observe pattern-menu order and live phase.
 - Capture a public System 46 runtime separately from the System 303 restoration
   baseline to make visual release differences explicit.
-- Test browser engines and Canvas paths for exact raster-font metrics, baseline,
-  nonspacing glyphs, and integer scaling.
+- Extend the completed Chromium checks to other browser engines and Canvas paths
+  for exact raster-font metrics, baseline, nonspacing glyphs, and integer scaling.
 - Add tested WOFF2 packaging guidance to the public CADR and Genera font
   reproductions without changing their profile or publication boundaries.
 - Document touch mappings for three-button presentation interaction through

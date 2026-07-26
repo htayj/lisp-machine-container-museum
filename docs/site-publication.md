@@ -3,7 +3,7 @@ type: Preservation Note
 title: Publishing the museum documentation site
 description: Build, visual-profile, interaction, font-provenance, validation, and GitHub Pages publication contract for the Lisp Machine Museum knowledge base.
 tags: [documentation, github-pages, genera, fonts, preservation]
-timestamp: 2026-07-26T19:50:00-04:00
+timestamp: 2026-07-26T22:20:00-04:00
 ---
 
 # Publishing the museum documentation site
@@ -56,11 +56,11 @@ presentation. It adds these Genera-like operations:
 | Enter in search | Follow the current result presentation |
 | `Home` or `top` | Move to the beginning of the current document |
 | `open genera`, `open cadr`, or `home` | Select the named collection or museum activity |
-| Left scroll-margin ▲/▼ | Move by one text line |
+| Empty outlined boxes at the vertical margin ends | Move by one text line |
 | Hold a directional end control | Repeat after a short delay until released |
 | Click above or below the vertical car | Move backward or forward by one display page |
 | Drag either scroll car | Position proportionally through the document |
-| Bottom scroll-margin ◀/▶ | Move horizontally by one eight-pixel character cell |
+| Empty outlined boxes at the horizontal margin ends | Move horizontally by one eight-pixel character cell |
 | Click before or after the horizontal car | Move left or right by one display page |
 | Focus a shaft; Arrow/Page/Home/End | Line/cell, page, beginning, or end navigation without a wheel |
 
@@ -87,6 +87,20 @@ The selected Documentation Examiner profile puts its vertical viewer bar on the 
 and its horizontal bar on the bottom, matching the reviewed Genera layout. The wheel
 and ordinary browser scrolling remain available.
 
+The selected Dynamic Windows source fixes the default margin at 14 pixels:
+two pixels of outside whitespace around a 10-pixel elevator strip. Each end target
+is an empty 10-by-10 outlined box. The central strip has two one-pixel
+`50%-GRAY` cables with white between them; the outlined car uses `33%-GRAY` and an
+eight-pixel minimum length. The site's one-line/cell primary-button action and
+keyboard bindings are documented accessibility adaptations, but its visible
+geometry follows this source profile.
+
+The document viewport also exposes Dynamic Windows continuation state. A ragged
+top or bottom edge appears only while more document content exists beyond that
+edge; the side pair does the same for horizontal overflow. The ten-device-pixel
+repeat remains device-pixel anchored through zoom. This is functional window
+decoration, not a permanent zigzag ornament.
+
 ## Genera font publication boundary
 
 The Pages build downloads
@@ -97,8 +111,11 @@ That separate public reproduction contains the 89 resident fonts from the pinned
 Genera 8.5 base-world profile and publishes its bounded historical font-shape
 payload under the U.S. “typeface as typeface” rationale recorded in its notice.
 
-The site selects Unicode BDF representations of `CPTFONT`, `JESS13`, `HL12`, and
-`TR12`, including the bold or italic variants actually used by the theme. Chromium
+The site selects Unicode BDF representations of `CPTFONT`, `JESS13`, `HL12`,
+`HL14`, `SWISS20`, and `TR12`, including the bold or italic variants actually used
+by the theme. Body and interface roles use CPTFONT and JESS13; smaller headings use
+HL12 or HL14 at their native cell sizes, and the 20-pixel page title uses SWISS20
+rather than an enlarged HL12. Chromium
 rejects the release's bitmap-in-SFNT WOFF2 form because the OpenType sanitizer
 disallows its empty `glyf` table. The build therefore creates a web-only outline:
 the outer boundary of each connected set of BDF pixels becomes a rectilinear contour
@@ -115,17 +132,20 @@ extraction under `build/fonts/genera/` remains a separate ignored research input
 
 ## Device-pixel stipples
 
-The scroll-shaft checker, transient-window shadow, and preformatted-block hatch are
+The scroll-cable stipple, transient-window shadow, ragged-border repeat, and
+preformatted-block hatch are
 device-pixel patterns rather than CSS-pixel textures. At load and after a layout or
 visual-viewport resize, the site divides their one-, two-, and three-pixel periods by
 the current device-pixel ratio and visual-viewport scale. Browser zoom therefore
 changes the layout scale without enlarging or shrinking the stipple cells. The CSS
 declarations retain a one-CSS-pixel fallback for operation without JavaScript.
 
-Both scroll shafts repeat the exact two-by-two `50%-GRAY` mask `.#/#.`. Both cars
+The two one-pixel cables in each scroll shaft repeat the exact two-by-two
+`50%-GRAY` mask `.#/#.`; the white middle of the shaft is not stippled. Both cars
 repeat the exact three-by-three `33%-GRAY` diagonal mask `#../.#./..#` inside a
-one-pixel outline. These roles and matrices come from the selected Genera Dynamic
-Windows source inventory rather than from a generic CSS checkerboard.
+one-pixel outline. These roles, matrices, and dimensions come from the selected
+Genera Dynamic Windows source inventory rather than from a generic CSS
+checkerboard.
 
 ## Raster evidence sizing
 
@@ -181,24 +201,46 @@ The public target is
 
 ## Visual and behavioral verification
 
-The initial local review used Chromium 150 at 1440 by 1000 and 390 by 844 CSS pixels.
-The review checked:
+The final local review used Chromium 150.0.7871.124 at 1440 by 1000, 390 by 844,
+and 1200 by 900 CSS pixels; the last viewport used device-pixel ratio 2. The review
+checked:
 
 - successful loading of the generated CPTFONT, JESS, Swiss, and Dutch webfonts;
+- native 20-pixel SWISS20 and 15-pixel HL14 heading selection without synthetic
+  enlargement of HL12;
 - the desktop museum index and the long interface-style article;
 - the titled three-column System Menu and stippled shadow;
 - search query, result ordering, current-result outline, and abort behavior;
 - pointer-documentation changes;
 - Genera collection navigation;
+- 14-pixel scroll-margin geometry, empty 10-pixel end boxes, white shaft centers,
+  one-device-pixel patterned cables, eight-pixel-minimum cars, line and page
+  movement, proportional dragging, and keyboard movement;
+- correct top/right/bottom/left ragged-edge transitions after vertical and
+  horizontal scrolling;
 - the narrow layout, narrow System Menu, command area, active scroll margin, and
   document-pane-contained horizontal overflow for unscaled raster evidence; and
 - the browser console for font, JavaScript, and asset errors.
 
-The inspected build loaded all requested font families, returned the expected Dynamic
-Windows result first for that search, had no console errors, and kept the narrow
-document at the viewport width. The screenshots used for this private implementation
-review remain temporary build evidence; they are not added to the museum's curated
-runtime screenshot collections.
+The inspected build loaded all requested font families, returned **Dynamic Windows
+and presentation-based interaction** first for the tested search, had no console
+or page errors, and kept the narrow document pane at viewport width while retaining
+a 768-by-963 screenshot at exactly 768 by 963 rendered content pixels. A one-line
+end-box action moved 15 pixels, a shaft selection moved one 856-pixel display page,
+car dragging changed the proportional position, and keyboard `End` reached the
+34-pixel horizontal maximum in the desktop case. At device-pixel ratio 2, each
+cable line measured 0.5 CSS pixels and its two-device-pixel stipple period measured
+1 CSS pixel, preserving the physical pattern period. Page-scale checks at 1,
+1.25, 1.5, and 2 likewise produced inverse CSS periods of 2, 1.6, 1.333, and
+1 pixels for the two-device-pixel stipple, while the ragged repeat followed the
+same device-pixel anchoring.
+
+The visual pass found the menu, search form, framed panes, typography, bottom
+pointer-documentation/status polarity, desktop layout, narrow reflow, and HiDPI
+pattern density consistent with the selected Documentation Examiner profile and
+the style guide. The screenshots used for this private implementation review remain
+temporary build evidence; they are not added to the museum's curated runtime
+screenshot collections.
 
 ## Reproduce validation
 

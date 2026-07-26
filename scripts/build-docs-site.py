@@ -40,6 +40,27 @@ FONT_SELECTION = {
     "hl12.bdf": ("genera-swiss.woff2", "Genera Swiss", "normal", "400"),
     "hl12b.bdf": ("genera-swiss-bold.woff2", "Genera Swiss", "normal", "700"),
     "hl12i.bdf": ("genera-swiss-italic.woff2", "Genera Swiss", "italic", "400"),
+    "hl14.bdf": ("genera-swiss14.woff2", "Genera Swiss 14", "normal", "400"),
+    "hl14b.bdf": ("genera-swiss14-bold.woff2", "Genera Swiss 14", "normal", "700"),
+    "hl14i.bdf": ("genera-swiss14-italic.woff2", "Genera Swiss 14", "italic", "400"),
+    "swiss20.bdf": (
+        "genera-swiss20.woff2",
+        "Genera Swiss Display",
+        "normal",
+        "400",
+    ),
+    "swiss20b.bdf": (
+        "genera-swiss20-bold.woff2",
+        "Genera Swiss Display",
+        "normal",
+        "700",
+    ),
+    "swiss20i.bdf": (
+        "genera-swiss20-italic.woff2",
+        "Genera Swiss Display",
+        "italic",
+        "400",
+    ),
     "tr12.bdf": ("genera-dutch.woff2", "Genera Dutch", "normal", "400"),
     "tr12i.bdf": ("genera-dutch-italic.woff2", "Genera Dutch", "italic", "400"),
 }

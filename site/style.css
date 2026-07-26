@@ -116,10 +116,12 @@ a {
 }
 
 .program-frame {
+  --document-left: 240px;
+  position: relative;
   display: grid;
   min-height: 0;
-  grid-template-columns: 226px 16px minmax(0, 1fr);
-  grid-template-rows: 20px minmax(0, 1fr) 16px;
+  grid-template-columns: 226px 14px minmax(0, 1fr);
+  grid-template-rows: 20px minmax(0, 1fr) 14px;
   border: 1px solid var(--ink);
   margin: 4px 5px 3px;
 }
@@ -146,8 +148,8 @@ a {
 .pane-title {
   border-bottom: 1px solid var(--ink);
   padding: 3px 5px 2px;
-  font-family: "Genera Swiss", "Genera JESS", sans-serif;
-  font-size: 14px;
+  font-family: "Genera Swiss 14", "Genera JESS", sans-serif;
+  font-size: 15px;
   font-weight: 700;
 }
 
@@ -239,35 +241,38 @@ kbd {
 
 .museum-article h1,
 .museum-article h2,
-.museum-article h3,
-.museum-article h4 {
-  font-family: "Genera Swiss", "Genera JESS", sans-serif;
+.museum-article h3 {
+  font-family: "Genera Swiss 14", "Genera Swiss", "Genera JESS", sans-serif;
   line-height: 1.05;
 }
 
 .museum-article h1 {
+  font-family: "Genera Swiss Display", "Genera Swiss 14", "Genera Swiss", sans-serif;
   margin: 8px 0 14px;
   border-bottom: 2px solid var(--ink);
   padding-bottom: 4px;
   font-size: 20px;
+  font-weight: 700;
 }
 
 .museum-article h2 {
   margin: 22px 0 8px;
   border-bottom: 1px solid var(--ink);
   padding-bottom: 2px;
-  font-size: 16px;
+  font-size: 15px;
 }
 
 .museum-article h3 {
   margin: 17px 0 6px;
-  font-size: 14px;
+  font-size: 15px;
   font-style: italic;
 }
 
 .museum-article h4 {
+  font-family: "Genera Swiss", "Genera JESS", sans-serif;
   margin: 14px 0 5px;
-  font-size: 13px;
+  font-size: 14px;
+  line-height: 1.05;
 }
 
 .museum-article p,
@@ -378,17 +383,21 @@ kbd {
   display: grid;
   grid-column: 2;
   grid-row: 2;
-  grid-template-rows: 16px 1fr 16px;
+  grid-template-rows: 14px 1fr 14px;
   border-right: 1px solid var(--ink);
 }
 
-.scroll-margin button {
+.scroll-margin button,
+.horizontal-scroll-margin button {
+  align-self: center;
+  justify-self: center;
+  width: 10px;
+  height: 10px;
   overflow: hidden;
-  border: 0;
+  border: 1px solid var(--ink);
   padding: 0;
   cursor: pointer;
-  font-size: 9px;
-  line-height: 14px;
+  background: var(--paper);
 }
 
 .scroll-shaft,
@@ -399,6 +408,15 @@ kbd {
   outline: 0;
   touch-action: none;
   background-color: var(--paper);
+}
+
+.scroll-shaft::before,
+.scroll-shaft::after,
+.horizontal-scroll-shaft::before,
+.horizontal-scroll-shaft::after {
+  position: absolute;
+  z-index: 0;
+  content: "";
   background-image:
     url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='2' height='2' viewBox='0 0 2 2' shape-rendering='crispEdges'%3E%3Cpath d='M1 0h1v1H1zM0 1h1v1H0z'/%3E%3C/svg%3E");
   background-repeat: repeat;
@@ -406,8 +424,22 @@ kbd {
 }
 
 .scroll-shaft {
-  border-top: 1px solid;
-  border-bottom: 1px solid;
+  margin: 0;
+}
+
+.scroll-shaft::before,
+.scroll-shaft::after {
+  top: 0;
+  bottom: 0;
+  width: var(--device-pixel);
+}
+
+.scroll-shaft::before {
+  left: 2px;
+}
+
+.scroll-shaft::after {
+  right: 2px;
 }
 
 .scroll-shaft:focus-visible,
@@ -418,8 +450,9 @@ kbd {
 
 #scroll-car,
 #horizontal-scroll-car {
+  z-index: 1;
   position: absolute;
-  min-height: 12px;
+  min-height: 8px;
   border: 1px solid var(--ink);
   background-color: var(--paper);
   background-image:
@@ -445,30 +478,90 @@ kbd {
   display: grid;
   grid-column: 3;
   grid-row: 3;
-  grid-template-columns: 16px 1fr 16px;
+  grid-template-columns: 14px 1fr 14px;
   border-top: 1px solid var(--ink);
 }
 
-.horizontal-scroll-margin button {
-  overflow: hidden;
-  border: 0;
-  padding: 0;
-  cursor: pointer;
-  font-size: 9px;
-  line-height: 14px;
+.horizontal-scroll-shaft {
+  margin: 0;
 }
 
-.horizontal-scroll-shaft {
-  border-right: 1px solid;
-  border-left: 1px solid;
+.horizontal-scroll-shaft::before,
+.horizontal-scroll-shaft::after {
+  right: 0;
+  left: 0;
+  height: var(--device-pixel);
+}
+
+.horizontal-scroll-shaft::before {
+  top: 2px;
+}
+
+.horizontal-scroll-shaft::after {
+  bottom: 2px;
 }
 
 #horizontal-scroll-car {
   top: 2px;
   bottom: 2px;
   left: 0;
-  min-width: 12px;
+  min-width: 8px;
   min-height: 0;
+}
+
+.ragged-edge {
+  position: absolute;
+  z-index: 4;
+  display: none;
+  pointer-events: none;
+}
+
+.ragged-edge.is-active {
+  display: block;
+}
+
+.ragged-edge--top,
+.ragged-edge--bottom {
+  left: var(--document-left);
+  right: 0;
+  height: calc(4 * var(--device-pixel));
+  background-image:
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='4' viewBox='0 0 10 4' shape-rendering='crispEdges'%3E%3Cpath d='M0 0L5 3L10 0' fill='none' stroke='black' stroke-width='1'/%3E%3C/svg%3E");
+  background-repeat: repeat-x;
+  background-size:
+    calc(10 * var(--device-pixel))
+    calc(4 * var(--device-pixel));
+}
+
+.ragged-edge--top {
+  top: 20px;
+}
+
+.ragged-edge--bottom {
+  bottom: 14px;
+  transform: scaleY(-1);
+}
+
+.ragged-edge--left,
+.ragged-edge--right {
+  top: 20px;
+  bottom: 14px;
+  width: calc(4 * var(--device-pixel));
+  background-image:
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='4' height='10' viewBox='0 0 4 10' shape-rendering='crispEdges'%3E%3Cpath d='M0 0L3 5L0 10' fill='none' stroke='black' stroke-width='1'/%3E%3C/svg%3E");
+  background-repeat: repeat-y;
+  background-size:
+    calc(4 * var(--device-pixel))
+    calc(10 * var(--device-pixel));
+}
+
+.ragged-edge--left {
+  left: var(--document-left);
+}
+
+.ragged-edge--right {
+  right: 0;
+  transform: scaleX(-1);
 }
 
 .command-pane {
@@ -725,6 +818,7 @@ input[type="search"]::-webkit-search-cancel-button {
   }
 
   .program-frame {
+    --document-left: 14px;
     grid-template-columns: 14px minmax(0, 1fr);
   }
 
@@ -795,6 +889,7 @@ input[type="search"]::-webkit-search-cancel-button {
   .navigator-pane,
   .scroll-margin,
   .horizontal-scroll-margin,
+  .ragged-edge,
   .command-pane,
   .who-line {
     display: none;

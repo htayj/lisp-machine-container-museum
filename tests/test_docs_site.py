@@ -70,13 +70,16 @@ class DocsSiteTests(unittest.TestCase):
 
     def test_site_uses_genera_scrollbar_patterns_and_placement(self) -> None:
         css = (REPOSITORY / "site" / "style.css").read_text(encoding="utf-8")
-        shaft = css.split(".scroll-shaft,", 1)[1].split("}", 1)[0]
+        cables = css.split(".scroll-shaft::before,", 1)[1].split("}", 1)[0]
         car = css.split("#scroll-car,", 1)[1].split("}", 1)[0]
-        self.assertIn("M1 0h1v1H1zM0 1h1v1H0z", shaft)
-        self.assertIn("var(--stipple-cell) var(--stipple-cell)", shaft)
+        self.assertIn("M1 0h1v1H1zM0 1h1v1H0z", cables)
+        self.assertIn("var(--stipple-cell) var(--stipple-cell)", cables)
         self.assertIn("M0 0h1v1H0zM1 1h1v1H1zM2 2h1v1H2z", car)
         self.assertIn("var(--gray-33-cell) var(--gray-33-cell)", car)
-        self.assertIn("grid-template-columns: 226px 16px minmax(0, 1fr)", css)
+        self.assertIn("grid-template-columns: 226px 14px minmax(0, 1fr)", css)
+        self.assertIn("width: 10px", css)
+        self.assertIn("height: 10px", css)
+        self.assertIn("min-height: 8px", car)
         self.assertIn(
             "grid-column: 2",
             css.split(".scroll-margin {", 1)[1].split("}", 1)[0],
@@ -85,6 +88,28 @@ class DocsSiteTests(unittest.TestCase):
             "grid-column: 3",
             css.split(".horizontal-scroll-margin {", 1)[1].split("}", 1)[0],
         )
+
+    def test_site_exposes_state_dependent_ragged_viewport_edges(self) -> None:
+        css = (REPOSITORY / "site" / "style.css").read_text(encoding="utf-8")
+        template = (REPOSITORY / "site" / "template.html").read_text(
+            encoding="utf-8"
+        )
+        javascript = (REPOSITORY / "site" / "site.js").read_text(encoding="utf-8")
+        for edge in ("top", "right", "bottom", "left"):
+            self.assertIn(f"ragged-edge--{edge}", template)
+            self.assertIn(f"ragged{edge.title()}.classList.toggle", javascript)
+        self.assertIn("calc(10 * var(--device-pixel))", css)
+        self.assertIn(".ragged-edge.is-active", css)
+
+    def test_site_uses_native_size_genera_heading_fonts(self) -> None:
+        self.assertIn("hl14b.bdf", BUILDER.FONT_SELECTION)
+        self.assertIn("swiss20b.bdf", BUILDER.FONT_SELECTION)
+        css = (REPOSITORY / "site" / "style.css").read_text(encoding="utf-8")
+        h1 = css.split(".museum-article h1 {", 1)[1].split("}", 1)[0]
+        h2 = css.split(".museum-article h2 {", 1)[1].split("}", 1)[0]
+        self.assertIn('"Genera Swiss Display"', h1)
+        self.assertIn("font-size: 20px", h1)
+        self.assertIn("font-size: 15px", h2)
 
     def test_site_scroll_margin_supports_pointer_and_keyboard_operation(self) -> None:
         template = (REPOSITORY / "site" / "template.html").read_text(
