@@ -3,7 +3,7 @@ type: Guided Tour
 title: Finding your way around Genera 8.5
 description: Beginner orientation to Genera activities, Dynamic Windows, presentations, mouse gestures, Select keys, the System Menu, Command Processor, and first core workflows.
 tags: [genera, tour, manual, navigation, activities, presentations, system-menu]
-timestamp: 2026-07-26T23:30:00-04:00
+timestamp: 2026-07-26T14:31:35-04:00
 ---
 
 # Finding your way around Genera 8.5
@@ -72,12 +72,12 @@ to explore them.
 In the tested Listener, hold Shift and the Right mouse button over the client. Release
 after inspecting the menu or selecting a cell.
 
-![Two-state teaching loop showing the Dynamic Lisp Listener and the Genera System Menu after Shift-Right.](../../assets/genera-screenshots/open-system-menu.gif)
+![One Genera interaction showing the Dynamic Lisp Listener and the System Menu after Shift-Right.](../../assets/genera-screenshots/open-system-menu.gif)
 
 *Keybinding and pointer illustration: the first complete frame is a reviewed Dynamic
 Lisp Listener state; the second is the reviewed Genera 8.5 System Menu state produced
 by holding Shift and Right over a Listener. The loop is a teaching comparison assembled
-from separately captured states, not a real-time recording. It does not establish
+from ordered action-boundary captures in one session, not a real-time recording. It does not establish
 transient timing, pointer motion, or every callback.*
 
 The three columns answer different questions:

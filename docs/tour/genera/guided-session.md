@@ -3,7 +3,7 @@ type: Guided Tour
 title: A working session in Symbolics Genera
 description: A linear, screenshot-rich first-person tour through Genera activities, Dynamic Lisp Listener, Command Processor, Zmacs, Help, presentations, Document Examiner, Inspector, Frame-Up, debugging, forms, compiler tools, communications, and administration.
 tags: [genera, tour, manual, applications, animation, user-story, presentations, dynamic-windows]
-timestamp: 2026-07-26T23:30:00-04:00
+timestamp: 2026-07-26T14:30:00-04:00
 ---
 
 # A working session in Symbolics Genera
@@ -33,9 +33,11 @@ Three principles will recur:
    launching a new process; and
 3. commands, Lisp forms, menus, and mouse gestures share one semantic environment.
 
-The animations below are slow teaching loops assembled from separately captured,
-reviewed complete states. They do not claim real-time latency, pointer paths, or
-unrecorded intermediate redisplay.
+Every animation below uses ordered action-boundary captures from one Genera harness
+session. The frames retain the actual typed input, prefix, prompt, or menu state that
+connects the beginning to the result; no animation alternates unrelated endpoints.
+Because independent X11 video grabbing interfered with this VLM/Xvfb path, these are
+not represented as real-time recordings.
 
 ## 1. Begin in the Dynamic Lisp Listener
 
@@ -58,10 +60,10 @@ Use Abort to cancel an incomplete input transaction.
 
 Hold Shift and the Right mouse button over the Listener.
 
-![Teaching loop alternating the Dynamic Lisp Listener and Genera System Menu.](../../assets/genera-screenshots/open-system-menu.gif)
+![One Genera interaction opening the System Menu from the Dynamic Lisp Listener.](../../assets/genera-screenshots/open-system-menu.gif)
 
-*Gesture illustration: separately captured complete states. It establishes the
-visible Shift-Right result, not menu timing or pointer motion.*
+*Runtime interaction: the logged-in Listener and visible Shift-Right result are
+ordered captures around the actual dispatched gesture in one session.*
 
 The columns distinguish operations on the complete screen, operations on a selected
 window, and registered programs. Left, Middle, and Right can mean different things
@@ -73,10 +75,10 @@ committing an operation.
 Press `Select E`. The activity machinery looks for a compatible Editor window and
 may reuse one instead of creating another.
 
-![Teaching loop alternating the Listener and a two-window Zmacs layout selected by Select E.](../../assets/genera-screenshots/select-editor.gif)
+![One Genera interaction showing the Select prefix and selecting a two-window Zmacs activity with E.](../../assets/genera-screenshots/select-editor.gif)
 
-*Activity illustration: separately captured states. It shows the selected Editor
-result in this world, not every creation/reuse policy branch.*
+*Runtime interaction: Listener, visible Select prefix, and selected Editor are from
+one session. It does not claim every creation/reuse policy branch.*
 
 The two mode lines identify which buffer and mode each pane displays. The selected
 pane owns the next editing command. `Control-X 3` is the familiar split command in
@@ -87,7 +89,7 @@ modern browser-style tab system.
 
 Press Help in the selected editor pane:
 
-![Teaching loop alternating the two-window editor and Zmacs Help dispatcher.](../../assets/genera-screenshots/open-zmacs-help.gif)
+![One Zmacs interaction opening the contextual Help dispatcher.](../../assets/genera-screenshots/open-zmacs-help.gif)
 
 The dispatcher can describe keys, commands, modes, and other active documentation.
 Help is contextual: asking in a different mode or pane can produce a different
@@ -97,7 +99,7 @@ command universe. Abort returns without deleting the Editor activity.
 
 Open the Zmacs Editor menu with the verified mouse gesture:
 
-![Teaching loop alternating Zmacs and its Editor menu.](../../assets/genera-screenshots/open-zmacs-editor-menu.gif)
+![One Zmacs interaction opening its Editor menu.](../../assets/genera-screenshots/open-zmacs-editor-menu.gif)
 
 The menu is temporary, object- and mode-sensitive, and paired with pointer
 documentation. It is not a permanently mounted application menubar. Named commands
@@ -109,11 +111,11 @@ provide direct command families.
 Open List Buffers. Move the pointer over a buffer row and watch the documentation
 field, then request the generic operation menu:
 
-![Three-state teaching loop showing List Buffers, pointer documentation for a buffer row, and its generic operation menu.](../../assets/genera-screenshots/operate-on-buffer.gif)
+![One List Buffers interaction showing a buffer row, its pointer documentation, and its generic operation menu.](../../assets/genera-screenshots/operate-on-buffer.gif)
 
-*Presentation illustration: three separately captured states from the verified
-List Buffers interaction. The slow loop preserves the visible states but does not
-invent pointer movement or menu latency.*
+*Runtime interaction: four ordered action-boundary captures from the same List
+Buffers operation; they preserve the visible states without inventing pointer
+motion or real-time menu latency.*
 
 The row is not merely a string containing a buffer name. It is a presentation linked
 to a buffer object, and the applicable operations arise from that type and the
@@ -131,7 +133,7 @@ the operation.
 
 Invoke the verified Zmacs character-style command:
 
-![Teaching loop alternating the editor and its character-style prompt.](../../assets/genera-screenshots/prompt-character-style.gif)
+![One Zmacs interaction invoking Change Typein Style and reaching its character-style prompt.](../../assets/genera-screenshots/prompt-character-style.gif)
 
 Genera character styles are semantic family, face, and size triples resolved through
 device mappings. The prompt shows a live input transaction with a default; it does
@@ -142,7 +144,7 @@ was committed.
 
 Press `Select D`.
 
-![Teaching loop alternating the Listener and Document Examiner.](../../assets/genera-screenshots/select-document-examiner.gif)
+![One Genera interaction showing the Select prefix and selecting Document Examiner.](../../assets/genera-screenshots/select-document-examiner.gif)
 
 Document Examiner combines a viewer, candidate or bookmark panes, command area,
 active scroll margins, and presentation-sensitive references. It is an application,
@@ -155,7 +157,10 @@ licensed prose.
 Presentation Inspector makes the semantic layer visible. Inspect an integer
 presentation, then request its handler report:
 
-![Teaching loop alternating an integer presentation and the corresponding handler report.](../../assets/genera-screenshots/inspect-presentation.gif)
+![Presentation Inspector showing the handler report for a researcher-created integer presentation.](../../assets/genera-screenshots/presentation-inspector-handler-report.png)
+
+*Runtime observation: this remains a still until a coherent inspect-and-report
+interaction has been re-recorded. It is not presented as an animation.*
 
 The report connects the displayed region to presentation types and translators.
 Which gesture applies depends on the active input context, nested presentation, and
@@ -176,10 +181,11 @@ state.
 
 Press `Select Q` to enter Frame-Up and create the reviewed split layout:
 
-![Teaching loop alternating the Listener and Frame-Up's split layout.](../../assets/genera-screenshots/reshape-screen.gif)
+![Frame-Up showing the reviewed split layout.](../../assets/genera-screenshots/frame-up-split-layout.png)
 
-*Layout illustration: separately captured states. It establishes the resulting
-split and frame decorations but omits pointer motion and intermediate geometry.*
+*Runtime observation: this remains a still until a coherent reshape interaction has
+been re-recorded. It establishes the resulting split and frame decorations, not the
+pointer path or intermediate geometry.*
 
 Frame-Up operates on the screen's window hierarchy. Pane rules, labels, scroll
 margins, and ragged continuation edges have functional meanings. The workspace is
@@ -189,7 +195,7 @@ not a modern collection of draggable cards.
 
 Signal only the synthetic condition used by the museum's debugger audit:
 
-![Teaching loop alternating the Listener and Debugger dynamic choices.](../../assets/genera-screenshots/enter-debugger.gif)
+![One Dynamic Lisp Listener interaction signalling a synthetic error and entering the Debugger.](../../assets/genera-screenshots/enter-debugger.gif)
 
 The Debugger reports condition and stack context, then constructs choices available
 for that failure. Commands can inspect frames, evaluate in context, restart, or
@@ -206,7 +212,7 @@ Use it to understand recovery architecture, not as a second everyday Listener.
 
 Open the GC options form used by the runtime audit:
 
-![Teaching loop alternating the Listener and an Accepting Values GC-options form.](../../assets/genera-screenshots/open-gc-options.gif)
+![One Genera interaction opening the Set GC Options Accepting Values form and moving to its next field.](../../assets/genera-screenshots/open-gc-options.gif)
 
 Fields are typed presentations with defaults, validation, completion, and actions.
 The display is textual and dense, but it is not an unstructured prompt transcript.
@@ -217,7 +223,7 @@ The same substrate can expose choices through keyboard entry and mouse gestures.
 Use the verified compiler workflow to macroexpand a harmless form and disassemble a
 small researcher-defined function:
 
-![Teaching loop alternating the Listener and compiler macroexpansion/disassembly output.](../../assets/genera-screenshots/macroexpand-and-disassemble.gif)
+![One Dynamic Lisp Listener interaction defining and compiling TOUR-SQUARE, then macroexpanding and disassembling it.](../../assets/genera-screenshots/macroexpand-and-disassemble.gif)
 
 Editing, compilation, macroexpansion, tracing, disassembly, object inspection, and
 debugging are neighboring operations in the live environment.

@@ -3,7 +3,7 @@ type: Rights Review
 title: Publishing runtime screenshots for museum documentation
 description: Capture-specific U.S. copyright review and publication policy for CADR and Genera runtime screenshots used as historical evidence.
 tags: [screenshots, copyright, fair-use, preservation, cadr, genera]
-timestamp: 2026-07-26T23:30:00-04:00
+timestamp: 2026-07-26T14:31:35-04:00
 ---
 
 # Publishing runtime screenshots for museum documentation
@@ -682,38 +682,37 @@ underlying interface or displayed software. The asset catalog should state
 that boundary so downstream users do not mistake repository access for a
 general reuse license.
 
-### Short teaching animations
+### Runtime teaching animations
 
 A guided-tour animation receives the same image- and use-specific review as a still,
-plus review of the sequence itself. It must state whether it is a real-time capture,
-selected frames from one interaction, or a teaching loop made from separately
-captured states. The published caption must not imply unrecorded timing, pointer
-motion, intermediate redisplay, or command effects.
+plus review of the sequence itself. It must be either a continuous recording or
+ordered action-boundary frames from one coherent harness interaction. Alternating
+unrelated before and after stills is not a demonstration and must not be published
+as one. A staged clip must not imply real-time timing or pointer motion that its
+frames do not retain.
 
-The preferred keybinding illustration is two or three complete, already reviewed
-frames with a slow pause on each state. Preserve the source pixels and canvas; do not
-fractionally rescale bitmap fonts or patterns. Record the source-frame identities,
-assembly command and tool, frame delays, loop behavior, animation digest, and exact
-instructional claim. An animation remains disallowed when it becomes a bulk
-interaction sequence, reproduces substantial Help or manual text, or functions as a
-decorative reel.
+Preserve the source pixels and canvas; do not fractionally rescale bitmap fonts or
+patterns. Record the session, actions, source-frame or raw-video identity, assembly
+tool, frame timing, loop behavior, animation digest, and exact instructional claim.
+An animation remains disallowed when it becomes a bulk gallery, reproduces
+substantial Help or manual text, or functions as a decorative reel.
 
-#### Linear-tour teaching loops reviewed 2026-07-26
+#### Coherent linear-tour interactions reviewed 2026-07-26
 
-The linear CADR and Genera working-session tours use **nine CADR** and **twelve
-Genera** short teaching loops. One loop in each set predates the linear narrative;
-the remaining loops are new combinations of already reviewed, tracked full-screen
-states. Each animation has two frames except the three-state Genera buffer-
-presentation loop. Every frame pauses for 240 centiseconds and the sequence repeats.
-There are no synthesized intermediate screens, annotations, crops, resizing, or
-licensed manual/documentation pages.
+The corrected linear tours use **ten CADR** and **ten Genera** animations. CADR's
+System-menu and QIX clips are continuous 10-frame-per-second recordings. The other
+CADR clips and every Genera clip retain ordered action-boundary captures from one
+named session. The previous Presentation Inspector and Frame-Up endpoint
+alternations were removed; those sections use reviewed stills until their complete
+interactions are re-recorded. There are no synthesized screens, annotations, crops,
+resizing, or licensed manual/documentation pages.
 
 The image- and use-specific conclusions are recorded in the
 [CADR asset catalog](assets/mit-cadr-screenshots/index.md#tour-animation-identities)
 and
 [Genera asset catalog](assets/genera-screenshots/index.md#tour-animation-identities).
-Those catalogs name the source frames, exact instructional claim, byte count, canvas,
-frame count, digest, builder, and sequence limitation for every loop.
+Those catalogs name the session, actions, exact instructional claim, byte count,
+canvas, frame count, digest, builder, and sequence limitation for every loop.
 
 The four-factor assessment remains bounded:
 
@@ -724,16 +723,41 @@ The four-factor assessment remains bounded:
 2. **Nature:** the selected screens are predominantly functional program,
    development-tool, menu, form, or diagnostic displays. The set excludes artwork,
    user documents, mail content, and substantial Help or Document Examiner prose.
-3. **Amount:** two or three complete low-resolution states are used because the
-   surrounding frame, mode line, pointer documentation, and pane relationship are
-   part of the instructional claim. The loops omit motion and all intermediate
-   operation states and are a minute fraction of either interactive system.
-4. **Market effect:** an inert selected-state comparison cannot execute a command,
+3. **Amount:** staged clips use only the action boundaries needed to understand the
+   transaction. Continuous clips use only a bounded launch, visible operation, and
+   exit interval. The surrounding frame, mode line, pointer documentation, and pane
+   relationship are retained where they are part of the claim.
+4. **Market effect:** an inert runtime recording cannot execute a command,
    edit data, inspect a live object, connect to a service, recover a machine, or
    substitute for the software, world/load band, manuals, fonts, or licensed media.
 
 This review does not authorize turning the source stills into arbitrary animations,
 adding more frames without review, or extracting the GIFs as a decorative gallery.
+
+#### HACKS, demonstrations, games, and examples
+
+“Full” in the preservation corpus means one complete bounded demonstration:
+invocation or start gate, enough ordinary operation to establish the program's
+visible behavior, its documented user controls when relevant, and the real stop or
+exit path. It does not mean an indefinitely long attract mode, every game state, or
+a bulk recording of copyrighted prose or artwork. Each program still requires a
+separate content and use review.
+
+The 18-second [`qix-full.gif`](assets/mit-cadr-screenshots/qix-full.gif) is approved
+beside the CADR HACKS analysis and guided tour. It shows the public maintained
+`NQIX` implementation immediately after the action-recorded invocation, its
+functional XOR line trail evolving, Space stopping the loop, and the Listener
+returning. The immediate clear makes the typed form illegible in the continuous
+frames; the claim is joined to the harness input record. The clip contains no third-party
+artwork, user data, manual prose, or licensed Genera payload. Its entire bounded
+interval is needed to distinguish an actual running raster algorithm from two
+unrelated endpoint stills, and it cannot substitute for the source, emulator, or
+interactive program.
+
+No Genera HACKS animation is approved merely from a descriptor or catalog entry.
+The current licensed world lacks the referenced source/media path, so those programs
+must remain marked runtime-blocked until a real interaction can be reached and each
+result reviewed.
 
 ## Exclusions and enhanced review
 

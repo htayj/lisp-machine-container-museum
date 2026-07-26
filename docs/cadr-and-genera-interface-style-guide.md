@@ -3,7 +3,7 @@ type: Editorial Guide
 title: CADR and Genera interface style guide
 description: Evidence-grounded visual, typographic, interaction, and web implementation guidance for recreating MIT CADR and Symbolics Genera interface styles without importing a generic retro aesthetic.
 tags: [mit-cadr, lm-3, genera, interface-design, web-design, typography, dynamic-windows, tv]
-timestamp: 2026-07-26T22:40:00-04:00
+timestamp: 2026-07-26T14:31:35-04:00
 ---
 
 # CADR and Genera interface style guide
@@ -925,8 +925,9 @@ layer visually subordinate:
   smooth modern motion;
 - name the exact chord in adjacent selectable text rather than painting a modern
   keycap overlay over the historical screen;
-- distinguish real-time recordings from teaching loops assembled from selected
-  frames;
+- distinguish continuous recordings from ordered action-boundary clips;
+- use frames from one coherent interaction; never animate unrelated endpoints and
+  call the result a demonstration;
 - never invent pointer trajectories, redisplay timing, or intermediate screens; and
 - honor reduced-motion preferences by exposing the same states as ordinary stills
   or text.

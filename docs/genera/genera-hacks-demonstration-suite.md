@@ -3,7 +3,7 @@ type: Historical Article
 title: The Genera HACKS demonstration suite
 description: A source-, descriptor-, manual-, and runtime-bounded guide to all 18 Genera HACKS demonstrations, their visible behavior, controls, implementation, and historical boundaries.
 tags: [genera, open-genera, hacks, demonstrations, graphics, sound, preservation]
-timestamp: 2026-07-18T12:07:58-04:00
+timestamp: 2026-07-26T14:31:35-04:00
 ---
 
 # The Genera HACKS demonstration suite
@@ -664,6 +664,39 @@ manual summaries:
 These findings are release-bounded. They do not establish that a site patch, a
 different HACKS release, or a physical Symbolics console behaved identically.
 
+## Complete animation coverage
+
+The target is one complete bounded runtime animation for every descriptor: actual
+invocation, enough ordinary operation to establish its visible behavior and controls,
+and the real stop or exit. A still, two unrelated endpoint frames, or descriptor
+prose is not a runtime animation. The present Genera 8.5 world cannot load HACKS 440,
+so none of the following rows is represented as recorded.
+
+| Descriptor | Recording status | Complete interval once the media is reachable |
+| --- | --- | --- |
+| ABACUS | Blocked: HACKS media absent | Open, exercise mouse editing, exit |
+| BIRDS | Blocked: HACKS media absent | Launch, retain representative animation and controls, stop |
+| CROCK | Blocked: HACKS media absent | Launch, retain clock update and chime boundary with auditable audio, exit |
+| DIGITAL-CROCK | Blocked: HACKS media absent | Launch, retain display update and noon/midnight boundary, exit |
+| ESCHER | Blocked: HACKS media absent | Launch, retain the complete selected demonstration interval, stop |
+| GODEL | Blocked: HACKS media absent | Launch, retain its distinct selected demonstration interval, stop |
+| HACKS | Blocked: HACKS media absent | Open legacy menu, demonstrate filtering and one safe dispatch, quit |
+| HOLLERITH-EDITOR | Blocked: HACKS media absent | Open, perform one reversible researcher-owned card edit, exit |
+| LEXIPHAGE | Blocked: HACKS media absent | Run over researcher-owned text, retain consumption, stop |
+| LIFE | Blocked: HACKS media absent | Run a source-defined or researcher-owned seed through generations, stop |
+| MUNCHING-SQUARES | Blocked: HACKS media absent | Launch, demonstrate controls and several phase changes, stop |
+| MUNCHING-TUNES | Blocked: media and audio fixture absent | Launch, retain visible controls and auditable sound, stop |
+| QIX | Blocked: HACKS media absent | Invoke, retain evolving trail, use actual any-character stop, return |
+| ROTATE | Blocked: HACKS media absent | Rotate a rights-compatible input through a complete representative cycle, stop |
+| SPLINES | Blocked: HACKS media absent | Launch, retain evolving splines, stop |
+| TV-BUG | Blocked: HACKS media absent | Launch, retain motion, stop |
+| WORM | Blocked: HACKS media absent | Launch, retain motion and user control, stop |
+| ZOWIE | Blocked: media and audio fixture absent | Run a bounded complete note-string example with auditable audio, stop |
+
+The tracked recorder/curator accepts only raw material from one coherent local
+harness session. It cannot manufacture these clips from the licensed descriptors,
+the CADR counterparts, or unrelated Genera stills.
+
 ## Runtime observation and screenshot status
 
 Session `d58-hacks-20260718`, generation 1, started at
@@ -711,9 +744,9 @@ The base and private worlds were unchanged. `save_world_performed` and
   code inspection alone.
 - Confirm whether all “any character” exits behave as the source indicates through
   the current X key translation.
-- Capture only representative states needed for analysis—for example Abacus mouse
-  editing, one Escher/Godel comparison, a Hollerith card, Munch controls, Splines,
-  TV Bug, and Worm—rather than a decorative gallery.
+- Record one complete bounded interaction for every descriptor in the ledger above,
+  while keeping each clip limited to launch, behavior/controls, and stop rather than
+  creating a decorative or indefinite gallery.
 - Test the two sound-only entries with an auditable audio path; screenshots cannot
   prove that Munching Tunes or Zowie was heard.
 

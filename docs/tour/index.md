@@ -43,10 +43,9 @@ configured machine room, not a disposable emulator.
 ## Reading the pictures
 
 The stills and animations are evidence, not decoration. Captions identify the system,
-state, and action they establish. Two- and three-state teaching loops deliberately
-pause on complete reviewed screens; they teach a gesture, selection result, or
-context change but do not claim to preserve real-time latency, pointer motion, or
-every intermediate redisplay.
+state, and action they establish. Every animation now comes from one coherent
+interaction: either a continuous recording or ordered action-boundary captures.
+Staged clips do not claim real-time latency or omitted pointer motion.
 
 The images have individual publication reviews. They do not distribute the software,
 fonts, documentation corpus, world image, or load band, and they are excluded from

@@ -2,8 +2,8 @@
 
 This directory contains twenty-two reviewed runtime captures selected from thirteen
 provenance-bearing System 303 sessions—twenty-one exact full framebuffers and one
-documented crop that retains a complete application window—plus nine short
-teaching animations assembled from those exact captures. They are runtime observations, not
+documented crop that retains a complete application window—plus ten runtime
+animations captured from coherent interactions. They are runtime observations, not
 manual illustrations and not claims about every CADR, application, or debugger release.
 
 ## Rights status
@@ -70,24 +70,24 @@ asset exclusion. MIT, LM-3, and the named contributors do not endorse this museu
 - The [linear System 303 working-session tour](../../tour/mit-cadr/guided-session.md),
   [orientation](../../tour/mit-cadr/orientation.md), and
   [application atlas](../../tour/mit-cadr/applications.md) may use the reviewed
-  stills and nine animations cataloged below. These uses are limited to teaching
+  stills and ten animations cataloged below. These uses are limited to teaching
   the exact visible Listener, System Menu, Zmacs, Help, Inspector, Peek, Screen
   Editor, trace, Error Handler, Emergency Break, terminal, compiler, Flavor, and
-  demonstration states beside substantive release-bounded explanation. Every GIF
-  alternates complete reviewed source frames with 2.4-second pauses. Each is labeled
-  a selected-state teaching loop, not a real-time recording, and adds no screen
-  pixels, licensed prose, or intermediate-state claim.
+  demonstration states beside substantive release-bounded explanation. Nine GIFs
+  retain ordered action-boundary captures from one working session; the System-menu
+  and QIX GIFs are continuous 10-frame-per-second captures. None is an alternation
+  of unrelated endpoints.
 
 For these animations specifically, the purpose is nonprofit instruction and
-criticism of verified gestures, activity selections, and context changes; the
-displayed material is predominantly functional; two or three complete frames are
-the minimum needed to preserve each before/after relationship; and the inert loops
+criticism of verified gestures, activity selections, context changes, and QIX's
+raster algorithm; the displayed material is predominantly functional; the retained
+frames or bounded continuous interval are limited to the interaction being analyzed;
+and the inert loops
 cannot edit text, execute commands, inspect objects, recover a machine, or substitute
 for the software, band, source, font, or manual. Those four factors support the same
 limited fair-use conclusion as the source stills.
-`scripts/build-tour-animations.sh` verifies every source-frame digest and assembles
-the tracked sources with ImageMagick 7.1.2-27, exact per-frame delay 240
-centiseconds, infinite loop, and lossless changed-region optimization.
+`scripts/build-tour-animations.sh` verifies the reviewed GIF digests and frame
+counts without rebuilding them from unrelated tracked stills.
 
 - [`lisp-listener-multiple-values.png`](lisp-listener-multiple-values.png) is also
   embedded in the [Lisp Listeners and editable input reimplementation
@@ -196,15 +196,16 @@ path is needed to render the museum pages.
 | [`qix-live.png`](qix-live.png) | `0027-qix-funcall-live.png` | 2026-07-18 12:54:29 | Load public `HAKDEF` and `QIX`, invoke `NQIX` in a fresh Listener, and allow the source-defined XOR trail to evolve before its any-key stop | `4c6d92f19027d7dd73a6934776d4e3361056bd7b006d8059277c5e47abd8131f` | `8f546c33f9036fb1e0d8447ff93e673f2137c3b2b94669efa1a9b8a0a715b273` |
 | [`supdup-disconnected.png`](supdup-disconnected.png) | `0020-supdup-connect-prompt.png` | 2026-07-19 20:34:35 | After loading the exact maintained public source through the isolated FILE bridge, select the resulting Supdup window; the source-injected shell shows its disconnected label and shared TV surface without the expected host prompt | `52c53d7b51c3298a7eb037c815bbbb6c76dcfd19dd54ebf3549abb1e16bead02` | `3205f9174f16cdda83ce66ba03778e2452b9ee5f04c56411f83613ee1996e9e8` |
 | [`telnet-disconnected.png`](telnet-disconnected.png) | `0025-telnet-disconnected-shell.png` | 2026-07-19 20:37:03 | Explicitly construct and select a maintained-source Telnet window with NIL process slots after ordinary creation exposed a source/band initialization mismatch; the static shell shows the distinct disconnected label only | `310c63af5118102151afe2e9dd7025f2ddf564f34fb999762fee247aeb1dd802` | `bf54d03936d07b0c74d3071f124f53d7f923f3969ac75371ec172b61d3b7b6d9` |
-| [`zmacs-mode-switch.gif`](zmacs-mode-switch.gif) | Derived from tracked `zmacs-text-mode.png` and `zmacs-lisp-mode.png` | Rebuilt 2026-07-26 | Alternate the two complete mode states with 2.4-second pauses; no resize, crop, annotation, or synthesized intermediate frame | `e65442288831d0dd83fb56e922f961dbc27e72ac74e9f7ae1372064e913114ae` | Source frame pixel hashes are the two hashes cataloged above |
-| [`open-system-menu.gif`](open-system-menu.gif) | Derived from `lisp-listener-multiple-values.png` and `system-menu.png` | Rebuilt 2026-07-26 | Teach the visible result of Right over the Listener; no pointer path, timing, or intermediate menu state claimed | `7ce6e08854a2e605aebec104c21713cce5eae087e5ba20b44d5d1b11a8e154b3` | Source frame pixel hashes are cataloged above |
-| [`open-zmacs-help.gif`](open-zmacs-help.gif) | Derived from `zmacs-lisp-buffer.png` and `zwei-help-menu.png` | Rebuilt 2026-07-26 | Teach the visible contextual Help result; no dispatcher timing or omitted prompt claimed | `68e93e43f32e7a27490848130b4848aca6eba13207eddf342653564fe0dd6d78` | Source frame pixel hashes are cataloged above |
-| [`select-inspector.gif`](select-inspector.gif) | Derived from `lisp-listener-multiple-values.png` and `inspector-list.png` | Rebuilt 2026-07-26 | Compare the Listener with the reviewed Inspector result for synthetic data; no arbitrary-object transition claimed | `e39e4d010300d32f0a8b0b8147b755985196edc909a3d5f522d543b8974af432` | Source frame pixel hashes are cataloged above |
-| [`select-peek.gif`](select-peek.gif) | Derived from `lisp-listener-multiple-values.png` and `peek-processes.png` | Rebuilt 2026-07-26 | Compare the Listener with Peek's reviewed process mode; no other Peek mode or mutation claimed | `7fcd6cd37f55cb446f38f21486e6a52a71f1f829030e3e4d58e49ff29887a42e` | Source frame pixel hashes are cataloged above |
-| [`open-screen-editor.gif`](open-screen-editor.gif) | Derived from `system-menu.png` and `screen-editor-menu.png` | Rebuilt 2026-07-26 | Teach the visible **Edit Screen** menu result without performing a layout mutation | `dbf63a976c5d81db0ee00d78278be4e758f9eeb519deff0a168803c7ee92da53` | Source frame pixel hashes are cataloged above |
-| [`trace-a-function.gif`](trace-a-function.gif) | Derived from `lisp-listener-multiple-values.png` and `trace-step-and-who-calls.png` | Rebuilt 2026-07-26 | Compare the Listener with the reviewed synthetic trace/step/who-calls result; intermediate command entry and timing omitted | `210ffe445be14d62a05e807453833be02a99e8edb3554ccaf143f4f06a43b2b0` | Source frame pixel hashes are cataloged above |
-| [`enter-error-handler.gif`](enter-error-handler.gif) | Derived from `lisp-listener-multiple-values.png` and `error-handler-dynamic-choices.png` | Rebuilt 2026-07-26 | Compare ordinary input with the reviewed synthetic Error Handler state; no universal recovery-choice claim | `d306694f0e969caa154ea9b6a0078c8084a4464e7f6687c993c6bb5ae6b36db4` | Source frame pixel hashes are cataloged above |
-| [`enter-emergency-break.gif`](enter-emergency-break.gif) | Derived from `lisp-listener-multiple-values.png` and `emergency-break-cold-load-evaluation.png` | Rebuilt 2026-07-26 | Contrast the ordinary Listener with the degraded cold-load evaluator; no claim that entry is harmless in arbitrary state | `bb6bf18c57a19cd55c3814a840bd1da39cedc4a3e6b5e4c459f1fa7540cd5d0a` | Source frame pixel hashes are cataloged above |
+| [`zmacs-mode-switch.gif`](zmacs-mode-switch.gif) | `tour-record-cadr-20260726`, captures `0005`–`0010` | Actual `Meta-X Text Mode` and `Meta-X Lisp Mode` prompts and results | `7ae0ded653430ceadfabba0d83a825c3b8d299c8a7ab34d811483eab82ce1043` | Six ordered frames from one session |
+| [`open-system-menu.gif`](open-system-menu.gif) | `tour-record-cadr-20260726`, continuous X11 capture | Actual Right-button dispatch and menu redisplay | `e260cb05d6a30e6ab28b21d713409eb19807bdb5f9d5c366109652e857840885` | 70 frames at 10 fps |
+| [`open-zmacs-help.gif`](open-zmacs-help.gif) | `tour-record-cadr-20260726`, captures `0011`–`0013` | Actual contextual Help dispatch | `3be75932ca82cde4298d473fea1b9a0bd9a742627aacca1f91a07d1b2edb2755` | Three ordered frames |
+| [`select-inspector.gif`](select-inspector.gif) | `tour-record-cadr-20260726`, captures `0015`–`0017` | Actual Inspector selection for synthetic data | `4ec4a22e3875183088271c0c6f4eff8ff8555cffb8b606d9e689ae52f5b5a802` | Three ordered frames |
+| [`select-peek.gif`](select-peek.gif) | `tour-record-cadr-20260726`, captures `0018`–`0020` | Actual Peek selection and process view | `d4bb81191da635b842f1bd511f11949e3a7bc542b577645847a74613f9420a3d` | Three ordered frames |
+| [`open-screen-editor.gif`](open-screen-editor.gif) | `tour-record-cadr-20260726`, captures `0021`, `0024`, `0025` | Actual **Edit Screen** selection through its highlighted prompt; no layout mutation | `58322e69b2f507f94348bae05193fa253cad2a52384fe8ca5b1de9b18b8c3495` | Three ordered frames |
+| [`trace-a-function.gif`](trace-a-function.gif) | `tour-record-cadr-20260726`, captures `0028`–`0031` | Define and trace `TOUR-LEAF`, then call it | `4d016bc18494f6ea1d213b056d6cbfd6b7b9302e2a7d6af2cc337eb2a05ea4cb` | Four ordered frames |
+| [`enter-error-handler.gif`](enter-error-handler.gif) | `tour-record-cadr-20260726`, captures `0032`–`0034` | Signal the synthetic tour error | `8e21441629778e9b4f0d8a7b156ad045a199090c6e9fe21005ab41da688fd61c` | Three ordered frames |
+| [`enter-emergency-break.gif`](enter-emergency-break.gif) | `tour-record-cadr-20260726`, captures `0035`–`0039` | Enter the cold-load stream and evaluate `(+ 40 2)` | `5f33479b4983b7da32d7f8bdbb1fa336bba1441795504277320c11f7ca25a90a` | Five ordered frames |
+| [`qix-full.gif`](qix-full.gif) | `hacks-record-cadr-20260726`, continuous X11 capture | Invoke public `NQIX`, retain its evolving trail, press Space, and return | `b3ebd3acc10c044b8ff86c81775f2ebdd7239a3dcfec452d15548bcca844e85a` | 180 frames at 10 fps |
 
 The PNG digest identifies the exact tracked file bytes. For the twenty-one uncropped
 captures, the pixel digest in each original sidecar identifies normalized eight-bit
@@ -217,23 +218,38 @@ and raw pixel digest
 
 ## Tour animation identities
 
-All nine files use a 768-by-963 logical canvas, infinite looping, and 240-centisecond
-delays on every frame. ImageMagick's lossless changed-region optimization may store
-later GIF frames as smaller rectangles while preserving that logical canvas.
+All ten files use a 768-by-963 logical canvas and infinite looping. Staged clips
+pause at action boundaries; continuous clips retain 10 fps. Lossless changed-region
+optimization may store later frames as smaller rectangles while preserving that
+logical canvas.
 
 | Animation | Bytes | Frames | GIF SHA-256 |
 | --- | ---: | ---: | --- |
-| `zmacs-mode-switch.gif` | 5,599 | 2 | `e65442288831d0dd83fb56e922f961dbc27e72ac74e9f7ae1372064e913114ae` |
-| `open-system-menu.gif` | 13,101 | 2 | `7ce6e08854a2e605aebec104c21713cce5eae087e5ba20b44d5d1b11a8e154b3` |
-| `open-zmacs-help.gif` | 11,985 | 2 | `68e93e43f32e7a27490848130b4848aca6eba13207eddf342653564fe0dd6d78` |
-| `select-inspector.gif` | 20,727 | 2 | `e39e4d010300d32f0a8b0b8147b755985196edc909a3d5f522d543b8974af432` |
-| `select-peek.gif` | 25,884 | 2 | `7fcd6cd37f55cb446f38f21486e6a52a71f1f829030e3e4d58e49ff29887a42e` |
-| `open-screen-editor.gif` | 18,167 | 2 | `dbf63a976c5d81db0ee00d78278be4e758f9eeb519deff0a168803c7ee92da53` |
-| `trace-a-function.gif` | 15,638 | 2 | `210ffe445be14d62a05e807453833be02a99e8edb3554ccaf143f4f06a43b2b0` |
-| `enter-error-handler.gif` | 13,367 | 2 | `d306694f0e969caa154ea9b6a0078c8084a4464e7f6687c993c6bb5ae6b36db4` |
-| `enter-emergency-break.gif` | 17,898 | 2 | `bb6bf18c57a19cd55c3814a840bd1da39cedc4a3e6b5e4c459f1fa7540cd5d0a` |
+| `zmacs-mode-switch.gif` | 12,926 | 6 | `7ae0ded653430ceadfabba0d83a825c3b8d299c8a7ab34d811483eab82ce1043` |
+| `open-system-menu.gif` | 16,547 | 70 | `e260cb05d6a30e6ab28b21d713409eb19807bdb5f9d5c366109652e857840885` |
+| `open-zmacs-help.gif` | 13,788 | 3 | `3be75932ca82cde4298d473fea1b9a0bd9a742627aacca1f91a07d1b2edb2755` |
+| `select-inspector.gif` | 25,635 | 3 | `4ec4a22e3875183088271c0c6f4eff8ff8555cffb8b606d9e689ae52f5b5a802` |
+| `select-peek.gif` | 48,125 | 3 | `d4bb81191da635b842f1bd511f11949e3a7bc542b577645847a74613f9420a3d` |
+| `open-screen-editor.gif` | 35,332 | 3 | `58322e69b2f507f94348bae05193fa253cad2a52384fe8ca5b1de9b18b8c3495` |
+| `trace-a-function.gif` | 11,610 | 4 | `4d016bc18494f6ea1d213b056d6cbfd6b7b9302e2a7d6af2cc337eb2a05ea4cb` |
+| `enter-error-handler.gif` | 17,071 | 3 | `8e21441629778e9b4f0d8a7b156ad045a199090c6e9fe21005ab41da688fd61c` |
+| `enter-emergency-break.gif` | 22,273 | 5 | `5f33479b4983b7da32d7f8bdbb1fa336bba1441795504277320c11f7ca25a90a` |
+| `qix-full.gif` | 87,386 | 180 | `b3ebd3acc10c044b8ff86c81775f2ebdd7239a3dcfec452d15548bcca844e85a` |
 
 ## Session provenance
+
+### Coherent tour and QIX animation sessions
+
+| Item | Recorded value |
+| --- | --- |
+| Tour session | `tour-record-cadr-20260726`, generation 1; System 303-0 |
+| Tour input boundary | Actual System menu, Zmacs modes and Help, Inspector, Peek, Edit Screen selection, `TOUR-LEAF` trace, synthetic error, and direct cold-load-stream interactions; no `(values 7 8)` frame is used in any of these GIFs |
+| Tour shutdown | Clean; public base disk unchanged; `forced_stop=false`; `state_may_be_incomplete=false` |
+| QIX session | `hacks-record-cadr-20260726`, generation 1; System 303-0 |
+| QIX source boundary | Public `demo/hakdef.lisp` and `demo/qix.lisp` loaded through the isolated `LOCAL-BRIDGE`; `NQIX` invoked by package-neutral `INTERN` |
+| QIX continuous source | Ignored `build/tour-recordings/cadr/qix-full.mkv`; 768 by 963, 10 fps, 18 seconds; FFV1 SHA-256 `2118057bb2f61b3ba5d04ac5a43fb753deff5e6197d1cdb4c0ba4d15ae5cbae3` |
+| QIX ordered input | Invoke `NQIX`; allow the XOR trail to evolve for nine seconds; press Space; retain the return to the Listener |
+| Provenance join | The animation session retains `usim_sha256_at_start` and `usim_sha256_at_exec`; individual harness screenshot sidecars do not claim the execution-time hash |
 
 ### Zmacs editor session
 

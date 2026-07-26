@@ -3,7 +3,7 @@ type: Editorial Guide
 title: Writing and research guide
 description: Conventions for evidence-based, preservation-conscious knowledge-base and guided-tour documentation in the repository's OKF bundle.
 tags: [documentation, okf, preservation, research]
-timestamp: 2026-07-26T23:30:00-04:00
+timestamp: 2026-07-26T14:31:35-04:00
 ---
 
 # Writing and research guide
@@ -96,12 +96,15 @@ evidence dossiers; it does not replace or weaken them.
 - Prefer one reviewed still for a stable layout and a short animation for a
   transition or key gesture. An animation must have the same capture-specific
   review, provenance, attribution, and license exclusion as a still.
-- State whether an animation is a real-time sequence, selected frames from one
-  recorded interaction, or a teaching loop made from separately captured before and
-  after states. Never imply timing or intermediate behavior that was not recorded.
-- Keep animation loops brief and narrowly tied to the instruction. Do not publish
-  bulk interaction recordings, substantial Help text, licensed prose, artwork, or a
-  decorative screen reel.
+- Use only a continuous recording or ordered action-boundary frames from one coherent
+  recorded interaction. Never alternate unrelated endpoint stills and describe the
+  result as a demonstration. State the capture mode and never imply timing or
+  intermediate behavior that was not recorded.
+- Keep animation loops brief and narrowly tied to the instruction. For a hack,
+  demonstration, game, or example, a complete bounded clip includes launch, enough
+  ordinary operation to establish behavior, and the real stop/exit path—not an
+  indefinite run or every state. Do not publish substantial Help text, licensed
+  prose, artwork, or a decorative screen reel.
 - Repeat the most useful key and gesture loops in an **Animated gesture guide**
   section of the relevant application atlas, so the narrative remains readable while
   the atlas remains useful as a quick control reference.

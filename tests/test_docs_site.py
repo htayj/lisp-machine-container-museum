@@ -271,11 +271,12 @@ ENDFONT
                 "assets/mit-cadr-screenshots/open-zmacs-help.gif",
                 "assets/mit-cadr-screenshots/open-screen-editor.gif",
                 "assets/mit-cadr-screenshots/enter-error-handler.gif",
+                "assets/mit-cadr-screenshots/qix-full.gif",
                 "assets/genera-screenshots/select-editor.gif",
                 "assets/genera-screenshots/open-zmacs-help.gif",
                 "assets/genera-screenshots/operate-on-buffer.gif",
                 "assets/genera-screenshots/select-document-examiner.gif",
-                "assets/genera-screenshots/inspect-presentation.gif",
+                "assets/genera-screenshots/presentation-inspector-handler-report.png",
                 "assets/genera-screenshots/open-gc-options.gif",
             ):
                 self.assertTrue((output / relative).is_file(), relative)

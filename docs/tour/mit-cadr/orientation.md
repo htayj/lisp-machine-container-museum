@@ -3,7 +3,7 @@ type: Guided Tour
 title: Finding your way around System 303
 description: Beginner orientation to the CADR screen, TV windows, mouse buttons, System selection, Help, Abort, and the first Listener and Zmacs workflows.
 tags: [mit-cadr, lm-3, tour, manual, navigation, system-menu, zmacs]
-timestamp: 2026-07-26T23:30:00-04:00
+timestamp: 2026-07-26T14:31:35-04:00
 ---
 
 # Finding your way around System 303
@@ -108,7 +108,7 @@ observed model.
 5. Invoke `Meta-X`, type `Text Mode`, and press Return.
 6. Invoke `Meta-X` again, type `Lisp Mode`, and press Return.
 
-![Two-state teaching loop showing Meta-X Text Mode and Meta-X Lisp Mode changing the System 303 Zmacs mode line.](../../assets/mit-cadr-screenshots/zmacs-mode-switch.gif)
+![One Zmacs interaction showing Meta-X Text Mode and Meta-X Lisp Mode changing the System 303 mode line.](../../assets/mit-cadr-screenshots/zmacs-mode-switch.gif)
 
 *Keybinding illustration: the complete tracked frames were captured in one System
 303 Zmacs session after `Meta-X Text Mode Return` and `Meta-X Lisp Mode Return`.

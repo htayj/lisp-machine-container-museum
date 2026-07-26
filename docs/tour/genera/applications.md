@@ -3,7 +3,7 @@ type: Guided Tour
 title: Symbolics Genera application atlas
 description: Beginner-facing, D01-D60-complete tour map for opening, safely trying, or understanding the availability boundary of every Genera 8.5 software area.
 tags: [genera, tour, manual, applications, catalog]
-timestamp: 2026-07-26T23:30:00-04:00
+timestamp: 2026-07-26T14:31:35-04:00
 ---
 
 # Symbolics Genera application atlas
@@ -16,38 +16,37 @@ access by software area.
 
 ## Animated gesture guide
 
-These slow loops are compact reminders for interactions introduced in the linear
-story. Each uses complete reviewed states and does not claim real-time timing,
-pointer paths, or omitted intermediate redisplay.
+These compact reminders retain ordered action-boundary captures from the same
+Genera session. They do not claim real-time timing or omitted pointer motion.
 
 <details>
 <summary>Open the System Menu: Shift-Right over the client</summary>
-<img src="../../assets/genera-screenshots/open-system-menu.gif" alt="Dynamic Lisp Listener and System Menu teaching loop.">
+<img src="../../assets/genera-screenshots/open-system-menu.gif" alt="Dynamic Lisp Listener interaction opening the System Menu.">
 </details>
 
 <details>
 <summary>Select the Editor activity: Select E</summary>
-<img src="../../assets/genera-screenshots/select-editor.gif" alt="Dynamic Lisp Listener and selected Zmacs activity teaching loop.">
+<img src="../../assets/genera-screenshots/select-editor.gif" alt="Dynamic Lisp Listener interaction selecting the Zmacs activity.">
 </details>
 
 <details>
 <summary>Ask Zmacs for contextual Help: Help</summary>
-<img src="../../assets/genera-screenshots/open-zmacs-help.gif" alt="Zmacs and Help dispatcher teaching loop.">
+<img src="../../assets/genera-screenshots/open-zmacs-help.gif" alt="Zmacs interaction opening the Help dispatcher.">
 </details>
 
 <details>
 <summary>Open the Zmacs Editor menu</summary>
-<img src="../../assets/genera-screenshots/open-zmacs-editor-menu.gif" alt="Zmacs and Editor menu teaching loop.">
+<img src="../../assets/genera-screenshots/open-zmacs-editor-menu.gif" alt="Zmacs interaction opening the Editor menu.">
 </details>
 
 <details>
 <summary>Request operations on a buffer presentation</summary>
-<img src="../../assets/genera-screenshots/operate-on-buffer.gif" alt="List Buffers, pointer documentation, and operation menu teaching loop.">
+<img src="../../assets/genera-screenshots/operate-on-buffer.gif" alt="List Buffers interaction opening a buffer operation menu.">
 </details>
 
 <details>
 <summary>Start a character-style input transaction</summary>
-<img src="../../assets/genera-screenshots/prompt-character-style.gif" alt="Zmacs and character-style prompt teaching loop.">
+<img src="../../assets/genera-screenshots/prompt-character-style.gif" alt="Zmacs interaction opening a character-style prompt.">
 </details>
 
 ## Everyday environment: D01-D16

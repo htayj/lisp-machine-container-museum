@@ -3,7 +3,7 @@ type: Preservation Note
 title: Operating CADR through the Xvfb computer-use harness
 description: Architecture, provenance, verified System 303 interactions, and limitations of the museum's private headless CADR sessions.
 tags: [mit-cadr, lm-3, usim, computer-use, xvfb, preservation]
-timestamp: 2026-07-18T12:56:34-04:00
+timestamp: 2026-07-26T14:31:35-04:00
 ---
 
 # Operating CADR through the Xvfb computer-use harness
@@ -274,12 +274,14 @@ local bridge interoperability rule, not evidence that historical Lisp Machine fi
 servers required lowercase raw pathnames.
 
 The first bridge access in a fresh System 303 session also enters the world's
-generic file-login dialogue. At its `loginname<space>password` prompt, a non-secret
-local label followed by a trailing space and no password completed the isolated
-bridge login; no historical site credential is required or appropriate. Later
-loads can repeat the short `Please log in` banner while proceeding with the saved
-local identity. The museum harness must never place a real password in a scripted
-interaction or provenance record.
+generic file-login dialogue. The local FILE implementation has a deliberate
+`lispm` compatibility identity that maps to the current isolated host account before
+the ordinary Unix-user password path. In session `hacks-record-cadr-20260726`,
+arbitrary label `MUSEUM` did not authenticate; `LISPM` plus a non-secret placeholder
+in the dialogue's `loginname<space>password` form did. No historical site credential
+is required or appropriate. Later loads can repeat the short `Please log in` banner
+while proceeding with the saved local identity. The museum harness must never place
+a real password in a scripted interaction or provenance record.
 
 The successful session then called `SPACEWAR:INIT` synchronously from the Listener
 top level, entered the live game, captured the complete application window, and

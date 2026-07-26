@@ -3,7 +3,7 @@ type: Historical Article
 title: CADR HACKS, display, sound, and novelty programs
 description: A source- and runtime-bounded dossier on every active System 303 HACKS component, every extra canonical demo source, the menu framework, controls, assets, missing inputs, hardware dependencies, and System 46 lineage.
 tags: [mit-cadr, lm-3, hacks, demos, graphics, sound, games, runtime]
-timestamp: 2026-07-18T12:56:34-04:00
+timestamp: 2026-07-26T14:31:35-04:00
 ---
 
 # CADR HACKS, display, sound, and novelty programs
@@ -617,6 +617,56 @@ give earlier authorship/edit dates, and several maintained files clearly preserv
 older experiments. The evidence establishes the two snapshots and their organization,
 not a complete chronology for every intervening system.
 
+## Complete animation coverage
+
+The preservation target is one **complete bounded runtime animation per runnable
+program**: actual invocation, enough ordinary operation to establish its behavior
+and controls, and the real stop or exit path. A still image, two unrelated endpoint
+frames, or a source-level inference does not satisfy this target. Continuous motion
+is recorded continuously; prompt- or turn-oriented programs may use ordered
+action-boundary frames from one interaction.
+
+| Program or menu leaf | Recording status | Required complete interval or present blocker |
+| --- | --- | --- |
+| Quit | Not a program | Covered only as the menu's exit path, not a standalone GIF |
+| Abacus | TODO | Open, exercise bead/number interaction, exit |
+| Beep Hacks | Blocked | Needs a reviewed audio-capture fixture as well as visible controls |
+| Crock | TODO | Open analog clock, retain visible update, exit |
+| Digital Crock | TODO | Open digital clock, retain visible update, exit |
+| Splines | TODO | Launch `DLWHAK` spline display, retain evolution, stop |
+| TV bug | TODO | Launch moving bug, retain motion, stop |
+| Godel (Insides of Escher) | TODO | Select one documented velocity pair, retain the evolving XOR line, stop |
+| Escher (xor'ing lines) | TODO | Retain one complete built-in fourfold-symmetry pattern interval, stop |
+| Birds (xor'ing triangles) | TODO | Retain one complete paired-velocity triangle interval, stop |
+| Hollerith editor 1 | TODO | Open the first editor, perform one reversible researcher-owned edit, exit |
+| Hollerith editor 2 | TODO | Open the second editor, perform one reversible researcher-owned edit, exit |
+| Munching Squares | TODO | Launch, retain several phase changes, stop |
+| Munching Tunes | Blocked | Requires the sound fixture; visual controls alone are not the complete behavior |
+| Live Bounce | TODO | Launch the `OHACKS` bouncing display, retain motion, stop |
+| Lexiphage | TODO | Launch, retain text consumption over researcher-owned text, stop |
+| Qix | **Recorded** | [`qix-full.gif`](../assets/mit-cadr-screenshots/qix-full.gif): action-recorded invocation, evolving XOR trail, Space, Listener return |
+| Rotate | TODO | Launch bitmap rotation with a public/source-owned input, retain a full visible cycle, stop |
+| Life | TODO | Launch a source-defined or researcher-owned seed, retain generations, stop |
+| Rotating Circles | TODO | Launch, retain a representative cycle, stop |
+| Worm | TODO | Launch, retain motion and user control, stop |
+| Worm-Trails | TODO | Launch, retain trail evolution and user control, stop |
+| Doctor | TODO | Record one complete synthetic conversation and the actual exit; the existing published evidence is a still |
+| CRAZE | TODO | Launch, retain its evolving raster behavior, stop |
+| FREDKIN | Blocked | Pinned source references missing `ELP-ARRAY` data |
+| LISS | TODO | Launch, retain a representative Lissajous cycle, stop |
+| PFOM | Blocked | Pinned source references missing `RISING SUN` picture data |
+| TREEDV | TODO | Launch, retain a representative tree drawing, stop |
+| VOTRAX | Blocked | Requires speech hardware or a faithful capture fixture |
+| WHAT | TODO | Exercise one complete researcher-owned example interaction and exit |
+| WORDS | Support only | Record only if its behavior is independently user-visible; otherwise cite it as support |
+| Color-only modules | Blocked in current profile | Require the 4-bit color-screen profile and separate capture/review |
+| Spacewar | TODO, separate game | Record start gate, representative two-player/control behavior, and actual stop; the existing published evidence is a still |
+
+This ledger is intentionally stricter than “source present.” `HAKDEF`, `TVBGAR`, and
+`WORMCH` are infrastructure/support modules rather than independent visual programs.
+Hardware-, service-, and data-dependent rows remain blocked until the required
+fixture exists; they must not be replaced by a fabricated animation.
+
 ## Runtime verification
 
 The tested System 303 base band does not load `HACKS`; source presence alone did not
@@ -677,6 +727,22 @@ labels. Its publication is covered by the
 | Raw sidecar | `0027-qix-funcall-live.json`, 4,423 bytes; SHA-256 `7087a351301bf7fc4a3b0934eee1e62ba96d1672d35905a214cde2578225d5a1` |
 | Run record | 6,940 bytes; SHA-256 `89cd8f2726471f0bde8efe411c1a142b97f96418e07f3594367d8f406e9b10a6` |
 | Shutdown | Clean: `forced_stop=false`, `state_may_be_incomplete=false`, usim and Xvfb exit status 0, public base disk unchanged |
+
+Session `hacks-record-cadr-20260726`, generation 1, repeated the public `HAKDEF`
+and `QIX` load and recorded the complete bounded operation continuously:
+
+![Continuous QIX runtime recording from invocation through Space and Listener return](../assets/mit-cadr-screenshots/qix-full.gif)
+
+The 768-by-963 recording runs for 18 seconds at 10 frames per second. Its linked
+harness action record establishes the `NQIX` call; the function clears the Listener
+too quickly for the typed form to remain legible in the video. The clip retains the
+evolving trail, includes the Space stop, and ends after return to the Listener. The
+session stopped cleanly with `forced_stop=false`,
+`state_may_be_incomplete=false`, usim and Xvfb exit status 0, and the public base
+disk unchanged. The ignored FFV1 source has SHA-256
+`2118057bb2f61b3ba5d04ac5a43fb753deff5e6197d1cdb4c0ba4d15ae5cbae3`;
+the reviewed 180-frame GIF has SHA-256
+`b3ebd3acc10c044b8ff86c81775f2ebdd7239a3dcfec452d15548bcca844e85a`.
 
 Programs requiring color hardware, a Votrax, missing `ELP-ARRAY` or `RISING SUN`
 data, configured Chaos/file services, printer hardware, or an audio capture fixture

@@ -3,7 +3,7 @@ type: Guided Tour
 title: MIT CADR and LM-3 application atlas
 description: Beginner-facing, D01-D60-complete tour map for opening, safely trying, or understanding the runtime boundary of every CADR and LM-3 software area.
 tags: [mit-cadr, lm-3, tour, manual, applications, catalog]
-timestamp: 2026-07-26T23:30:00-04:00
+timestamp: 2026-07-26T14:31:35-04:00
 ---
 
 # MIT CADR and LM-3 application atlas
@@ -19,28 +19,28 @@ a facility on valuable guest state.
 
 ## Animated gesture guide
 
-These slow loops are compact reminders for interactions introduced in the linear
-story. Each alternates complete reviewed states and does not claim real-time timing
-or omitted intermediate redisplay.
+These compact reminders come from coherent interactions introduced in the linear
+story. The menu clip is continuous; the others retain ordered action-boundary
+captures and do not claim omitted timing.
 
 <details>
 <summary>Open the System menu: Right over the client</summary>
-<img src="../../assets/mit-cadr-screenshots/open-system-menu.gif" alt="Listener and System menu teaching loop.">
+<img src="../../assets/mit-cadr-screenshots/open-system-menu.gif" alt="Continuous recording of the Listener opening the System menu.">
 </details>
 
 <details>
 <summary>Change Zmacs mode: Meta-X Text Mode or Meta-X Lisp Mode</summary>
-<img src="../../assets/mit-cadr-screenshots/zmacs-mode-switch.gif" alt="Zmacs Text and Lisp mode teaching loop.">
+<img src="../../assets/mit-cadr-screenshots/zmacs-mode-switch.gif" alt="Zmacs interaction changing through Text and Lisp modes.">
 </details>
 
 <details>
 <summary>Ask Zmacs for contextual Help: Help twice</summary>
-<img src="../../assets/mit-cadr-screenshots/open-zmacs-help.gif" alt="Zmacs and ZWEI Help teaching loop.">
+<img src="../../assets/mit-cadr-screenshots/open-zmacs-help.gif" alt="Zmacs interaction opening ZWEI Help.">
 </details>
 
 <details>
 <summary>Enter Screen Editor: System menu, then Edit Screen</summary>
-<img src="../../assets/mit-cadr-screenshots/open-screen-editor.gif" alt="System menu and Screen Editor teaching loop.">
+<img src="../../assets/mit-cadr-screenshots/open-screen-editor.gif" alt="System menu interaction selecting Edit Screen.">
 </details>
 
 ## Everyday environment: D01-D16

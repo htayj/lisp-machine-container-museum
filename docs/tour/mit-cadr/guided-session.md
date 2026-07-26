@@ -3,7 +3,7 @@ type: Guided Tour
 title: A working session on the MIT CADR
 description: A linear, screenshot-rich first-person tour through the System 303 Listener, System menu, Zmacs, Help, Inspector, Peek, screen layout, tracing, debugging, terminals, compiler tools, and demonstrations.
 tags: [mit-cadr, lm-3, tour, manual, applications, animation, user-story]
-timestamp: 2026-07-26T23:30:00-04:00
+timestamp: 2026-07-26T14:30:00-04:00
 ---
 
 # A working session on the MIT CADR
@@ -29,9 +29,10 @@ command language, not interchangeable substitutes for a modern primary click.
 If an interaction begins asking for something you did not intend, press **Abort**.
 Abort cancels the current interaction; it does not mean “close the application.”
 
-The animations below are slow teaching loops made from separately captured,
-reviewed states. They preserve complete native-size frames but do not claim
-real-time latency, pointer motion, or unrecorded intermediate redisplay.
+Every animation below now comes from one coherent harness interaction. Most retain
+selected action-boundary frames so the typed command, prefix, prompt, and result
+remain legible at native size; the System-menu and QIX clips are continuous X11
+captures. An animation is not used merely to alternate unrelated endpoints.
 
 ## 1. Meet the Lisp Listener
 
@@ -58,10 +59,10 @@ submit with Return, and use Abort to abandon incomplete input**.
 
 Press the Right mouse button over the Listener client to expose the System menu.
 
-![Teaching loop alternating the Listener and the System 303 System menu after a Right-button gesture.](../../assets/mit-cadr-screenshots/open-system-menu.gif)
+![Continuous recording of the System 303 System menu opening over the Listener after a Right-button gesture.](../../assets/mit-cadr-screenshots/open-system-menu.gif)
 
-*Gesture illustration: two separately captured complete states. It establishes the
-visible result of opening the menu, not the timing or pointer trajectory.*
+*Runtime interaction: a continuous 10-frame-per-second capture from one session,
+including the actual Right-button dispatch and menu redisplay.*
 
 Read the menu by role:
 
@@ -89,10 +90,10 @@ units or invoke extended commands. `Meta-X` prompts for a named command.
 
 Run `Meta-X Text Mode`, then `Meta-X Lisp Mode`, watching the mode line:
 
-![Teaching loop showing Zmacs change between Text and Lisp modes.](../../assets/mit-cadr-screenshots/zmacs-mode-switch.gif)
+![One Zmacs interaction changing from Text mode to Lisp mode through named commands.](../../assets/mit-cadr-screenshots/zmacs-mode-switch.gif)
 
-*Named-command illustration: separately captured mode states with slow pauses. The
-changed mode line is the claim; the loop does not synthesize command execution.*
+*Runtime interaction: six action-boundary captures from one editor session show the
+two `Meta-X` prompts and both resulting mode-line changes.*
 
 The buffer did not become a different document. Its **mode** changed the active
 editing grammar: indentation, syntax-sensitive motion, commands, and Help context.
@@ -101,11 +102,10 @@ editing grammar: indentation, syntax-sensitive motion, commands, and Help contex
 
 Press Help twice in the Lisp-mode buffer.
 
-![Teaching loop alternating a Lisp-mode Zmacs buffer and the ZWEI Help dispatcher.](../../assets/mit-cadr-screenshots/open-zmacs-help.gif)
+![One Zmacs interaction opening the ZWEI Help dispatcher.](../../assets/mit-cadr-screenshots/open-zmacs-help.gif)
 
-*Keybinding illustration: the complete before and Help states are separately
-captured. Only the visible dispatcher categories and contextual transition are
-asserted.*
+*Runtime interaction: before, dispatched Help input, and visible dispatcher states
+belong to the same editor session.*
 
 Help is not one global manual page. Zmacs can describe a key, list commands, show
 mode-specific bindings, or dispatch to other self-documentation. The answer depends
@@ -120,11 +120,11 @@ Evaluate `(list 'alpha 42 (list 'nested 'value))` in the Listener, then select
 Inspector for that object. The tour uses a small researcher-created list so every
 operation is harmless and legible.
 
-![Teaching loop alternating the Listener and Inspector's list view.](../../assets/mit-cadr-screenshots/select-inspector.gif)
+![One System 303 interaction selecting Inspector for a researcher-created list.](../../assets/mit-cadr-screenshots/select-inspector.gif)
 
-*Application-selection illustration: separately captured states. It establishes
-Inspector's visible list presentation, not an automatic transition for arbitrary
-Listener output.*
+*Runtime interaction: the typed list form, selection action, and Inspector result
+are retained from one session; no transition for arbitrary Listener output is
+claimed.*
 
 Rows in Inspector are mouse-sensitive regions. Pointing and clicking operate on the
 underlying component rather than merely positioning a text caret. This is an early
@@ -137,10 +137,10 @@ objects can remain actionable objects**.
 
 Select Peek and choose its process view.
 
-![Teaching loop alternating the Listener and Peek's process display.](../../assets/mit-cadr-screenshots/select-peek.gif)
+![One System 303 interaction selecting Peek and reaching its process display.](../../assets/mit-cadr-screenshots/select-peek.gif)
 
-*Application-selection illustration: the second frame is the reviewed process view.
-The loop does not claim that every Peek mode is safe or available.*
+*Runtime interaction: selection and process-view states come from one session. The
+clip does not claim that every Peek mode is safe or available.*
 
 Peek is a family of live views over processes, memory, windows, files, and network
 state. Its mode and Help determine the effective keys. Treat it as an observatory
@@ -154,10 +154,10 @@ share the same object-rich window environment.
 Open the System menu and choose **Edit Screen**. Stop at the Screen Editor menu and
 read the mouse-documentation line.
 
-![Teaching loop alternating the System menu and Screen Editor menu.](../../assets/mit-cadr-screenshots/open-screen-editor.gif)
+![One System 303 interaction choosing Edit Screen and reaching its highlighted prompt.](../../assets/mit-cadr-screenshots/open-screen-editor.gif)
 
-*Menu-transition illustration: separately captured complete states. No reshape or
-layout mutation is performed by the loop.*
+*Runtime interaction: the System menu, selected Edit Screen item, and resulting
+prompt are from one session. No reshape or layout mutation is performed.*
 
 The Screen Editor can reshape, move, expose, bury, split, and otherwise manage TV
 windows. For this preservation tour, inspect the operations and press Abort rather
@@ -168,11 +168,10 @@ a pile of independent modern application cards.
 
 Compile `TOUR-SQUARE`, enable Trace for it, call it once, and remove the trace.
 
-![Teaching loop alternating the Listener and the reviewed Trace, Step, and Who-Calls result.](../../assets/mit-cadr-screenshots/trace-a-function.gif)
+![One Listener interaction defining, tracing, and calling TOUR-LEAF.](../../assets/mit-cadr-screenshots/trace-a-function.gif)
 
-*Workflow illustration: the result frame comes from a verified synthetic trace
-exercise. The loop omits intermediate command entry and does not claim real-time
-call timing.*
+*Runtime interaction: four action-boundary captures show the researcher-defined
+function, trace request, call, and reported return in order.*
 
 Trace reports calls, arguments, and returns. Step and Who-Calls answer related but
 different questions. They are integrated with the Lisp environment: function names,
@@ -187,10 +186,10 @@ Now deliberately signal only the synthetic error described in the debugger dossi
 The Error Handler replaces the normal flow with a condition report, stack context,
 and dynamically available recovery choices.
 
-![Teaching loop alternating the Listener and the Error Handler's dynamic choices.](../../assets/mit-cadr-screenshots/enter-error-handler.gif)
+![One Listener interaction signalling a synthetic error and entering the Error Handler.](../../assets/mit-cadr-screenshots/enter-error-handler.gif)
 
-*Recovery illustration: separately captured pre-error and reviewed synthetic-error
-states. It does not claim that every condition offers these choices.*
+*Runtime interaction: the entered form and resulting dynamic choices are from the
+same session. It does not claim that every condition offers these choices.*
 
 Read before choosing. The available commands depend on the condition and frame.
 Abort is often the correct first-tour exit, but it is not a universal rollback:
@@ -231,13 +230,16 @@ This connects the visible window you have been using to its implementation model
 The same display substrate supports demonstrations and games. Three safe,
 representative stops show the range:
 
-![Live QIX line demonstration.](../../assets/mit-cadr-screenshots/qix-live.png)
+![Continuous recording of QIX after dispatch, evolving its XOR trail, and returning after Space.](../../assets/mit-cadr-screenshots/qix-full.gif)
 
 ![Doctor carrying on a short synthetic conversation.](../../assets/mit-cadr-screenshots/doctor-conversation.png)
 
 ![The System 303 Spacewar playfield.](../../assets/mit-cadr-screenshots/spacewar-game.png)
 
-QIX exercises raster drawing, Doctor turns pattern-driven text interaction into a
+The QIX animation is a continuous 18-second, 10-frame-per-second run. The harness
+action record establishes the call; its immediate screen clear means the typed form
+is not legible in the video. The trail then evolves and Space visibly returns to the
+Listener. QIX exercises raster drawing, Doctor turns pattern-driven text interaction into a
 program, and Spacewar combines continuous simulation, two-player controls, status,
 and the TV display. They are historically specific programs, not decorative “retro”
 effects. Read each dossier's stop or exit controls before running it.
@@ -247,11 +249,11 @@ effects. Read each dossier's stop or exit controls before running it.
 Emergency Break reaches a degraded evaluator when the ordinary environment cannot
 be trusted. It is not a second everyday Listener.
 
-![Teaching loop alternating the ordinary Listener and the cold-load Emergency Break evaluator.](../../assets/mit-cadr-screenshots/enter-emergency-break.gif)
+![One System 303 interaction entering the cold-load Emergency Break evaluator and evaluating a harmless arithmetic form.](../../assets/mit-cadr-screenshots/enter-emergency-break.gif)
 
-*Recovery comparison: the second state evaluates a researcher-entered `(+ 40 2)`.
-The loop does not imply that entering Emergency Break is harmless in an arbitrary
-machine state.*
+*Runtime interaction: the direct recovery entry, researcher-entered `(+ 40 2)`, and
+result are from one session. The clip does not imply that Emergency Break is
+harmless in an arbitrary machine state.*
 
 You should now recognize the system's main interaction language: selected windows,
 System operations, contextual Help, editor command tables, mouse-sensitive objects,
