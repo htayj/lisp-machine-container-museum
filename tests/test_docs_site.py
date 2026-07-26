@@ -61,11 +61,50 @@ class DocsSiteTests(unittest.TestCase):
         javascript = (REPOSITORY / "site" / "site.js").read_text(encoding="utf-8")
         self.assertIn("var(--stipple-cell) var(--stipple-cell)", css)
         self.assertIn('rootStyle.setProperty("--stipple-cell"', javascript)
+        self.assertIn('rootStyle.setProperty("--gray-33-cell"', javascript)
         self.assertIn("window.devicePixelRatio", javascript)
         self.assertIn("window.visualViewport?.scale", javascript)
         self.assertIn(
             'window.visualViewport?.addEventListener("resize"', javascript
         )
+
+    def test_site_uses_genera_scrollbar_patterns_and_placement(self) -> None:
+        css = (REPOSITORY / "site" / "style.css").read_text(encoding="utf-8")
+        shaft = css.split(".scroll-shaft,", 1)[1].split("}", 1)[0]
+        car = css.split("#scroll-car,", 1)[1].split("}", 1)[0]
+        self.assertIn("M1 0h1v1H1zM0 1h1v1H0z", shaft)
+        self.assertIn("var(--stipple-cell) var(--stipple-cell)", shaft)
+        self.assertIn("M0 0h1v1H0zM1 1h1v1H1zM2 2h1v1H2z", car)
+        self.assertIn("var(--gray-33-cell) var(--gray-33-cell)", car)
+        self.assertIn("grid-template-columns: 226px 16px minmax(0, 1fr)", css)
+        self.assertIn(
+            "grid-column: 2",
+            css.split(".scroll-margin {", 1)[1].split("}", 1)[0],
+        )
+        self.assertIn(
+            "grid-column: 3",
+            css.split(".horizontal-scroll-margin {", 1)[1].split("}", 1)[0],
+        )
+
+    def test_site_scroll_margin_supports_pointer_and_keyboard_operation(self) -> None:
+        template = (REPOSITORY / "site" / "template.html").read_text(
+            encoding="utf-8"
+        )
+        javascript = (REPOSITORY / "site" / "site.js").read_text(encoding="utf-8")
+        self.assertNotIn('<div class="scroll-margin" aria-hidden="true">', template)
+        self.assertEqual(template.count('role="scrollbar"'), 2)
+        self.assertIn('aria-orientation="vertical"', template)
+        self.assertIn('aria-orientation="horizontal"', template)
+        for behavior in (
+            "scrollFromShaft",
+            "beginScrollDrag",
+            "scrollShaftKeydown",
+            "scrollFromHorizontalShaft",
+            "beginHorizontalScrollDrag",
+            "horizontalScrollShaftKeydown",
+            "installRepeatingScrollButton",
+        ):
+            self.assertIn(behavior, javascript)
 
     def test_site_uses_genera_split_who_line_polarity(self) -> None:
         css = (REPOSITORY / "site" / "style.css").read_text(encoding="utf-8")

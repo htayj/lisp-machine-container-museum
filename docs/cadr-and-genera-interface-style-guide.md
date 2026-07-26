@@ -3,7 +3,7 @@ type: Editorial Guide
 title: CADR and Genera interface style guide
 description: Evidence-grounded visual, typographic, interaction, and web implementation guidance for recreating MIT CADR and Symbolics Genera interface styles without importing a generic retro aesthetic.
 tags: [mit-cadr, lm-3, genera, interface-design, web-design, typography, dynamic-windows, tv]
-timestamp: 2026-07-26T11:24:00-04:00
+timestamp: 2026-07-26T11:28:00-04:00
 ---
 
 # CADR and Genera interface style guide
@@ -340,6 +340,45 @@ CADR scroll controls are window-margin behavior, not generic browser scrollbars.
 They may expose position and navigation through a thin edge region. Use a narrow
 track, raster car/marker, and context-sensitive pointer documentation. Avoid rounded
 thumbs, translucent overlays, disappearing scrollbars, and inertial overscroll.
+
+Do not render the margin as a passive position meter. The inspected TV lineage
+defines button-sensitive relative and absolute gestures; the inspected Genera
+Dynamic Windows margin divides the control into start box, middle shaft, car, and
+end box, with relative jumps, proportional positioning, motion tracking, and
+optional auto-repeat. A web adaptation should make at least these operations
+available without a wheel:
+
+- one-line movement from directional end controls;
+- relative page movement by selecting the shaft outside the car;
+- proportional movement by dragging the car; and
+- Arrow, Page Up/Down, Home, and End operation when the shaft has keyboard focus.
+
+This keyboard and primary-button mapping is an accessibility adaptation, not a claim
+that the historical three-button gesture table used modern scrollbar conventions.
+Retain the thin hard-edged margin, proportional car geometry, immediate repaint, and
+pointer documentation while exposing the adaptation clearly.
+
+For the selected Genera Documentation Examiner profile, place the vertical viewer
+scrollbar in its left margin and the horizontal scrollbar in its bottom margin.
+The reviewed Listener, Terminal, Converse, and Notifications displays likewise put
+their vertical scrolling margin on the left of the pane it controls. Do not move the
+bar to the browser-conventional right edge merely because the implementation uses
+HTML.
+
+Dynamic Windows source assigns `50%-GRAY` to the shaft and `33%-GRAY` to the car.
+Use their exact minimal cells, with no interpolated scaling:
+
+```text
+50%-GRAY shaft    33%-GRAY car
+.#                #..
+#.                .#.
+                  ..#
+```
+
+The cells are periodic masks: phase and drawing ALU still matter in a historical
+raster implementation. For a monochrome web reproduction, repeat these matrices
+from the top-left of each margin region, keep their cells anchored to device pixels
+through zoom, and retain the car's one-pixel black outline.
 
 Text cursors and blinkers are rectangular raster objects. A block or thin rectangle
 that follows the current character cell is more authentic than a glowing caret.

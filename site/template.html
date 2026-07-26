@@ -50,10 +50,33 @@
           <a href="@@SOURCE_URL@@" data-pointer-doc="Open the canonical Markdown source on GitHub.">Source: docs/@@SOURCE_PATH@@</a>
         </footer>
       </main>
-      <div class="scroll-margin" aria-hidden="true">
-        <button id="scroll-top" type="button" tabindex="-1">▲</button>
-        <div class="scroll-shaft"><span id="scroll-car"></span></div>
-        <button id="scroll-bottom" type="button" tabindex="-1">▼</button>
+      <div class="scroll-margin" aria-label="Document scroll controls">
+        <button id="scroll-top" type="button" aria-label="Scroll up one line"
+          data-pointer-doc="Scroll the document up one line.">▲</button>
+        <div class="scroll-shaft" id="scroll-shaft" role="scrollbar" tabindex="0"
+          aria-label="Document position" aria-controls="museum-document"
+          aria-orientation="vertical" aria-valuemin="0" aria-valuemax="100"
+          aria-valuenow="0"
+          data-pointer-doc="Click for relative movement, drag the car for proportional positioning, or use Arrow, Page, Home, and End keys.">
+          <span id="scroll-car"
+            data-pointer-doc="Drag for proportional document positioning."></span>
+        </div>
+        <button id="scroll-bottom" type="button" aria-label="Scroll down one line"
+          data-pointer-doc="Scroll the document down one line.">▼</button>
+      </div>
+      <div class="horizontal-scroll-margin" aria-label="Horizontal document scroll controls">
+        <button id="scroll-left" type="button" aria-label="Scroll left"
+          data-pointer-doc="Scroll the document left by one character cell.">◀</button>
+        <div class="horizontal-scroll-shaft" id="horizontal-scroll-shaft"
+          role="scrollbar" tabindex="0" aria-label="Horizontal document position"
+          aria-controls="museum-document" aria-orientation="horizontal"
+          aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"
+          data-pointer-doc="Click for relative horizontal movement, drag the car for proportional positioning, or use Left, Right, Page, Home, and End keys.">
+          <span id="horizontal-scroll-car"
+            data-pointer-doc="Drag for proportional horizontal document positioning."></span>
+        </div>
+        <button id="scroll-right" type="button" aria-label="Scroll right"
+          data-pointer-doc="Scroll the document right by one character cell.">▶</button>
       </div>
     </div>
 

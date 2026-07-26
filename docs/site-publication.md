@@ -3,7 +3,7 @@ type: Preservation Note
 title: Publishing the museum documentation site
 description: Build, visual-profile, interaction, font-provenance, validation, and GitHub Pages publication contract for the Lisp Machine Museum knowledge base.
 tags: [documentation, github-pages, genera, fonts, preservation]
-timestamp: 2026-07-26T11:25:00-04:00
+timestamp: 2026-07-26T11:29:00-04:00
 ---
 
 # Publishing the museum documentation site
@@ -51,11 +51,29 @@ presentation. It adds these Genera-like operations:
 | Enter in search | Follow the current result presentation |
 | `Home` or `top` | Move to the beginning of the current document |
 | `open genera`, `open cadr`, or `home` | Select the named collection or museum activity |
+| Left scroll-margin ▲/▼ | Move by one text line |
+| Hold a directional end control | Repeat after a short delay until released |
+| Click above or below the vertical car | Move backward or forward by one display page |
+| Drag either scroll car | Position proportionally through the document |
+| Bottom scroll-margin ◀/▶ | Move horizontally by one eight-pixel character cell |
+| Click before or after the horizontal car | Move left or right by one display page |
+| Focus a shaft; Arrow/Page/Home/End | Line/cell, page, beginning, or end navigation without a wheel |
 
 Pointing at or focusing a link, button, or input updates the stable bottom
 documentation line. Keyboard and pointer users receive the same description.
 JavaScript is progressive: canonical page links and the collection indexes remain
 usable when scripting is disabled.
+
+The active margin follows the historical role rather than merely drawing a browser
+scrollbar. Genera margin scrollbars divide into start, shaft, car, and end hit
+regions; their source defines relative movement, proportional positioning, and
+repeat-capable controls. The site preserves relative shaft movement and proportional
+car dragging, and its directional end controls repeat while held. It maps those end
+controls to discoverable one-line/cell directions and adds standard keyboard
+equivalents instead of requiring historical Left/Middle/Right button combinations.
+The selected Documentation Examiner profile puts its vertical viewer bar on the left
+and its horizontal bar on the bottom, matching the reviewed Genera layout. The wheel
+and ordinary browser scrolling remain available.
 
 ## Genera font publication boundary
 
@@ -91,6 +109,11 @@ visual-viewport resize, the site divides their one-, two-, and three-pixel perio
 the current device-pixel ratio and visual-viewport scale. Browser zoom therefore
 changes the layout scale without enlarging or shrinking the stipple cells. The CSS
 declarations retain a one-CSS-pixel fallback for operation without JavaScript.
+
+Both scroll shafts repeat the exact two-by-two `50%-GRAY` mask `.#/#.`. Both cars
+repeat the exact three-by-three `33%-GRAY` diagonal mask `#../.#./..#` inside a
+one-pixel outline. These roles and matrices come from the selected Genera Dynamic
+Windows source inventory rather than from a generic CSS checkerboard.
 
 ## Raster evidence sizing
 
@@ -155,8 +178,8 @@ The review checked:
 - search query, result ordering, current-result outline, and abort behavior;
 - pointer-documentation changes;
 - Genera collection navigation;
-- the narrow layout, narrow System Menu, command area, scroll margin, and absence of
-  horizontal document overflow; and
+- the narrow layout, narrow System Menu, command area, active scroll margin, and
+  document-pane-contained horizontal overflow for unscaled raster evidence; and
 - the browser console for font, JavaScript, and asset errors.
 
 The inspected build loaded all requested font families, returned the expected Dynamic
