@@ -3,7 +3,7 @@ type: Preservation Note
 title: Publishing the museum documentation site
 description: Build, visual-profile, interaction, font-provenance, validation, and GitHub Pages publication contract for the Lisp Machine Museum knowledge base.
 tags: [documentation, github-pages, genera, fonts, preservation]
-timestamp: 2026-07-26T11:20:00-04:00
+timestamp: 2026-07-26T11:21:00-04:00
 ---
 
 # Publishing the museum documentation site
@@ -70,14 +70,26 @@ The site selects Unicode BDF representations of `CPTFONT`, `JESS13`, `HL12`, and
 `TR12`, including the bold or italic variants actually used by the theme. Chromium
 rejects the release's bitmap-in-SFNT WOFF2 form because the OpenType sanitizer
 disallows its empty `glyf` table. The build therefore creates a web-only outline:
-each set BDF pixel becomes one exact square contour at a 64-unit grid, horizontal
-runs are merged without changing their union, advances and bearings come from the
-BDF, and the em is the BDF ascent plus descent. This changes storage, not the
-intended one-bit displayed geometry.
+the outer boundary of each connected set of BDF pixels becomes a rectilinear contour
+on a 64-unit grid, internal pixel edges are discarded, advances and bearings come
+from the BDF, and the em is the BDF ascent plus descent. Diagonal-only contacts
+remain separate and enclosed unset pixels remain holes. This changes storage, not
+the intended one-bit displayed geometry. Discarding internal edges is also necessary
+for web display: independently rasterizing touching per-row contours at fractional
+CSS-pixel scales produced visible white seams through enlarged glyphs.
 
 The generated webfonts, source notices, and a hash manifest exist only in the Pages
 artifact. No font payload is committed here, and the direct licensed-world
 extraction under `build/fonts/genera/` remains a separate ignored research input.
+
+## Device-pixel stipples
+
+The scroll-shaft checker, transient-window shadow, and preformatted-block hatch are
+device-pixel patterns rather than CSS-pixel textures. At load and after a layout or
+visual-viewport resize, the site divides their one-, two-, and three-pixel periods by
+the current device-pixel ratio and visual-viewport scale. Browser zoom therefore
+changes the layout scale without enlarging or shrinking the stipple cells. The CSS
+declarations retain a one-CSS-pixel fallback for operation without JavaScript.
 
 ## Static build
 

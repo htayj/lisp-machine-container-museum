@@ -17,6 +17,56 @@ SPEC.loader.exec_module(BUILDER)
 
 
 class DocsSiteTests(unittest.TestCase):
+    def test_bitmap_union_contours_removes_internal_pixel_edges(self) -> None:
+        contours = BUILDER.bitmap_union_contours(
+            {(0, 0), (1, 0), (0, 1), (1, 1)}
+        )
+        self.assertEqual(len(contours), 1)
+        self.assertEqual(set(contours[0]), {(0, 0), (2, 0), (2, 2), (0, 2)})
+
+    def test_bitmap_union_contours_preserves_holes_and_diagonal_separation(
+        self,
+    ) -> None:
+        ring = {
+            (x, y)
+            for x in range(3)
+            for y in range(3)
+            if (x, y) != (1, 1)
+        }
+        self.assertEqual(len(BUILDER.bitmap_union_contours(ring)), 2)
+        self.assertEqual(
+            len(BUILDER.bitmap_union_contours({(0, 0), (1, 1)})), 2
+        )
+
+    def test_bitmap_union_contours_preserves_exhaustive_three_by_three_area(
+        self,
+    ) -> None:
+        coordinates = [(x, y) for y in range(3) for x in range(3)]
+        for mask in range(1, 1 << len(coordinates)):
+            cells = {
+                coordinate
+                for index, coordinate in enumerate(coordinates)
+                if mask & (1 << index)
+            }
+            doubled_area = 0
+            for contour in BUILDER.bitmap_union_contours(cells):
+                self.assertGreaterEqual(len(contour), 4)
+                for start, end in zip(contour, contour[1:] + contour[:1]):
+                    self.assertTrue(start[0] == end[0] or start[1] == end[1])
+                    doubled_area += start[0] * end[1] - end[0] * start[1]
+            self.assertEqual(doubled_area, 2 * len(cells))
+
+    def test_site_anchors_stipples_to_device_pixels(self) -> None:
+        css = (REPOSITORY / "site" / "style.css").read_text(encoding="utf-8")
+        javascript = (REPOSITORY / "site" / "site.js").read_text(encoding="utf-8")
+        self.assertIn("var(--stipple-cell) var(--stipple-cell)", css)
+        self.assertIn('rootStyle.setProperty("--stipple-cell"', javascript)
+        self.assertIn("window.devicePixelRatio", javascript)
+        self.assertIn("window.visualViewport?.scale", javascript)
+        self.assertIn(
+            'window.visualViewport?.addEventListener("resize"', javascript
+        )
+
     def test_rewrite_markdown_links_preserves_fragments_and_external_links(self) -> None:
         source = (
             '<a href="../genera/index.md#articles">Genera</a>'
@@ -77,6 +127,7 @@ ENDFONT
             glyph_name = font.getBestCmap()[65]
             self.assertEqual(font["hmtx"][glyph_name][0], 4 * 64)
             self.assertGreater(font["glyf"][glyph_name].numberOfContours, 0)
+            self.assertLess(font["glyf"][glyph_name].numberOfContours, 6)
 
     def test_complete_site_build_without_optional_fonts(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:

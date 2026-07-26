@@ -18,6 +18,18 @@
   let searchIndex = null;
   let selectedResult = 0;
 
+  function updateDevicePixelPatterns() {
+    const visualScale = window.visualViewport?.scale || 1;
+    const ratio = Math.max(
+      0.25,
+      (window.devicePixelRatio || 1) * visualScale,
+    );
+    const rootStyle = document.documentElement.style;
+    rootStyle.setProperty("--device-pixel", `${1 / ratio}px`);
+    rootStyle.setProperty("--stipple-cell", `${2 / ratio}px`);
+    rootStyle.setProperty("--hatch-period", `${3 / ratio}px`);
+  }
+
   function setDocumentation(text) {
     pointerDoc.textContent = text || "Select a presentation or enter a command.";
   }
@@ -230,7 +242,12 @@
   });
 
   documentPane.addEventListener("scroll", updateScrollCar, { passive: true });
-  window.addEventListener("resize", updateScrollCar);
+  window.addEventListener("resize", () => {
+    updateDevicePixelPatterns();
+    updateScrollCar();
+  });
+  window.visualViewport?.addEventListener("resize", updateDevicePixelPatterns);
+  updateDevicePixelPatterns();
   updateClock();
   updateScrollCar();
   setInterval(updateClock, 30000);

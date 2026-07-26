@@ -242,6 +242,90 @@ def parse_bdf(source: Path) -> tuple[int, int, list[dict[str, object]]]:
     return ascent, descent, glyphs
 
 
+def bitmap_union_contours(
+    cells: set[tuple[int, int]],
+) -> list[list[tuple[int, int]]]:
+    """Return the rectilinear boundary of a set of unit bitmap pixels.
+
+    Internal pixel edges are discarded so a rasterizer sees each connected ink
+    region as a union outline, not as a stack of touching row rectangles.  At a
+    diagonal-only contact, the leftmost-turn rule keeps the two regions as
+    separate contours.
+    """
+
+    edges: set[tuple[tuple[int, int], tuple[int, int]]] = set()
+    for x, y in cells:
+        candidates = (
+            ((x, y), (x + 1, y), (x, y - 1)),
+            ((x + 1, y), (x + 1, y + 1), (x + 1, y)),
+            ((x + 1, y + 1), (x, y + 1), (x, y + 1)),
+            ((x, y + 1), (x, y), (x - 1, y)),
+        )
+        for start, end, neighbor in candidates:
+            if neighbor not in cells:
+                edges.add((start, end))
+
+    outgoing: dict[tuple[int, int], list[tuple[int, int]]] = {}
+    for start, end in edges:
+        outgoing.setdefault(start, []).append(end)
+
+    def turn_score(
+        previous: tuple[int, int],
+        current: tuple[int, int],
+        candidate: tuple[int, int],
+    ) -> int:
+        incoming = (current[0] - previous[0], current[1] - previous[1])
+        onward = (candidate[0] - current[0], candidate[1] - current[1])
+        cross = incoming[0] * onward[1] - incoming[1] * onward[0]
+        dot = incoming[0] * onward[0] + incoming[1] * onward[1]
+        if cross > 0:
+            return 3
+        if dot > 0:
+            return 2
+        if cross < 0:
+            return 1
+        return 0
+
+    unused = set(edges)
+    contours: list[list[tuple[int, int]]] = []
+    while unused:
+        first_edge = min(unused)
+        start, current = first_edge
+        unused.remove(first_edge)
+        contour = [start]
+        previous = start
+        while current != start:
+            contour.append(current)
+            candidates = [
+                end for end in outgoing.get(current, []) if (current, end) in unused
+            ]
+            if not candidates:
+                raise RuntimeError("bitmap outline contains an open boundary")
+            following = max(
+                candidates,
+                key=lambda end: (turn_score(previous, current, end), end),
+            )
+            unused.remove((current, following))
+            previous, current = current, following
+
+        simplified = list(contour)
+        changed = True
+        while changed and len(simplified) > 3:
+            changed = False
+            for index, point in enumerate(simplified):
+                previous_point = simplified[index - 1]
+                following_point = simplified[(index + 1) % len(simplified)]
+                if (
+                    previous_point[0] == point[0] == following_point[0]
+                    or previous_point[1] == point[1] == following_point[1]
+                ):
+                    simplified.pop(index)
+                    changed = True
+                    break
+        contours.append(simplified)
+    return contours
+
+
 def bdf_to_woff2(
     source: Path, destination: Path, family: str, style: str, weight: str
 ) -> None:
@@ -273,27 +357,23 @@ def bdf_to_woff2(
         assert isinstance(y_offset, int)
         assert isinstance(rows, list)
         pen = TTGlyphPen(None)
+        cells: set[tuple[int, int]] = set()
         for row_index, hex_row in enumerate(rows[:height]):
             row_value = int(str(hex_row), 16) if hex_row else 0
             padded_width = len(str(hex_row)) * 4
             bits = f"{row_value:0{padded_width}b}"[:width]
-            column = 0
-            while column < width:
-                if bits[column] != "1":
-                    column += 1
-                    continue
-                run_start = column
-                while column < width and bits[column] == "1":
-                    column += 1
-                x0 = (x_offset + run_start) * pixel
-                x1 = (x_offset + column) * pixel
-                y0 = (y_offset + height - row_index - 1) * pixel
-                y1 = y0 + pixel
-                pen.moveTo((x0, y0))
-                pen.lineTo((x1, y0))
-                pen.lineTo((x1, y1))
-                pen.lineTo((x0, y1))
-                pen.closePath()
+            y = y_offset + height - row_index - 1
+            cells.update(
+                (x_offset + column, y)
+                for column, bit in enumerate(bits)
+                if bit == "1"
+            )
+        for contour in bitmap_union_contours(cells):
+            first, *remaining = contour
+            pen.moveTo((first[0] * pixel, first[1] * pixel))
+            for x, y in remaining:
+                pen.lineTo((x * pixel, y * pixel))
+            pen.closePath()
         glyph_order.append(name)
         character_map[encoding] = name
         outlines[name] = pen.glyph()
