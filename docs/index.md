@@ -51,6 +51,12 @@ machine-readable metadata layer while retaining ordinary Markdown as the source.
   gives the complete `usim`-centered path from deterministic headless execution
   through display, input, crash-consistent private disks, offline museum release,
   and optional networking or translation.
+- [CADR-WEB portable core and host ABI](mit-cadr/cadr-web-core-architecture-decision.md)
+  records the portable machine boundary and the deterministic pull-style contract
+  between the CADR core and native or browser hosts.
+- [Native CADR instruction-boundary oracle](mit-cadr/cadr-native-instruction-oracle-design.md)
+  describes the frozen pre-refactor witness used to prove exact clock-slot,
+  canonical-state, and ordered-mutation parity during core extraction.
 - [Lisp Listeners and editable input reimplementation specification](lisp-listeners-reimplementation-specification.md)
   defines the System 46, System 303, and Genera 8.5 Listener state, histories,
   input editing, ZDT/ZTOP embodiments, command dispatch, recovery, visible regions,

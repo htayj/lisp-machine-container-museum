@@ -132,6 +132,12 @@ the public LM-3 software and the `usim` emulator.
 - [CADR browser and WebAssembly implementation roadmap](cadr-browser-webassembly-implementation-roadmap.md)
   sequences the pinned `usim` port through deterministic execution, boot, display,
   complete input, private storage, release, networking, and optional translation.
+- [CADR-WEB portable core, host ABI, trace, and snapshot boundary](cadr-web-core-architecture-decision.md)
+  records the instance-owned core boundary, versioned pull-style host ABI, lifecycle,
+  deterministic request protocol, and staged trace and snapshot contract.
+- [Native CADR instruction-boundary oracle design](cadr-native-instruction-oracle-design.md)
+  freezes the exact pre-refactor execution witness used to prove portable-core
+  state and ordered-mutation parity at every outer clock-slot boundary.
 - [CADR diagnostics, checkout, and hardware tools](cadr-diagnostics-checkout-and-hardware-tools.md)
   documents ordered machine and memory tests, destructive disk checkout, PROM and
   embedded-controller workflows, the continuity/probe test stand, and the complete

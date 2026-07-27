@@ -1,2 +1,5 @@
 # Recovered source contexts are byte-exact preservation artifacts.
 docs/assets/mit-cadr-online-help/source/** -whitespace
+
+# Oracle patches retain byte-exact upstream context, including historical spacing.
+cadr-web/oracle/patches/*.patch -whitespace

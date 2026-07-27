@@ -1,0 +1,1287 @@
+diff --git a/Makefile.usim b/Makefile.usim
+--- a/Makefile.usim
++++ b/Makefile.usim
+@@ -44,8 +44,23 @@
+ USIM_MOUSE		= sdl3-mouse.c
+ USIM_TV			= sdl3-video.c
+ 
++else ifeq ($(USIM_BACKEND), oracle)
++
++USIM_CFLAGS		= -DWITH_CADR_ORACLE=1
++USIM_KEYBOARD	= kbd.c cadet.c knight.c lmch.c
++USIM_MOUSE		= mouse.c
++USIM_TV			=
++USIM_CHAOS		= uch11.c
++USIM_IDLE		= cadr_oracle_idle_stubs.c
++USIM_LASHUP		= cadr_oracle_lashup_stubs.c
++USIM_ORACLE		= cadr_oracle_native.c
++
+ endif
+ 
++USIM_CHAOS ?= uch11.c uch11-chaosd.c uch11-local.c uch11-udp.c
++USIM_IDLE ?= idle.c
++USIM_LASHUP ?= lashup-debugger.c
++
+ # dependencies and object files for different backends are in separate dirs
+ # so there is no need to clean when switching backends
+ DEPDIR := .deps-usim/$(USIM_BACKEND)/$(USIM_BUILD_TYPE)
+@@ -92,24 +107,28 @@
+ $(OBJDIR)/chaos.chutil.o: $(CHAOSDIR)/chncp/chutil.c | $(OBJDIR)
+ 	$(CC) $(CFLAGS) $(CHAOS_CFLAGS) -w -I$(CHAOSDIR)/chunix -I. -DSELECT -c -o $@ $<
+ 
++ifeq ($(USIM_BACKEND),oracle)
++CHAOS_OBJS :=
++else
+ CHAOS_OBJS := $(OBJDIR)/chaos.glob.o $(OBJDIR)/chaos.FILE.o $(OBJDIR)/chaos.MINI.o \
+ 			  $(OBJDIR)/chaos.chopen.o $(OBJDIR)/chaos.chdopen.o \
+ 			  $(OBJDIR)/chaos.challoc.o $(OBJDIR)/chaos.chutil.o \
+ 			  $(OBJDIR)/chaos.libhosts.a
++endif
+ 
+ SRCS := usim.c ucfg.c ini.c trace.c dump.c \
+ 		ucode.c uexec.c uvmem.c udiss.c usym.c \
+-		misc.c m32.c idle.c \
++		misc.c m32.c $(USIM_IDLE) \
+ 		machine-control.c \
+ 		bus-adaptor.c \
+ 		bus-interface.c diagnostic-interface.c unibus-mapping.c \
+-		lashup-debugger.c \
++		$(USIM_LASHUP) \
+ 		iob.c $(USIM_KEYBOARD) $(USIM_MOUSE) \
+-		uch11.c uch11-chaosd.c uch11-local.c uch11-udp.c \
++		$(USIM_CHAOS) \
+ 		tape-controller.c tape-drive.c \
+ 		main-memory.c \
+ 		disk-controller.c disk-unit.c \
+-		tv.c colortv.c $(USIM_TV)
++		tv.c colortv.c $(USIM_TV) $(USIM_ORACLE)
+ 
+ OBJS := $(SRCS:%.c=$(OBJDIR)/%.o) $(CHAOS_OBJS)
+ DEPS := $(SRCS:%.c=$(DEPDIR)/%.d) 
+@@ -118,7 +137,7 @@
+ usim:
+ 	$(info USIM_BACKEND    = $(USIM_BACKEND))
+ 	$(info USIM_BUILD_TYPE = $(USIM_BUILD_TYPE))
+-	$(error "USIM_BACKEND=x11/sdl2/sdl3 and USIM_BUILD_TYPE=debug/release must be set.")
++	$(error "USIM_BACKEND=x11/sdl2/sdl3/oracle and USIM_BUILD_TYPE=debug/release must be set.")
+ 
+ ifdef USIM_BACKEND
+ ifdef USIM_BUILD_TYPE
+diff --git a/ucfg.c b/ucfg.c
+--- a/ucfg.c
++++ b/ucfg.c
+@@ -44,6 +44,18 @@
+ #include "sdl3-keyboard.h"
+ #include "sdl3-video.h"
+ 
++#elif defined(WITH_CADR_ORACLE)
++
++#include "kbd.h"
++#define ShiftMapIndex 0
++#define LockMapIndex 1
++#define ControlMapIndex 2
++#define Mod1MapIndex 3
++#define Mod2MapIndex 4
++#define Mod3MapIndex 5
++#define Mod4MapIndex 6
++#define Mod5MapIndex 7
++
+ #endif
+ 
+ #define INIHEQ(s, n) (streq(s, section) && streq(n, name))
+diff --git a/iob.c b/iob.c
+--- a/iob.c
++++ b/iob.c
+@@ -12,6 +12,9 @@
+ #include "uch11.h"
+ #include "ucode.h"
+ #include "utrace.h"
++#ifdef WITH_CADR_ORACLE
++#include "cadr_oracle_native.h"
++#endif
+ 
+ #if WITH_X11
+ 
+@@ -31,6 +34,11 @@
+ #include "sdl3-keyboard.h"
+ #include "sdl3-mouse.h"
+ 
++#elif WITH_CADR_ORACLE
++
++#include "kbd.h"
++#include "mouse.h"
++
+ #endif
+ 
+ uint32_t iob_csr;
+@@ -38,6 +46,32 @@
+ 
+ uint16_t the_60_cycle_clock = 0;
+ 
++#ifdef WITH_CADR_ORACLE
++extern void cadr_oracle_snapshot_keyboard_fields(void);
++void
++cadr_oracle_snapshot_iob(void)
++{
++    cadr_oracle_snapshot_begin(CADR_ORACLE_IOB_STATE);
++    cadr_oracle_snapshot_u32(1,iob_csr);
++    cadr_oracle_snapshot_u32(2,iob_usec);
++    cadr_oracle_snapshot_u32(3,the_60_cycle_clock);
++    cadr_oracle_snapshot_u32(4,kbd_type);
++    cadr_oracle_snapshot_u32(5,kbd_scancode);
++    cadr_oracle_snapshot_u32(6,mouse_x);
++    cadr_oracle_snapshot_u32(7,mouse_y);
++    cadr_oracle_snapshot_u32(8,mouse_rawx);
++    cadr_oracle_snapshot_u32(9,mouse_rawy);
++    cadr_oracle_snapshot_u32(10,mouse_head);
++    cadr_oracle_snapshot_u32(11,mouse_middle);
++    cadr_oracle_snapshot_u32(12,mouse_tail);
++    cadr_oracle_snapshot_u32(13,is_mouse_warp);
++    cadr_oracle_snapshot_u32(14,mouse_warp_x);
++    cadr_oracle_snapshot_u32(15,mouse_warp_y);
++    cadr_oracle_snapshot_keyboard_fields();
++    cadr_oracle_snapshot_end();
++}
++#endif
++
+ #ifdef WITH_SDL3
+ struct itimerval interval_timer;
+ #endif
+@@ -45,6 +79,9 @@
+ static uint32_t
+ get_us_clock(void)
+ {
++#ifdef WITH_CADR_ORACLE
++	return (uint32_t) machine_cycles;
++#else
+ 	static struct timeval tv;
+ 	struct timeval tv2;
+ 	uint32_t ds;
+@@ -62,6 +99,7 @@
+ 	ds = tv2.tv_sec - tv.tv_sec;
+ 	du = tv2.tv_usec - tv.tv_usec;
+ 	return (ds * 1000 * 1000) + du;
++#endif
+ }
+ 
+ #if WITH_SDL3
+@@ -395,17 +433,24 @@
+ void
+ iob_poll(void)
+ {
++#ifdef WITH_CADR_ORACLE
++	return;
++#else
+ #ifdef WITH_SDL3
+ #else
+ 	mouse_poll();
+ #endif
+ 	// there is no kbd_poll; handled by events
+ 	uch11_poll();
++#endif
+ }
+ 
+ void
+ iob_init(void)
+ {
++#ifdef WITH_CADR_ORACLE
++	return;
++#else
+ #ifdef WITH_SDL3
+     signal(SIGALRM, &interval_timer_over);
+     interval_timer.it_interval.tv_sec = 0;
+@@ -418,6 +463,7 @@
+ 	mouse_init();
+ #endif
+ 	uch11_init();
++#endif
+ }
+ 
+ void
+diff --git a/machine-control.c b/machine-control.c
+--- a/machine-control.c
++++ b/machine-control.c
+@@ -33,16 +33,23 @@
+ void
+ machine_control_performance_report_start()
+ {
++#ifdef WITH_CADR_ORACLE
++    return;
++#else
+     if (machine_control_measuring_perf) return;
+     machine_control_measuring_perf = true;
+ 
+     machine_control_run_started_at_machine_cycles = machine_cycles;
+     clock_gettime(CLOCK_MONOTONIC, &machine_control_run_ts);
++#endif
+ }
+ 
+ void
+ machine_control_performance_report_stop()
+ {
++#ifdef WITH_CADR_ORACLE
++    return;
++#else
+     if (!machine_control_measuring_perf) return;
+     machine_control_measuring_perf = false;
+ 
+@@ -68,6 +75,7 @@
+ 	NOTICE(TRACE_USIM, "usim: cpu:%.2lfs (%.1lf%%), idle:%.2lfs (%.1lf%%), total:%.2lfs, idle count:%llu\n",
+             cpu_time, cpu_time_percent, idle_time, idle_time_percent, total_time, idle_count);
+ #endif
++#endif
+ }
+ 
+ // Reset stops the machine by clearing RUN, 
+@@ -147,12 +155,14 @@
+     inhibit = true;
+ }
+ 
++#ifndef WITH_CADR_ORACLE
+ static void*
+ machine_control_thread_run(__attribute__((unused)) void* arg)
+ {
+     machine_control_start_blocking();
+     return NULL;
+ }
++#endif
+ 
+ void
+ machine_control_start_blocking(void)
+@@ -165,6 +175,9 @@
+ bool
+ machine_control_start_nonblocking(void)
+ {
++#ifdef WITH_CADR_ORACLE
++    return false;
++#else
+     pthread_attr_t attr;
+     pthread_attr_init(&attr);
+     pthread_attr_setdetachstate(&attr, PTHREAD_CREATE_DETACHED);
+@@ -178,6 +191,7 @@
+     {
+         return true;
+     }
++#endif
+ }
+ 
+ void
+diff --git a/usim.c b/usim.c
+--- a/usim.c
++++ b/usim.c
+@@ -195,7 +195,11 @@
+ usim_init(int argc, char **argv)
+ {
+     print_header();
++#ifdef WITH_CADR_ORACLE
++    srand(0);
++#else
+     srand(time(NULL));
++#endif
+     // strdup so it can always be freed
+ 	config_filename = strdup("usim.ini");
+ 	warm_boot_flag = false;
+@@ -360,13 +364,15 @@
+     }
+ 
+     // run usim
+-#if SIGINFO
++#if SIGINFO && !defined(WITH_CADR_ORACLE)
+ 	signal(SIGINFO, siginfo_handler);
+ #endif
++#ifndef WITH_CADR_ORACLE
+ 	signal(SIGUSR1, siginfo_handler);
+ 	signal(SIGHUP, sighup_handler);
+     signal(SIGINT, sigint_handler);
+     signal(SIGTERM, sigterm_handler);
++#endif
+ 
+     ucode_init();
+ 
+@@ -443,6 +449,7 @@
+ {
+     if (warm_boot_flag) iob_prepare_for_warm_boot();
+ 
++#ifndef WITH_CADR_ORACLE
+     signal(SIGALRM, sigalrm_handler);
+     struct itimerval itimer;
+     itimer.it_interval.tv_sec = 0;
+@@ -450,6 +457,7 @@
+     itimer.it_value.tv_sec = 0;
+     itimer.it_value.tv_usec = 16666;
+     setitimer(ITIMER_REAL, &itimer, 0);
++#endif
+ }
+ 
+ void
+@@ -470,6 +478,7 @@
+     iob_quit();
+     idle_quit();
+ 
++#ifndef WITH_CADR_ORACLE
+     if (machine_cycles > 0)
+     {
+         if (dump_state_flag || verbose_dump_state_flag)
+@@ -487,6 +496,7 @@
+         save_state(NULL);
+         save_screenshot();
+     }
++#endif
+ 
+     ucfg_quit();
+ 
+diff --git a/ucode.c b/ucode.c
+--- a/ucode.c
++++ b/ucode.c
+@@ -1,3 +1,10 @@
++/*
++ * CADR native-oracle patch anchor.
++ *
++ * This exact-context marker is intentionally applied only to the disposable
++ * prepared copy.  It proves the patch boundary before any future capture hook
++ * is admitted; it does not itself claim to emit an instruction trace.
++ */
+ /* ucode.c --- CADR simulator main loop
+  */
+ 
+@@ -28,6 +35,9 @@
+ #include "usim.h"
+ #include "utrace.h"
+ #include "uvmem.h"
++#ifdef WITH_CADR_ORACLE
++#include "cadr_oracle_native.h"
++#endif
+ 
+ // cycles do not reset even with reset
+ uint64_t machine_cycles;
+@@ -53,11 +63,22 @@
+     // set the initial conditions
+     machine_control_boot();
+ 
++#ifdef WITH_CADR_ORACLE
++    const uint64_t oracle_slot_limit = 100000;
++    cadr_oracle_start(oracle_slot_limit);
++#endif
+     machine_control_performance_report_start();
+ 
+     // this loop is the main clock (not the processor)
+-	while (!machine_state.halted) 
++	while (!machine_state.halted
++#ifdef WITH_CADR_ORACLE
++           && machine_cycles < oracle_slot_limit
++#endif
++          )
+ 	{
++#ifdef WITH_CADR_ORACLE
++        cadr_oracle_slot_begin(inhibit);
++#endif
+         uexec_step();
+ 
+         if (idle_enabled) idle_check(machine_cycles);
+@@ -77,9 +98,15 @@
+ #endif
+ 
+ 		machine_cycles++;
++#ifdef WITH_CADR_ORACLE
++        cadr_oracle_slot_end(machine_state.halted);
++#endif
+ 	}
+ 
+     machine_control_performance_report_stop();
++#ifdef WITH_CADR_ORACLE
++    cadr_oracle_finish(machine_state.halted);
++#endif
+ }
+ 
+ void
+@@ -117,9 +144,15 @@
+ void
+ set_interrupt_status_reg(int new)
+ {
++	int old = interrupt_status_reg;
+ 	interrupt_status_reg = new;
+     // if Xbus or Unibus interrupt is requested, then set pending flag
+ 	interrupt_pending_flag = (interrupt_status_reg & 0140000) ? 1 : 0;
++#ifdef WITH_CADR_ORACLE
++	cadr_oracle_event_u32(CADR_ORACLE_INTERRUPT, 0,
++	                      (uint32_t)interrupt_status_reg,
++	                      old == interrupt_status_reg ? 1 : 0);
++#endif
+ }
+ 
+ void
+diff --git a/uexec.c b/uexec.c
+--- a/uexec.c
++++ b/uexec.c
+@@ -30,6 +30,9 @@
+ #include "usim.h"
+ #include "utrace.h"
+ #include "uvmem.h"
++#ifdef WITH_CADR_ORACLE
++#include "cadr_oracle_native.h"
++#endif
+ 
+ bool uexec_has_run_once = false;
+ 
+@@ -126,7 +129,13 @@
+ pushSPC(uint32_t pc)
+ {
+ 	spcptr = (spcptr + 1) & 037;
++#ifdef WITH_CADR_ORACLE
++	uint32_t old = spc[spcptr];
++#endif
+ 	spc[spcptr] = pc;
++#ifdef WITH_CADR_ORACLE
++	cadr_oracle_write_u32(CADR_ORACLE_SPC, spcptr, old, spc[spcptr]);
++#endif
+ }
+ 
+ static inline uint32_t
+@@ -387,17 +396,35 @@
+ 	case 010:		/* C-PDL-BUFFER-POINTER PDL (addressed by pointer) */
+ 		DEBUG(TRACE_UCODE, "writing pdl[%o] <- %o\n", pdl_pointer, data);
+ 		trace_pdlptr_write(data);
+-		pdl[pdl_pointer] = data;
++		{
++			uint32_t old = pdl[pdl_pointer];
++			pdl[pdl_pointer] = data;
++#ifdef WITH_CADR_ORACLE
++			cadr_oracle_write_u32(CADR_ORACLE_PDL, pdl_pointer, old, pdl[pdl_pointer]);
++#endif
++		}
+ 		return;
+ 	case 011:		/* C-PDL-BUFFER-POINTER-PUSH PDL (addressed by pointer, push) */
+ 		pdl_pointer = (pdl_pointer + 1) & 01777;
+ 		DEBUG(TRACE_UCODE, "writing pdl[%o] <- %o, push\n", pdl_pointer, data);
+ 		trace_pdlptr_push(data);
+-		pdl[pdl_pointer] = data;
++		{
++			uint32_t old = pdl[pdl_pointer];
++			pdl[pdl_pointer] = data;
++#ifdef WITH_CADR_ORACLE
++			cadr_oracle_write_u32(CADR_ORACLE_PDL, pdl_pointer, old, pdl[pdl_pointer]);
++#endif
++		}
+ 		return;
+ 	case 012:		/* C-PDL-BUFFER-INDEX PDL (address by index). */
+ 		DEBUG(TRACE_UCODE, "writing pdl[%o] <- %o\n", pdl_index, data);
+-		pdl[pdl_index] = data;
++		{
++			uint32_t old = pdl[pdl_index];
++			pdl[pdl_index] = data;
++#ifdef WITH_CADR_ORACLE
++			cadr_oracle_write_u32(CADR_ORACLE_PDL, pdl_index, old, pdl[pdl_index]);
++#endif
++		}
+ 		trace_pdlidx_write(data);
+ 		return;
+ 	case 013:		/* PDL-BUFFER-INDEX PDL index. */
+@@ -468,12 +495,22 @@
+ {
+ 	// means if IR<25> == 1, 
+ 	if (dest & 04000) {
+-		amem[dest & 03777] = out;
++		uint32_t index = dest & 03777, old = amem[index];
++		amem[index] = out;
++#ifdef WITH_CADR_ORACLE
++		cadr_oracle_write_u32(CADR_ORACLE_AMEM, index, old, amem[index]);
++#endif
+ 	}
+ 	else
+ 	{
+ 		mfwrite(dest, out);
+-		mmem[dest & 037] = amem[dest & 037] = out;
++		uint32_t index = dest & 037;
++		uint32_t old_a = amem[index], old_m = mmem[index];
++		mmem[index] = amem[index] = out;
++#ifdef WITH_CADR_ORACLE
++		cadr_oracle_write_u32(CADR_ORACLE_AMEM, index, old_a, amem[index]);
++		cadr_oracle_write_u32(CADR_ORACLE_MMEM, index, old_m, mmem[index]);
++#endif
+ 	}
+ }
+ 
+@@ -729,6 +766,9 @@
+ 		divOps(aluop);
+ 		break;
+ 	}
++#ifdef WITH_CADR_ORACLE
++	alu_out = cadr_oracle_alu_behavior(p0_pc, aluop, alu_out);
++#endif
+ 	qControl();
+ 	outControl();
+ 	writeDest(dest);
+@@ -757,7 +797,13 @@
+ 
+ 	if (ir(10, 2) == 2) {
+ 		DEBUG(TRACE_MICROCODE, "dmem[%o] <- %o\n", disp_addr, adata);
+-		dmem[disp_addr] = adata;
++		{
++			uint32_t old = dmem[disp_addr];
++			dmem[disp_addr] = adata;
++#ifdef WITH_CADR_ORACLE
++			cadr_oracle_write_u32(CADR_ORACLE_DMEM, disp_addr, old, dmem[disp_addr]);
++#endif
++		}
+ 		return;
+ 	}
+ 	if (ir(10, 2) == 3)
+@@ -918,7 +964,13 @@
+ 	 */
+ 	if (p && r) {
+ 		DEBUG(TRACE_MICROCODE, "u-code write; %Lo @ %o\n", iwr, target);
+-		imem[target] = iwr;
++		{
++			uint64_t old = imem[target];
++			imem[target] = iwr;
++#ifdef WITH_CADR_ORACLE
++			cadr_oracle_write_u64(CADR_ORACLE_IMEM, target, old, imem[target]);
++#endif
++		}
+ 		return;
+ 	}
+ 	/*
+@@ -1044,6 +1096,9 @@
+ 
+ 	// fetch instruction
+ 	incNPC();
++#ifdef WITH_CADR_ORACLE
++	cadr_oracle_latch_fetched(p0, p0_pc, p0_imem);
++#endif
+ 
+ // this is used to dump the memories to hex files at a particular pc
+ #if 0
+@@ -1085,6 +1140,9 @@
+ 	// if this instrution is inhibited, return and continue from next
+ 	if (inhibit == true) 
+     {
++#ifdef WITH_CADR_ORACLE
++		cadr_oracle_latch_inhibited();
++#endif
+ 		DEBUG(TRACE_MICROCODE, "inhibit; npc %o\n", npc);
+ 		inhibit = false;
+         return;
+@@ -1124,6 +1182,11 @@
+     // read
+     mdata = (msource == 0) ? mmem[maddr] : mfread(maddr);
+     adata = amem[aaddr];
++#ifdef WITH_CADR_ORACLE
++    cadr_oracle_latch_decoded(p0, op, popj, aaddr, maddr,
++                              msource != 0, (uint32_t)adata,
++                              (uint32_t)mdata);
++#endif
+     // this is used either to write to IMEM
+     // or load statistics counter
+     iwr = ((uint64_t) (adata & 0177777) << 32) | (uint32_t) mdata;
+diff --git a/uvmem.c b/uvmem.c
+--- a/uvmem.c
++++ b/uvmem.c
+@@ -18,6 +18,9 @@
+ #include "ucode.h"
+ #include "utrace.h"
+ #include "uvmem.h"
++#ifdef WITH_CADR_ORACLE
++#include "cadr_oracle_native.h"
++#endif
+ 
+ // see also ucadr/uc-page-fault.lisp for bit positions
+ 
+@@ -138,7 +141,11 @@
+ 		const uint32_t l1_index = (md >> 13) & 03777;
+ 		// ucadr/uc-page-fault.lisp:MAP-WRITE-FIRST-LEVEL-MAP
+ 		const uint32_t l1_data = (vma >> 27) & 037;
++		uint32_t old = l1_map[l1_index];
+ 		l1_map[l1_index] = l1_data;
++#ifdef WITH_CADR_ORACLE
++		cadr_oracle_write_u32(CADR_ORACLE_L1_MAP, l1_index, old, l1_map[l1_index]);
++#endif
+ 		DEBUG(TRACE_VM, "l1_map[#o%o] <- #o%o\n", l1_index, l1_data);
+ 	}
+ 
+@@ -151,7 +158,11 @@
+ 		// ucadr/uc-page-fault.lisp:MAP-WRITE-SECOND-LEVEL-MAP
+ 		const uint32_t l2_data = vma & 077777777;
+ 		assert ((l2_data & 0xFF000000)  == 0); // l2_data should be 24-bits
++		uint32_t old = l2_map[l2_index];
+ 		l2_map[l2_index] = l2_data;
++#ifdef WITH_CADR_ORACLE
++		cadr_oracle_write_u32(CADR_ORACLE_L2_MAP, l2_index, old, l2_map[l2_index]);
++#endif
+ 		DEBUG(TRACE_VM, "l2_map[#o%o] <- #o%o\n", l2_index, l2_data);
+ 	}
+ }
+@@ -200,7 +211,13 @@
+ 	{
+ 		uint32_t offset = ((pn - 035774) << 8) + (vaddr & 0xFF);
+ 		assert (false);
+-		if (write) amem[offset] = *pv;
++		if (write) {
++			uint32_t old = amem[offset];
++			amem[offset] = *pv;
++#ifdef WITH_CADR_ORACLE
++			cadr_oracle_write_u32(CADR_ORACLE_AMEM, offset, old, amem[offset]);
++#endif
++		}
+ 		else *pv = amem[offset];
+ 	}
+ 	else if (000000 <= pn && pn <= 037777)
+diff --git a/main-memory.c b/main-memory.c
+--- a/main-memory.c
++++ b/main-memory.c
+@@ -22,6 +22,9 @@
+ #include "main-memory.h"
+ #include "ucode.h"
+ #include "utrace.h"
++#ifdef WITH_CADR_ORACLE
++#include "cadr_oracle_native.h"
++#endif
+ 
+ #define NUMBER_OF_WORDS_PER_PAGE 256
+ #define NUMBER_OF_BYTES_PER_PAGE (NUMBER_OF_WORDS_PER_PAGE * 4)
+@@ -100,6 +103,9 @@
+ 	{
+ 		// paddr[7:0] is offset
+ 		pages[pn][paddr & 0xFF] = v;
++#ifdef WITH_CADR_ORACLE
++		cadr_oracle_main_memory_page_changed(pn);
++#endif
+         return true;
+ 	}
+ 	else
+@@ -146,6 +152,9 @@
+ 	if (pn < main_memory_npages)
+ 	{
+         memcpy(pages[pn], buffer, NUMBER_OF_BYTES_PER_PAGE);
++#ifdef WITH_CADR_ORACLE
++		cadr_oracle_main_memory_page_changed(pn);
++#endif
+         return true;
+ 	}
+ 	else
+@@ -160,3 +169,11 @@
+ main_memory_bus_reset(void)
+ {
+ }
++
++#ifdef WITH_CADR_ORACLE
++uint32_t
++cadr_oracle_main_memory_word(uint32_t word_address)
++{
++	return pages[word_address >> 8][word_address & 0xff];
++}
++#endif
+diff --git a/tv.c b/tv.c
+--- a/tv.c
++++ b/tv.c
+@@ -8,6 +8,9 @@
+ #include "tv.h"
+ #include "ucode.h"
+ #include "utrace.h"
++#ifdef WITH_CADR_ORACLE
++#include "cadr_oracle_native.h"
++#endif
+ 
+ #if WITH_X11
+ #include "x11.h"
+@@ -101,6 +104,24 @@
+ static uint32_t tv_sync_ptr;
+ static uint8_t tv_sync_ram[4096]; // 4Kx8, 12-bit address lines
+ 
++#ifdef WITH_CADR_ORACLE
++void
++cadr_oracle_snapshot_tv(void)
++{
++    cadr_oracle_snapshot_begin(CADR_ORACLE_TV_STATE);
++    cadr_oracle_snapshot_u32(1,tv_monitor);
++    cadr_oracle_snapshot_u32(2,tv_width);
++    cadr_oracle_snapshot_u32(3,tv_height);
++    cadr_oracle_snapshot_u32(4,tv_background);
++    cadr_oracle_snapshot_u32(5,tv_foreground);
++    cadr_oracle_snapshot_u32(6,tv_mode);
++    cadr_oracle_snapshot_u32(7,tv_vert_spacing);
++    cadr_oracle_snapshot_u32(8,tv_sync_ptr);
++    cadr_oracle_snapshot_bytes(9,tv_sync_ram,sizeof(tv_sync_ram));
++    cadr_oracle_snapshot_end();
++}
++#endif
++
+ // sch: ntvinc
+ static bool
+ tv_is_sync_prom_enabled(void)
+@@ -220,7 +241,11 @@
+ void
+ tv_screen_write(uint32_t offset, uint32_t v)
+ {
++	uint32_t old = tv_screen_buffer[offset];
+ 	tv_screen_buffer[offset] = v;
++#ifdef WITH_CADR_ORACLE
++	cadr_oracle_write_u32(CADR_ORACLE_TV_MEMORY, offset, old, tv_screen_buffer[offset]);
++#endif
+ 
+ #ifdef WITH_SDL3
+ 
+diff --git a/colortv.c b/colortv.c
+--- a/colortv.c
++++ b/colortv.c
+@@ -10,6 +10,9 @@
+ #include "tv.h"
+ #include "ucode.h"
+ #include "utrace.h"
++#ifdef WITH_CADR_ORACLE
++#include "cadr_oracle_native.h"
++#endif
+ 
+ // Color TV is probed by LISPM by writing 1 to 17'200'000 and reading it back
+ // if it is not 1, Color TV is disabled
+@@ -39,6 +42,22 @@
+ static uint32_t colortv_vert_spacing;
+ static uint32_t colortv_sync_ptr;
+ static uint8_t colortv_sync_ram[4096]; // 4Kx8, 12-bit address lines
++
++#ifdef WITH_CADR_ORACLE
++void
++cadr_oracle_snapshot_colortv(void)
++{
++    cadr_oracle_snapshot_begin(CADR_ORACLE_COLOR_TV_STATE);
++    cadr_oracle_snapshot_u32(1,colortv_mode);
++    cadr_oracle_snapshot_u32(2,colortv_vsync);
++    cadr_oracle_snapshot_u32(3,colortv_hsync);
++    cadr_oracle_snapshot_u32(4,sync_prom_enb);
++    cadr_oracle_snapshot_u32(5,colortv_vert_spacing);
++    cadr_oracle_snapshot_u32(6,colortv_sync_ptr);
++    cadr_oracle_snapshot_bytes(7,colortv_sync_ram,sizeof(colortv_sync_ram));
++    cadr_oracle_snapshot_end();
++}
++#endif
+  
+ bool
+ colortv_is_interrupt_enabled(void)
+@@ -75,7 +94,11 @@
+ colortv_screen_write(uint32_t offset, uint32_t v)
+ {
+     DEBUG(TRACE_COLOR, "color: screen write: offset:#o%o *pv:#o%o\n", offset, v);
++	uint32_t old = colortv_screen_buffer[offset];
+ 	colortv_screen_buffer[offset] = v;
++#ifdef WITH_CADR_ORACLE
++	cadr_oracle_write_u32(CADR_ORACLE_COLOR_TV_MEMORY, offset, old, colortv_screen_buffer[offset]);
++#endif
+ }
+ 
+ void
+@@ -181,7 +204,12 @@
+                 }
+ 
+                 // set alpha to opaque
++                const uint32_t old_map = colortv_color_map[location];
+                 colortv_color_map[location] = 0xFF000000 | new_value;
++#ifdef WITH_CADR_ORACLE
++                cadr_oracle_write_u32(CADR_ORACLE_COLOR_MAP, location,
++                                      old_map, colortv_color_map[location]);
++#endif
+ 
+                 DEBUG(TRACE_COLOR, "color: write loc:#o%o channel:#o%o value:#o$%o final:0x%08x\n",
+                         location, color_channel, 
+diff --git a/unibus-mapping.c b/unibus-mapping.c
+--- a/unibus-mapping.c
++++ b/unibus-mapping.c
+@@ -12,6 +12,9 @@
+ #include "ucode.h"
+ #include "unibus-mapping.h"
+ #include "utrace.h"
++#ifdef WITH_CADR_ORACLE
++#include "cadr_oracle_native.h"
++#endif
+ 
+ uint16_t unibus_mapping_registers[16];
+ uint16_t unibus_mapping_buffers[16];
+@@ -43,7 +46,12 @@
+ 				const uint32_t page_no = (uaddr - 0766140) / 2;
+ 				if (write) 
+ 				{
++					uint16_t old = unibus_mapping_registers[page_no];
+ 					unibus_mapping_registers[page_no] = *pv;
++#ifdef WITH_CADR_ORACLE
++					cadr_oracle_write_u32(CADR_ORACLE_UNIBUS_MAP, page_no,
++					                      old, unibus_mapping_registers[page_no]);
++#endif
+ #ifndef NDEBUG
+ 					const bool map_valid = (((*pv >> 15) & 1) != 0);
+ 					const bool write_permit = (((*pv >> 14) & 1) != 0);
+diff --git a/uch11.c b/uch11.c
+--- a/uch11.c
++++ b/uch11.c
+@@ -37,6 +37,9 @@
+ #include "ucode.h"
+ #include "usim.h"
+ #include "utrace.h"
++#ifdef WITH_CADR_ORACLE
++#include "cadr_oracle_native.h"
++#endif
+ 
+ int uch11_backend = UCH11_BACKEND_LOCAL;
+ int uch11_myaddr = 0177040;	/* LOCAL-CADR */
+@@ -70,6 +73,32 @@
+ pthread_mutex_t recvqueue;
+ struct queue_head queuehead = TAILQ_HEAD_INITIALIZER(queuehead);
+ 
++#ifdef WITH_CADR_ORACLE
++void
++cadr_oracle_snapshot_chaos(void)
++{
++    cadr_oracle_snapshot_begin(CADR_ORACLE_CHAOS_STATE);
++    cadr_oracle_snapshot_u32(1,uch11_backend);
++    cadr_oracle_snapshot_u32(2,uch11_myaddr);
++    cadr_oracle_snapshot_u32(3,uch11_serveraddr);
++    cadr_oracle_snapshot_u32(4,uch11_csr);
++    cadr_oracle_snapshot_u32(5,uch11_bit_count);
++    cadr_oracle_snapshot_u32(6,uch11_lost_count);
++    cadr_oracle_snapshot_u32(7,uch11_xmit_buffer_size);
++    cadr_oracle_snapshot_u32(8,uch11_xmit_buffer_ptr);
++    cadr_oracle_snapshot_bytes(9,uch11_xmit_buffer,sizeof(uch11_xmit_buffer));
++    cadr_oracle_snapshot_u32(10,uch11_rcv_buffer_ptr);
++    cadr_oracle_snapshot_u32(11,uch11_rcv_buffer_size);
++    cadr_oracle_snapshot_u32(12,uch11_rcv_buffer_empty);
++    cadr_oracle_snapshot_bytes(13,uch11_rcv_buffer,sizeof(uch11_rcv_buffer));
++    cadr_oracle_snapshot_bytes(14,uch11_rcv_buffer_toss,sizeof(uch11_rcv_buffer_toss));
++    cadr_oracle_snapshot_u32(15,reconnect_delay);
++    cadr_oracle_snapshot_u32(16,reconnect_chaos);
++    cadr_oracle_snapshot_u32(17,TAILQ_EMPTY(&queuehead));
++    cadr_oracle_snapshot_end();
++}
++#endif
++
+ // udp
+ 
+ int chudpopen(void);
+@@ -290,28 +319,39 @@
+ void
+ uch11_poll(void)
+ {
++#ifdef WITH_CADR_ORACLE
++	return;
++#else
+ 	if (uch11_backend == UCH11_BACKEND_LOCAL)
+ 		chaos_poll_local();
+ 	else if (uch11_backend == UCH11_BACKEND_DAEMON)
+ 		chaos_poll_chaosd();
+ 	else if (uch11_backend == UCH11_BACKEND_UDP)
+ 		chaos_poll_udp();
++#endif
+ }
+ 
+ void
+ uch11_force_reconect(void)
+ {
++#ifdef WITH_CADR_ORACLE
++	return;
++#else
+ 	if (uch11_backend == UCH11_BACKEND_DAEMON) {
+ 		WARNING(TRACE_CHAOS, "chaos: forcing reconnect to chaosd\n");
+ 		close(chaosd_fd);
+ 		chaosd_fd = -1;
+ 		reconnect_chaos = true;
+ 	}
++#endif
+ }
+ 
+ void
+ uch11_reconnect(void)
+ {
++#ifdef WITH_CADR_ORACLE
++	return;
++#else
+ 	static int reconnect_time;
+ 
+ 	if (++reconnect_delay < 200)
+@@ -326,11 +366,18 @@
+ 		reconnect_chaos = false;
+ 		reconnect_delay = 0;
+ 	}
++#endif
+ }
+ 
+ int
+ uch11_init(void)
+ {
++#ifdef WITH_CADR_ORACLE
++	uch11_myaddr = 0;
++	uch11_serveraddr = 0;
++	uch11_rcv_buffer_empty = true;
++	return 0;
++#else
+ 	char hosts_file[PATH_MAX] = {0};
+     char root_directory[PATH_MAX] = {0};
+ 
+@@ -387,7 +434,12 @@
+ 		err(1, "could not resolve %s", whichconf);
+ 	NOTICE(TRACE_USIM, "chaos: mapping %s to %s\n", whichdir, root_directory);
+ 	return 0;
++#endif
+ }
++
++#ifdef WITH_CADR_ORACLE
++int hybrid_udp_and_local = 0;
++#endif
+ 
+ //#include "uch11-chaosd.c"
+ //#include "uch11-local.c"
+diff --git a/bus-adaptor.c b/bus-adaptor.c
+--- a/bus-adaptor.c
++++ b/bus-adaptor.c
+@@ -39,6 +39,9 @@
+ #include "ucode.h"
+ #include "utrace.h"
+ #include "usim.h"
++#ifdef WITH_CADR_ORACLE
++#include "cadr_oracle_native.h"
++#endif
+ 
+ static void
+ bus_adaptor_xbusio_rw(bool write, uint32_t paddr, uint32_t *pv)
+@@ -335,7 +338,12 @@
+                 else
+                 {
+                     // cache low word
++                    uint16_t old_buffer = unibus_mapping_buffers[page_no];
+                     unibus_mapping_buffers[page_no] = *pv;
++#ifdef WITH_CADR_ORACLE
++                    cadr_oracle_write_u32(CADR_ORACLE_UNIBUS_BUFFER, page_no,
++                                          old_buffer, unibus_mapping_buffers[page_no]);
++#endif
+ 
+                     DEBUG(TRACE_UNIBUS_MAPPING, "unibus-mapping: dma write (LO) paddr:#o%08o *pv=#o%06o\n", 
+                             paddr, *pv);
+@@ -357,7 +365,12 @@
+                     *pv = (uint16_t)(v32 & 0x0000FFFF);
+ 
+                     // cache low word
++                    uint16_t old_buffer = unibus_mapping_buffers[page_no];
+                     unibus_mapping_buffers[page_no] = (uint16_t)((v32>>16) & 0x0000FFFF);
++#ifdef WITH_CADR_ORACLE
++                    cadr_oracle_write_u32(CADR_ORACLE_UNIBUS_BUFFER, page_no,
++                                          old_buffer, unibus_mapping_buffers[page_no]);
++#endif
+ 
+                     DEBUG(TRACE_UNIBUS_MAPPING, "unibus-mapping: dma read (LO) paddr:#o%08o v32=#o%011o *pv=#o%06o HI=#o%06o\n", 
+                             paddr, v32, *pv, unibus_mapping_buffers[page_no]);
+@@ -482,22 +495,70 @@
+ bus_adaptor_read(uint32_t paddr, uint32_t *pv)
+ {
+     bus_adaptor_rw(false, paddr, pv);
++#ifdef WITH_CADR_ORACLE
++    cadr_oracle_event_u32(CADR_ORACLE_BUS_READ, paddr, *pv,
++                          bus_interface_get_bus_error_status());
++    if (017377774 <= paddr && paddr <= 017377777)
++        cadr_oracle_event_u32(CADR_ORACLE_DISK_READ,paddr,*pv,0);
++    const uint32_t pn=(paddr>>8)&0x3fff;
++    if (037000 <= pn && pn <= 037777) {
++        const uint32_t uaddr=(((pn-037000)<<8)+(paddr&0xff))<<1;
++        if (0764140 <= uaddr && uaddr <= 0764156)
++            cadr_oracle_event_u32(CADR_ORACLE_CHAOS_READ,uaddr,*pv,0);
++        if (0772520 <= uaddr && uaddr <= 0772532)
++            cadr_oracle_event_u32(CADR_ORACLE_TAPE_READ,uaddr,*pv,0);
++    }
++    cadr_oracle_refresh_device_states();
++#endif
+ }
+ 
+ void
+ bus_adaptor_write(uint32_t paddr, uint32_t v)
+ {
+     bus_adaptor_rw(true, paddr, &v);
++#ifdef WITH_CADR_ORACLE
++    cadr_oracle_event_u32(CADR_ORACLE_BUS_WRITE, paddr, v,
++                          bus_interface_get_bus_error_status());
++    if (017377774 <= paddr && paddr <= 017377777)
++        cadr_oracle_event_u32(CADR_ORACLE_DISK_WRITE,paddr,v,0);
++    const uint32_t pn=(paddr>>8)&0x3fff;
++    if (037000 <= pn && pn <= 037777) {
++        const uint32_t uaddr=(((pn-037000)<<8)+(paddr&0xff))<<1;
++        if (0764140 <= uaddr && uaddr <= 0764156)
++            cadr_oracle_event_u32(CADR_ORACLE_CHAOS_WRITE,uaddr,v,0);
++        if (0772520 <= uaddr && uaddr <= 0772532)
++            cadr_oracle_event_u32(CADR_ORACLE_TAPE_WRITE,uaddr,v,0);
++    }
++    cadr_oracle_refresh_device_states();
++#endif
+ }
+ 
+ void
+ bus_adaptor_unibus_read(uint32_t uaddr, uint16_t *pv)
+ {
+     bus_adaptor_unibus_rw(false, uaddr, pv);
++#ifdef WITH_CADR_ORACLE
++    cadr_oracle_event_u32(CADR_ORACLE_IOB_READ, uaddr, *pv,
++                          bus_interface_get_bus_error_status());
++    if (0764140 <= uaddr && uaddr <= 0764156)
++        cadr_oracle_event_u32(CADR_ORACLE_CHAOS_READ,uaddr,*pv,0);
++    if (0772520 <= uaddr && uaddr <= 0772532)
++        cadr_oracle_event_u32(CADR_ORACLE_TAPE_READ,uaddr,*pv,0);
++    cadr_oracle_refresh_device_states();
++#endif
+ }
+ 
+ void
+ bus_adaptor_unibus_write(uint32_t uaddr, uint16_t v)
+ {
+     bus_adaptor_unibus_rw(true, uaddr, &v);
+-}
+\ No newline at end of file
++#ifdef WITH_CADR_ORACLE
++    cadr_oracle_event_u32(CADR_ORACLE_IOB_WRITE, uaddr, v,
++                          bus_interface_get_bus_error_status());
++    if (0764140 <= uaddr && uaddr <= 0764156)
++        cadr_oracle_event_u32(CADR_ORACLE_CHAOS_WRITE,uaddr,v,0);
++    if (0772520 <= uaddr && uaddr <= 0772532)
++        cadr_oracle_event_u32(CADR_ORACLE_TAPE_WRITE,uaddr,v,0);
++    cadr_oracle_refresh_device_states();
++#endif
++}
+diff --git a/bus-interface.c b/bus-interface.c
+--- a/bus-interface.c
++++ b/bus-interface.c
+@@ -18,6 +18,9 @@
+ #include "ucode.h"
+ #include "usim.h"
+ #include "utrace.h"
++#ifdef WITH_CADR_ORACLE
++#include "cadr_oracle_native.h"
++#endif
+ 
+ // "... accumulated error status bits from previous bus cycles."
+ // "Note that these bits are not cleared by power up."
+@@ -50,6 +53,21 @@
+     return ((addr17 ? ((uint32_t)1) : ((uint32_t)0)) << 17) | (((uint32_t)addr) << 1);
+ }
+ 
++#ifdef WITH_CADR_ORACLE
++void
++cadr_oracle_snapshot_bus_interface(void)
++{
++    cadr_oracle_snapshot_begin(CADR_ORACLE_BUS_INTERFACE_STATE);
++    cadr_oracle_snapshot_u32(1, bus_error_status);
++    cadr_oracle_snapshot_u32(2, nxm_inhibited);
++    cadr_oracle_snapshot_u32(3, modifier_reset);
++    cadr_oracle_snapshot_u32(4, debuggee_bus_error_status);
++    cadr_oracle_snapshot_u32(5, addr17);
++    cadr_oracle_snapshot_u32(6, addr);
++    cadr_oracle_snapshot_end();
++}
++#endif
++
+ uint16_t
+ bus_interface_get_bus_error_status(void)
+ {
+diff --git a/disk-controller.c b/disk-controller.c
+--- a/disk-controller.c
++++ b/disk-controller.c
+@@ -39,6 +39,9 @@
+ #include "ucfg.h"
+ #include "ucode.h"
+ #include "utrace.h"
++#ifdef WITH_CADR_ORACLE
++#include "cadr_oracle_native.h"
++#endif
+ 
+ // implementation may support >8 disks, 
+ // but this is a limitation also in the disk controller protocol 
+@@ -112,6 +115,54 @@
+ bool done_interrupt_enable;
+ bool attention_interrupt_enable;
+ 
++#ifdef WITH_CADR_ORACLE
++void
++cadr_oracle_snapshot_disk(void)
++{
++    cadr_oracle_snapshot_begin(CADR_ORACLE_DISK_STATE);
++    cadr_oracle_snapshot_u32(1, cmd);
++    cadr_oracle_snapshot_u32(2, clp);
++    cadr_oracle_snapshot_u32(3, da);
++    cadr_oracle_snapshot_u32(4, xfer_req.ready);
++    cadr_oracle_snapshot_u32(5, xfer_req.p ? xfer_req.p->unit : UINT32_MAX);
++    cadr_oracle_snapshot_u32(6, xfer_req.read);
++    cadr_oracle_snapshot_u32(7, xfer_req.compare);
++    cadr_oracle_snapshot_u32(8, xfer_req.clp);
++    cadr_oracle_snapshot_u32(9, xfer_req.cylinder);
++    cadr_oracle_snapshot_u32(10, xfer_req.head);
++    cadr_oracle_snapshot_u32(11, xfer_req.block);
++    cadr_oracle_snapshot_u32(12, reset_condition);
++    cadr_oracle_snapshot_u32(13, status.read_compare_difference);
++    cadr_oracle_snapshot_u32(14, status.ccw_cycle);
++    cadr_oracle_snapshot_u32(15, status.nonexistent_memory_error);
++    cadr_oracle_snapshot_u32(16, status.interrupt_request);
++    cadr_oracle_snapshot_u32(17, status.not_active);
++    cadr_oracle_snapshot_u32(18, done_interrupt_enable);
++    cadr_oracle_snapshot_u32(19, attention_interrupt_enable);
++    for (uint32_t i=0;i<NUMBER_OF_DISK_UNITS;++i) {
++        const struct disk_unit_s *p=disk_units+i;
++        uint32_t tag=100+i*20;
++        cadr_oracle_snapshot_u32(tag+0,p->unit);
++        cadr_oracle_snapshot_u32(tag+1,p->ncylinders);
++        cadr_oracle_snapshot_u32(tag+2,p->nheads);
++        cadr_oracle_snapshot_u32(tag+3,p->nblocks_per_track);
++        cadr_oracle_snapshot_u32(tag+4,p->nblocks_per_cylinder);
++        cadr_oracle_snapshot_u32(tag+5,p->configured);
++        cadr_oracle_snapshot_u32(tag+6,p->online);
++        cadr_oracle_snapshot_u32(tag+7,p->read_only);
++        cadr_oracle_snapshot_u32(tag+8,p->seek_error);
++        cadr_oracle_snapshot_u32(tag+9,p->has_fault);
++        cadr_oracle_snapshot_u32(tag+10,p->attention);
++        cadr_oracle_snapshot_u32(tag+11,p->last_memory_address);
++        cadr_oracle_snapshot_u32(tag+12,p->cylinder);
++        cadr_oracle_snapshot_u32(tag+13,p->head);
++        cadr_oracle_snapshot_u32(tag+14,p->sector);
++        cadr_oracle_snapshot_u32(tag+15,p->lba);
++    }
++    cadr_oracle_snapshot_end();
++}
++#endif
++
+ static void
+ assert_interrupt(void)
+ {
+diff --git a/kbd.c b/kbd.c
+--- a/kbd.c
++++ b/kbd.c
+@@ -10,6 +10,9 @@
+ #include "ucode.h"
+ #include "usim.h"
+ #include "utrace.h"
++#ifdef WITH_CADR_ORACLE
++#include "cadr_oracle_native.h"
++#endif
+ 
+ int kbd_type = 1;		/* Default is "cadet". */
+ uint32_t kbd_scancode;
+@@ -21,6 +24,17 @@
+ static int key_queue_iptr;
+ static int key_queue_free = KEY_QUEUE_LEN;
+ 
++#ifdef WITH_CADR_ORACLE
++void
++cadr_oracle_snapshot_keyboard_fields(void)
++{
++    cadr_oracle_snapshot_bytes(20,key_queue,sizeof(key_queue));
++    cadr_oracle_snapshot_u32(21,key_queue_optr);
++    cadr_oracle_snapshot_u32(22,key_queue_iptr);
++    cadr_oracle_snapshot_u32(23,key_queue_free);
++}
++#endif
++
+ /*
+  * Translation map for the host keyboard to a corresponding Lisp
+  * Machine character or modifier.
+diff --git a/tape-controller.c b/tape-controller.c
+--- a/tape-controller.c
++++ b/tape-controller.c
+@@ -19,6 +19,9 @@
+ #include "tape-drive.h"
+ #include "ucode.h"
+ #include "utrace.h"
++#ifdef WITH_CADR_ORACLE
++#include "cadr_oracle_native.h"
++#endif
+ 
+ #define UNIBUS_INTERRUPT_VECTOR 0224
+ 
+@@ -152,6 +155,43 @@
+ // if IBM packing mode needs to be supported, this has to be implemented
+ static uint16_t mtrd;
+ 
++static void tape_controller_go(void);
++
++#ifdef WITH_CADR_ORACLE
++void
++cadr_oracle_snapshot_tape(void)
++{
++    cadr_oracle_snapshot_begin(CADR_ORACLE_TAPE_STATE);
++    cadr_oracle_snapshot_u32(1,mts.ilc); cadr_oracle_snapshot_u32(2,mts.eof);
++    cadr_oracle_snapshot_u32(3,mts.eot); cadr_oracle_snapshot_u32(4,mts.rle);
++    cadr_oracle_snapshot_u32(5,mts.bte); cadr_oracle_snapshot_u32(6,mts.nxm);
++    cadr_oracle_snapshot_u32(7,mts.selr);
++    cadr_oracle_snapshot_u32(8,mtc.den8); cadr_oracle_snapshot_u32(9,mtc.den5);
++    cadr_oracle_snapshot_u32(10,mtc.pevn); cadr_oracle_snapshot_u32(11,mtc.slt);
++    cadr_oracle_snapshot_u32(12,mtc.cur); cadr_oracle_snapshot_u32(13,mtc.int_enb);
++    cadr_oracle_snapshot_u32(14,mtc.fun);
++    cadr_oracle_snapshot_u32(15,(uint16_t)mtbrc);
++    cadr_oracle_snapshot_u32(16,mtcma); cadr_oracle_snapshot_u32(17,mtd);
++    cadr_oracle_snapshot_u32(18,mtrd);
++    for (uint32_t i=0;i<NUMBER_OF_TAPE_DRIVES;++i) {
++        const struct tape_drive_s *p=tape_drives+i;
++        uint32_t tag=100+i*16;
++        cadr_oracle_snapshot_u32(tag+0,p->unit);
++        cadr_oracle_snapshot_u32(tag+1,p->configured);
++        cadr_oracle_snapshot_u64(tag+2,(uint64_t)p->length_ft);
++        cadr_oracle_snapshot_u32(tag+3,p->read_only);
++        cadr_oracle_snapshot_u32(tag+4,p->online);
++        cadr_oracle_snapshot_u32(tag+5,p->bpi);
++        cadr_oracle_snapshot_u64(tag+6,(uint64_t)p->eotpos);
++        cadr_oracle_snapshot_u64(tag+7,(uint64_t)p->pos);
++        cadr_oracle_snapshot_u32(tag+8,p->bot);
++        cadr_oracle_snapshot_u32(tag+9,p->rws);
++        cadr_oracle_snapshot_u32(tag+10,p->ready);
++    }
++    cadr_oracle_snapshot_end();
++}
++#endif
++
+ #define SELECTED_DRIVE() (tape_drives + mtc.slt)
+ 
+ static void
+@@ -348,7 +388,11 @@
+         if (go) 
+         {            
+             DEBUG(TRACE_TAPE, "tape-controller: mtc signals go\n");
++#ifdef WITH_CADR_ORACLE
++            tape_controller_go();
++#else
+             pthread_cond_broadcast(&tape_controller_go_cond);
++#endif
+             // controller ready is set in go thread
+         }
+         else
+@@ -740,6 +784,7 @@
+     p->ready = true;
+ }
+ 
++#ifndef WITH_CADR_ORACLE
+ static void*
+ tape_controller_run(__attribute__((unused)) void* arg)
+ {
+@@ -778,10 +823,14 @@
+ 
+     return NULL;
+ }
++#endif
+ 
+ bool 
+ tape_controller_init(void)
+ {
++#ifdef WITH_CADR_ORACLE
++    tape_controller_bus_reset();
++#else
+     pthread_attr_t attr;
+     pthread_attr_init(&attr);
+     pthread_attr_setdetachstate(&attr, PTHREAD_CREATE_DETACHED);
+@@ -803,6 +852,7 @@
+         warnx("cannot create tape-controller go mutex\n");
+         return false;
+     }
++#endif
+ 
+     NOTICE(TRACE_USIM, "tape-controller: attached to tape drive(s):");
+     for (size_t i = 0; i < NUMBER_OF_TAPE_DRIVES; i++)
+@@ -817,11 +867,13 @@
+ void
+ tape_controller_quit(void)
+ {
++#ifndef WITH_CADR_ORACLE
+     tape_controller_run_flag = false;
+     pthread_cond_broadcast(&tape_controller_go_cond);
+ 
+     pthread_mutex_destroy(&tape_controller_go_mutex);
+     pthread_cond_destroy(&tape_controller_go_cond);
++#endif
+ }
+ 
+ void

@@ -3,7 +3,7 @@ type: Implementation Roadmap
 title: MIT CADR System 303 browser and WebAssembly implementation roadmap
 description: A milestone-complete plan for porting the pinned System 303 CADR emulator to a deterministic, locally persistent, browser-hosted WebAssembly machine.
 tags: [mit-cadr, lm-3, system-303, webassembly, browser, emulator, roadmap]
-timestamp: 2026-07-27T17:45:00-04:00
+timestamp: 2026-07-27T17:47:00-04:00
 ---
 
 # MIT CADR System 303 browser and WebAssembly implementation roadmap
@@ -265,23 +265,135 @@ Rules:
 - a host failure becomes a typed machine-host condition, never an arbitrary partial
   write.
 
-Exit gate `C-M1`: native headless execution reaches the same first 100,000
-microinstruction boundary states as the pre-refactor build.
+Exit gate `C-M1`: native headless execution reaches the same 100,001 outer
+clock-slot boundary states `S0` through `S100000` as the pre-refactor build. This
+includes inhibited slots, the same-slot polling schedule, canonical state hashes,
+and every ordered mutation range. It does not silently equate a clock slot with a
+retired microinstruction.
 
 #### M1 implementation status
 
-The first ABI scaffold is present under `cadr-web/`. It establishes an opaque
-machine instance, fixed-width versioned records, typed status values, monotonically
-increasing request IDs, generation invalidation on reset, copied scalar
-completions, deterministic application of queued completions at a run boundary, and
-a strict native library build with a forbidden-host-symbol check.
+The M1 production core is present under `cadr-web/`. It provides an opaque machine
+instance, fixed-width versioned records, typed status values, copied request and
+completion payloads, reset generation invalidation, a real outer-clock-slot run
+loop, instance-owned processor and memory state, and prefix-scoped bus/controller
+models. The archive build audits exported symbols, mutable globals, undefined
+dependencies, public-header resources, and direct host/backend dependencies.
 
-This scaffold **does not execute CADR microinstructions** and therefore does not
-close `C-M1`. Its bounded `run` operation either applies one valid queued completion
-or returns `CADR_STATUS_UNIMPLEMENTED_GUEST`. That explicit result prevents an ABI
-test double from being mistaken for the emulator core. The next M1 implementation
-step is to freeze the native instruction-boundary oracle and move processor state
-behind this boundary without changing its trace.
+Oracle gate `O1` is **closed**. The final disposable native oracle executable has
+SHA-256
+`b4d2d16351af5984a6229243c469a58af9fc24ba76a62b7bc6c7e51f12d56b2c`.
+Three fresh, independently invoked captures each produced the same
+24,000,792-byte, 100,002-record trace. Its SHA-256 is
+`97c8dbf8d7bd0f3a896fecfdcb8161c5a2d2ad0a77b7c25d14c5091f21ecd0d5`;
+its final boundary-chain hash is
+`6df4eef12c062ae63b082d8428e0a966b8e85af00fa0745aebb801ca3f3ad791`,
+and its validated identity bundle is
+`5e31742c67576a291dc071b91673c5e4ef3952edb2a1d9c3081a4f4adbc01390`.
+The selected profile SHA-256 is
+`1b8d63db98acd46e40adf99a8a3ceb5e0558d4ac027cb2cb4a439665b14b5d2a`.
+Each file contains `S0` through `S100000` plus one terminal record, and all three
+accepted runs recorded zero uncontrolled external events.
+
+The final capture revalidated its profile, source manifest, exact patch, executable,
+canonical configuration, prepared source, input aggregate, and disk bindings.
+Source, configuration, executable, inputs, and disk identities were unchanged across
+capture. An opt-in NDJSON component dump emits all 60 canonical tagged scalars,
+tree-root families 14, 1 through 13, and 15, device-root families 31 through 37,
+and the state digest at selected boundaries including `S0`. The tracked validator
+independently recomputes that digest. Enabling the dump did not change ordinary trace
+bytes, and the 40-test oracle/codec suite passed its positive, negative, mutation,
+identity, parser, checkpoint, and diagnostic-tamper cases. Those oracle results
+alone do not prove production parity; the separate production comparison below
+supplies that evidence.
+
+The codec now requires exactly reserved identity TLVs 100 through 108 on `S0`,
+derives their bundle, binds the header UUID to that bundle, and rejects those TLVs
+on any other record. Comparison also requires the selected expected full bundle and
+profile hash; a synthetically self-consistent trace for another profile therefore
+fails selection. Native identity parsing rejects malformed half-byte pairs. General
+event-range rendering remains deferred to M2; O1 claims only its implemented
+boundary hashes, checkpoints, and selected-boundary component dump.
+
+The source-grounded M1 sequence first freezes the pre-refactor oracle, then extracts
+one tracked BSD-derived production core. The oracle is a disposable, exactly
+patched copy of the pinned source; native and WebAssembly production hosts will
+instead link the same reviewed `libcadrcore`. M1 ports all processor, memory, bus,
+reset, and controller state plus every host-backed operation actually exercised by
+the measured prefix. It does not fake an operation or shorten the gate merely to
+defer complete disk integration to M4.
+
+The boundary contract follows the pinned `uexec_step` order. PC pipeline advance
+and delayed-MD completion occur before the inhibit test. `INHIBITED` therefore
+means that class execution was suppressed; it does not mean the canonical state or
+mutation range is unchanged. Likewise, zero enumerated mutation events makes no
+claim that processor or latch state is unchanged. A successful bounded prefix uses
+an explicit limit-reached terminal reason without synthesizing a guest halt.
+
+Before the ABI version is frozen, its public vocabulary must use clock-slot budgets
+and report both completed slots and executed microinstructions. The core, not the
+host, issues requests; the host only drains typed descriptors and returns copied
+completion bytes. Cold power-on, boot, and reset remain separate transitions.
+
+`C-M1` is **closed for the frozen `CADR-WEB-303` prefix**. A fresh headless
+production run completed 100,000 outer clock slots and executed 82,149
+microinstructions. The fail-closed comparator matched all 100,001 boundaries,
+`S0` through `S100000`, including every canonical state SHA-256, ordered mutation
+SHA-256, first-mutation ordinal, mutation count, and executed/inhibited/halt flag.
+It also has negative tests for a changed state digest, changed ordered-mutation
+digest, wrong boundary count, missing or malformed selection arguments, and a
+structurally valid self-consistent trace selected with the wrong identity bundle or
+profile. The comparator requires both frozen selection digests on every invocation;
+it does not infer the target from the trace being tested. It also rejects external
+events, abort, failure, or guest-halt terminals, a missing, duplicate, or early
+terminal, and malformed production boundary flags. The selected prefix must contain
+exactly the expected boundaries followed immediately by one
+`TERMINAL_COMPLETE`/`COMPLETE_LIMIT` record. Known ABI reserved fields are rejected
+before execution or completion delivery mutates result, request, queue, generation,
+or guest state. The two-machine interleaving test and forbidden dependency and
+mutable-global audits pass.
+
+The verified local build identities were:
+
+| Item | Bytes | SHA-256 |
+| --- | ---: | --- |
+| `cadr-web/build/cadr-headless` | 64,176 | `fcbb7e7d51338c9faecf95e73545b2cdf681bbc4682958c020788d849b066b98` |
+| `cadr-web/build/libcadr_core.a` | 71,516 | `2deb56c440bb15e5172c67e1142b5775283a3649bfb83170da6bd6c062af82cf` |
+| frozen oracle trace | 24,000,792 | `97c8dbf8d7bd0f3a896fecfdcb8161c5a2d2ad0a77b7c25d14c5091f21ecd0d5` |
+| ignored boundary witness | 20,674,527 | `34023f108424d9f9a92621f6e70dbf034d0235d6919f7b4a307864aee3e33c90` |
+
+The exact selected inputs were configuration
+`1cfd4cb6f8ebe390a527f6c870fad51b53d1e4897cee4371bbfc2ae8bba38e2f`,
+PROM
+`2c667f99f014a7130a55b255d31df02588d9396beace78abfe9325269e4ff3e6`,
+PROM symbols
+`e9e3dd6a541511dd9541ae96b99dae19cb185d8b79fa09959f21fa52224f233d`,
+microcode symbols
+`9071decf16fa8f11d7970c4662db0d6e95600fe43ec86ac41c77b37dbd7caa2a`,
+and base disk
+`bb16e46ad81decfe1efe691d36b6aa4ce3fd4ffb82474365de3520989d397cb5`.
+The reproducible local command was:
+
+```sh
+cadr-web/build/cadr-headless \
+  cadr-web/profiles/cadr-web-303.ini.in \
+  l/sys/ubin/promh.mcr l/sys/ubin/promh.sym l/sys/ubin/ucadr.sym \
+  l/usim/disk-sys-303-0.img 100000 \
+  build/cadr-web-m1-final-boundaries.txt
+python scripts/compare-cadr-web-trace.py \
+  build/cadr-oracle/m1-identity-final-capture-1/trace.cdrtrc1 \
+  build/cadr-web-m1-final-boundaries.txt \
+  --expected-identity-bundle \
+    5e31742c67576a291dc071b91673c5e4ef3952edb2a1d9c3081a4f4adbc01390 \
+  --expected-profile-sha256 \
+    1b8d63db98acd46e40adf99a8a3ceb5e0558d4ac027cb2cb4a439665b14b5d2a \
+  --expected-boundaries 100001
+```
+
+This is a bounded M1 compatibility result, not M2 general tracing, snapshot, or
+restore. Prefix-inactive disk payload service, tape, Chaos transport, color TV,
+audio, and other later device behaviors remain explicit typed stubs until their
+roadmap milestones.
 
 ### M2 — Establish deterministic instruction tracing
 

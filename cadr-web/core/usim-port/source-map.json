@@ -1,0 +1,2090 @@
+{
+  "schema": "cadr-core-source-map-v2",
+  "profile": {
+    "id": "CADR-WEB-303-M1",
+    "upstream": "https://tumbleweed.nu/r/usim",
+    "vcs": "fossil",
+    "revision": "330d8248ec2e12af071e287920e681600f75df9ffd854aada5f8a64c9adad64d",
+    "revision_hash_algorithm": "sha3-256",
+    "configuration": "USIM_BACKEND=x11; USIM_BUILD_TYPE=release; LISPM_SYSTEM=9999"
+  },
+  "source_root_contract": {
+    "argument": "--source-root",
+    "relative_root": "usim",
+    "closure_rule": "The declared closure is exact: all and only source_files are identity-checked. Production C is the exact 16-file M1 set; direct headers/tables support only that set."
+  },
+  "rights": {
+    "license": "BSD-2-Clause",
+    "upstream_path": "COPYING.md",
+    "upstream_sha256": "9019d704e2460ec451759ad06b9edc3bc33fc57aedca436c3a77066b38b024af",
+    "tracked_copy": "COPYING.md",
+    "provenance": "Public tracked upstream file at the pinned Fossil check-in; no Genera media, disk image, PROM, microcode payload, guest memory image, tape payload, or guest filesystem bytes are imported."
+  },
+  "exclusions": [
+    {
+      "kind": "disk-image-and-block-payload",
+      "paths": [
+        "disk-sys-303-0.img",
+        "disk-unit.c"
+      ],
+      "reason": "guest payload and host-file threaded unit are excluded; a later overlay transaction adapter is required."
+    },
+    {
+      "kind": "prom-microcode-and-symbol-payload",
+      "paths": [
+        "promh.mcr",
+        "promh.sym",
+        "ucadr.sym",
+        "*.mcr",
+        "*.sym"
+      ],
+      "reason": "M1 maps control-store semantics but imports no guest/PROM/microcode bytes."
+    },
+    {
+      "kind": "tape-and-network-transport-payload",
+      "paths": [
+        "tape-drive.c",
+        "uch11-chaosd.c",
+        "uch11-local.c",
+        "uch11-udp.c"
+      ],
+      "reason": "host transports and guest payloads remain adapters."
+    }
+  ],
+  "dispositions": {
+    "import": {
+      "reason": "verbatim, small, public BSD-derived constant/helper may be retained with attribution and byte identity",
+      "derived_module": "cadr-web/core"
+    },
+    "adapt": {
+      "reason": "reimplement the identified observable semantics behind fixed-width deterministic core state; do not copy host bindings or raw serialization",
+      "derived_module": "cadr-web/core"
+    },
+    "omit": {
+      "reason": "host threading, wall-clock, files, display, transport, diagnostics, or mutable guest payload is outside the M1 deterministic core",
+      "derived_module": "cadr-web/host-adapter"
+    }
+  },
+  "source_files": [
+    {
+      "path": "uexec.c",
+      "bytes": 26601,
+      "sha256": "260a1aa716f5fa776fed0ccffe8e7cbfb231f354d03274aaa592b18413913927",
+      "kind": "production-c"
+    },
+    {
+      "path": "m32.c",
+      "bytes": 510,
+      "sha256": "919ea36da0772c31f0998dedd18ce6c7841b5585b751d3b14aebe12f8434658d",
+      "kind": "production-c"
+    },
+    {
+      "path": "ucode.c",
+      "bytes": 4654,
+      "sha256": "1b8775124fe7fcb112daf67848b07616811001c49565130887e4590d519bfe13",
+      "kind": "production-c"
+    },
+    {
+      "path": "machine-control.c",
+      "bytes": 5493,
+      "sha256": "c960449aca4609da7253bf5896c4992468fe2c8abc71396e260171a75ac8754e",
+      "kind": "production-c"
+    },
+    {
+      "path": "uvmem.c",
+      "bytes": 7241,
+      "sha256": "76e0fc294c031bbdc568a563c4466f0a7bad880efaccce59f3458df911742b65",
+      "kind": "production-c"
+    },
+    {
+      "path": "main-memory.c",
+      "bytes": 4318,
+      "sha256": "bcf8270990f2184eb4771c23c30ec3130e289b4ba1bf792aad45ecec3899e753",
+      "kind": "production-c"
+    },
+    {
+      "path": "bus-adaptor.c",
+      "bytes": 16298,
+      "sha256": "153d3150d945b3b7e3683c1da207c31e649bca12008c75ced1aceeb468ec7a14",
+      "kind": "production-c"
+    },
+    {
+      "path": "bus-interface.c",
+      "bytes": 9128,
+      "sha256": "98d47c643f820093bad8121114e0b8f6f297279ee053161d21c49f0388df6722",
+      "kind": "production-c"
+    },
+    {
+      "path": "unibus-mapping.c",
+      "bytes": 2313,
+      "sha256": "f119a9199a7fe480101c973a668755d67673c6dd5552b80dd5a0b5f4203b884b",
+      "kind": "production-c"
+    },
+    {
+      "path": "diagnostic-interface.c",
+      "bytes": 8031,
+      "sha256": "303b5e2c56cffa61d33756fdd5700d6b486805197635bf57b41dbf4ded313a16",
+      "kind": "production-c"
+    },
+    {
+      "path": "tv.c",
+      "bytes": 8253,
+      "sha256": "26b017bee040648edd5ade643f5777f819513f71639171207e40c06c3425a7d7",
+      "kind": "production-c"
+    },
+    {
+      "path": "colortv.c",
+      "bytes": 6054,
+      "sha256": "ce8bee60a0fa0a461d153c860c5ba1acc60a4747da3c27a005005a42260c07c7",
+      "kind": "production-c"
+    },
+    {
+      "path": "iob.c",
+      "bytes": 10267,
+      "sha256": "529cc570c1f3552c0c366a84049a6e6f5267788bdb4255457076fcb5c8c5d14e",
+      "kind": "production-c"
+    },
+    {
+      "path": "disk-controller.c",
+      "bytes": 22804,
+      "sha256": "426d19b2ac9e9e24c04f218bc1088f20c46d6f2bbacad689c6d8d693931775d2",
+      "kind": "production-c"
+    },
+    {
+      "path": "tape-controller.c",
+      "bytes": 26534,
+      "sha256": "8d7a329400fd5a0b4a22238478f924067100ef6b2c256b8c81ac04e0d14a12de",
+      "kind": "production-c"
+    },
+    {
+      "path": "uch11.c",
+      "bytes": 9917,
+      "sha256": "c52be93754dc4a8718d2f8d10de4e2f19405e7e000659406b33e5a7e3f1d46ae",
+      "kind": "production-c"
+    },
+    {
+      "path": "m32.h",
+      "bytes": 737,
+      "sha256": "eb915f31607d86194a8e8e3984133f7537ed318c907e586930b4fd2c57d105df",
+      "kind": "direct-header-or-table"
+    },
+    {
+      "path": "ucode.h",
+      "bytes": 1439,
+      "sha256": "c9894ea50d7f307045460b0cfe21d0af36d5e4f1704a539f5c7e0eea3ac0f41c",
+      "kind": "direct-header-or-table"
+    },
+    {
+      "path": "machine-control.h",
+      "bytes": 1139,
+      "sha256": "660784aab48b560f36ffc87ba22bbad66caf4ca9f672241cd310e9c7ca45cda8",
+      "kind": "direct-header-or-table"
+    },
+    {
+      "path": "uvmem.h",
+      "bytes": 788,
+      "sha256": "55248d0fe7fc9cf48bb807998ead166bc57cf003b96e7e9e67cd712a745ff749",
+      "kind": "direct-header-or-table"
+    },
+    {
+      "path": "main-memory.h",
+      "bytes": 1037,
+      "sha256": "a898e6c86fa1bd2747ee1e29fc4c453d64f973b66b97aa8abf9efc5eabc091b4",
+      "kind": "direct-header-or-table"
+    },
+    {
+      "path": "bus-adaptor.h",
+      "bytes": 259,
+      "sha256": "7738ec164606d3888a857cea16e45183105fed315afde096b67c2218fb9c7620",
+      "kind": "direct-header-or-table"
+    },
+    {
+      "path": "bus-interface.h",
+      "bytes": 662,
+      "sha256": "6afb89db8e68661e3dc9b569cc27d91d9d3f37e933dc728e79e7c0e7e89ef23b",
+      "kind": "direct-header-or-table"
+    },
+    {
+      "path": "unibus-mapping.h",
+      "bytes": 239,
+      "sha256": "846ad43cb4506eff1c3256e50ee429cc6c894751780a7f365ef12f08e4a24223",
+      "kind": "direct-header-or-table"
+    },
+    {
+      "path": "diagnostic-interface.h",
+      "bytes": 181,
+      "sha256": "08cbe432ff259b7b2423155fe7dec69064d4625d14b585c74c271f3837307c26",
+      "kind": "direct-header-or-table"
+    },
+    {
+      "path": "tv.h",
+      "bytes": 842,
+      "sha256": "9e482b23e7f34e59910fd0338c745e886dbd6a2a9f593d2eaaf109f2baeea8f4",
+      "kind": "direct-header-or-table"
+    },
+    {
+      "path": "colortv.h",
+      "bytes": 574,
+      "sha256": "d60143e45afca62503bd83d86f6e74bb87f11704bc4100a8adf76f3ddba86d5d",
+      "kind": "direct-header-or-table"
+    },
+    {
+      "path": "iob.h",
+      "bytes": 681,
+      "sha256": "d9c499deab71e8b936fe98136332247f4d456468fd8272b708358d9bf3d4d088",
+      "kind": "direct-header-or-table"
+    },
+    {
+      "path": "disk-controller.h",
+      "bytes": 382,
+      "sha256": "e6ef3641e7cf41d600a1c755b3a2e3010f8112cc45084a150b2189e1bc47c28d",
+      "kind": "direct-header-or-table"
+    },
+    {
+      "path": "tape-controller.h",
+      "bytes": 466,
+      "sha256": "04110489ac5f860f0b479c7aba9227913d6ec870acc6f8e0af2a575438e281fc",
+      "kind": "direct-header-or-table"
+    },
+    {
+      "path": "uch11.h",
+      "bytes": 600,
+      "sha256": "ba2005350fb0605a19265af88f36be812abcbe79ca1c04c23f76edbde286cb84",
+      "kind": "direct-header-or-table"
+    },
+    {
+      "path": "usim.h",
+      "bytes": 1106,
+      "sha256": "808f7a05800b725fc210b8cdbbbf2f6ebe5e800696edb78176117ac9d72f820e",
+      "kind": "direct-header-or-table"
+    },
+    {
+      "path": "config.h",
+      "bytes": 100,
+      "sha256": "c4d0fce56804efdee6d523bad9915644c4748e420251913adc1cd2c5fed1ae8f",
+      "kind": "direct-header-or-table"
+    },
+    {
+      "path": "config-release.h",
+      "bytes": 162,
+      "sha256": "a237ef4902c689692daf27cef35d9212b65926cebffbdb2c89deb4b70ea853e2",
+      "kind": "direct-header-or-table"
+    },
+    {
+      "path": "defmic.h",
+      "bytes": 239,
+      "sha256": "d7ab9991fa00badf8b59b97b25d808c9ea20916740e3cba8829c1932368acc75",
+      "kind": "direct-header-or-table"
+    },
+    {
+      "path": "defmic300.h",
+      "bytes": 12519,
+      "sha256": "9a4ce71599c69e68eb63a8371e3ad57872e3201cd715c98d1820b4038f27aab3",
+      "kind": "direct-header-or-table"
+    },
+    {
+      "path": "qcom.h",
+      "bytes": 276,
+      "sha256": "92d00a209ab82ddf7c754e853b897abd84130a08aa67a5c0371bf81bee1a10ea",
+      "kind": "direct-header-or-table"
+    },
+    {
+      "path": "qcom300.h",
+      "bytes": 5169,
+      "sha256": "4c4dcdcd35a9960257b3242da3f75c302806aaf00b79fc327bda7427748960b9",
+      "kind": "direct-header-or-table"
+    },
+    {
+      "path": "dump.h",
+      "bytes": 2183,
+      "sha256": "4a77b4740cff2d8cbaf0c97f52a212e53e759631a9e310f876ccbbb861c948b1",
+      "kind": "direct-header-or-table"
+    },
+    {
+      "path": "misc.h",
+      "bytes": 1652,
+      "sha256": "8422b97ee1de878cec7fed5b524573ccb0fb0427a2103688c673b4149cceac48",
+      "kind": "direct-header-or-table"
+    },
+    {
+      "path": "udiss.h",
+      "bytes": 94,
+      "sha256": "588be51cd334aa55ac4d65a0af1cf7e3a6e64d870d9a5b7281ec50e91d5e738f",
+      "kind": "direct-header-or-table"
+    },
+    {
+      "path": "utrace.h",
+      "bytes": 3065,
+      "sha256": "a9cce84dd5b963f0273b90799f62321290ad05c978efdf46b14992915834626e",
+      "kind": "direct-header-or-table"
+    },
+    {
+      "path": "usym.h",
+      "bytes": 545,
+      "sha256": "7e804d625b5de406dcb3e553e8c1fdc2c0ab61067e7ede5efe4b3ccd227d09e5",
+      "kind": "direct-header-or-table"
+    },
+    {
+      "path": "disk-unit.h",
+      "bytes": 1836,
+      "sha256": "155bf59206c79168030336afeaa415cc9ae01facfe3da8c0ccaae8ce0cdd4697",
+      "kind": "direct-header-or-table"
+    },
+    {
+      "path": "tape-drive.h",
+      "bytes": 2204,
+      "sha256": "8b2c80eb113d169a98afa6f06ca96b063517afeba40b71857fd3dbe3ec3808c9",
+      "kind": "direct-header-or-table"
+    },
+    {
+      "path": "idle.h",
+      "bytes": 826,
+      "sha256": "2023fe78649ed7a09a0c9f07e9aec2f5b2f67a824b741052b1c2b795d2c7e29a",
+      "kind": "direct-header-or-table"
+    },
+    {
+      "path": "ucfg.h",
+      "bytes": 563,
+      "sha256": "be256b15b9af6b66fa67934e8e7e6547b978930fcfe4ff467133cd88bcdd2dca",
+      "kind": "direct-header-or-table"
+    },
+    {
+      "path": "lashup.h",
+      "bytes": 1165,
+      "sha256": "ff9eff22ac56cefa01ad3a57beb1fdbd787b3afa7134b07b5703eebe66f897c2",
+      "kind": "direct-header-or-table"
+    },
+    {
+      "path": "lashup-debugger.h",
+      "bytes": 1109,
+      "sha256": "2770401afa8a5f11089782ad674ef3ca75771a0a80edbaa39e2e1d49fd69a229",
+      "kind": "direct-header-or-table"
+    },
+    {
+      "path": "kbd.h",
+      "bytes": 995,
+      "sha256": "718520d65fb15cdea802dadbbf600aa44c6ae87c2dffcba4ed8ef68fe65f4959",
+      "kind": "direct-header-or-table"
+    },
+    {
+      "path": "mouse.h",
+      "bytes": 350,
+      "sha256": "e7c514357353279140573ed8f22107abc5b2a67b67964cfbf277ab6aa680961c",
+      "kind": "direct-header-or-table"
+    },
+    {
+      "path": "x11.h",
+      "bytes": 262,
+      "sha256": "7bbb31fed865faae04e26088f7f8e1f7e52419ca3c83d4e3618d962f1bf58188",
+      "kind": "direct-header-or-table"
+    },
+    {
+      "path": "uch11-backend.h",
+      "bytes": 1856,
+      "sha256": "c2abf38d59725aed87003de06856cec3d880d787fbff69d841d6dc9bb7ce03aa",
+      "kind": "direct-header-or-table"
+    },
+    {
+      "path": "COPYING.md",
+      "bytes": 1281,
+      "sha256": "9019d704e2460ec451759ad06b9edc3bc33fc57aedca436c3a77066b38b024af",
+      "kind": "license"
+    }
+  ],
+  "selected_production_c_sources": [
+    "uexec.c",
+    "m32.c",
+    "ucode.c",
+    "machine-control.c",
+    "uvmem.c",
+    "main-memory.c",
+    "bus-adaptor.c",
+    "bus-interface.c",
+    "unibus-mapping.c",
+    "diagnostic-interface.c",
+    "tv.c",
+    "colortv.c",
+    "iob.c",
+    "disk-controller.c",
+    "tape-controller.c",
+    "uch11.c"
+  ],
+  "symbols": {
+    "uexec.c": {
+      "function": {
+        "adapt": [
+          "ir",
+          "pushSPC",
+          "popSPC",
+          "lcbytemode",
+          "advanceLC",
+          "mfread",
+          "mfwrite",
+          "writeDest",
+          "qControl",
+          "outControl",
+          "arithOps",
+          "logiOps",
+          "divOps",
+          "alu",
+          "dsp",
+          "check_jcond",
+          "jmp",
+          "msk",
+          "byt",
+          "incNPC",
+          "uexec_step"
+        ],
+        "omit": []
+      },
+      "mutable_global": {
+        "adapt": [
+          "uexec_has_run_once",
+          "p0",
+          "p0_pc",
+          "p0_imem",
+          "p1",
+          "p1_pc",
+          "p1_imem",
+          "npc",
+          "debug_ir",
+          "iwr",
+          "prom",
+          "imem",
+          "amem",
+          "aaddr",
+          "adata",
+          "mmem",
+          "maddr",
+          "mdata",
+          "dmem",
+          "pdl",
+          "spc",
+          "spcptr",
+          "dispatch_constant",
+          "pdl_pointer",
+          "pdl_index",
+          "vma_reg",
+          "md_reg",
+          "lc",
+          "oa_reg_low",
+          "oa_reg_high",
+          "opc",
+          "q",
+          "old_q",
+          "interrupt_control",
+          "inhibit",
+          "op",
+          "popj",
+          "new_md",
+          "new_md_delay",
+          "alu_carry",
+          "alu_out",
+          "oal",
+          "oah",
+          "out"
+        ],
+        "omit": []
+      }
+    },
+    "m32.c": {
+      "function": {
+        "adapt": [
+          "rol32"
+        ],
+        "omit": []
+      },
+      "mutable_global": {
+        "adapt": [],
+        "omit": []
+      }
+    },
+    "ucode.c": {
+      "function": {
+        "adapt": [
+          "ucode_init",
+          "ucode_run",
+          "ucode_load_prom_from_file",
+          "set_interrupt_status_reg",
+          "assert_unibus_interrupt",
+          "deassert_unibus_interrupt",
+          "assert_xbus_interrupt",
+          "deassert_xbus_interrupt"
+        ],
+        "omit": []
+      },
+      "mutable_global": {
+        "adapt": [
+          "machine_cycles",
+          "interrupt_status_reg",
+          "interrupt_pending_flag"
+        ],
+        "omit": []
+      }
+    },
+    "machine-control.c": {
+      "function": {
+        "adapt": [
+          "machine_control_reset",
+          "machine_control_power_on",
+          "machine_control_power_off",
+          "machine_control_boot",
+          "machine_control_thread_run",
+          "machine_control_start_blocking",
+          "machine_control_start_nonblocking",
+          "machine_control_shutdown"
+        ],
+        "omit": [
+          "machine_control_performance_report_start",
+          "machine_control_performance_report_stop"
+        ]
+      },
+      "mutable_global": {
+        "adapt": [
+          "machine_state"
+        ],
+        "omit": [
+          "machine_control_run_ts",
+          "machine_control_halt_ts",
+          "machine_control_run_started_at_machine_cycles",
+          "machine_control_measuring_perf",
+          "machine_control_thread"
+        ]
+      }
+    },
+    "uvmem.c": {
+      "function": {
+        "adapt": [
+          "uvmem_vtop",
+          "uvmem_write_map",
+          "vm"
+        ],
+        "omit": []
+      },
+      "mutable_global": {
+        "adapt": [
+          "l1_map",
+          "l2_map"
+        ],
+        "omit": []
+      }
+    },
+    "main-memory.c": {
+      "function": {
+        "adapt": [
+          "main_memory_read",
+          "main_memory_write",
+          "main_memory_read_page",
+          "main_memory_write_page",
+          "main_memory_bus_reset"
+        ],
+        "omit": [
+          "main_memory_load_page_from_file",
+          "main_memory_save_page_to_file"
+        ]
+      },
+      "mutable_global": {
+        "adapt": [
+          "main_memory_npages",
+          "pages"
+        ],
+        "omit": []
+      }
+    },
+    "bus-adaptor.c": {
+      "function": {
+        "adapt": [
+          "bus_adaptor_xbusio_rw",
+          "bus_adaptor_xbus_rw",
+          "bus_adaptor_unibus_rw",
+          "bus_adaptor_rw",
+          "bus_adaptor_read",
+          "bus_adaptor_write",
+          "bus_adaptor_unibus_read",
+          "bus_adaptor_unibus_write"
+        ],
+        "omit": []
+      },
+      "mutable_global": {
+        "adapt": [],
+        "omit": []
+      }
+    },
+    "bus-interface.c": {
+      "function": {
+        "adapt": [
+          "bus_interface_get_debuggee_uaddr",
+          "bus_interface_get_bus_error_status",
+          "bus_interface_is_xbus_nxm",
+          "bus_interface_is_unibus_nxm",
+          "bus_interface_is_unibus_map_error",
+          "bus_interface_reset_bus_error_status",
+          "bus_interface_set_debuggee_bus_error_status",
+          "bus_interface_set_nxm_inhibit",
+          "bus_interface_set_xbus_nxm",
+          "bus_interface_set_unibus_nxm",
+          "bus_interface_set_unibus_map_error",
+          "bus_interface_read",
+          "bus_interface_write",
+          "bus_interface_bus_reset"
+        ],
+        "omit": []
+      },
+      "mutable_global": {
+        "adapt": [
+          "bus_error_status",
+          "nxm_inhibited",
+          "modifier_reset",
+          "debuggee_bus_error_status",
+          "addr17",
+          "addr"
+        ],
+        "omit": []
+      }
+    },
+    "unibus-mapping.c": {
+      "function": {
+        "adapt": [
+          "unibus_mapping_rw",
+          "unibus_mapping_read",
+          "unibus_mapping_write"
+        ],
+        "omit": []
+      },
+      "mutable_global": {
+        "adapt": [
+          "unibus_mapping_registers",
+          "unibus_mapping_buffers"
+        ],
+        "omit": []
+      }
+    },
+    "diagnostic-interface.c": {
+      "function": {
+        "adapt": [
+          "get_flag_register_1",
+          "get_flag_register_2",
+          "dump_main_memory",
+          "diagnostic_interface_read",
+          "diagnostic_interface_write"
+        ],
+        "omit": []
+      },
+      "mutable_global": {
+        "adapt": [
+          "param1",
+          "param2",
+          "param3"
+        ],
+        "omit": []
+      }
+    },
+    "tv.c": {
+      "function": {
+        "adapt": [
+          "tv_is_sync_prom_enabled",
+          "tv_is_black_on_white",
+          "tv_is_interrupt_enabled",
+          "accumulate_update",
+          "tv_assert_interrupt",
+          "tv_reset",
+          "tv_screen_read",
+          "tv_screen_write",
+          "tv_control_read",
+          "tv_control_write",
+          "tv_bus_reset"
+        ],
+        "omit": [
+          "tv_update_screen",
+          "tv_save_screenshot",
+          "tv_poll",
+          "tv_init"
+        ]
+      },
+      "mutable_global": {
+        "adapt": [
+          "tv_monitor",
+          "tv_width",
+          "tv_height",
+          "tv_screen_buffer",
+          "tv_background",
+          "tv_foreground",
+          "tv_mode",
+          "u_minh",
+          "u_maxh",
+          "u_minv",
+          "u_maxv",
+          "tv_vert_spacing",
+          "tv_sync_ptr",
+          "tv_sync_ram"
+        ],
+        "omit": [
+          "tv_bitmap",
+          "window_position_x",
+          "window_position_y",
+          "window_display",
+          "window_always_on_top"
+        ]
+      }
+    },
+    "colortv.c": {
+      "function": {
+        "adapt": [
+          "colortv_is_interrupt_enabled",
+          "colortv_assert_interrupt",
+          "colortv_is_sync_prom_enabled",
+          "colortv_screen_read",
+          "colortv_screen_write",
+          "colortv_control_read",
+          "colortv_control_write",
+          "colortv_init",
+          "colortv_bus_reset"
+        ],
+        "omit": []
+      },
+      "mutable_global": {
+        "adapt": [
+          "colortv_screen_buffer",
+          "colortv_color_map",
+          "colortv_mode",
+          "colortv_vsync",
+          "colortv_hsync",
+          "sync_prom_enb",
+          "colortv_vert_spacing",
+          "colortv_sync_ptr",
+          "colortv_sync_ram"
+        ],
+        "omit": []
+      },
+      "immutable_global": {
+        "import": [
+          "colortv_width",
+          "colortv_height"
+        ]
+      }
+    },
+    "iob.c": {
+      "function": {
+        "adapt": [
+          "iob_is_keyboard_ready_set",
+          "iob_set_keyboard_ready",
+          "iob_clear_keyboard_ready",
+          "iob_is_mouse_ready_set",
+          "iob_set_mouse_ready",
+          "iob_clear_mouse_ready",
+          "iob_unibus_read",
+          "iob_unibus_write",
+          "iob_bus_reset",
+          "iob_prepare_for_warm_boot"
+        ],
+        "omit": [
+          "get_us_clock",
+          "interval_timer_over",
+          "iob_poll",
+          "iob_init",
+          "iob_quit"
+        ]
+      },
+      "mutable_global": {
+        "adapt": [
+          "iob_csr",
+          "the_60_cycle_clock",
+          "iob_scancode",
+          "iob_mouse_x",
+          "iob_mouse_y"
+        ],
+        "omit": [
+          "iob_usec",
+          "interval_timer"
+        ]
+      }
+    },
+    "disk-controller.c": {
+      "function": {
+        "adapt": [
+          "assert_interrupt",
+          "deassert_interrupt",
+          "set_status_not_active",
+          "set_status_active",
+          "reset_status",
+          "reset",
+          "encode_status",
+          "decode_da",
+          "perform_xfer",
+          "do_xfer",
+          "submit_xfer",
+          "start_read",
+          "start_read_compare",
+          "start_write",
+          "start_seek",
+          "start_recalibrate",
+          "start_fault_clear",
+          "start_at_ease",
+          "start_offset_clear",
+          "start",
+          "disk_controller_get_attention",
+          "disk_controller_read",
+          "disk_controller_write",
+          "disk_controller_bus_reset"
+        ],
+        "omit": [
+          "disk_controller_thread_run",
+          "disk_controller_init",
+          "disk_controller_quit"
+        ]
+      },
+      "mutable_global": {
+        "adapt": [
+          "cmd",
+          "clp",
+          "da",
+          "xfer_req",
+          "reset_condition",
+          "status",
+          "done_interrupt_enable",
+          "attention_interrupt_enable"
+        ],
+        "omit": [
+          "thread",
+          "thread_run"
+        ]
+      }
+    },
+    "tape-controller.c": {
+      "function": {
+        "adapt": [
+          "tape_controller_assert_unibus_interrupt",
+          "tape_controller_is_mtc_err",
+          "tape_controller_reset_mtc_err",
+          "tape_controller_debug_mts",
+          "tape_controller_debug_mtc",
+          "tape_controller_encode_mts",
+          "tape_controller_encode_mtc",
+          "tape_controller_update_mtc",
+          "tape_controller_offline",
+          "tape_controller_read",
+          "tape_controller_write",
+          "tape_controller_write_eof",
+          "tape_controller_space_forward",
+          "tape_controller_space_reverse",
+          "tape_controller_rewind",
+          "tape_controller_go",
+          "tape_controller_bus_reset",
+          "tape_controller_set_mts_eof",
+          "tape_controller_is_mts_eot",
+          "tape_controller_set_mts_eot",
+          "tape_controller_reset_mts_eot",
+          "tape_controller_set_mts_bte",
+          "tape_controller_unibus_read",
+          "tape_controller_unibus_write"
+        ],
+        "omit": [
+          "tape_controller_run",
+          "tape_controller_init",
+          "tape_controller_quit"
+        ]
+      },
+      "mutable_global": {
+        "adapt": [
+          "COMMAND_STRS",
+          "mts_debug",
+          "mtc_debug",
+          "mts",
+          "mtc",
+          "mtbrc",
+          "mtcma",
+          "mtd",
+          "mtrd"
+        ],
+        "omit": [
+          "tape_controller_thread",
+          "tape_controller_run_flag",
+          "tape_controller_go_cond",
+          "tape_controller_go_mutex"
+        ]
+      }
+    },
+    "uch11.c": {
+      "function": {
+        "adapt": [
+          "uch11_checksum",
+          "uch11_rx_pkt",
+          "uch11_xmit_done_intr",
+          "uch11_xmit_pkt",
+          "uch11_get_bit_count",
+          "uch11_get_rcv_buffer",
+          "uch11_put_xmit_buffer",
+          "uch11_get_csr",
+          "uch11_set_csr"
+        ],
+        "omit": [
+          "uch11_poll",
+          "uch11_force_reconect",
+          "uch11_reconnect",
+          "uch11_init"
+        ]
+      },
+      "mutable_global": {
+        "adapt": [
+          "uch11_csr",
+          "uch11_bit_count",
+          "uch11_lost_count",
+          "uch11_xmit_buffer",
+          "uch11_xmit_buffer_size",
+          "uch11_xmit_buffer_ptr",
+          "uch11_rcv_buffer",
+          "uch11_rcv_buffer_toss",
+          "uch11_rcv_buffer_ptr",
+          "uch11_rcv_buffer_size",
+          "uch11_rcv_buffer_empty"
+        ],
+        "omit": [
+          "uch11_backend",
+          "uch11_myaddr",
+          "uch11_serveraddr",
+          "reconnect_delay",
+          "reconnect_chaos",
+          "uch11_send",
+          "recvqueue",
+          "queuehead",
+          "chaosd_fd"
+        ]
+      }
+    }
+  },
+  "ambiguities": [
+    "The public checkout asserts, rather than live-verifies, the Fossil revision because its local administrative database is unavailable; byte identities are the verifier authority.",
+    "The upstream C keeps backend, thread, and diagnostics intertwined with several device models. M1 records their core-facing state/operation semantics as adapt, but does not claim its host timing or callback ordering.",
+    "disk-controller.c and tape-controller.c reference disk-unit.c and tape-drive.c. Those units are explicitly excluded because they own host files/threads and guest payload; later work must define transaction and completion adapters.",
+    "uch11.c contains a duplicated recvqueue declaration in the selected upstream bytes; the symbol map intentionally rejects duplicate map entries while preserving this as upstream source evidence."
+  ],
+  "derived_outputs": {
+    "root": "cadr-web/core/usim-port",
+    "files": [
+      {
+        "path": "bus-adaptor.c",
+        "bytes": 7955,
+        "sha256": "918a73835b62d973e31bf7c78028358bf14204bff0da7a6bbe456ce90a3a3c27",
+        "functions": [
+          {
+            "symbol": "cadr_bus_device_cold_power_on",
+            "integration_status": "integrated",
+            "test_witness": "cadr-web/tests/test_cadr_bus_device.c::test_authoritative_ram_map_and_reset"
+          },
+          {
+            "symbol": "cadr_bus_runtime_reset",
+            "integration_status": "integrated",
+            "test_witness": "cadr-web/tests/test_cadr_bus_device.c::test_authoritative_ram_map_and_reset"
+          },
+          {
+            "symbol": "cadr_unibus_read16",
+            "integration_status": "integrated",
+            "test_witness": "cadr-web/tests/test_cadr_bus_device.c::test_authoritative_ram_map_and_reset"
+          },
+          {
+            "symbol": "cadr_unibus_write16",
+            "integration_status": "integrated",
+            "test_witness": "cadr-web/tests/test_cadr_bus_device.c::test_authoritative_ram_map_and_reset"
+          },
+          {
+            "symbol": "cadr_bus_read32",
+            "integration_status": "integrated",
+            "test_witness": "cadr-web/tests/test_cadr_bus_device.c::test_authoritative_ram_map_and_reset"
+          },
+          {
+            "symbol": "cadr_bus_write32",
+            "integration_status": "integrated",
+            "test_witness": "cadr-web/tests/test_cadr_bus_device.c::test_authoritative_ram_map_and_reset"
+          }
+        ]
+      },
+      {
+        "path": "bus-interface.c",
+        "bytes": 4009,
+        "sha256": "911685f66c1ff302b11b493eb020c324f17cae44eb3ca84e8112795caca9b3e5",
+        "functions": [
+          {
+            "symbol": "cadr_bus_set_interrupt_status",
+            "integration_status": "integrated",
+            "test_witness": "cadr-web/tests/test_cadr_bus_device.c::test_interrupt_status_and_processor_reset_trigger"
+          },
+          {
+            "symbol": "cadr_bus_interrupt_pending",
+            "integration_status": "integrated",
+            "test_witness": "cadr-web/tests/test_cadr_bus_device.c::test_interrupt_status_and_processor_reset_trigger"
+          },
+          {
+            "symbol": "cadr_bus_assert_unibus_interrupt",
+            "integration_status": "integrated",
+            "test_witness": "cadr-web/tests/test_cadr_bus_device.c::test_interrupt_status_and_processor_reset_trigger"
+          },
+          {
+            "symbol": "cadr_bus_deassert_unibus_interrupt",
+            "integration_status": "integrated",
+            "test_witness": "cadr-web/tests/test_cadr_bus_device.c::test_interrupt_status_and_processor_reset_trigger"
+          },
+          {
+            "symbol": "cadr_bus_assert_xbus_interrupt",
+            "integration_status": "integrated",
+            "test_witness": "cadr-web/tests/test_cadr_bus_device.c::test_interrupt_status_and_processor_reset_trigger"
+          },
+          {
+            "symbol": "cadr_bus_deassert_xbus_interrupt",
+            "integration_status": "integrated",
+            "test_witness": "cadr-web/tests/test_cadr_bus_device.c::test_interrupt_status_and_processor_reset_trigger"
+          },
+          {
+            "symbol": "cadr_bus_processor_interrupt_control_written",
+            "integration_status": "integrated",
+            "test_witness": "cadr-web/tests/test_cadr_bus_device.c::test_interrupt_status_and_processor_reset_trigger"
+          },
+          {
+            "symbol": "cadr_bus_set_xbus_nxm",
+            "integration_status": "integrated",
+            "test_witness": "cadr-web/tests/test_cadr_bus_device.c::test_interrupt_status_and_processor_reset_trigger"
+          },
+          {
+            "symbol": "cadr_bus_set_unibus_nxm",
+            "integration_status": "integrated",
+            "test_witness": "cadr-web/tests/test_cadr_bus_device.c::test_interrupt_status_and_processor_reset_trigger"
+          },
+          {
+            "symbol": "cadr_bus_set_unibus_map_error",
+            "integration_status": "integrated",
+            "test_witness": "cadr-web/tests/test_cadr_bus_device.c::test_interrupt_status_and_processor_reset_trigger"
+          },
+          {
+            "symbol": "cadr_bus_interface_reset",
+            "integration_status": "integrated",
+            "test_witness": "cadr-web/tests/test_cadr_bus_device.c::test_interrupt_status_and_processor_reset_trigger"
+          },
+          {
+            "symbol": "cadr_bus_interface_read",
+            "integration_status": "integrated",
+            "test_witness": "cadr-web/tests/test_cadr_bus_device.c::test_interrupt_status_and_processor_reset_trigger"
+          },
+          {
+            "symbol": "cadr_bus_interface_write",
+            "integration_status": "integrated",
+            "test_witness": "cadr-web/tests/test_cadr_bus_device.c::test_interrupt_status_and_processor_reset_trigger"
+          }
+        ]
+      },
+      {
+        "path": "cadr_processor_memory.c",
+        "bytes": 30253,
+        "sha256": "1538dcd84d9737d9a215e73aa95aa1ea5ba3cdae2d1bfb847e1a3ffc5013f452",
+        "functions": [
+          {
+            "symbol": "cadr_processor_memory_reset",
+            "integration_status": "integrated",
+            "test_witness": "cadr-web/tests/test_cadr_machine_state.c::test_reset_preserves_machine_cycles"
+          },
+          {
+            "symbol": "cadr_processor_memory_boot",
+            "integration_status": "integrated",
+            "test_witness": "cadr-web/tests/test_cadr_core_integration.c::test_clock_slots_and_interleaving"
+          },
+          {
+            "symbol": "cadr_processor_memory_set_main_memory_pages",
+            "integration_status": "integrated",
+            "test_witness": "cadr-web/tests/test_cadr_memory_maps.c::test_default_ram_profile_enforces_configured_pages"
+          },
+          {
+            "symbol": "cadr_processor_memory_main_access",
+            "integration_status": "integrated",
+            "test_witness": "cadr-web/tests/test_cadr_memory_maps.c::test_nxm_is_instance_local_and_fail_closed"
+          },
+          {
+            "symbol": "cadr_processor_memory_main_read",
+            "integration_status": "integrated",
+            "test_witness": "cadr-web/tests/test_cadr_memory_maps.c::test_nxm_is_instance_local_and_fail_closed"
+          },
+          {
+            "symbol": "cadr_processor_memory_main_write",
+            "integration_status": "integrated",
+            "test_witness": "cadr-web/tests/test_cadr_memory_maps.c::test_nxm_is_instance_local_and_fail_closed"
+          },
+          {
+            "symbol": "cadr_processor_memory_vtop",
+            "integration_status": "integrated",
+            "test_witness": "cadr-web/tests/test_cadr_memory_maps.c::test_map_translation_and_permissions"
+          },
+          {
+            "symbol": "cadr_processor_memory_write_map",
+            "integration_status": "integrated",
+            "test_witness": "cadr-web/tests/test_cadr_memory_maps.c::test_map_translation_and_permissions"
+          },
+          {
+            "symbol": "cadr_processor_memory_virtual_access",
+            "integration_status": "integrated",
+            "test_witness": "cadr-web/tests/test_cadr_memory_maps.c::test_virtual_bus_amem_and_tv_routes"
+          },
+          {
+            "symbol": "cadr_processor_memory_step_with_bus",
+            "integration_status": "integrated",
+            "test_witness": "cadr-web/tests/test_cadr_processor_microengine.c::test_pipeline_and_inhibit"
+          },
+          {
+            "symbol": "cadr_processor_memory_step",
+            "integration_status": "integrated",
+            "test_witness": "cadr-web/tests/test_cadr_processor_microengine.c::test_pipeline_and_inhibit"
+          }
+        ]
+      },
+      {
+        "path": "colortv.c",
+        "bytes": 1410,
+        "sha256": "395992b97a8a73fa13c2abfe065587aebcbee3c08ebedd25f038d763910c1677",
+        "functions": [
+          {
+            "symbol": "cadr_colortv_read",
+            "integration_status": "prefix-only",
+            "test_witness": "cadr-web/tests/test_cadr_bus_device.c::test_disabled_color_probe_and_typed_stubs"
+          },
+          {
+            "symbol": "cadr_colortv_write",
+            "integration_status": "prefix-only",
+            "test_witness": "cadr-web/tests/test_cadr_bus_device.c::test_disabled_color_probe_and_typed_stubs"
+          },
+          {
+            "symbol": "cadr_colortv_control_read",
+            "integration_status": "prefix-only",
+            "test_witness": "cadr-web/tests/test_cadr_bus_device.c::test_disabled_color_probe_and_typed_stubs"
+          },
+          {
+            "symbol": "cadr_colortv_control_write",
+            "integration_status": "prefix-only",
+            "test_witness": "cadr-web/tests/test_cadr_bus_device.c::test_disabled_color_probe_and_typed_stubs"
+          }
+        ]
+      },
+      {
+        "path": "diagnostic-interface.c",
+        "bytes": 5300,
+        "sha256": "aa841d91ca7cb73d10bd4ae4c91345ded74eed91d7eed49e14483ae0a755effb",
+        "functions": [
+          {
+            "symbol": "cadr_diagnostic_set_latches",
+            "integration_status": "integrated",
+            "test_witness": "cadr-web/tests/test_cadr_bus_device.c::test_diagnostic_latches_and_debug_instruction"
+          },
+          {
+            "symbol": "cadr_diagnostic_debug_instruction",
+            "integration_status": "integrated",
+            "test_witness": "cadr-web/tests/test_cadr_bus_device.c::test_diagnostic_latches_and_debug_instruction"
+          },
+          {
+            "symbol": "cadr_diagnostic_read",
+            "integration_status": "integrated",
+            "test_witness": "cadr-web/tests/test_cadr_bus_device.c::test_diagnostic_latches_and_debug_instruction"
+          },
+          {
+            "symbol": "cadr_diagnostic_write",
+            "integration_status": "integrated",
+            "test_witness": "cadr-web/tests/test_cadr_bus_device.c::test_diagnostic_latches_and_debug_instruction"
+          }
+        ]
+      },
+      {
+        "path": "disk-controller.c",
+        "bytes": 726,
+        "sha256": "6d51c7a15e7a13fb27478ba03f41641ccff7d66f3a9fd37184d3cb670766b3e1",
+        "functions": [
+          {
+            "symbol": "cadr_disk_read",
+            "integration_status": "prefix-only",
+            "test_witness": "cadr-web/tests/test_cadr_bus_device.c::test_disabled_color_probe_and_typed_stubs"
+          },
+          {
+            "symbol": "cadr_disk_write",
+            "integration_status": "prefix-only",
+            "test_witness": "cadr-web/tests/test_cadr_bus_device.c::test_disabled_color_probe_and_typed_stubs"
+          }
+        ]
+      },
+      {
+        "path": "iob.c",
+        "bytes": 716,
+        "sha256": "e0b94d39f46df86baa53922f7d65b09a8d4562c48bb213c5999a8cfe0bf24162",
+        "functions": [
+          {
+            "symbol": "cadr_iob_read",
+            "integration_status": "prefix-only",
+            "test_witness": "cadr-web/tests/test_cadr_bus_device.c::test_disabled_color_probe_and_typed_stubs"
+          },
+          {
+            "symbol": "cadr_iob_write",
+            "integration_status": "prefix-only",
+            "test_witness": "cadr-web/tests/test_cadr_bus_device.c::test_disabled_color_probe_and_typed_stubs"
+          }
+        ]
+      },
+      {
+        "path": "tape-controller.c",
+        "bytes": 723,
+        "sha256": "9209e00f952d6a8cbdb00ea80433a8c17576e49623748c8ddb9b7daf1a0b15a9",
+        "functions": [
+          {
+            "symbol": "cadr_tape_read",
+            "integration_status": "prefix-only",
+            "test_witness": "cadr-web/tests/test_cadr_bus_device.c::test_disabled_color_probe_and_typed_stubs"
+          },
+          {
+            "symbol": "cadr_tape_write",
+            "integration_status": "prefix-only",
+            "test_witness": "cadr-web/tests/test_cadr_bus_device.c::test_disabled_color_probe_and_typed_stubs"
+          }
+        ]
+      },
+      {
+        "path": "tv.c",
+        "bytes": 1976,
+        "sha256": "ca1cd093abdaa9d9b326b878cacb4820a001082e75078cbcb2fe1e6ff18d17a0",
+        "functions": [
+          {
+            "symbol": "cadr_tv_read",
+            "integration_status": "integrated",
+            "test_witness": "cadr-web/tests/test_cadr_bus_device.c::test_authoritative_ram_map_and_reset"
+          },
+          {
+            "symbol": "cadr_tv_write",
+            "integration_status": "integrated",
+            "test_witness": "cadr-web/tests/test_cadr_bus_device.c::test_authoritative_ram_map_and_reset"
+          },
+          {
+            "symbol": "cadr_tv_control_read",
+            "integration_status": "integrated",
+            "test_witness": "cadr-web/tests/test_cadr_bus_device.c::test_authoritative_ram_map_and_reset"
+          },
+          {
+            "symbol": "cadr_tv_control_write",
+            "integration_status": "integrated",
+            "test_witness": "cadr-web/tests/test_cadr_bus_device.c::test_authoritative_ram_map_and_reset"
+          }
+        ]
+      },
+      {
+        "path": "uch11.c",
+        "bytes": 516,
+        "sha256": "26c4badaaad8be62c1f2dceb58dd3b156dccaa91af16c1a488556ad81433d402",
+        "functions": [
+          {
+            "symbol": "cadr_uch11_read_csr",
+            "integration_status": "prefix-only",
+            "test_witness": "cadr-web/tests/test_cadr_bus_device.c::test_disabled_color_probe_and_typed_stubs"
+          },
+          {
+            "symbol": "cadr_uch11_write_csr",
+            "integration_status": "prefix-only",
+            "test_witness": "cadr-web/tests/test_cadr_bus_device.c::test_disabled_color_probe_and_typed_stubs"
+          }
+        ]
+      },
+      {
+        "path": "unibus-mapping.c",
+        "bytes": 980,
+        "sha256": "230c4d588acc4cd6428c78c1065401eacb7ecec09b1ff0bfad0e46d454b6fb5e",
+        "functions": [
+          {
+            "symbol": "cadr_unibus_map_read",
+            "integration_status": "integrated",
+            "test_witness": "cadr-web/tests/test_cadr_bus_device.c::test_authoritative_ram_map_and_reset"
+          },
+          {
+            "symbol": "cadr_unibus_map_write",
+            "integration_status": "integrated",
+            "test_witness": "cadr-web/tests/test_cadr_bus_device.c::test_authoritative_ram_map_and_reset"
+          }
+        ]
+      }
+    ],
+    "status_vocabulary": [
+      "integrated",
+      "prefix-only"
+    ],
+    "nonclaim": "Presence or integration status is not a parity claim. Prefix-only functions establish typed fail-closed zero-device behavior, not upstream controller semantics."
+  },
+  "adaptation_records": [
+    {
+      "id": "uexec-implemented",
+      "source_file": "uexec.c",
+      "source_span": {
+        "line_start": 1,
+        "line_end": 1159
+      },
+      "source_symbols": [
+        "aaddr",
+        "adata",
+        "advanceLC",
+        "alu",
+        "alu_carry",
+        "alu_out",
+        "amem",
+        "arithOps",
+        "byt",
+        "check_jcond",
+        "debug_ir",
+        "dispatch_constant",
+        "divOps",
+        "dmem",
+        "dsp",
+        "imem",
+        "incNPC",
+        "inhibit",
+        "interrupt_control",
+        "ir",
+        "iwr",
+        "jmp",
+        "lc",
+        "lcbytemode",
+        "logiOps",
+        "maddr",
+        "md_reg",
+        "mdata",
+        "mfread",
+        "mfwrite",
+        "mmem",
+        "msk",
+        "new_md",
+        "new_md_delay",
+        "npc",
+        "oa_reg_high",
+        "oa_reg_low",
+        "oah",
+        "oal",
+        "old_q",
+        "op",
+        "opc",
+        "out",
+        "outControl",
+        "p0",
+        "p0_imem",
+        "p0_pc",
+        "p1",
+        "p1_imem",
+        "p1_pc",
+        "pdl",
+        "pdl_index",
+        "pdl_pointer",
+        "popSPC",
+        "popj",
+        "prom",
+        "pushSPC",
+        "q",
+        "qControl",
+        "spc",
+        "spcptr",
+        "uexec_has_run_once",
+        "uexec_step",
+        "vma_reg",
+        "writeDest"
+      ],
+      "implementation_status": "implemented",
+      "intended_derived_file": "cadr-web/core/usim-port/cadr_processor_memory.c",
+      "intended_derived_symbols": [
+        "cadr_processor_memory_step",
+        "cadr_processor_memory_step_with_bus"
+      ],
+      "observable_mapping": "Pipeline, registers, control stores, ALU, dispatch, jump, byte, destination, and one-step state transitions map to cadr_cpu_state, cadr_memory_state, and cadr_processor_memory_step_with_bus. Status covers only the named tested M1 mapping and makes no parity claim.",
+      "test_witness": "cadr-web/tests/test_cadr_processor_microengine.c::test_pipeline_and_inhibit",
+      "integration_status": "integrated"
+    },
+    {
+      "id": "m32-implemented",
+      "source_file": "m32.c",
+      "source_span": {
+        "line_start": 1,
+        "line_end": 27
+      },
+      "source_symbols": [
+        "rol32"
+      ],
+      "implementation_status": "implemented",
+      "intended_derived_file": "cadr-web/core/usim-port/cadr_processor_memory.c",
+      "intended_derived_symbols": [
+        "cadr_rol32"
+      ],
+      "observable_mapping": "The 32-bit rotate helper maps to the fixed-width cadr_rol32 helper and its rotate edge vectors. Status covers only the named tested M1 mapping and makes no parity claim.",
+      "test_witness": "cadr-web/tests/test_cadr_processor_microengine.c::test_rotate_and_arithmetic_edges",
+      "integration_status": "integrated"
+    },
+    {
+      "id": "ucode-implemented",
+      "source_file": "ucode.c",
+      "source_span": {
+        "line_start": 1,
+        "line_end": 187
+      },
+      "source_symbols": [
+        "assert_unibus_interrupt",
+        "assert_xbus_interrupt",
+        "deassert_unibus_interrupt",
+        "deassert_xbus_interrupt",
+        "interrupt_pending_flag",
+        "interrupt_status_reg",
+        "machine_cycles",
+        "set_interrupt_status_reg",
+        "ucode_init"
+      ],
+      "implementation_status": "implemented",
+      "intended_derived_file": "cadr-web/core/usim-port/cadr_processor_memory.c",
+      "intended_derived_symbols": [
+        "cadr_processor_memory_reset",
+        "cadr_processor_memory_step_with_bus"
+      ],
+      "observable_mapping": "Processor reset, cycle accounting, and bus interrupt state map to cadr_processor_memory_reset, cpu.microinstructions_executed, and cadr_bus_state; the unbounded upstream run loop and PROM file loader remain pending or excluded. Status covers only the named tested M1 mapping and makes no parity claim.",
+      "test_witness": "cadr-web/tests/test_cadr_processor_microengine.c::test_pipeline_and_inhibit",
+      "integration_status": "integrated"
+    },
+    {
+      "id": "ucode-partial-semantics-pending",
+      "source_file": "ucode.c",
+      "source_span": {
+        "line_start": 1,
+        "line_end": 187
+      },
+      "source_symbols": [
+        "ucode_run"
+      ],
+      "implementation_status": "pending",
+      "intended_derived_file": "cadr-web/core/usim-port/cadr_processor_memory.c",
+      "intended_derived_symbols": [
+        "cadr_processor_memory_reset",
+        "cadr_processor_memory_step_with_bus"
+      ],
+      "observable_mapping": "Processor reset, cycle accounting, and bus interrupt state map to cadr_processor_memory_reset, cpu.microinstructions_executed, and cadr_bus_state; the unbounded upstream run loop and PROM file loader remain pending or excluded. Status is pending and makes no behavioral claim.",
+      "test_witness": "tests/test_cadr_core_source_map.py::test_pending_records_are_explicit",
+      "integration_status": "pending"
+    },
+    {
+      "id": "ucode-pending",
+      "source_file": "ucode.c",
+      "source_span": {
+        "line_start": 1,
+        "line_end": 187
+      },
+      "source_symbols": [
+        "ucode_load_prom_from_file"
+      ],
+      "implementation_status": "pending",
+      "intended_derived_file": null,
+      "intended_derived_symbols": [],
+      "observable_mapping": "Processor reset, cycle accounting, and bus interrupt state map to cadr_processor_memory_reset, cpu.microinstructions_executed, and cadr_bus_state; the unbounded upstream run loop and PROM file loader remain pending or excluded. Status is pending and makes no behavioral claim.",
+      "test_witness": "tests/test_cadr_core_source_map.py::test_pending_records_are_explicit",
+      "integration_status": "pending"
+    },
+    {
+      "id": "machine-control-power-boot-implemented",
+      "source_file": "machine-control.c",
+      "source_span": {
+        "line_start": 1,
+        "line_end": 188
+      },
+      "source_symbols": [
+        "machine_control_boot",
+        "machine_control_power_on",
+        "machine_state"
+      ],
+      "implementation_status": "implemented",
+      "intended_derived_file": "cadr-web/core/cadr_core.c",
+      "intended_derived_symbols": [
+        "cadr_machine_cold_power_on",
+        "cadr_machine_boot"
+      ],
+      "observable_mapping": "Reset, cold power-on, and boot map to the public lifecycle plus instance-owned cadr_machine_state. Power-off, threaded starts, and shutdown sequencing remain pending. Status covers only the named tested M1 mapping and makes no parity claim.",
+      "test_witness": "cadr-web/tests/test_cadr_core_integration.c::test_clock_slots_and_interleaving",
+      "integration_status": "integrated"
+    },
+    {
+      "id": "machine-control-reset-implemented",
+      "source_file": "machine-control.c",
+      "source_span": {
+        "line_start": 1,
+        "line_end": 188
+      },
+      "source_symbols": [
+        "machine_control_reset"
+      ],
+      "implementation_status": "implemented",
+      "intended_derived_file": "cadr-web/core/cadr_core.c",
+      "intended_derived_symbols": [
+        "cadr_machine_reset"
+      ],
+      "observable_mapping": "Machine reset maps to the public reset lifecycle operation and its processor reset while preserving cumulative machine-cycle accounting. Status covers only the named tested M1 mapping and makes no parity claim.",
+      "test_witness": "cadr-web/tests/test_cadr_machine_state.c::test_reset_preserves_machine_cycles",
+      "integration_status": "integrated"
+    },
+    {
+      "id": "machine-control-pending",
+      "source_file": "machine-control.c",
+      "source_span": {
+        "line_start": 1,
+        "line_end": 188
+      },
+      "source_symbols": [
+        "machine_control_power_off",
+        "machine_control_shutdown",
+        "machine_control_start_blocking",
+        "machine_control_start_nonblocking",
+        "machine_control_thread_run"
+      ],
+      "implementation_status": "pending",
+      "intended_derived_file": null,
+      "intended_derived_symbols": [],
+      "observable_mapping": "Reset, cold power-on, and boot map to the public lifecycle plus instance-owned cadr_machine_state. Power-off, threaded starts, and shutdown sequencing remain pending. Status is pending and makes no behavioral claim.",
+      "test_witness": "tests/test_cadr_core_source_map.py::test_pending_records_are_explicit",
+      "integration_status": "pending"
+    },
+    {
+      "id": "uvmem-implemented",
+      "source_file": "uvmem.c",
+      "source_span": {
+        "line_start": 1,
+        "line_end": 228
+      },
+      "source_symbols": [
+        "l1_map",
+        "l2_map",
+        "uvmem_vtop",
+        "uvmem_write_map",
+        "vm"
+      ],
+      "implementation_status": "implemented",
+      "intended_derived_file": "cadr-web/core/usim-port/cadr_processor_memory.c",
+      "intended_derived_symbols": [
+        "cadr_processor_memory_vtop",
+        "cadr_processor_memory_write_map",
+        "cadr_processor_memory_virtual_access"
+      ],
+      "observable_mapping": "L1/L2 maps, permission results, address translation, and virtual access map to cadr_memory_state and the cadr_processor_memory_vtop/write_map/virtual_access operations. Status covers only the named tested M1 mapping and makes no parity claim.",
+      "test_witness": "cadr-web/tests/test_cadr_memory_maps.c::test_map_translation_and_permissions",
+      "integration_status": "integrated"
+    },
+    {
+      "id": "main-memory-implemented",
+      "source_file": "main-memory.c",
+      "source_span": {
+        "line_start": 1,
+        "line_end": 162
+      },
+      "source_symbols": [
+        "main_memory_bus_reset",
+        "main_memory_npages",
+        "main_memory_read",
+        "main_memory_write",
+        "pages"
+      ],
+      "implementation_status": "implemented",
+      "intended_derived_file": "cadr-web/core/usim-port/cadr_processor_memory.c",
+      "intended_derived_symbols": [
+        "cadr_processor_memory_set_main_memory_pages",
+        "cadr_processor_memory_main_read",
+        "cadr_processor_memory_main_write"
+      ],
+      "observable_mapping": "Configured page count, 32-bit words, NXM result, and reset preservation map to cadr_memory_state and main-access operations; page-bulk helpers remain pending. Status covers only the named tested M1 mapping and makes no parity claim.",
+      "test_witness": "cadr-web/tests/test_cadr_memory_maps.c::test_nxm_is_instance_local_and_fail_closed",
+      "integration_status": "integrated"
+    },
+    {
+      "id": "main-memory-pending",
+      "source_file": "main-memory.c",
+      "source_span": {
+        "line_start": 1,
+        "line_end": 162
+      },
+      "source_symbols": [
+        "main_memory_read_page",
+        "main_memory_write_page"
+      ],
+      "implementation_status": "pending",
+      "intended_derived_file": null,
+      "intended_derived_symbols": [],
+      "observable_mapping": "Configured page count, 32-bit words, NXM result, and reset preservation map to cadr_memory_state and main-access operations; page-bulk helpers remain pending. Status is pending and makes no behavioral claim.",
+      "test_witness": "tests/test_cadr_core_source_map.py::test_pending_records_are_explicit",
+      "integration_status": "pending"
+    },
+    {
+      "id": "bus-adaptor-implemented",
+      "source_file": "bus-adaptor.c",
+      "source_span": {
+        "line_start": 1,
+        "line_end": 503
+      },
+      "source_symbols": [
+        "bus_adaptor_read",
+        "bus_adaptor_rw",
+        "bus_adaptor_unibus_read",
+        "bus_adaptor_unibus_rw",
+        "bus_adaptor_unibus_write",
+        "bus_adaptor_write",
+        "bus_adaptor_xbus_rw",
+        "bus_adaptor_xbusio_rw"
+      ],
+      "implementation_status": "implemented",
+      "intended_derived_file": "cadr-web/core/usim-port/bus-adaptor.c",
+      "intended_derived_symbols": [
+        "cadr_bus_read32",
+        "cadr_bus_write32",
+        "cadr_unibus_read16",
+        "cadr_unibus_write16"
+      ],
+      "observable_mapping": "Main-memory, Xbus, Unibus, map, diagnostic, TV, and typed-unimplemented device routing map to cadr_bus_read32/write32 and cadr_unibus_read16/write16 for the tested M1 address prefix. Status covers only the named tested M1 mapping and makes no parity claim.",
+      "test_witness": "cadr-web/tests/test_cadr_bus_device.c::test_authoritative_ram_map_and_reset",
+      "integration_status": "integrated"
+    },
+    {
+      "id": "bus-interface-implemented",
+      "source_file": "bus-interface.c",
+      "source_span": {
+        "line_start": 1,
+        "line_end": 312
+      },
+      "source_symbols": [
+        "bus_error_status",
+        "bus_interface_bus_reset",
+        "bus_interface_get_bus_error_status",
+        "bus_interface_is_unibus_map_error",
+        "bus_interface_is_unibus_nxm",
+        "bus_interface_is_xbus_nxm",
+        "bus_interface_reset_bus_error_status",
+        "bus_interface_set_unibus_map_error",
+        "bus_interface_set_unibus_nxm",
+        "bus_interface_set_xbus_nxm",
+        "nxm_inhibited"
+      ],
+      "implementation_status": "implemented",
+      "intended_derived_file": "cadr-web/core/usim-port/bus-interface.c",
+      "intended_derived_symbols": [
+        "cadr_bus_interface_read",
+        "cadr_bus_interface_write",
+        "cadr_bus_interface_reset",
+        "cadr_bus_set_interrupt_status"
+      ],
+      "observable_mapping": "Interrupt status/pending and NXM/map-error latches map to cadr_bus_state. Debuggee address registers, NXM inhibit writes, and incomplete register dispatch remain pending. Status covers only the named tested M1 mapping and makes no parity claim.",
+      "test_witness": "cadr-web/tests/test_cadr_bus_device.c::test_interrupt_status_and_processor_reset_trigger",
+      "integration_status": "integrated"
+    },
+    {
+      "id": "bus-interface-partial-semantics-pending",
+      "source_file": "bus-interface.c",
+      "source_span": {
+        "line_start": 1,
+        "line_end": 312
+      },
+      "source_symbols": [
+        "addr",
+        "addr17",
+        "bus_interface_get_debuggee_uaddr",
+        "bus_interface_read",
+        "bus_interface_set_debuggee_bus_error_status",
+        "bus_interface_set_nxm_inhibit",
+        "bus_interface_write",
+        "debuggee_bus_error_status",
+        "modifier_reset"
+      ],
+      "implementation_status": "pending",
+      "intended_derived_file": "cadr-web/core/usim-port/bus-interface.c",
+      "intended_derived_symbols": [
+        "cadr_bus_interface_read",
+        "cadr_bus_interface_write",
+        "cadr_bus_interface_reset",
+        "cadr_bus_set_interrupt_status"
+      ],
+      "observable_mapping": "Interrupt status/pending and NXM/map-error latches map to cadr_bus_state. Debuggee address registers, NXM inhibit writes, and incomplete register dispatch remain pending. Status is pending and makes no behavioral claim.",
+      "test_witness": "tests/test_cadr_core_source_map.py::test_pending_records_are_explicit",
+      "integration_status": "pending"
+    },
+    {
+      "id": "unibus-mapping-implemented",
+      "source_file": "unibus-mapping.c",
+      "source_span": {
+        "line_start": 1,
+        "line_end": 95
+      },
+      "source_symbols": [
+        "unibus_mapping_buffers",
+        "unibus_mapping_read",
+        "unibus_mapping_registers",
+        "unibus_mapping_rw",
+        "unibus_mapping_write"
+      ],
+      "implementation_status": "implemented",
+      "intended_derived_file": "cadr-web/core/usim-port/unibus-mapping.c",
+      "intended_derived_symbols": [
+        "cadr_unibus_map_read",
+        "cadr_unibus_map_write"
+      ],
+      "observable_mapping": "Sixteen map registers and saved upper halfwords map to cadr_bus_state.unibus_map/unibus_halfword and checked read/write operations. Status covers only the named tested M1 mapping and makes no parity claim.",
+      "test_witness": "cadr-web/tests/test_cadr_bus_device.c::test_authoritative_ram_map_and_reset",
+      "integration_status": "integrated"
+    },
+    {
+      "id": "diagnostic-interface-implemented",
+      "source_file": "diagnostic-interface.c",
+      "source_span": {
+        "line_start": 1,
+        "line_end": 329
+      },
+      "source_symbols": [
+        "get_flag_register_1",
+        "get_flag_register_2",
+        "param1",
+        "param2",
+        "param3"
+      ],
+      "implementation_status": "implemented",
+      "intended_derived_file": "cadr-web/core/usim-port/diagnostic-interface.c",
+      "intended_derived_symbols": [
+        "cadr_diagnostic_read",
+        "cadr_diagnostic_write",
+        "cadr_diagnostic_set_latches"
+      ],
+      "observable_mapping": "Flag computation and three 16-bit instruction latches map to cadr_diagnostic_latches; unimplemented diagnostic register branches keep the full read/write functions pending. Status covers only the named tested M1 mapping and makes no parity claim.",
+      "test_witness": "cadr-web/tests/test_cadr_bus_device.c::test_diagnostic_latches_and_debug_instruction",
+      "integration_status": "integrated"
+    },
+    {
+      "id": "diagnostic-interface-partial-semantics-pending",
+      "source_file": "diagnostic-interface.c",
+      "source_span": {
+        "line_start": 1,
+        "line_end": 329
+      },
+      "source_symbols": [
+        "diagnostic_interface_read",
+        "diagnostic_interface_write"
+      ],
+      "implementation_status": "pending",
+      "intended_derived_file": "cadr-web/core/usim-port/diagnostic-interface.c",
+      "intended_derived_symbols": [
+        "cadr_diagnostic_read",
+        "cadr_diagnostic_write",
+        "cadr_diagnostic_set_latches"
+      ],
+      "observable_mapping": "Flag computation and three 16-bit instruction latches map to cadr_diagnostic_latches; unimplemented diagnostic register branches keep the full read/write functions pending. Status is pending and makes no behavioral claim.",
+      "test_witness": "tests/test_cadr_core_source_map.py::test_pending_records_are_explicit",
+      "integration_status": "pending"
+    },
+    {
+      "id": "diagnostic-interface-pending",
+      "source_file": "diagnostic-interface.c",
+      "source_span": {
+        "line_start": 1,
+        "line_end": 329
+      },
+      "source_symbols": [
+        "dump_main_memory"
+      ],
+      "implementation_status": "pending",
+      "intended_derived_file": null,
+      "intended_derived_symbols": [],
+      "observable_mapping": "Flag computation and three 16-bit instruction latches map to cadr_diagnostic_latches; unimplemented diagnostic register branches keep the full read/write functions pending. Status is pending and makes no behavioral claim.",
+      "test_witness": "tests/test_cadr_core_source_map.py::test_pending_records_are_explicit",
+      "integration_status": "pending"
+    },
+    {
+      "id": "tv-implemented",
+      "source_file": "tv.c",
+      "source_span": {
+        "line_start": 1,
+        "line_end": 371
+      },
+      "source_symbols": [
+        "tv_bus_reset",
+        "tv_is_sync_prom_enabled",
+        "tv_mode",
+        "tv_reset",
+        "tv_screen_buffer",
+        "tv_screen_read",
+        "tv_screen_write",
+        "tv_sync_ptr",
+        "tv_sync_ram",
+        "tv_vert_spacing"
+      ],
+      "implementation_status": "implemented",
+      "intended_derived_file": "cadr-web/core/usim-port/tv.c",
+      "intended_derived_symbols": [
+        "cadr_tv_read",
+        "cadr_tv_write",
+        "cadr_tv_control_read",
+        "cadr_tv_control_write"
+      ],
+      "observable_mapping": "Monochrome screen words and selected sync/mode state map to cadr_device_state and screen read/write. Incomplete control, interrupt, geometry, and host update behavior remains pending. Status covers only the named tested M1 mapping and makes no parity claim.",
+      "test_witness": "cadr-web/tests/test_cadr_bus_device.c::test_authoritative_ram_map_and_reset",
+      "integration_status": "integrated"
+    },
+    {
+      "id": "tv-partial-semantics-pending",
+      "source_file": "tv.c",
+      "source_span": {
+        "line_start": 1,
+        "line_end": 371
+      },
+      "source_symbols": [
+        "tv_control_read",
+        "tv_control_write"
+      ],
+      "implementation_status": "pending",
+      "intended_derived_file": "cadr-web/core/usim-port/tv.c",
+      "intended_derived_symbols": [
+        "cadr_tv_read",
+        "cadr_tv_write",
+        "cadr_tv_control_read",
+        "cadr_tv_control_write"
+      ],
+      "observable_mapping": "Monochrome screen words and selected sync/mode state map to cadr_device_state and screen read/write. Incomplete control, interrupt, geometry, and host update behavior remains pending. Status is pending and makes no behavioral claim.",
+      "test_witness": "tests/test_cadr_core_source_map.py::test_pending_records_are_explicit",
+      "integration_status": "pending"
+    },
+    {
+      "id": "tv-pending",
+      "source_file": "tv.c",
+      "source_span": {
+        "line_start": 1,
+        "line_end": 371
+      },
+      "source_symbols": [
+        "accumulate_update",
+        "tv_assert_interrupt",
+        "tv_background",
+        "tv_foreground",
+        "tv_height",
+        "tv_is_black_on_white",
+        "tv_is_interrupt_enabled",
+        "tv_monitor",
+        "tv_width",
+        "u_maxh",
+        "u_maxv",
+        "u_minh",
+        "u_minv"
+      ],
+      "implementation_status": "pending",
+      "intended_derived_file": null,
+      "intended_derived_symbols": [],
+      "observable_mapping": "Monochrome screen words and selected sync/mode state map to cadr_device_state and screen read/write. Incomplete control, interrupt, geometry, and host update behavior remains pending. Status is pending and makes no behavioral claim.",
+      "test_witness": "tests/test_cadr_core_source_map.py::test_pending_records_are_explicit",
+      "integration_status": "pending"
+    },
+    {
+      "id": "colortv-pending",
+      "source_file": "colortv.c",
+      "source_span": {
+        "line_start": 1,
+        "line_end": 208
+      },
+      "source_symbols": [
+        "colortv_assert_interrupt",
+        "colortv_bus_reset",
+        "colortv_color_map",
+        "colortv_control_read",
+        "colortv_control_write",
+        "colortv_hsync",
+        "colortv_init",
+        "colortv_is_interrupt_enabled",
+        "colortv_is_sync_prom_enabled",
+        "colortv_mode",
+        "colortv_screen_buffer",
+        "colortv_screen_read",
+        "colortv_screen_write",
+        "colortv_sync_ptr",
+        "colortv_sync_ram",
+        "colortv_vert_spacing",
+        "colortv_vsync",
+        "sync_prom_enb"
+      ],
+      "implementation_status": "pending",
+      "intended_derived_file": "cadr-web/core/usim-port/colortv.c",
+      "intended_derived_symbols": [
+        "cadr_colortv_read",
+        "cadr_colortv_write",
+        "cadr_colortv_control_read",
+        "cadr_colortv_control_write"
+      ],
+      "observable_mapping": "Color-TV state and controller operations are absent; derived entry points are fail-closed prefix only. Status is pending and makes no behavioral claim.",
+      "test_witness": "tests/test_cadr_core_source_map.py::test_pending_records_are_explicit",
+      "integration_status": "prefix-only"
+    },
+    {
+      "id": "iob-pending",
+      "source_file": "iob.c",
+      "source_span": {
+        "line_start": 1,
+        "line_end": 443
+      },
+      "source_symbols": [
+        "iob_bus_reset",
+        "iob_clear_keyboard_ready",
+        "iob_clear_mouse_ready",
+        "iob_csr",
+        "iob_is_keyboard_ready_set",
+        "iob_is_mouse_ready_set",
+        "iob_mouse_x",
+        "iob_mouse_y",
+        "iob_prepare_for_warm_boot",
+        "iob_scancode",
+        "iob_set_keyboard_ready",
+        "iob_set_mouse_ready",
+        "iob_unibus_read",
+        "iob_unibus_write",
+        "the_60_cycle_clock"
+      ],
+      "implementation_status": "pending",
+      "intended_derived_file": "cadr-web/core/usim-port/iob.c",
+      "intended_derived_symbols": [
+        "cadr_iob_read",
+        "cadr_iob_write"
+      ],
+      "observable_mapping": "I/O-board keyboard, mouse, timer, serial, and register semantics are absent; derived entry points are fail-closed prefix only. Status is pending and makes no behavioral claim.",
+      "test_witness": "tests/test_cadr_core_source_map.py::test_pending_records_are_explicit",
+      "integration_status": "prefix-only"
+    },
+    {
+      "id": "disk-controller-pending",
+      "source_file": "disk-controller.c",
+      "source_span": {
+        "line_start": 1,
+        "line_end": 839
+      },
+      "source_symbols": [
+        "assert_interrupt",
+        "attention_interrupt_enable",
+        "clp",
+        "cmd",
+        "da",
+        "deassert_interrupt",
+        "decode_da",
+        "disk_controller_bus_reset",
+        "disk_controller_get_attention",
+        "disk_controller_read",
+        "disk_controller_write",
+        "do_xfer",
+        "done_interrupt_enable",
+        "encode_status",
+        "perform_xfer",
+        "reset",
+        "reset_condition",
+        "reset_status",
+        "set_status_active",
+        "set_status_not_active",
+        "start",
+        "start_at_ease",
+        "start_fault_clear",
+        "start_offset_clear",
+        "start_read",
+        "start_read_compare",
+        "start_recalibrate",
+        "start_seek",
+        "start_write",
+        "status",
+        "submit_xfer",
+        "xfer_req"
+      ],
+      "implementation_status": "pending",
+      "intended_derived_file": "cadr-web/core/usim-port/disk-controller.c",
+      "intended_derived_symbols": [
+        "cadr_disk_read",
+        "cadr_disk_write"
+      ],
+      "observable_mapping": "Disk controller registers, CCWs, transfers, media completion, and interrupts are absent; cadr_disk_read/write are fail-closed zero-device prefix only. Status is pending and makes no behavioral claim.",
+      "test_witness": "tests/test_cadr_core_source_map.py::test_pending_records_are_explicit",
+      "integration_status": "prefix-only"
+    },
+    {
+      "id": "tape-controller-pending",
+      "source_file": "tape-controller.c",
+      "source_span": {
+        "line_start": 1,
+        "line_end": 959
+      },
+      "source_symbols": [
+        "COMMAND_STRS",
+        "mtbrc",
+        "mtc",
+        "mtc_debug",
+        "mtcma",
+        "mtd",
+        "mtrd",
+        "mts",
+        "mts_debug",
+        "tape_controller_assert_unibus_interrupt",
+        "tape_controller_bus_reset",
+        "tape_controller_debug_mtc",
+        "tape_controller_debug_mts",
+        "tape_controller_encode_mtc",
+        "tape_controller_encode_mts",
+        "tape_controller_go",
+        "tape_controller_is_mtc_err",
+        "tape_controller_is_mts_eot",
+        "tape_controller_offline",
+        "tape_controller_read",
+        "tape_controller_reset_mtc_err",
+        "tape_controller_reset_mts_eot",
+        "tape_controller_rewind",
+        "tape_controller_set_mts_bte",
+        "tape_controller_set_mts_eof",
+        "tape_controller_set_mts_eot",
+        "tape_controller_space_forward",
+        "tape_controller_space_reverse",
+        "tape_controller_unibus_read",
+        "tape_controller_unibus_write",
+        "tape_controller_update_mtc",
+        "tape_controller_write",
+        "tape_controller_write_eof"
+      ],
+      "implementation_status": "pending",
+      "intended_derived_file": "cadr-web/core/usim-port/tape-controller.c",
+      "intended_derived_symbols": [
+        "cadr_tape_read",
+        "cadr_tape_write"
+      ],
+      "observable_mapping": "Tape controller registers, transport commands, media motion, completion, and interrupts are absent; cadr_tape_read/write are fail-closed zero-device prefix only. Status is pending and makes no behavioral claim.",
+      "test_witness": "tests/test_cadr_core_source_map.py::test_pending_records_are_explicit",
+      "integration_status": "prefix-only"
+    },
+    {
+      "id": "uch11-pending",
+      "source_file": "uch11.c",
+      "source_span": {
+        "line_start": 1,
+        "line_end": 394
+      },
+      "source_symbols": [
+        "uch11_bit_count",
+        "uch11_checksum",
+        "uch11_csr",
+        "uch11_get_bit_count",
+        "uch11_get_csr",
+        "uch11_get_rcv_buffer",
+        "uch11_lost_count",
+        "uch11_put_xmit_buffer",
+        "uch11_rcv_buffer",
+        "uch11_rcv_buffer_empty",
+        "uch11_rcv_buffer_ptr",
+        "uch11_rcv_buffer_size",
+        "uch11_rcv_buffer_toss",
+        "uch11_rx_pkt",
+        "uch11_set_csr",
+        "uch11_xmit_buffer",
+        "uch11_xmit_buffer_ptr",
+        "uch11_xmit_buffer_size",
+        "uch11_xmit_done_intr",
+        "uch11_xmit_pkt"
+      ],
+      "implementation_status": "pending",
+      "intended_derived_file": "cadr-web/core/usim-port/uch11.c",
+      "intended_derived_symbols": [
+        "cadr_uch11_read_csr",
+        "cadr_uch11_write_csr"
+      ],
+      "observable_mapping": "Chaos CSR, packet buffers, checksum flow, interrupt, and transport semantics are absent; cadr_uch11_read/write_csr are fail-closed zero-device prefix only. Status is pending and makes no behavioral claim.",
+      "test_witness": "tests/test_cadr_core_source_map.py::test_pending_records_are_explicit",
+      "integration_status": "prefix-only"
+    }
+  ],
+  "implementation_status_vocabulary": [
+    "implemented",
+    "pending"
+  ],
+  "compatibility_nonclaim": "This ledger records source coverage and tested integration only. It makes no instruction, device, timing, runtime, or whole-system parity claim."
+}

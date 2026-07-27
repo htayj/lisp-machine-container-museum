@@ -11,11 +11,16 @@
 /build/help/mit-cadr/
 /build/research/
 /build/cadr-computer-use/
+/build/cadr-oracle/
 /build/.cadr-computer-use-runtime.lock
 /build/.cadr-computer-use-display.lock
 /build/genera-computer-use/
 /build/.genera-computer-use-runtime.lock
 /build/.genera-computer-use-vlm.lock
 /build/genera-probe-*/
+/cadr-web/build/
+/cadr-web/*.o
+/cadr-web/core/*.o
+/cadr-web/core/usim-port/*.o
 __pycache__/
 /_site/
