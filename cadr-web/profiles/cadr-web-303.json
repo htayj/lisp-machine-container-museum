@@ -1,0 +1,358 @@
+{
+  "schema": "cadr-web-profile",
+  "schema_version": 1,
+  "profile": {
+    "id": "CADR-WEB-303",
+    "description": "M0 identity record for the System 303 browser/WebAssembly target.",
+    "system": "LM-3 System 303-0",
+    "network_default": "offline"
+  },
+  "source_pins": {
+    "lm3_l": {
+      "vcs": "fossil",
+      "hash_algorithm": "sha3-256",
+      "revision": "d1250f90044f09b6c92014a9aef65f9574e1bcbf8a7163004e53cc6dbed0f2d6"
+    },
+    "sys": {
+      "vcs": "fossil",
+      "hash_algorithm": "sha3-256",
+      "revision": "4df393c68d7f083ce42d5c377039d26043cc18a9031ace28258dc97f4137eb91"
+    },
+    "usim": {
+      "vcs": "fossil",
+      "hash_algorithm": "sha3-256",
+      "revision": "330d8248ec2e12af071e287920e681600f75df9ffd854aada5f8a64c9adad64d"
+    },
+    "chaos": {
+      "vcs": "fossil",
+      "hash_algorithm": "sha3-256",
+      "revision": "db2953fde68d726a605d1d1699bab6c926ef252bd4991f692bae6ee5a634764e"
+    },
+    "usite": {
+      "vcs": "fossil",
+      "hash_algorithm": "sha3-256",
+      "revision": "8f717978b458b40adf1e238aaf177f5bc54ef46881268e03b787ba57b0d30a0e"
+    }
+  },
+  "artifacts": [
+    {
+      "id": "cadr-web-303-runnable-template",
+      "path": "cadr-web/profiles/cadr-web-303.ini.in",
+      "bytes": 854,
+      "sha256": "1cfd4cb6f8ebe390a527f6c870fad51b53d1e4897cee4371bbfc2ae8bba38e2f",
+      "disposition": "tracked",
+      "required": true
+    },
+    {
+      "id": "usim-303-0-configuration",
+      "path": "l/usim/usim-303-0.ini",
+      "bytes": 579,
+      "sha256": "1e4a93c330b6082aaff71b170d741aa30faa4a88bd5f04b83686f568ba6442e1",
+      "disposition": "metadata-only-review",
+      "required": false
+    },
+    {
+      "id": "usite-extra-hosts",
+      "path": "l/usite/extra.hosts",
+      "bytes": 262,
+      "sha256": "6c400a95202e49ec98c4dd9d04a1c84bfd897172b66b73964f109c443bfd1438",
+      "disposition": "metadata-only-review",
+      "required": false
+    },
+    {
+      "id": "prom-control-store",
+      "path": "l/sys/ubin/promh.mcr",
+      "bytes": 20480,
+      "sha256": "2c667f99f014a7130a55b255d31df02588d9396beace78abfe9325269e4ff3e6",
+      "disposition": "metadata-only-review",
+      "required": false
+    },
+    {
+      "id": "prom-symbols",
+      "path": "l/sys/ubin/promh.sym",
+      "bytes": 3130,
+      "sha256": "e9e3dd6a541511dd9541ae96b99dae19cb185d8b79fa09959f21fa52224f233d",
+      "disposition": "metadata-only-review",
+      "required": false
+    },
+    {
+      "id": "microcode-symbols",
+      "path": "l/sys/ubin/ucadr.sym",
+      "bytes": 83270,
+      "sha256": "9071decf16fa8f11d7970c4662db0d6e95600fe43ec86ac41c77b37dbd7caa2a",
+      "disposition": "metadata-only-review",
+      "required": false
+    },
+    {
+      "id": "cadet-keyboard-device-source",
+      "path": "l/usim/cadet.c",
+      "bytes": 6896,
+      "sha256": "e8974b1bbee8f30a4d55ea76bff8e9b519a02d32056997bf9c5089f2b217860b",
+      "disposition": "public-source",
+      "required": false
+    },
+    {
+      "id": "keyboard-device-source",
+      "path": "l/usim/kbd.c",
+      "bytes": 11245,
+      "sha256": "718bb78231dc40586073dd659c0c46950dcbcf5ad226b1d6dadf2297b8413d9e",
+      "disposition": "public-source",
+      "required": false
+    },
+    {
+      "id": "sdl3-cadet-scancode-table",
+      "path": "l/usim/sdl3-keyboard-cadet-scancodes.defs",
+      "bytes": 2333,
+      "sha256": "913fa9ef9452f6b9bc32e3ac7f7b911680839258c0be9ac75fb770890173a149",
+      "disposition": "public-source",
+      "required": false
+    },
+    {
+      "id": "sdl3-default-host-keyboard-map",
+      "path": "l/usim/sdl3-keyboard-default-mapping.defs",
+      "bytes": 2374,
+      "sha256": "532b577e62ae89f4b748d10805aecc1520d1b5cbe4ccbdf26c08dd31338e9117",
+      "disposition": "public-source",
+      "required": false
+    },
+    {
+      "id": "system-303-0-base-disk",
+      "path": "l/usim/disk-sys-303-0.img",
+      "bytes": 269562880,
+      "sha256": "bb16e46ad81decfe1efe691d36b6aa4ce3fd4ffb82474365de3520989d397cb5",
+      "disposition": "unresolved-local-import",
+      "required": false,
+      "upstream_mismatch": {
+        "bytes": 269562880,
+        "sha256": "4e2ddb91e0f71b70fcc80aff1a8484594251f4765d7f94a5b429b64cca136a00",
+        "fossil_unversioned_artifact_prefix": "e8eca149",
+        "first_differing_byte": 1026
+      }
+    }
+  ],
+  "saved_state": {
+    "disposition": "excluded",
+    "reason": "No initial saved state is a profile input or distribution artifact."
+  },
+  "native_executable": {
+    "disposition": "m0-boot-golden",
+    "reason": "Three new no-saved-state X11 cold boots of this exact executable produced the same Listener pixel hash. Older SDL3 captures remain non-golden and are not inherited.",
+    "candidate": {
+      "backend": "x11",
+      "build_type": "release",
+      "bytes": 1215344,
+      "sha256": "a1d88a5b0ba3d477adfd8e3f9296ad282aa8a1fdc0118b3b27defeffafa53bd6",
+      "command": "make -f Makefile.usim USIM_BACKEND=x11 USIM_BUILD_TYPE=release LDFLAGS=-no-pie",
+      "toolchain": {
+        "gcc": "16.1.1 20260625",
+        "make": "4.4.1",
+        "guix": "1.5.0"
+      },
+      "host_link_exception": "LDFLAGS=-no-pie is required on the audited host because the existing Chaos static archive is not position independent."
+    }
+  },
+  "cold_boot_initial_state": {
+    "kind": "power-on with System 303-0 disk, no saved-state input",
+    "saved_state_input": false,
+    "native_executable_sha256": "a1d88a5b0ba3d477adfd8e3f9296ad282aa8a1fdc0118b3b27defeffafa53bd6",
+    "config_template": {
+      "path": "cadr-web/profiles/cadr-web-303.ini.in",
+      "sha256": "1cfd4cb6f8ebe390a527f6c870fad51b53d1e4897cee4371bbfc2ae8bba38e2f",
+      "canonical_sha256": "86c5500509b1c18e67a3f74071069761a1725656cedf955858e5f46bff2bf3c4"
+    },
+    "microcode": {
+      "prom-control-store-artifact": "prom-control-store",
+      "prom-symbols-artifact": "prom-symbols",
+      "microcode-symbols-artifact": "microcode-symbols"
+    },
+    "disk": {
+      "geometry": "Trident T-300",
+      "bytes": 269562880,
+      "sha256": "bb16e46ad81decfe1efe691d36b6aa4ce3fd4ffb82474365de3520989d397cb5",
+      "private_copy": "fresh per-session copy of excluded local import"
+    }
+  },
+  "runtime_input_boundary": {
+    "generated_native_executable": {
+      "disposition": "generated-local",
+      "path_class": "local build output; no host path recorded",
+      "sha256": "a1d88a5b0ba3d477adfd8e3f9296ad282aa8a1fdc0118b3b27defeffafa53bd6",
+      "bytes": 1215344,
+      "source_pin": "usim"
+    },
+    "fs_root": {
+      "disposition": "generated-local",
+      "path_class": "fresh per-session runtime/fs-root; no host path recorded",
+      "consumed_inputs": [
+        {
+          "name": "System 303 microcode files",
+          "disposition": "metadata-only-review",
+          "source_pin": "sys",
+          "private_tree_sha256": "21f5215de973aa6ccbddb817f2d64edd95ee1014c3028a9b0711ea7c741b807e",
+          "runtime_paths": ["runtime/fs-root/sys/ubin/promh.mcr", "runtime/fs-root/sys/ubin/promh.sym", "runtime/fs-root/sys/ubin/ucadr.sym"],
+          "artifact_ids": ["prom-control-store", "prom-symbols", "microcode-symbols"]
+        },
+        {
+          "name": "LOCAL-CADR Chaos hosts table",
+          "disposition": "metadata-only-review",
+          "source_pin": "usite",
+          "private_tree_sha256": "adbb720339db225e6635977a869cf3f3d50b507e614b37a976f4a6548d212a81",
+          "runtime_paths": ["runtime/fs-root/usite/extra.hosts"],
+          "artifact_ids": ["usite-extra-hosts"]
+        }
+      ],
+      "incidental_entries_excluded": [
+        "runtime/fs-root/chaos is copied by the harness but is not named by the M0 generated configuration",
+        "runtime/fs-root/tree is a private convenience symlink and is not named by the M0 generated configuration",
+        "all machine-local absolute paths are excluded from profile evidence"
+      ]
+    }
+  },
+  "native_boot_series": {
+    "schema": "cadr-m0-boot-evidence-v1",
+    "protocol": [
+      "fresh private disk copy",
+      "stage pointer at 0,0",
+      "wait 25 seconds",
+      "Return at the date-and-time prompt",
+      "wait 2 seconds",
+      "N then Return to decline setting the time",
+      "wait 6 seconds",
+      "capture Lisp Listener 1",
+      "bounded normal stop with 45-second timeout"
+    ],
+    "common": {
+      "usim_sha256_at_start_and_exec": "a1d88a5b0ba3d477adfd8e3f9296ad282aa8a1fdc0118b3b27defeffafa53bd6",
+      "disk_sha256_before_and_after": "bb16e46ad81decfe1efe691d36b6aa4ce3fd4ffb82474365de3520989d397cb5",
+      "config_canonical_sha256": "86c5500509b1c18e67a3f74071069761a1725656cedf955858e5f46bff2bf3c4",
+      "public_source_revisions_at_start": {"chaos": "db2953fde68d726a605d1d1699bab6c926ef252bd4991f692bae6ee5a634764e", "l": "d1250f90044f09b6c92014a9aef65f9574e1bcbf8a7163004e53cc6dbed0f2d6", "system": "4df393c68d7f083ce42d5c377039d26043cc18a9031ace28258dc97f4137eb91", "usim": "330d8248ec2e12af071e287920e681600f75df9ffd854aada5f8a64c9adad64d", "usite": "8f717978b458b40adf1e238aaf177f5bc54ef46881268e03b787ba57b0d30a0e"},
+      "private_source_tree_sha256_at_copy_and_start": {"chaos": "34ab197641aae909e9a224edc307020fddec263e732207a74573d51dac0daa87", "system": "21f5215de973aa6ccbddb817f2d64edd95ee1014c3028a9b0711ea7c741b807e", "usite": "adbb720339db225e6635977a869cf3f3d50b507e614b37a976f4a6548d212a81"},
+      "private_source_changed_since_copy": {"chaos": false, "system": false, "usite": false},
+      "private_machine_artifacts_sha256_at_start": {"promh.mcr": "2c667f99f014a7130a55b255d31df02588d9396beace78abfe9325269e4ff3e6", "promh.sym": "e9e3dd6a541511dd9541ae96b99dae19cb185d8b79fa09959f21fa52224f233d", "ucadr.sym": "9071decf16fa8f11d7970c4662db0d6e95600fe43ec86ac41c77b37dbd7caa2a"},
+      "window_title": "usim",
+      "window_geometry": {"x": 0, "y": 0, "width": 768, "height": 963, "screen": 0},
+      "generation": 1,
+      "resume_requested": false,
+      "saved_state_input": false,
+      "resumed": false,
+      "forced_stop": false,
+      "state_may_be_incomplete": false,
+      "usim_exit_status": 0,
+      "xvfb_exit_status": 0
+    },
+    "runs": [
+      {
+        "schema": "cadr-m0-boot-evidence-v1",
+        "session": "cadr-m0-bound-20260727-8f0133c2-1",
+        "generation": 1,
+        "cold_boot": true,
+        "saved_state_input": false,
+        "resumed": false,
+        "resume_requested": false,
+        "config_canonical_sha256": "86c5500509b1c18e67a3f74071069761a1725656cedf955858e5f46bff2bf3c4",
+        "config_runtime_layout": {"fs_root": "runtime/fs-root", "disk": "runtime/disk-sys-303-0.img", "state_output": "runtime/usim.state", "screenshot_output": "runtime/final-framebuffer.pbm"},
+        "usim_sha256_at_start": "a1d88a5b0ba3d477adfd8e3f9296ad282aa8a1fdc0118b3b27defeffafa53bd6",
+        "usim_sha256_at_exec": "a1d88a5b0ba3d477adfd8e3f9296ad282aa8a1fdc0118b3b27defeffafa53bd6",
+        "base_disk_sha256_before_and_after": "bb16e46ad81decfe1efe691d36b6aa4ce3fd4ffb82474365de3520989d397cb5",
+        "private_disk_sha256_before_and_after": "bb16e46ad81decfe1efe691d36b6aa4ce3fd4ffb82474365de3520989d397cb5",
+        "public_source_revisions_at_start": {"chaos": "db2953fde68d726a605d1d1699bab6c926ef252bd4991f692bae6ee5a634764e", "l": "d1250f90044f09b6c92014a9aef65f9574e1bcbf8a7163004e53cc6dbed0f2d6", "system": "4df393c68d7f083ce42d5c377039d26043cc18a9031ace28258dc97f4137eb91", "usim": "330d8248ec2e12af071e287920e681600f75df9ffd854aada5f8a64c9adad64d", "usite": "8f717978b458b40adf1e238aaf177f5bc54ef46881268e03b787ba57b0d30a0e"},
+        "private_source_tree_sha256_at_copy_and_start": {"chaos": "34ab197641aae909e9a224edc307020fddec263e732207a74573d51dac0daa87", "system": "21f5215de973aa6ccbddb817f2d64edd95ee1014c3028a9b0711ea7c741b807e", "usite": "adbb720339db225e6635977a869cf3f3d50b507e614b37a976f4a6548d212a81"},
+        "private_source_changed_since_copy": {"chaos": false, "system": false, "usite": false},
+        "private_machine_artifacts_sha256_at_start": {"promh.mcr": "2c667f99f014a7130a55b255d31df02588d9396beace78abfe9325269e4ff3e6", "promh.sym": "e9e3dd6a541511dd9541ae96b99dae19cb185d8b79fa09959f21fa52224f233d", "ucadr.sym": "9071decf16fa8f11d7970c4662db0d6e95600fe43ec86ac41c77b37dbd7caa2a"},
+        "window_title": "usim",
+        "window_geometry": {"x": 0, "y": 0, "width": 768, "height": 963, "screen": 0},
+        "listener": {
+          "label": "listener-ready",
+          "width": 768,
+          "height": 963,
+          "png_sha256": "e5aedfcbbceaa1d83122c7a029697b5d8d0fd4f8def710f9ce5beb37a5788828",
+          "pixel_sha256": "2c8985aaee1418cc43f0938f1b3ce2031bc624ee681a15de4f9da1fd28f94fda"
+        },
+        "boot_phases": {"schema": "cadr-m0-boot-log-v1", "phases": ["emulator", "monitor", "memory", "disk0-online", "keyboard", "chaos-hosts", "chaos-local-name", "chaos-local-backend", "filesystem-root", "idle-disabled", "x11", "powered-on", "booting", "sigterm", "powered-off", "state-written", "framebuffer-written"], "canonical_sha256": "fbfaff07bf9293f745513cdcff9770d9dfec512add9005443ed4844bd6d2cf51"},
+        "clean_stop": {"forced_stop": false, "state_may_be_incomplete": false, "usim_exit_status": 0, "xvfb_exit_status": 0}
+      },
+      {
+        "schema": "cadr-m0-boot-evidence-v1",
+        "session": "cadr-m0-bound-20260727-8f0133c2-2",
+        "generation": 1,
+        "cold_boot": true,
+        "saved_state_input": false,
+        "resumed": false,
+        "resume_requested": false,
+        "config_canonical_sha256": "86c5500509b1c18e67a3f74071069761a1725656cedf955858e5f46bff2bf3c4",
+        "config_runtime_layout": {"fs_root": "runtime/fs-root", "disk": "runtime/disk-sys-303-0.img", "state_output": "runtime/usim.state", "screenshot_output": "runtime/final-framebuffer.pbm"},
+        "usim_sha256_at_start": "a1d88a5b0ba3d477adfd8e3f9296ad282aa8a1fdc0118b3b27defeffafa53bd6",
+        "usim_sha256_at_exec": "a1d88a5b0ba3d477adfd8e3f9296ad282aa8a1fdc0118b3b27defeffafa53bd6",
+        "base_disk_sha256_before_and_after": "bb16e46ad81decfe1efe691d36b6aa4ce3fd4ffb82474365de3520989d397cb5",
+        "private_disk_sha256_before_and_after": "bb16e46ad81decfe1efe691d36b6aa4ce3fd4ffb82474365de3520989d397cb5",
+        "public_source_revisions_at_start": {"chaos": "db2953fde68d726a605d1d1699bab6c926ef252bd4991f692bae6ee5a634764e", "l": "d1250f90044f09b6c92014a9aef65f9574e1bcbf8a7163004e53cc6dbed0f2d6", "system": "4df393c68d7f083ce42d5c377039d26043cc18a9031ace28258dc97f4137eb91", "usim": "330d8248ec2e12af071e287920e681600f75df9ffd854aada5f8a64c9adad64d", "usite": "8f717978b458b40adf1e238aaf177f5bc54ef46881268e03b787ba57b0d30a0e"},
+        "private_source_tree_sha256_at_copy_and_start": {"chaos": "34ab197641aae909e9a224edc307020fddec263e732207a74573d51dac0daa87", "system": "21f5215de973aa6ccbddb817f2d64edd95ee1014c3028a9b0711ea7c741b807e", "usite": "adbb720339db225e6635977a869cf3f3d50b507e614b37a976f4a6548d212a81"},
+        "private_source_changed_since_copy": {"chaos": false, "system": false, "usite": false},
+        "private_machine_artifacts_sha256_at_start": {"promh.mcr": "2c667f99f014a7130a55b255d31df02588d9396beace78abfe9325269e4ff3e6", "promh.sym": "e9e3dd6a541511dd9541ae96b99dae19cb185d8b79fa09959f21fa52224f233d", "ucadr.sym": "9071decf16fa8f11d7970c4662db0d6e95600fe43ec86ac41c77b37dbd7caa2a"},
+        "window_title": "usim",
+        "window_geometry": {"x": 0, "y": 0, "width": 768, "height": 963, "screen": 0},
+        "listener": {
+          "label": "listener-ready",
+          "width": 768,
+          "height": 963,
+          "png_sha256": "e5aedfcbbceaa1d83122c7a029697b5d8d0fd4f8def710f9ce5beb37a5788828",
+          "pixel_sha256": "2c8985aaee1418cc43f0938f1b3ce2031bc624ee681a15de4f9da1fd28f94fda"
+        },
+        "boot_phases": {"schema": "cadr-m0-boot-log-v1", "phases": ["emulator", "monitor", "memory", "disk0-online", "keyboard", "chaos-hosts", "chaos-local-name", "chaos-local-backend", "filesystem-root", "idle-disabled", "x11", "powered-on", "booting", "sigterm", "powered-off", "state-written", "framebuffer-written"], "canonical_sha256": "fbfaff07bf9293f745513cdcff9770d9dfec512add9005443ed4844bd6d2cf51"},
+        "clean_stop": {"forced_stop": false, "state_may_be_incomplete": false, "usim_exit_status": 0, "xvfb_exit_status": 0}
+      },
+      {
+        "schema": "cadr-m0-boot-evidence-v1",
+        "session": "cadr-m0-bound-20260727-8f0133c2-3",
+        "generation": 1,
+        "cold_boot": true,
+        "saved_state_input": false,
+        "resumed": false,
+        "resume_requested": false,
+        "config_canonical_sha256": "86c5500509b1c18e67a3f74071069761a1725656cedf955858e5f46bff2bf3c4",
+        "config_runtime_layout": {"fs_root": "runtime/fs-root", "disk": "runtime/disk-sys-303-0.img", "state_output": "runtime/usim.state", "screenshot_output": "runtime/final-framebuffer.pbm"},
+        "usim_sha256_at_start": "a1d88a5b0ba3d477adfd8e3f9296ad282aa8a1fdc0118b3b27defeffafa53bd6",
+        "usim_sha256_at_exec": "a1d88a5b0ba3d477adfd8e3f9296ad282aa8a1fdc0118b3b27defeffafa53bd6",
+        "base_disk_sha256_before_and_after": "bb16e46ad81decfe1efe691d36b6aa4ce3fd4ffb82474365de3520989d397cb5",
+        "private_disk_sha256_before_and_after": "bb16e46ad81decfe1efe691d36b6aa4ce3fd4ffb82474365de3520989d397cb5",
+        "public_source_revisions_at_start": {"chaos": "db2953fde68d726a605d1d1699bab6c926ef252bd4991f692bae6ee5a634764e", "l": "d1250f90044f09b6c92014a9aef65f9574e1bcbf8a7163004e53cc6dbed0f2d6", "system": "4df393c68d7f083ce42d5c377039d26043cc18a9031ace28258dc97f4137eb91", "usim": "330d8248ec2e12af071e287920e681600f75df9ffd854aada5f8a64c9adad64d", "usite": "8f717978b458b40adf1e238aaf177f5bc54ef46881268e03b787ba57b0d30a0e"},
+        "private_source_tree_sha256_at_copy_and_start": {"chaos": "34ab197641aae909e9a224edc307020fddec263e732207a74573d51dac0daa87", "system": "21f5215de973aa6ccbddb817f2d64edd95ee1014c3028a9b0711ea7c741b807e", "usite": "adbb720339db225e6635977a869cf3f3d50b507e614b37a976f4a6548d212a81"},
+        "private_source_changed_since_copy": {"chaos": false, "system": false, "usite": false},
+        "private_machine_artifacts_sha256_at_start": {"promh.mcr": "2c667f99f014a7130a55b255d31df02588d9396beace78abfe9325269e4ff3e6", "promh.sym": "e9e3dd6a541511dd9541ae96b99dae19cb185d8b79fa09959f21fa52224f233d", "ucadr.sym": "9071decf16fa8f11d7970c4662db0d6e95600fe43ec86ac41c77b37dbd7caa2a"},
+        "window_title": "usim",
+        "window_geometry": {"x": 0, "y": 0, "width": 768, "height": 963, "screen": 0},
+        "listener": {
+          "label": "listener-ready",
+          "width": 768,
+          "height": 963,
+          "png_sha256": "e5aedfcbbceaa1d83122c7a029697b5d8d0fd4f8def710f9ce5beb37a5788828",
+          "pixel_sha256": "2c8985aaee1418cc43f0938f1b3ce2031bc624ee681a15de4f9da1fd28f94fda"
+        },
+        "boot_phases": {"schema": "cadr-m0-boot-log-v1", "phases": ["emulator", "monitor", "memory", "disk0-online", "keyboard", "chaos-hosts", "chaos-local-name", "chaos-local-backend", "filesystem-root", "idle-disabled", "x11", "powered-on", "booting", "sigterm", "powered-off", "state-written", "framebuffer-written"], "canonical_sha256": "fbfaff07bf9293f745513cdcff9770d9dfec512add9005443ed4844bd6d2cf51"},
+        "clean_stop": {"forced_stop": false, "state_may_be_incomplete": false, "usim_exit_status": 0, "xvfb_exit_status": 0}
+      }
+    ],
+    "listener_pixel_sha256": "2c8985aaee1418cc43f0938f1b3ce2031bc624ee681a15de4f9da1fd28f94fda",
+    "conclusion": "All three new fresh X11 cold boots reached Lisp Listener 1 with the same captured 768 by 963 pixel hash, ordered normalized host markers, the exact rendered template, unchanged base and private disk hashes, and clean shutdown. This closes M0 boot identity only; the instruction-boundary oracle remains a later milestone."
+  },
+  "blockers": [
+    {
+      "id": "disk-provenance",
+      "status": "excluded-local-import",
+      "m0_blocking": false,
+      "reason": "The disk's exact technical identity is recorded for local M0 evidence, but its unresolved distribution provenance excludes it from bundles."
+    },
+    {
+      "id": "golden-oracle-stabilization",
+      "status": "closed",
+      "m0_blocking": true,
+      "reason": "Three new fixed-protocol cold boots have the same Listener pixel hash and all required provenance and clean-stop evidence."
+    },
+    {
+      "id": "distribution-rights",
+      "status": "open",
+      "m0_blocking": false,
+      "reason": "No public distribution path may include artifacts without established rights."
+    }
+  ]
+}

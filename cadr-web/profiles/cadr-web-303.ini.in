@@ -1,0 +1,32 @@
+; CADR-WEB-303 runnable native cold-boot configuration template.
+; @RUNTIME@ is the private per-session runtime root.  The four path values
+; below are materialized by the harness and then canonicalized back to this
+; template before M0 evidence is accepted.  No saved-state file is an input.
+[usim]
+fs_root_directory = @FS_ROOT@
+state_filename = @STATE@
+screenshot_filename = @SCREENSHOT@
+kbd = cadet
+monitor = other
+grab_keyboard = false
+geometry = 0 0
+scale = 1
+scale_filter = nearest
+allow_resize = false
+beep_amplitude = 0
+special_key = F12
+
+[ucode]
+prommcr_filename = @FS_ROOT@/sys/ubin/promh.mcr
+promsym_filename = @FS_ROOT@/sys/ubin/promh.sym
+mcrsym_filename = @FS_ROOT@/sys/ubin/ucadr.sym
+track_mouse = false
+
+[chaos]
+hosts = @FS_ROOT@/usite/extra.hosts
+backend = local
+myname = LOCAL-CADR
+servername = LOCAL-BRIDGE
+
+[disk]
+disk0 = T-300,@DISK@

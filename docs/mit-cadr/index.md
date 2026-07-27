@@ -125,6 +125,13 @@ the public LM-3 software and the `usim` emulator.
   reconstructs the 23-module UCODE build, two-pass assembler and output formats,
   incremental microassembly, remote-object inspection, and every release-bounded CC
   control while preserving the separate-debuggee safety boundary.
+- [CADR System 303 macroinstruction and microarchitecture reimplementation specification](cadr-macroinstruction-and-microarchitecture-reimplementation-specification.md)
+  specifies the compiler-visible 16-bit macroinstruction stream and the 48-bit CADR
+  control-store engine, including complete primary decode, effective addresses,
+  destinations, fault restart, release deltas, and differential tests.
+- [CADR browser and WebAssembly implementation roadmap](cadr-browser-webassembly-implementation-roadmap.md)
+  sequences the pinned `usim` port through deterministic execution, boot, display,
+  complete input, private storage, release, networking, and optional translation.
 - [CADR diagnostics, checkout, and hardware tools](cadr-diagnostics-checkout-and-hardware-tools.md)
   documents ordered machine and memory tests, destructive disk checkout, PROM and
   embedded-controller workflows, the continuity/probe test stand, and the complete

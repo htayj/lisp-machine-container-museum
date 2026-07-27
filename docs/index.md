@@ -44,6 +44,13 @@ machine-readable metadata layer while retaining ordinary Markdown as the source.
 - [Reimplementation specification coverage](reimplementation-specification-coverage.md)
   tracks the D01-D60 reconstruction contracts, their release profiles, visual
   evidence obligations, and completion gates.
+- [CADR System 303 macroinstruction and microarchitecture specification](mit-cadr/cadr-macroinstruction-and-microarchitecture-reimplementation-specification.md)
+  defines the 16-bit compiler-visible ISA, 48-bit control-store engine, release
+  deltas, restart rules, and objective conformance tests.
+- [CADR browser and WebAssembly implementation roadmap](mit-cadr/cadr-browser-webassembly-implementation-roadmap.md)
+  gives the complete `usim`-centered path from deterministic headless execution
+  through display, input, crash-consistent private disks, offline museum release,
+  and optional networking or translation.
 - [Lisp Listeners and editable input reimplementation specification](lisp-listeners-reimplementation-specification.md)
   defines the System 46, System 303, and Genera 8.5 Listener state, histories,
   input editing, ZDT/ZTOP embodiments, command dispatch, recovery, visible regions,
