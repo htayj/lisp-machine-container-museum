@@ -16,7 +16,9 @@ extern "C" {
 #endif
 
 #define CADR_ABI_MAJOR UINT32_C(1)
-#define CADR_ABI_MINOR UINT32_C(0)
+#define CADR_ABI_MINOR UINT32_C(1)
+#define CADR_ABI_MINOR_M1 UINT32_C(0)
+#define CADR_ABI_MINOR_M2 UINT32_C(1)
 #define CADR_SHA256_BYTES UINT32_C(32)
 
 typedef uint32_t cadr_status;
@@ -63,6 +65,37 @@ typedef uint32_t cadr_status;
 #define CADR_ARTIFACT_BASE_DISK           UINT32_C(3)
 #define CADR_ARTIFACT_PROM_SYMBOLS         UINT32_C(4)
 #define CADR_ARTIFACT_MICROCODE_SYMBOLS    UINT32_C(5)
+
+#define CADR_TRACE_SELECTOR_MICRO_PC           (UINT64_C(1) << 0U)
+#define CADR_TRACE_SELECTOR_DECODED_WORD       (UINT64_C(1) << 1U)
+#define CADR_TRACE_SELECTOR_A_SOURCE           (UINT64_C(1) << 2U)
+#define CADR_TRACE_SELECTOR_M_SOURCE           (UINT64_C(1) << 3U)
+#define CADR_TRACE_SELECTOR_DESTINATION        (UINT64_C(1) << 4U)
+#define CADR_TRACE_SELECTOR_Q                  (UINT64_C(1) << 5U)
+#define CADR_TRACE_SELECTOR_VMA                (UINT64_C(1) << 6U)
+#define CADR_TRACE_SELECTOR_MD                 (UINT64_C(1) << 7U)
+#define CADR_TRACE_SELECTOR_MACRO_PC           (UINT64_C(1) << 8U)
+#define CADR_TRACE_SELECTOR_FAULT              (UINT64_C(1) << 9U)
+#define CADR_TRACE_SELECTOR_INTERRUPT          (UINT64_C(1) << 10U)
+#define CADR_TRACE_SELECTOR_DEVICE_TRANSACTION (UINT64_C(1) << 11U)
+#define CADR_TRACE_SELECTOR_KNOWN              ((UINT64_C(1) << 12U) - UINT64_C(1))
+
+#define CADR_TRACE_EVENT_CLOCK     UINT64_C(1)
+#define CADR_TRACE_EVENT_INTERRUPT UINT64_C(2)
+#define CADR_TRACE_EVENT_DEVICE    UINT64_C(4)
+#define CADR_TRACE_EVENT_FAULT     UINT64_C(8)
+#define CADR_TRACE_EVENT_HALT      UINT64_C(16)
+#define CADR_TRACE_EVENT_KNOWN     (CADR_TRACE_EVENT_CLOCK | CADR_TRACE_EVENT_INTERRUPT | CADR_TRACE_EVENT_DEVICE | CADR_TRACE_EVENT_FAULT | CADR_TRACE_EVENT_HALT)
+
+#define CADR_TRACE_TRANSPORT_FULL      UINT32_C(0)
+#define CADR_TRACE_TRANSPORT_HASH_ONLY UINT32_C(1)
+
+#define CADR_TRACE_REASON_COMPLETE_LIMIT UINT32_C(0)
+#define CADR_TRACE_REASON_COMPLETE_HALT  UINT32_C(1)
+#define CADR_TRACE_REASON_ABORT          UINT32_C(2)
+#define CADR_TRACE_REASON_FAILURE        UINT32_C(3)
+
+#define CADR_TRACE_HEADER_BYTES UINT32_C(256)
 
 typedef struct cadr_machine cadr_machine;
 
@@ -195,6 +228,39 @@ typedef struct cadr_network_descriptor {
     uint64_t frame_byte_count;
 } cadr_network_descriptor;
 
+typedef struct cadr_trace_config {
+    uint32_t abi_major;
+    uint32_t abi_minor;
+    uint32_t struct_size;
+    uint32_t flags;
+    uint64_t first_boundary;
+    uint64_t selector_mask;
+    uint64_t event_mask;
+    uint32_t ring_record_capacity;
+    uint32_t transport_mode;
+    uint32_t reserved0;
+    uint32_t reserved1;
+    uint8_t profile_sha256[CADR_SHA256_BYTES];
+    uint8_t artifact_set_sha256[CADR_SHA256_BYTES];
+    uint8_t input_schedule_sha256[CADR_SHA256_BYTES];
+} cadr_trace_config;
+
+typedef struct cadr_trace_finish_request {
+    uint32_t abi_major;
+    uint32_t abi_minor;
+    uint32_t struct_size;
+    uint32_t reason;
+    uint32_t reserved0;
+    uint32_t reserved1;
+} cadr_trace_finish_request;
+
+typedef struct cadr_snapshot_request {
+    uint32_t abi_major;
+    uint32_t abi_minor;
+    uint32_t struct_size;
+    uint32_t flags;
+} cadr_snapshot_request;
+
 #if defined(__cplusplus)
 #define CADR_ABI_STATIC_ASSERT(condition, message) static_assert(condition, message)
 #else
@@ -215,6 +281,9 @@ CADR_ABI_STATIC_ASSERT(sizeof(cadr_block_write_descriptor) == 24U, "block write 
 CADR_ABI_STATIC_ASSERT(sizeof(cadr_present_descriptor) == 24U, "present descriptor layout");
 CADR_ABI_STATIC_ASSERT(sizeof(cadr_audio_descriptor) == 24U, "audio descriptor layout");
 CADR_ABI_STATIC_ASSERT(sizeof(cadr_network_descriptor) == 16U, "network descriptor layout");
+CADR_ABI_STATIC_ASSERT(sizeof(cadr_trace_config) == 152U, "trace config layout");
+CADR_ABI_STATIC_ASSERT(sizeof(cadr_trace_finish_request) == 24U, "trace finish layout");
+CADR_ABI_STATIC_ASSERT(sizeof(cadr_snapshot_request) == 16U, "snapshot request layout");
 
 #undef CADR_ABI_STATIC_ASSERT
 
@@ -248,6 +317,36 @@ cadr_status cadr_machine_run(cadr_machine *machine,
                              cadr_run_result *out_result);
 cadr_status cadr_machine_query(cadr_machine *machine,
                                cadr_machine_info *out_info);
+
+/* ABI 1.1 deterministic tracing; all output storage remains host-owned. */
+cadr_status cadr_machine_trace_start(cadr_machine *machine,
+                                     const cadr_trace_config *config);
+cadr_status cadr_machine_trace_header(const cadr_machine *machine,
+                                      uint8_t *bytes, uint64_t capacity,
+                                      uint64_t *out_written);
+cadr_status cadr_machine_trace_drain(cadr_machine *machine,
+                                     uint8_t *bytes, uint64_t capacity,
+                                     uint64_t *out_written,
+                                     uint64_t *out_records);
+cadr_status cadr_machine_trace_finish(cadr_machine *machine,
+                                      const cadr_trace_finish_request *request);
+cadr_status cadr_machine_trace_digest(const cadr_machine *machine,
+                                      uint8_t digest[CADR_SHA256_BYTES]);
+cadr_status cadr_machine_trace_count(const cadr_machine *machine,
+                                     uint64_t *out_record_count);
+
+/* Snapshot restore always constructs a fresh machine and publishes atomically. */
+cadr_status cadr_machine_snapshot_size(cadr_machine *machine,
+                                       const cadr_snapshot_request *request,
+                                       uint64_t *out_byte_count);
+cadr_status cadr_machine_snapshot_save(cadr_machine *machine,
+                                       const cadr_snapshot_request *request,
+                                       uint8_t *bytes, uint64_t capacity,
+                                       uint64_t *out_written);
+cadr_status cadr_machine_snapshot_restore(
+    const cadr_snapshot_request *request,
+    const uint8_t *bytes, uint64_t byte_count,
+    cadr_machine **out_machine);
 
 #ifdef __cplusplus
 }

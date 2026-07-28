@@ -963,8 +963,8 @@
     "files": [
       {
         "path": "bus-adaptor.c",
-        "bytes": 7955,
-        "sha256": "918a73835b62d973e31bf7c78028358bf14204bff0da7a6bbe456ce90a3a3c27",
+        "bytes": 10826,
+        "sha256": "773763c8be2a67b9cd54a758d80bd6e38d433ecbbed11b0cc46c75437d449420",
         "functions": [
           {
             "symbol": "cadr_bus_device_cold_power_on",
@@ -1072,8 +1072,8 @@
       },
       {
         "path": "cadr_processor_memory.c",
-        "bytes": 30253,
-        "sha256": "1538dcd84d9737d9a215e73aa95aa1ea5ba3cdae2d1bfb847e1a3ffc5013f452",
+        "bytes": 36028,
+        "sha256": "d48b42a9ee35aa7c230833a5346266d199ffc247c968e3cb98fde85d4feb4a89",
         "functions": [
           {
             "symbol": "cadr_processor_memory_reset",
@@ -1239,8 +1239,8 @@
       },
       {
         "path": "tv.c",
-        "bytes": 1976,
-        "sha256": "ca1cd093abdaa9d9b326b878cacb4820a001082e75078cbcb2fe1e6ff18d17a0",
+        "bytes": 2266,
+        "sha256": "8a45840a4a5c89edf560385d9d454083fefcb9c0480619aed2534e0a2466708c",
         "functions": [
           {
             "symbol": "cadr_tv_read",
@@ -1283,8 +1283,8 @@
       },
       {
         "path": "unibus-mapping.c",
-        "bytes": 980,
-        "sha256": "230c4d588acc4cd6428c78c1065401eacb7ecec09b1ff0bfad0e46d454b6fb5e",
+        "bytes": 1058,
+        "sha256": "80a0db48d90606ebb3e38d5d7cab79382a46ae06590fbff77a3aad2038a9aa17",
         "functions": [
           {
             "symbol": "cadr_unibus_map_read",

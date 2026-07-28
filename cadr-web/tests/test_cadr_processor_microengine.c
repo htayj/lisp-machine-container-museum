@@ -325,6 +325,19 @@ static void test_delayed_md(void)
     CHECK(state.cpu.md == UINT32_C(0x76543210));
 }
 
+static void test_trace_raw_word_precedes_oa_overlay(void)
+{
+    const uint64_t raw = UINT64_C(0x000008001018);
+    const uint32_t overlay = UINT32_C(0x0007c000);
+
+    setup();
+    state.cpu.oa_low = overlay;
+    state.cpu.oa_low_pending = 1U;
+    execute_primed(raw);
+    CHECK(state.trace.raw_fetched_word == raw);
+    CHECK(state.trace.effective_word == (raw | overlay));
+}
+
 int main(void)
 {
     test_pipeline_and_inhibit();
@@ -333,6 +346,7 @@ int main(void)
     test_jump_dispatch_and_byte();
     test_popj_iwr_and_decoded_latches();
     test_delayed_md();
+    test_trace_raw_word_precedes_oa_overlay();
     if (failures != 0) { return 1; }
     (void)puts("cadr_processor_microengine: ok");
     return 0;

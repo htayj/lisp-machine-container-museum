@@ -19,4 +19,10 @@ void cadr_canonical_write_u32(cadr_machine_state *state, uint32_t family,
                               uint32_t index, uint32_t old_value,
                               uint32_t new_value);
 
+/* State-only integration seams used by atomic snapshot restore. */
+cadr_status cadr_canonical_rebuild(cadr_machine_state *state);
+cadr_status cadr_boundary_digest_state(
+    const cadr_machine_state *state,
+    uint8_t digest[CADR_SHA256_BYTES]);
+
 #endif

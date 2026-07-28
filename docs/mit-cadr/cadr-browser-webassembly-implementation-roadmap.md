@@ -3,7 +3,7 @@ type: Implementation Roadmap
 title: MIT CADR System 303 browser and WebAssembly implementation roadmap
 description: A milestone-complete plan for porting the pinned System 303 CADR emulator to a deterministic, locally persistent, browser-hosted WebAssembly machine.
 tags: [mit-cadr, lm-3, system-303, webassembly, browser, emulator, roadmap]
-timestamp: 2026-07-27T17:47:00-04:00
+timestamp: 2026-07-28T19:25:34-04:00
 ---
 
 # MIT CADR System 303 browser and WebAssembly implementation roadmap
@@ -415,6 +415,28 @@ Exit gate `C-M2`:
 - two native runs with the same input schedule have identical trace hashes; and
 - a deliberately perturbed ALU, byte, jump, and dispatch result is detected at the
   first differing boundary.
+
+#### M2 implementation status
+
+The ABI1.1 implementation now supplies the bounded `CDRGTRC1` trace producer,
+semantic hash-only transport, and `CDRSNAP1` fresh atomic snapshot restore in
+`cadr-web/`. This is a new portable-core reconstruction boundary, not a claim about
+a historical CADR save format. Its normative record/state inventory, compound-slot
+ordering, host hand-off rules, versioning, failure semantics, and test obligations
+are in the [CADR-WEB-303 ABI1.1 tracing and snapshot specification](cadr-deterministic-tracing-and-snapshot-reimplementation-specification.md).
+
+`C-M2` is **closed for the native portable-core and synthetic ABI1.1 profile**. The
+implementation has focused tests for selector/event ordering, full
+versus hash-only parity, raw-ring backpressure, terminal reservation, trace
+cross-parsing, CDRSTATE2 mutation coverage and cache verification, CDRSNAP1
+malformation rejection, queued-completion restoration, restore-continuation parity,
+repeat-run trace identity, and the four injected M2 mutants. A clean `make test`
+passed every C and Python gate, and the final production core again matched all
+100,001 boundaries of the frozen M1 oracle. The exact commands, results, binary
+hashes, remaining runtime unknowns, and conformance matrix are recorded in the
+normative companion specification. These are implementation tests, not System 303
+runtime observations, and do not close the M3 browser/WASM parity gate or expand the
+selected historical compatibility claim.
 
 ### M3 — Compile and run the headless core as WebAssembly
 

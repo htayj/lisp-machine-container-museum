@@ -51,6 +51,8 @@ machine-readable metadata layer while retaining ordinary Markdown as the source.
   gives the complete `usim`-centered path from deterministic headless execution
   through display, input, crash-consistent private disks, offline museum release,
   and optional networking or translation.
+- [CADR-WEB-303 ABI1.1 deterministic tracing and snapshot specification](mit-cadr/cadr-deterministic-tracing-and-snapshot-reimplementation-specification.md)
+  defines the new portable-core CDRGTRC1/CDRSNAP1 trace and continuation boundary.
 - [CADR-WEB portable core and host ABI](mit-cadr/cadr-web-core-architecture-decision.md)
   records the portable machine boundary and the deterministic pull-style contract
   between the CADR core and native or browser hosts.

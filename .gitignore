@@ -22,5 +22,6 @@
 /cadr-web/*.o
 /cadr-web/core/*.o
 /cadr-web/core/usim-port/*.o
+/cadr-web/trace/*.o
 __pycache__/
 /_site/

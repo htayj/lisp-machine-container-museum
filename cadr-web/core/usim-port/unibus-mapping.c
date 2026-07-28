@@ -1,4 +1,5 @@
 #include "cadr_bus_device.h"
+#include "cadr_state_v2.h"
 
 cadr_status cadr_unibus_map_read(cadr_machine_state *const state, const uint32_t uaddr,
                                  uint16_t *const out_value)
@@ -22,5 +23,6 @@ cadr_status cadr_unibus_map_write(cadr_machine_state *const state, const uint32_
     }
     page = (uaddr - 0766140U) >> 1U;
     state->bus.unibus_map[page] = value;
+    cadr_state_v2_note_bus_map_write(state, page);
     return CADR_STATUS_OK;
 }

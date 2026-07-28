@@ -81,9 +81,8 @@ static void test_abi_negotiation(void)
     CHECK(machine == NULL);
     value = config();
     value.abi_minor += 1U;
-    CHECK(cadr_machine_create(&value, &machine) == CADR_STATUS_OK);
-    cadr_machine_destroy(machine);
-    machine = NULL;
+    CHECK(cadr_machine_create(&value, &machine) == CADR_STATUS_ABI_MISMATCH);
+    CHECK(machine == NULL);
     value = config();
     value.struct_size = (uint32_t)(sizeof(value) - 1U);
     CHECK(cadr_machine_create(&value, &machine) == CADR_STATUS_INVALID_ARGUMENT);

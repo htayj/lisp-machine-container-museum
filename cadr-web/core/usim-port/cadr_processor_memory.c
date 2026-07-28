@@ -11,6 +11,7 @@
  */
 
 #include "cadr_processor_memory.h"
+#include "cadr_state_v2.h"
 
 #include <stddef.h>
 
@@ -71,6 +72,8 @@ static void cadr_push_spc(cadr_machine_state *const state, const uint32_t pc)
     cpu->micro_stack[cpu->micro_stack_pointer] = pc;
     cadr_canonical_write_u32(state, 6U, cpu->micro_stack_pointer,
                              old_value, pc);
+    cadr_state_v2_note_u32_write(state, CADR_STATE_V2_ROOT_SPC,
+                                 cpu->micro_stack_pointer);
 }
 
 static uint32_t cadr_pop_spc(cadr_cpu_state *const cpu)
@@ -116,6 +119,8 @@ cadr_status cadr_processor_memory_main_access(cadr_machine_state *const state,
     if (page < state->memory.main_memory_pages) {
         if (write != 0U) {
             state->memory.main_memory[page][paddr & UINT32_C(0xff)] = *value;
+            cadr_state_v2_note_u32_write(state, CADR_STATE_V2_ROOT_MAIN_RAM,
+                                         (page << 8U) | (paddr & UINT32_C(0xff)));
         } else {
             *value = state->memory.main_memory[page][paddr & UINT32_C(0xff)];
         }
@@ -177,6 +182,7 @@ void cadr_processor_memory_write_map(cadr_machine_state *const state, const uint
         state->memory.l1_map[index] = (vma >> 27U) & UINT32_C(0x1f);
         cadr_canonical_write_u32(state, 7U, index, old_value,
                                  state->memory.l1_map[index]);
+        cadr_state_v2_note_u32_write(state, CADR_STATE_V2_ROOT_L1, index);
     }
     if ((vma & UINT32_C(1) << 25U) != 0U) {
         const uint32_t l1_index = (md >> 13U) & UINT32_C(0x7ff);
@@ -186,6 +192,7 @@ void cadr_processor_memory_write_map(cadr_machine_state *const state, const uint
         state->memory.l2_map[l2_index] = vma & UINT32_C(0x00ffffff);
         cadr_canonical_write_u32(state, 8U, l2_index, old_value,
                                  state->memory.l2_map[l2_index]);
+        cadr_state_v2_note_u32_write(state, CADR_STATE_V2_ROOT_L2, l2_index);
     }
 }
 
@@ -216,6 +223,7 @@ cadr_status cadr_processor_memory_virtual_access(
             state->cpu.a_memory[offset] = *value;
             cadr_canonical_write_u32(state, 2U, offset, old_value,
                                      state->cpu.a_memory[offset]);
+            cadr_state_v2_note_u32_write(state, CADR_STATE_V2_ROOT_AMEM, offset);
         } else {
             *value = state->cpu.a_memory[offset];
         }
@@ -355,18 +363,21 @@ static void cadr_mfwrite(cadr_machine_state *const state,
           const uint32_t old_value = cpu->pdl[index];
           cpu->pdl[index] = data;
           cadr_canonical_write_u32(state, 5U, index, old_value, data);
+          cadr_state_v2_note_u32_write(state, CADR_STATE_V2_ROOT_PDL, index);
           return; }
     case 9U: cpu->pdl_pointer = (cpu->pdl_pointer + 1U) & UINT32_C(0x3ff);
         { const uint32_t index = cpu->pdl_pointer;
           const uint32_t old_value = cpu->pdl[index];
           cpu->pdl[index] = data;
           cadr_canonical_write_u32(state, 5U, index, old_value, data);
+          cadr_state_v2_note_u32_write(state, CADR_STATE_V2_ROOT_PDL, index);
           return; }
     case 10U:
         { const uint32_t index = cpu->pdl_index;
           const uint32_t old_value = cpu->pdl[index];
           cpu->pdl[index] = data;
           cadr_canonical_write_u32(state, 5U, index, old_value, data);
+          cadr_state_v2_note_u32_write(state, CADR_STATE_V2_ROOT_PDL, index);
           return; }
     case 11U: cpu->pdl_index = data & UINT32_C(0x3ff); return;
     case 12U: cpu->pdl_pointer = data & UINT32_C(0x3ff); return;
@@ -397,6 +408,7 @@ static void cadr_write_destination(cadr_machine_state *const state,
         const uint32_t old_value = cpu->a_memory[index];
         cpu->a_memory[index] = value;
         cadr_canonical_write_u32(state, 2U, index, old_value, value);
+        cadr_state_v2_note_u32_write(state, CADR_STATE_V2_ROOT_AMEM, index);
     } else {
         const uint32_t index = destination & UINT32_C(0x1f);
         const uint32_t old_a = cpu->a_memory[index];
@@ -406,6 +418,8 @@ static void cadr_write_destination(cadr_machine_state *const state,
         cpu->a_memory[index] = value;
         cadr_canonical_write_u32(state, 2U, index, old_a, value);
         cadr_canonical_write_u32(state, 3U, index, old_m, value);
+        cadr_state_v2_note_u32_write(state, CADR_STATE_V2_ROOT_AMEM, index);
+        cadr_state_v2_note_u32_write(state, CADR_STATE_V2_ROOT_MMEM, index);
     }
 }
 
@@ -488,6 +502,10 @@ static void cadr_alu(cadr_machine_state *const state,
     default: cpu->out = (cpu->alu_out << 1U) |
         ((cpu->old_q & (UINT32_C(1) << 31U)) != 0U ? 1U : 0U); break;
     }
+#ifdef CADR_TRACE_MUTANT_ALU
+    /* Test-only semantic mutant: alter the real ALU result before writeback. */
+    cpu->out ^= UINT32_C(1);
+#endif
     cadr_write_destination(state, bus, destination, cpu->out);
 }
 
@@ -528,7 +546,11 @@ static void cadr_jump(cadr_machine_state *const state,
     const uint32_t n = cadr_ir(cpu, 7U, 1U);
     uint32_t condition;
     if (cadr_ir(cpu, 10U, 2U) == 1U) { cpu->halted = 1U; }
-    if (p != 0U && r != 0U) { state->memory.imem[target] = cpu->instruction_write_register; return; }
+    if (p != 0U && r != 0U) {
+        state->memory.imem[target] = cpu->instruction_write_register;
+        cadr_state_v2_note_u64_write(state, CADR_STATE_V2_ROOT_IMEM, target);
+        return;
+    }
     condition = cadr_jump_condition(state, &mdata, adata);
     if (cadr_ir(cpu, 6U, 1U) != 0U) { condition = condition == 0U ? 1U : 0U; }
     if (p != 0U && condition != 0U) { cadr_push_spc(state, n == 0U ? cpu->next_micro_pc : cpu->next_micro_pc - 1U); }
@@ -538,6 +560,10 @@ static void cadr_jump(cadr_machine_state *const state,
         target &= CADR_MICRO_PC_MASK;
     }
     if (condition != 0U) {
+#ifdef CADR_TRACE_MUTANT_JUMP
+        /* Test-only semantic mutant: perturb the chosen jump destination. */
+        target ^= UINT32_C(1);
+#endif
         if (n != 0U) { cpu->inhibit = 1U; }
         cpu->next_micro_pc = target;
         cpu->effective_popj = 0U;
@@ -560,7 +586,11 @@ static void cadr_dispatch(cadr_machine_state *const state,
     uint32_t r;
     uint32_t mask;
     uint32_t l2;
-    if (cadr_ir(cpu, 10U, 2U) == 2U) { state->cpu.dispatch_memory[address] = adata; return; }
+    if (cadr_ir(cpu, 10U, 2U) == 2U) {
+        state->cpu.dispatch_memory[address] = adata;
+        cadr_state_v2_note_u32_write(state, CADR_STATE_V2_ROOT_DISPATCH, address);
+        return;
+    }
     if (cadr_ir(cpu, 10U, 2U) == 3U) { position = cadr_lc_byte_mode(cpu); }
     mdata = cadr_rol32(mdata, position);
     cpu->decoded_m_data = mdata;
@@ -583,6 +613,10 @@ static void cadr_dispatch(cadr_machine_state *const state,
     if (p != 0U && r != 0U) { return; }
     if (p != 0U) { cadr_push_spc(state, n == 0U ? cpu->next_micro_pc : cpu->next_micro_pc - 1U); }
     if (r != 0U) { target = cadr_pop_spc(cpu); if ((target & (UINT32_C(1) << 14U)) != 0U) { target = cadr_advance_lc(state, bus, target); } target &= CADR_MICRO_PC_MASK; }
+ #ifdef CADR_TRACE_MUTANT_DISPATCH
+    /* Test-only semantic mutant: perturb the dispatch-table outcome. */
+    target ^= UINT32_C(1);
+ #endif
     cpu->next_micro_pc = target;
     cpu->effective_popj = 0U;
 }
@@ -609,6 +643,10 @@ static void cadr_byte(cadr_machine_state *const state,
                cpu->decoded_m_data = mdata;
            }
            cpu->out = (mdata & mask) | (adata & ~mask); }
+#ifdef CADR_TRACE_MUTANT_BYTE
+    /* Test-only semantic mutant: alter byte insertion before writeback. */
+    cpu->out ^= UINT32_C(1);
+#endif
     cadr_write_destination(state, bus, destination, cpu->out);
 }
 
@@ -626,6 +664,65 @@ static void cadr_inc_npc(cadr_machine_state *const state)
     cpu->opc = cpu->p0_pc;
 }
 
+static void cadr_trace_latch_begin(cadr_machine_state *const state)
+{
+    cadr_cpu_state *const cpu = &state->cpu;
+    cadr_trace_state *const trace = &state->trace;
+    trace->valid_mask = CADR_TRACE_LATCH_VALID_PIPELINE |
+        CADR_TRACE_LATCH_VALID_Q | CADR_TRACE_LATCH_VALID_VMA |
+        CADR_TRACE_LATCH_VALID_MD | CADR_TRACE_LATCH_VALID_MACRO_PC |
+        CADR_TRACE_LATCH_VALID_FAULT | CADR_TRACE_LATCH_VALID_INTERRUPT;
+    trace->pre_p0_pc = cpu->p0_pc;
+    trace->pre_p1_pc = cpu->p1_pc;
+    trace->pre_next_micro_pc = cpu->next_micro_pc;
+    trace->pre_opc = cpu->opc;
+    trace->pre_q = cpu->q;
+    trace->pre_vma = cpu->vma;
+    trace->pre_md = cpu->md;
+    trace->pre_macro_pc = cpu->location_counter;
+    trace->pre_fault = cpu->guest_fault;
+    trace->fault_code = cpu->guest_fault;
+    trace->pre_interrupt_status = state->bus.interrupt_status;
+    trace->pre_interrupt_pending =
+        (state->bus.interrupt_status & UINT16_C(0140000)) != 0U ? 1U : 0U;
+    trace->interrupt_level = state->bus.interrupt_status & UINT16_C(01774);
+    trace->pre_destination = 0U;
+    trace->destination_kind = 0U;
+    trace->destination_address = 0U;
+    trace->post_destination_value = 0U;
+    trace->m_source_kind = 0U;
+    trace->m_address = 0U;
+    trace->m_value = 0U;
+    trace->class_outcome = 0U;
+}
+
+static void cadr_trace_latch_end(cadr_machine_state *const state,
+                                 const uint32_t executed)
+{
+    cadr_cpu_state *const cpu = &state->cpu;
+    cadr_trace_state *const trace = &state->trace;
+    trace->post_p0_pc = cpu->p0_pc;
+    trace->post_p1_pc = cpu->p1_pc;
+    trace->post_next_micro_pc = cpu->next_micro_pc;
+    trace->post_opc = cpu->opc;
+    trace->post_q = cpu->q;
+    trace->post_vma = cpu->vma;
+    trace->post_md = cpu->md;
+    trace->md_delayed_phase = cpu->pending_md_delay != 0U ? 1U : 0U;
+    trace->post_macro_pc = cpu->location_counter;
+    trace->post_fault = cpu->guest_fault;
+    trace->post_interrupt_status = state->bus.interrupt_status;
+    trace->post_interrupt_pending =
+        (state->bus.interrupt_status & UINT16_C(0140000)) != 0U ? 1U : 0U;
+    trace->interrupt_level = state->bus.interrupt_status & UINT16_C(01774);
+    trace->class_outcome = executed != 0U ? cpu->decoded_class + 1U : 0U;
+    if (executed != 0U) {
+        trace->valid_mask |= CADR_TRACE_LATCH_VALID_DECODED_WORD |
+            CADR_TRACE_LATCH_VALID_A_SOURCE | CADR_TRACE_LATCH_VALID_M_SOURCE |
+            CADR_TRACE_LATCH_VALID_CLASS_OUTCOME;
+    }
+}
+
 void cadr_processor_memory_step_with_bus(
     cadr_machine_state *const state,
     const cadr_processor_memory_bus *const bus)
@@ -636,10 +733,19 @@ void cadr_processor_memory_step_with_bus(
     uint32_t msource;
     uint32_t maddress;
     uint32_t aaddress;
+    uint64_t raw_fetched_word;
 
+    cadr_trace_latch_begin(state);
     cadr_inc_npc(state);
+    raw_fetched_word = cpu->p0 & CADR_U48_MASK;
+    state->trace.raw_fetched_word = raw_fetched_word;
+    state->trace.effective_word = raw_fetched_word;
     if (cpu->pending_md_delay != 0U) { cpu->pending_md_delay -= 1U; if (cpu->pending_md_delay == 0U) { cpu->md = cpu->pending_md; } }
-    if (cpu->inhibit != 0U) { cpu->inhibit = 0U; return; }
+    if (cpu->inhibit != 0U) {
+        cpu->inhibit = 0U;
+        cadr_trace_latch_end(state, 0U);
+        return;
+    }
     if (cpu->oa_low_pending != 0U) { cpu->oa_low_pending = 0U; cpu->p0 |= cpu->oa_low; }
     if (cpu->oa_high_pending != 0U) { cpu->oa_high_pending = 0U; cpu->p0 |= (uint64_t)cpu->oa_high << 26U; }
     cpu->p0 &= CADR_U48_MASK;
@@ -657,6 +763,26 @@ void cadr_processor_memory_step_with_bus(
     cpu->effective_popj = cadr_ir(cpu, 42U, 1U);
     cpu->instruction_write_register =
         ((uint64_t)(adata & UINT32_C(0xffff)) << 32U) | mdata;
+    state->trace.effective_word = cpu->p0 & CADR_U48_MASK;
+    state->trace.pc = cpu->p0_pc;
+    state->trace.store_selector = cpu->p0_imem;
+    state->trace.operation = cpu->decoded_class;
+    state->trace.a_address = aaddress;
+    state->trace.m_address = maddress;
+    state->trace.a_value = adata;
+    state->trace.m_value = mdata;
+    state->trace.instruction_memory = cpu->p0_imem;
+    state->trace.functional_m_source = msource;
+    state->trace.effective_popj = cpu->effective_popj;
+    state->trace.decoded = 1U;
+    state->trace.m_source_kind = msource;
+    state->trace.pre_destination = cadr_ir(cpu, 14U, 12U);
+    if (cpu->decoded_class == 0U || cpu->decoded_class == 3U) {
+        state->trace.destination_kind =
+            (state->trace.pre_destination & UINT32_C(0x800)) != 0U ? 1U : 2U;
+        state->trace.destination_address = state->trace.pre_destination &
+            ((state->trace.destination_kind == 1U) ? UINT32_C(0x3ff) : UINT32_C(0x1f));
+    }
     switch (cpu->decoded_class) {
     case 0U: cadr_alu(state, bus, mdata, adata); break;
     case 1U: cadr_jump(state, bus, mdata, adata); break;
@@ -670,7 +796,12 @@ void cadr_processor_memory_step_with_bus(
         }
         cpu->next_micro_pc = target & CADR_MICRO_PC_MASK;
     }
+    if (cpu->decoded_class == 0U || cpu->decoded_class == 3U) {
+        state->trace.post_destination_value = cpu->out;
+        state->trace.valid_mask |= CADR_TRACE_LATCH_VALID_DESTINATION;
+    }
     cpu->microinstructions_executed += 1U;
+    cadr_trace_latch_end(state, 1U);
 }
 
 void cadr_processor_memory_step(cadr_machine_state *const state)

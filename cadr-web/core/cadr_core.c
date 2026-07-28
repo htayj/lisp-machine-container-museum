@@ -1,6 +1,9 @@
 #include "cadr_machine.h"
 #include "cadr_boundary_state.h"
 #include "cadr_host_api.h"
+#include "cadr_snapshot.h"
+#include "cadr_state_v2.h"
+#include "cadr_trace_engine.h"
 #include "usim-port/cadr_bus_device.h"
 #include "usim-port/cadr_processor_memory.h"
 
@@ -305,12 +308,10 @@ void cadr_canonical_write_u32(cadr_machine_state *state, uint32_t family,
     cadr_tree_update(state, family, index);
 }
 
-static void cadr_canonical_initialize(cadr_machine_state *state)
+cadr_status cadr_canonical_rebuild(cadr_machine_state *state)
 {
-    static const uint8_t empty_domain[] = "CDRMUT1\0";
     uint32_t family;
-    cadr_canonical_state *canonical = &state->canonical;
-    (void)memset(canonical, 0, sizeof(*canonical));
+    if (state == NULL) return CADR_STATUS_INVALID_ARGUMENT;
     for (family = CADR_FAMILY_AMEM; family <= CADR_FAMILY_L2_MAP; ++family) {
         uint32_t count;
         const uint32_t *values;
@@ -318,6 +319,15 @@ static void cadr_canonical_initialize(cadr_machine_state *state)
             cadr_tree_for(state, family, &count, &values);
         if (nodes != NULL) cadr_tree_build(family, values, count, nodes);
     }
+    return CADR_STATUS_OK;
+}
+
+static void cadr_canonical_initialize(cadr_machine_state *state)
+{
+    static const uint8_t empty_domain[] = "CDRMUT1\0";
+    cadr_canonical_state *canonical = &state->canonical;
+    (void)memset(canonical, 0, sizeof(*canonical));
+    (void)cadr_canonical_rebuild(state);
     cadr_sha256(empty_domain, sizeof(empty_domain) - 1U,
                 canonical->mutation_sha256);
     canonical->initialized = 1U;
@@ -368,13 +378,39 @@ static const cadr_profile_artifact cadr_profile_artifacts[] = {
         0x95,0x60,0x0f,0xe4,0x3e,0xc8,0x6a,0xc4,0x1c,0x77,0xb3,0x7d,0xbd,0x7c,0xaa,0x2a } }
 };
 
+static const uint8_t cadr_selected_profile_sha256[CADR_SHA256_BYTES] = {
+    0x1bU,0x8dU,0x63U,0xdbU,0x98U,0xacU,0xd4U,0x6eU,
+    0x40U,0xadU,0xf9U,0x9aU,0x8aU,0x3cU,0xebU,0x5eU,
+    0x05U,0x58U,0xd4U,0xacU,0x02U,0x7cU,0xb2U,0xcbU,
+    0x4aU,0x43U,0x96U,0x65U,0xb1U,0x4bU,0x5dU,0x2aU
+};
+
+static const uint8_t cadr_selected_artifact_set_sha256[CADR_SHA256_BYTES] = {
+    0xe9U,0x6eU,0x6fU,0xf9U,0x03U,0xc2U,0x3cU,0xceU,
+    0xa7U,0x07U,0xecU,0xe0U,0xe9U,0xa8U,0x72U,0xa8U,
+    0xa7U,0x77U,0x71U,0xa6U,0x66U,0x3eU,0x3bU,0x91U,
+    0x9eU,0xabU,0xa2U,0x1eU,0x22U,0xf2U,0xf9U,0x41U
+};
+
 static cadr_status cadr_validate_record(uint32_t abi_major, uint32_t abi_minor,
                                         uint32_t struct_size, size_t minimum_size)
 {
     if (abi_major != CADR_ABI_MAJOR) return CADR_STATUS_ABI_MISMATCH;
-    (void)abi_minor;
+    if (abi_minor > CADR_ABI_MINOR) return CADR_STATUS_ABI_MISMATCH;
     return (size_t)struct_size < minimum_size
         ? CADR_STATUS_INVALID_ARGUMENT : CADR_STATUS_OK;
+}
+
+static cadr_status cadr_validate_m2_record(uint32_t abi_major,
+                                           uint32_t abi_minor,
+                                           uint32_t struct_size,
+                                           size_t minimum_size)
+{
+    cadr_status status = cadr_validate_record(abi_major, abi_minor, struct_size,
+                                               minimum_size);
+    if (status != CADR_STATUS_OK) return status;
+    return abi_minor < CADR_ABI_MINOR_M2
+        ? CADR_STATUS_ABI_MISMATCH : CADR_STATUS_OK;
 }
 
 static const cadr_profile_artifact *cadr_profile_artifact_for(uint32_t kind)
@@ -530,6 +566,11 @@ cadr_status cadr_machine_create(const cadr_machine_config *config,
     machine->state.events.generation = UINT64_C(1);
     machine->state.events.next_request_id = UINT64_C(1);
     cadr_processor_memory_set_main_memory_pages(&machine->state, 8192U);
+    /*
+     * CDRSTATE2 is an M2-derived cache.  Keep a newly created M1 machine
+     * cheap and construct the full-RAM Merkle cache only at an M2 boundary
+     * that needs it (trace start, snapshot, or restore).
+     */
     *out_machine = machine;
     return CADR_STATUS_OK;
 }
@@ -537,6 +578,7 @@ cadr_status cadr_machine_create(const cadr_machine_config *config,
 void cadr_machine_destroy(cadr_machine *machine)
 {
     if (machine == NULL) return;
+    cadr_trace_engine_stop(&machine->state);
     cadr_discard_completion(machine);
     free(machine);
 }
@@ -558,6 +600,7 @@ cadr_status cadr_machine_import_artifact(cadr_machine *machine,
     if (status != CADR_STATUS_OK) return status;
     if (machine->state.lifecycle != CADR_MACHINE_COLD ||
         ingress->byte_count != byte_count) return CADR_STATUS_INVALID_ARGUMENT;
+    if (cadr_trace_engine_active(&machine->state)) return CADR_STATUS_NOT_READY;
     expected = cadr_profile_artifact_for(ingress->artifact_kind);
     if (expected == NULL) return CADR_STATUS_PROFILE_MISMATCH;
     if (expected->byte_count != byte_count) return CADR_STATUS_ARTIFACT_MISMATCH;
@@ -565,6 +608,8 @@ cadr_status cadr_machine_import_artifact(cadr_machine *machine,
     if (memcmp(digest, expected->sha256, CADR_SHA256_BYTES) != 0) {
         return CADR_STATUS_ARTIFACT_MISMATCH;
     }
+    /* Artifact ingress can bulk-replace a logical root. */
+    cadr_state_v2_invalidate(&machine->state);
     switch (ingress->artifact_kind) {
     case CADR_ARTIFACT_BOOT_CONFIGURATION:
         machine->state.artifacts.boot_configuration_ingressed = 1U;
@@ -598,6 +643,8 @@ cadr_status cadr_machine_cold_power_on(cadr_machine *machine)
         machine->state.artifacts.base_disk_verified == 0U) {
         return CADR_STATUS_NOT_READY;
     }
+    if (cadr_trace_engine_active(&machine->state)) return CADR_STATUS_NOT_READY;
+    cadr_state_v2_invalidate(&machine->state);
     cadr_invalidate_requests(machine);
     machine->state.events.persistent_status = CADR_STATUS_OK;
     machine->state.cpu.microinstructions_executed = 0U;
@@ -613,6 +660,8 @@ cadr_status cadr_machine_boot(cadr_machine *machine)
 {
     if (machine == NULL) return CADR_STATUS_INVALID_ARGUMENT;
     if (machine->state.lifecycle != CADR_MACHINE_POWERED) return CADR_STATUS_NOT_READY;
+    if (cadr_trace_engine_active(&machine->state)) return CADR_STATUS_NOT_READY;
+    cadr_state_v2_invalidate(&machine->state);
     cadr_processor_memory_boot(&machine->state);
     cadr_canonical_initialize(&machine->state);
     machine->state.lifecycle = CADR_MACHINE_RUNNING;
@@ -632,6 +681,8 @@ cadr_status cadr_machine_reset(cadr_machine *machine,
         machine->state.events.generation == UINT64_MAX) {
         return CADR_STATUS_INVALID_ARGUMENT;
     }
+    if (cadr_trace_engine_active(&machine->state)) return CADR_STATUS_NOT_READY;
+    cadr_state_v2_invalidate(&machine->state);
     cadr_invalidate_requests(machine);
     machine->state.events.generation += UINT64_C(1);
     machine->state.events.persistent_status = CADR_STATUS_OK;
@@ -648,6 +699,9 @@ cadr_status cadr_machine_issue_host_request(cadr_machine *machine,
                                             uint64_t completion_byte_count)
 {
     uint64_t required = cadr_descriptor_size(operation);
+    uint8_t descriptor_sha256[CADR_SHA256_BYTES];
+    uint64_t request_id;
+    cadr_status status;
     if (machine == NULL || !cadr_valid_operation(operation) ||
         descriptor_byte_count != required ||
         descriptor_byte_count > CADR_MAX_HOST_DESCRIPTOR_BYTES ||
@@ -664,12 +718,27 @@ cadr_status cadr_machine_issue_host_request(cadr_machine *machine,
         machine->state.events.next_request_id == UINT64_MAX) {
         return CADR_STATUS_WAITING_FOR_HOST;
     }
+    cadr_sha256(descriptor_bytes, descriptor_byte_count, descriptor_sha256);
+    status = cadr_trace_engine_preflight_event(&machine->state,
+                                               CADR_TRACE_EVENT_DEVICE);
+    if (status != CADR_STATUS_OK) return status;
+    request_id = machine->state.events.next_request_id;
     (void)memcpy(machine->state.events.request_descriptor, descriptor_bytes,
                  (size_t)descriptor_byte_count);
     machine->state.events.request_descriptor_byte_count = descriptor_byte_count;
     machine->state.events.outstanding_request_id = machine->state.events.next_request_id++;
     machine->state.events.outstanding_operation = operation;
     machine->state.events.expected_completion_byte_count = completion_byte_count;
+    cadr_state_v2_note_completion_changed(&machine->state);
+    status = cadr_trace_engine_record_device_request_issue(
+        &machine->state, operation, CADR_STATUS_OK,
+        machine->state.events.generation, request_id, descriptor_sha256,
+        descriptor_byte_count, completion_byte_count);
+    if (status != CADR_STATUS_OK) {
+        machine->state.events.persistent_status = CADR_STATUS_GUEST_FAULT;
+        machine->state.lifecycle = CADR_MACHINE_GUEST_FAULTED;
+        return CADR_STATUS_GUEST_FAULT;
+    }
     return CADR_STATUS_OK;
 }
 
@@ -680,7 +749,9 @@ cadr_status cadr_machine_next_host_request(cadr_machine *machine,
 {
     cadr_status status;
     uint64_t needed;
+    uint32_t requested_minor;
     if (machine == NULL || out_request == NULL) return CADR_STATUS_INVALID_ARGUMENT;
+    requested_minor = out_request->abi_minor;
     status = cadr_validate_record(out_request->abi_major, out_request->abi_minor,
                                   out_request->struct_size, sizeof(*out_request));
     if (status != CADR_STATUS_OK) return status;
@@ -694,7 +765,7 @@ cadr_status cadr_machine_next_host_request(cadr_machine *machine,
     (void)memcpy(descriptor_bytes, machine->state.events.request_descriptor,
                  (size_t)needed);
     out_request->abi_major = CADR_ABI_MAJOR;
-    out_request->abi_minor = CADR_ABI_MINOR;
+    out_request->abi_minor = requested_minor;
     out_request->struct_size = (uint32_t)sizeof(*out_request);
     out_request->operation = machine->state.events.outstanding_operation;
     out_request->generation = machine->state.events.generation;
@@ -705,6 +776,42 @@ cadr_status cadr_machine_next_host_request(cadr_machine *machine,
     return CADR_STATUS_OK;
 }
 
+static cadr_status cadr_trace_rejected_completion(
+    cadr_machine *machine, const cadr_host_completion *completion,
+    const uint8_t *bytes, uint64_t byte_count, cadr_status rejection)
+{
+    uint8_t completion_sha256[CADR_SHA256_BYTES];
+    cadr_status status;
+    /*
+     * Malformed ABI records are outside the trace model.  A semantic
+     * rejection is recordable only when every field needed by the normalized
+     * code-4 payload has a valid representation and the declared payload
+     * length agrees with the bytes supplied by the caller.
+     */
+    if (!cadr_valid_operation(completion->operation) ||
+        (completion->host_status != CADR_HOST_RESULT_OK &&
+         completion->host_status != CADR_HOST_RESULT_FAILED) ||
+        completion->generation == 0U || completion->request_id == 0U ||
+        completion->completion_byte_count != byte_count) {
+        return rejection;
+    }
+    cadr_sha256(bytes, byte_count, completion_sha256);
+    status = cadr_trace_engine_preflight_event(&machine->state,
+                                               CADR_TRACE_EVENT_DEVICE);
+    if (status != CADR_STATUS_OK) return status;
+    machine->state.in_host_completion = 0U;
+    status = cadr_trace_engine_record_device_completion(
+        &machine->state, 4U, completion->operation, completion->host_status,
+        (uint32_t)rejection, completion->generation, completion->request_id,
+        completion_sha256, byte_count);
+    if (status != CADR_STATUS_OK) {
+        machine->state.events.persistent_status = CADR_STATUS_GUEST_FAULT;
+        machine->state.lifecycle = CADR_MACHINE_GUEST_FAULTED;
+        return CADR_STATUS_GUEST_FAULT;
+    }
+    return rejection;
+}
+
 cadr_status cadr_machine_complete_host_request(cadr_machine *machine,
                                                const cadr_host_completion *completion,
                                                const uint8_t *bytes,
@@ -712,6 +819,8 @@ cadr_status cadr_machine_complete_host_request(cadr_machine *machine,
 {
     cadr_status status;
     uint8_t *copy = NULL;
+    uint8_t completion_sha256[CADR_SHA256_BYTES];
+    uint32_t record_rejection = 0U;
     if (machine == NULL || completion == NULL ||
         (byte_count != 0U && bytes == NULL) || byte_count > (uint64_t)SIZE_MAX) {
         return CADR_STATUS_INVALID_ARGUMENT;
@@ -730,6 +839,7 @@ cadr_status cadr_machine_complete_host_request(cadr_machine *machine,
     }
     if (completion->generation != machine->state.events.generation) {
         status = CADR_STATUS_STALE_GENERATION;
+        record_rejection = 1U;
         goto done;
     }
     if (completion->request_id <= machine->state.events.last_completed_request_id ||
@@ -737,16 +847,19 @@ cadr_status cadr_machine_complete_host_request(cadr_machine *machine,
          completion->request_id == machine->state.events.outstanding_request_id &&
          completion->operation == machine->state.events.outstanding_operation)) {
         status = CADR_STATUS_DUPLICATE_COMPLETION;
+        record_rejection = 1U;
         goto done;
     }
     if (machine->state.events.outstanding_request_id == 0U ||
         completion->request_id != machine->state.events.outstanding_request_id ||
         completion->operation != machine->state.events.outstanding_operation) {
         status = CADR_STATUS_WRONG_COMPLETION;
+        record_rejection = 1U;
         goto done;
     }
     if (byte_count != machine->state.events.expected_completion_byte_count) {
         status = CADR_STATUS_WRONG_LENGTH;
+        record_rejection = 1U;
         goto done;
     }
     if (byte_count != 0U) {
@@ -757,12 +870,38 @@ cadr_status cadr_machine_complete_host_request(cadr_machine *machine,
         }
         (void)memcpy(copy, bytes, (size_t)byte_count);
     }
+    cadr_sha256(bytes, byte_count, completion_sha256);
+    status = cadr_trace_engine_preflight_event(&machine->state,
+                                               CADR_TRACE_EVENT_DEVICE);
+    if (status != CADR_STATUS_OK) {
+        free(copy);
+        goto done;
+    }
     machine->state.events.completion_bytes = copy;
     machine->state.events.completion_byte_count = byte_count;
     machine->state.events.completion_host_status = completion->host_status;
     machine->state.events.completion_queued = 1U;
-    status = CADR_STATUS_OK;
+    cadr_state_v2_note_completion_changed(&machine->state);
+    /*
+     * The reentrancy guard is operational call state, not a stable machine
+     * boundary.  Clear it before hashing the accepted completion so the event
+     * witnesses the state visible when this API returns.
+     */
+    machine->state.in_host_completion = 0U;
+    status = cadr_trace_engine_record_device_completion(
+        &machine->state, 2U, completion->operation, completion->host_status,
+        CADR_STATUS_OK, completion->generation, completion->request_id,
+        completion_sha256, byte_count);
+    if (status != CADR_STATUS_OK) {
+        machine->state.events.persistent_status = CADR_STATUS_GUEST_FAULT;
+        machine->state.lifecycle = CADR_MACHINE_GUEST_FAULTED;
+        status = CADR_STATUS_GUEST_FAULT;
+    }
 done:
+    if (record_rejection != 0U) {
+        status = cadr_trace_rejected_completion(machine, completion, bytes,
+                                                 byte_count, status);
+    }
     machine->state.in_host_completion = 0U;
     return status;
 }
@@ -772,6 +911,15 @@ static cadr_status cadr_apply_completion(cadr_machine *machine)
     cadr_status status = machine->state.events.completion_host_status ==
         CADR_HOST_RESULT_FAILED ? CADR_STATUS_HOST_FAILURE
                                 : CADR_STATUS_UNIMPLEMENTED_DEVICE;
+    const uint32_t operation = machine->state.events.outstanding_operation;
+    const uint32_t result = machine->state.events.completion_host_status;
+    const uint64_t generation = machine->state.events.generation;
+    const uint64_t request_id = machine->state.events.outstanding_request_id;
+    const uint64_t byte_count = machine->state.events.completion_byte_count;
+    uint8_t completion_sha256[CADR_SHA256_BYTES];
+    cadr_status trace_status;
+    cadr_sha256(machine->state.events.completion_bytes, byte_count,
+                completion_sha256);
     machine->state.events.last_completed_request_id =
         machine->state.events.outstanding_request_id;
     cadr_discard_completion(machine);
@@ -780,6 +928,15 @@ static cadr_status cadr_apply_completion(cadr_machine *machine)
     machine->state.events.expected_completion_byte_count = 0U;
     machine->state.events.outstanding_operation = CADR_HOST_OPERATION_NONE;
     machine->state.events.persistent_status = status;
+    cadr_state_v2_note_completion_changed(&machine->state);
+    trace_status = cadr_trace_engine_record_device_completion(
+        &machine->state, 3U, operation, result, status, generation, request_id,
+        completion_sha256, byte_count);
+    if (trace_status != CADR_STATUS_OK) {
+        machine->state.events.persistent_status = CADR_STATUS_GUEST_FAULT;
+        machine->state.lifecycle = CADR_MACHINE_GUEST_FAULTED;
+        return CADR_STATUS_GUEST_FAULT;
+    }
     return status;
 }
 
@@ -793,9 +950,11 @@ cadr_status cadr_machine_run(cadr_machine *machine,
     cadr_status status;
     uint64_t before_micro;
     uint64_t slots;
+    uint32_t requested_minor;
     if (machine == NULL || request == NULL || out_result == NULL) {
         return CADR_STATUS_INVALID_ARGUMENT;
     }
+    requested_minor = out_result->abi_minor;
     status = cadr_validate_record(request->abi_major, request->abi_minor,
                                   request->struct_size, sizeof(*request));
     if (status != CADR_STATUS_OK) return status;
@@ -811,7 +970,7 @@ cadr_status cadr_machine_run(cadr_machine *machine,
         return CADR_STATUS_INVALID_ARGUMENT;
     }
     out_result->abi_major = CADR_ABI_MAJOR;
-    out_result->abi_minor = CADR_ABI_MINOR;
+    out_result->abi_minor = requested_minor;
     out_result->struct_size = (uint32_t)sizeof(*out_result);
     out_result->clock_slots_completed = 0U;
     out_result->microinstructions_executed = 0U;
@@ -831,19 +990,38 @@ cadr_status cadr_machine_run(cadr_machine *machine,
         return CADR_STATUS_WAITING_FOR_HOST;
     }
     if (machine->state.events.completion_queued != 0U) {
-        out_result->completions_applied = 1U;
+        status = cadr_trace_engine_preflight_event(&machine->state,
+                                                   CADR_TRACE_EVENT_DEVICE);
+        if (status != CADR_STATUS_OK) {
+            out_result->terminal_status = status;
+            return status;
+        }
         status = cadr_apply_completion(machine);
+        out_result->completions_applied = 1U;
         out_result->terminal_status = status;
         return status;
     }
     before_micro = machine->state.cpu.microinstructions_executed;
+    status = CADR_STATUS_OK;
     for (slots = 0U; slots < request->clock_slot_budget; ++slots) {
         uint32_t old_interrupt_control;
+        uint64_t tick_before;
+        uint32_t interrupt_before;
+        uint32_t fault_before;
+        uint32_t halt_before;
+        uint16_t boundary_flags;
+        cadr_trace_slot_events slot_events;
         if (machine->state.clock_slots_completed == UINT64_MAX ||
             machine->state.cpu.microinstructions_executed == UINT64_MAX) {
             machine->state.events.persistent_status = CADR_STATUS_GUEST_FAULT;
             break;
         }
+        tick_before = machine->state.bus.guest_tick;
+        interrupt_before = machine->state.bus.interrupt_status;
+        fault_before = machine->state.cpu.guest_fault;
+        halt_before = machine->state.cpu.halted;
+        status = cadr_trace_engine_slot_preflight(&machine->state);
+        if (status != CADR_STATUS_OK) break;
         machine->state.cpu.interrupt_pending = machine->state.bus.interrupt_pending;
         machine->state.cpu.debug_ir = cadr_diagnostic_debug_instruction(&machine->state);
         machine->state.trace.raw_fetched_word =
@@ -897,31 +1075,80 @@ cadr_status cadr_machine_run(cadr_machine *machine,
         }
         cadr_update_diagnostic_latches(machine);
         out_result->clock_slots_completed += 1U;
+        boundary_flags = machine->state.trace.last_slot_inhibited != 0U
+            ? CADR_TRACE_BOUNDARY_INHIBITED : CADR_TRACE_BOUNDARY_EXECUTED;
+        if (machine->state.cpu.halted != 0U) {
+            boundary_flags = (uint16_t)(boundary_flags | CADR_TRACE_BOUNDARY_HALT);
+        }
+        /*
+         * Terminal slot status is part of the machine state witnessed by the
+         * boundary and its events.  Classify it before closing the compound
+         * trace slot so the following terminal record observes the same final
+         * state instead of a host-status mutation made between records.
+         */
         if (machine->state.events.unexpected_bus_operation != 0U) {
             machine->state.events.persistent_status =
                 CADR_STATUS_UNIMPLEMENTED_DEVICE;
-            break;
-        }
-        if (machine->state.canonical.overflowed != 0U) {
-            machine->state.lifecycle = CADR_MACHINE_GUEST_FAULTED;
-            machine->state.events.persistent_status =
-                CADR_STATUS_GUEST_FAULT;
-            break;
-        }
-        if (machine->state.cpu.guest_fault != 0U) {
+        } else if (machine->state.canonical.overflowed != 0U ||
+                   machine->state.cpu.guest_fault != 0U) {
             machine->state.lifecycle = CADR_MACHINE_GUEST_FAULTED;
             machine->state.events.persistent_status = CADR_STATUS_GUEST_FAULT;
-            break;
-        }
-        if (machine->state.cpu.halted != 0U) {
+        } else if (machine->state.cpu.halted != 0U) {
             machine->state.events.persistent_status = CADR_STATUS_HALTED;
+        }
+        status = cadr_trace_engine_record_boundary(&machine->state,
+                                                   boundary_flags);
+        if (status == CADR_STATUS_OK) {
+            (void)memset(&slot_events, 0, sizeof(slot_events));
+            slot_events.clock_present =
+                machine->state.bus.guest_tick != tick_before ? 1U : 0U;
+            if (slot_events.clock_present != 0U) {
+                slot_events.tick_before = tick_before;
+                slot_events.tick_after = machine->state.bus.guest_tick;
+                slot_events.clock_decision = 1U;
+            }
+            slot_events.interrupt_present =
+                machine->state.bus.interrupt_status != interrupt_before
+                    ? 1U : 0U;
+            if (slot_events.interrupt_present != 0U) {
+                slot_events.interrupt_before = interrupt_before;
+                slot_events.interrupt_after =
+                    machine->state.bus.interrupt_status;
+                slot_events.interrupt_level =
+                    slot_events.interrupt_after & UINT32_C(01774);
+                slot_events.interrupt_pending =
+                    (slot_events.interrupt_after & UINT32_C(0140000)) != 0U
+                        ? 1U : 0U;
+            }
+            slot_events.fault_present =
+                machine->state.cpu.guest_fault != fault_before ? 1U : 0U;
+            if (slot_events.fault_present != 0U) {
+                slot_events.fault_before = fault_before;
+                slot_events.fault_after = machine->state.cpu.guest_fault;
+                slot_events.fault_code = slot_events.fault_after;
+                slot_events.fault_value_valid = 1U;
+            }
+            slot_events.halt_present =
+                machine->state.cpu.halted != halt_before ? 1U : 0U;
+            if (slot_events.halt_present != 0U) {
+                slot_events.halt_code = CADR_STATUS_HALTED;
+            }
+            status = cadr_trace_engine_slot_close(&machine->state,
+                                                  &slot_events);
+        }
+        if (status != CADR_STATUS_OK) {
+            machine->state.lifecycle = CADR_MACHINE_GUEST_FAULTED;
+            machine->state.events.persistent_status = CADR_STATUS_GUEST_FAULT;
+            status = CADR_STATUS_GUEST_FAULT;
             break;
         }
+        if (machine->state.events.persistent_status != CADR_STATUS_OK) break;
     }
     out_result->microinstructions_executed =
         machine->state.cpu.microinstructions_executed - before_micro;
-    status = machine->state.events.persistent_status;
-    if (status == CADR_STATUS_OK) status = CADR_STATUS_OK;
+    if (machine->state.events.persistent_status != CADR_STATUS_OK) {
+        status = machine->state.events.persistent_status;
+    }
     out_result->terminal_status = status;
     return status;
 }
@@ -929,12 +1156,14 @@ cadr_status cadr_machine_run(cadr_machine *machine,
 cadr_status cadr_machine_query(cadr_machine *machine, cadr_machine_info *out_info)
 {
     cadr_status status;
+    uint32_t requested_minor;
     if (machine == NULL || out_info == NULL) return CADR_STATUS_INVALID_ARGUMENT;
+    requested_minor = out_info->abi_minor;
     status = cadr_validate_record(out_info->abi_major, out_info->abi_minor,
                                   out_info->struct_size, sizeof(*out_info));
     if (status != CADR_STATUS_OK) return status;
     out_info->abi_major = CADR_ABI_MAJOR;
-    out_info->abi_minor = CADR_ABI_MINOR;
+    out_info->abi_minor = requested_minor;
     out_info->struct_size = (uint32_t)sizeof(*out_info);
     out_info->lifecycle = machine->state.lifecycle;
     out_info->generation = machine->state.events.generation;
@@ -1092,20 +1321,21 @@ static void cadr_state_fixed_root(cadr_sha256_context *context,
 }
 
 static void cadr_state_tree_root(cadr_sha256_context *context,
-                                 cadr_machine_state *state, uint32_t family)
+                                 const cadr_machine_state *state, uint32_t family)
 {
     uint32_t count;
     const uint32_t *values;
     uint8_t (*nodes)[CADR_SHA256_BYTES] =
-        cadr_tree_for(state, family, &count, &values);
+        cadr_tree_for((cadr_machine_state *)(uintptr_t)state, family, &count, &values);
     (void)count;
     (void)values;
     cadr_digest_u32(context, family);
     cadr_sha256_update(context, nodes[1], CADR_SHA256_BYTES);
 }
 
-cadr_status cadr_machine_boundary_digest(cadr_machine *machine,
-                                         uint8_t digest[CADR_SHA256_BYTES])
+cadr_status cadr_boundary_digest_state(
+    const cadr_machine_state *state,
+    uint8_t digest[CADR_SHA256_BYTES])
 {
     static const uint8_t domain[] = "CDRSTATE1\0";
     static const cadr_fixed_root fixed_trees[] = {
@@ -1128,14 +1358,12 @@ cadr_status cadr_machine_boundary_digest(cadr_machine *machine,
         {36U, "fc19253d8cab8743f153ee1b262f54f9a1d050e250ed7d1d7bbd1040138149df"},
         {37U, "27be1c8d4b1c4e01ac9550bc22662c958c18f8da7522bc99c8d17ecb7ce825df"}
     };
-    cadr_machine_state *state;
     cadr_sha256_context context;
     size_t index;
-    if (machine == NULL || digest == NULL ||
-        machine->state.canonical.initialized == 0U) {
+    if (state == NULL || digest == NULL ||
+        state->canonical.initialized == 0U) {
         return CADR_STATUS_INVALID_ARGUMENT;
     }
-    state = &machine->state;
     cadr_sha256_init(&context);
     cadr_sha256_update(&context, domain, sizeof(domain) - 1U);
     cadr_state_u64(&context, 1U, state->clock_slots_completed);
@@ -1216,5 +1444,260 @@ cadr_status cadr_machine_boundary_digest(cadr_machine *machine,
         cadr_state_fixed_root(&context, &fixed_devices[index]);
     }
     cadr_sha256_final(&context, digest);
+    return CADR_STATUS_OK;
+}
+
+cadr_status cadr_machine_boundary_digest(cadr_machine *machine,
+                                         uint8_t digest[CADR_SHA256_BYTES])
+{
+    if (machine == NULL) return CADR_STATUS_INVALID_ARGUMENT;
+    return cadr_boundary_digest_state(&machine->state, digest);
+}
+
+cadr_status cadr_machine_trace_start(cadr_machine *machine,
+                                     const cadr_trace_config *config)
+{
+    cadr_trace_engine_config internal;
+    cadr_status status;
+    if (machine == NULL || config == NULL) return CADR_STATUS_INVALID_ARGUMENT;
+    status = cadr_validate_m2_record(config->abi_major, config->abi_minor,
+                                     config->struct_size, sizeof(*config));
+    if (status != CADR_STATUS_OK) return status;
+    if (config->flags != 0U || config->reserved0 != 0U ||
+        config->reserved1 != 0U ||
+        memcmp(config->profile_sha256, cadr_selected_profile_sha256,
+               CADR_SHA256_BYTES) != 0 ||
+        memcmp(config->artifact_set_sha256,
+               cadr_selected_artifact_set_sha256,
+               CADR_SHA256_BYTES) != 0) {
+        return CADR_STATUS_PROFILE_MISMATCH;
+    }
+    if (config->first_boundary != machine->state.clock_slots_completed) {
+        return CADR_STATUS_INVALID_ARGUMENT;
+    }
+    if (machine->state.events.outstanding_request_id != 0U ||
+        machine->state.events.completion_queued != 0U) {
+        return CADR_STATUS_NOT_READY;
+    }
+    status = cadr_state_v2_rebuild(&machine->state);
+    if (status != CADR_STATUS_OK) return status;
+    (void)memset(&internal, 0, sizeof(internal));
+    internal.first_boundary = config->first_boundary;
+    internal.selector_mask = config->selector_mask;
+    internal.event_mask = config->event_mask;
+    internal.ring_record_capacity = config->ring_record_capacity;
+    internal.transport_mode = config->transport_mode;
+    (void)memcpy(internal.profile_sha256, config->profile_sha256,
+                 CADR_SHA256_BYTES);
+    (void)memcpy(internal.artifact_set_sha256, config->artifact_set_sha256,
+                 CADR_SHA256_BYTES);
+    (void)memcpy(internal.input_schedule_sha256,
+                 config->input_schedule_sha256, CADR_SHA256_BYTES);
+    return cadr_trace_engine_start(&machine->state, &internal);
+}
+
+cadr_status cadr_machine_trace_header(const cadr_machine *machine,
+                                      uint8_t *bytes, uint64_t capacity,
+                                      uint64_t *out_written)
+{
+    cadr_status status;
+    if (out_written == NULL) return CADR_STATUS_INVALID_ARGUMENT;
+    *out_written = 0U;
+    if (machine == NULL || bytes == NULL ||
+        capacity < CADR_TRACE_HEADER_BYTES ||
+        !cadr_trace_engine_active(&machine->state)) {
+        return capacity < CADR_TRACE_HEADER_BYTES
+            ? CADR_STATUS_WRONG_LENGTH : CADR_STATUS_INVALID_ARGUMENT;
+    }
+    status = cadr_trace_engine_header(&machine->state, bytes);
+    if (status == CADR_STATUS_OK) *out_written = CADR_TRACE_HEADER_BYTES;
+    return status;
+}
+
+cadr_status cadr_machine_trace_drain(cadr_machine *machine,
+                                     uint8_t *bytes, uint64_t capacity,
+                                     uint64_t *out_written,
+                                     uint64_t *out_records)
+{
+    if (machine == NULL || out_written == NULL || out_records == NULL ||
+        (capacity != 0U && bytes == NULL) ||
+        !cadr_trace_engine_active(&machine->state)) {
+        if (out_written != NULL) *out_written = 0U;
+        if (out_records != NULL) *out_records = 0U;
+        return CADR_STATUS_INVALID_ARGUMENT;
+    }
+    return cadr_trace_engine_drain(&machine->state, bytes, capacity,
+                                   out_written, out_records);
+}
+
+cadr_status cadr_machine_trace_finish(
+    cadr_machine *machine, const cadr_trace_finish_request *request)
+{
+    cadr_status status;
+    if (machine == NULL || request == NULL) return CADR_STATUS_INVALID_ARGUMENT;
+    status = cadr_validate_m2_record(request->abi_major, request->abi_minor,
+                                     request->struct_size, sizeof(*request));
+    if (status != CADR_STATUS_OK) return status;
+    if (request->reserved0 != 0U || request->reserved1 != 0U ||
+        !cadr_trace_engine_active(&machine->state)) {
+        return CADR_STATUS_INVALID_ARGUMENT;
+    }
+    return cadr_trace_engine_finish(&machine->state, request->reason);
+}
+
+cadr_status cadr_machine_trace_digest(
+    const cadr_machine *machine, uint8_t digest[CADR_SHA256_BYTES])
+{
+    if (machine == NULL || digest == NULL ||
+        !cadr_trace_engine_active(&machine->state)) {
+        return CADR_STATUS_INVALID_ARGUMENT;
+    }
+    return cadr_trace_engine_semantic_digest(&machine->state, digest);
+}
+
+cadr_status cadr_machine_trace_count(const cadr_machine *machine,
+                                     uint64_t *out_record_count)
+{
+    if (out_record_count == NULL) return CADR_STATUS_INVALID_ARGUMENT;
+    *out_record_count = 0U;
+    if (machine == NULL || !cadr_trace_engine_active(&machine->state)) {
+        return CADR_STATUS_INVALID_ARGUMENT;
+    }
+    *out_record_count = cadr_trace_engine_record_count(&machine->state);
+    return CADR_STATUS_OK;
+}
+
+static cadr_status cadr_snapshot_request_validate(
+    const cadr_snapshot_request *request)
+{
+    cadr_status status;
+    if (request == NULL) return CADR_STATUS_INVALID_ARGUMENT;
+    status = cadr_validate_m2_record(request->abi_major, request->abi_minor,
+                                     request->struct_size, sizeof(*request));
+    if (status != CADR_STATUS_OK) return status;
+    return request->flags == 0U ? CADR_STATUS_OK
+                                : CADR_STATUS_INVALID_ARGUMENT;
+}
+
+static cadr_status cadr_snapshot_compute_digests(
+    cadr_machine_state *state,
+    uint8_t cdrstate1[CADR_SHA256_BYTES],
+    uint8_t cdrstate2[CADR_SHA256_BYTES])
+{
+    cadr_status status = cadr_canonical_rebuild(state);
+    if (status != CADR_STATUS_OK) return status;
+    /*
+     * Normal execution maintains the cache through the typed write hooks.
+     * Rebuilding here only when an earlier bulk lifecycle operation marked it
+     * invalid preserves the M2 snapshot boundary without making each save an
+     * O(full RAM) operation.
+     */
+    if (state->trace.state_v2.initialized == 0U) {
+        status = cadr_state_v2_rebuild(state);
+        if (status != CADR_STATUS_OK) return status;
+    }
+    status = cadr_boundary_digest_state(state, cdrstate1);
+    if (status != CADR_STATUS_OK) return status;
+    return cadr_state_v2_digest(state, cdrstate2);
+}
+
+cadr_status cadr_machine_snapshot_size(cadr_machine *machine,
+                                       const cadr_snapshot_request *request,
+                                       uint64_t *out_byte_count)
+{
+    uint8_t cdrstate1[CADR_SHA256_BYTES];
+    uint8_t cdrstate2[CADR_SHA256_BYTES];
+    cadr_status status;
+    if (out_byte_count == NULL) return CADR_STATUS_INVALID_ARGUMENT;
+    *out_byte_count = 0U;
+    if (machine == NULL) return CADR_STATUS_INVALID_ARGUMENT;
+    status = cadr_snapshot_request_validate(request);
+    if (status != CADR_STATUS_OK) return status;
+    status = cadr_snapshot_compute_digests(&machine->state, cdrstate1,
+                                           cdrstate2);
+    if (status != CADR_STATUS_OK) return status;
+    return cadr_snapshot_size(&machine->state, cdrstate1, cdrstate2,
+                              out_byte_count);
+}
+
+cadr_status cadr_machine_snapshot_save(cadr_machine *machine,
+                                       const cadr_snapshot_request *request,
+                                       uint8_t *bytes, uint64_t capacity,
+                                       uint64_t *out_written)
+{
+    uint8_t cdrstate1[CADR_SHA256_BYTES];
+    uint8_t cdrstate2[CADR_SHA256_BYTES];
+    cadr_status status;
+    if (out_written == NULL) return CADR_STATUS_INVALID_ARGUMENT;
+    *out_written = 0U;
+    if (machine == NULL || bytes == NULL) return CADR_STATUS_INVALID_ARGUMENT;
+    status = cadr_snapshot_request_validate(request);
+    if (status != CADR_STATUS_OK) return status;
+    status = cadr_snapshot_compute_digests(&machine->state, cdrstate1,
+                                           cdrstate2);
+    if (status != CADR_STATUS_OK) return status;
+    return cadr_snapshot_serialize(&machine->state, cdrstate1, cdrstate2,
+                                   bytes, capacity, out_written);
+}
+
+static cadr_status cadr_restore_rebuild(cadr_machine_state *state,
+                                        void *context)
+{
+    cadr_status status;
+    (void)context;
+    status = cadr_canonical_rebuild(state);
+    if (status != CADR_STATUS_OK) return status;
+    return cadr_state_v2_rebuild(state);
+}
+
+static cadr_status cadr_restore_validate(
+    const cadr_machine_state *state,
+    const cadr_snapshot_metadata *metadata,
+    void *context)
+{
+    uint8_t cdrstate1[CADR_SHA256_BYTES];
+    uint8_t cdrstate2[CADR_SHA256_BYTES];
+    cadr_status status;
+    (void)context;
+    status = cadr_boundary_digest_state(state, cdrstate1);
+    if (status != CADR_STATUS_OK) return status;
+    status = cadr_state_v2_digest(state, cdrstate2);
+    if (status != CADR_STATUS_OK) return status;
+    if (memcmp(cdrstate1, metadata->cdrstate1_digest,
+               CADR_SHA256_BYTES) != 0 ||
+        memcmp(cdrstate2, metadata->cdrstate2_digest,
+               CADR_SHA256_BYTES) != 0) {
+        return CADR_STATUS_ARTIFACT_MISMATCH;
+    }
+    return cadr_state_v2_verify_cache(state);
+}
+
+cadr_status cadr_machine_snapshot_restore(
+    const cadr_snapshot_request *request,
+    const uint8_t *bytes, uint64_t byte_count,
+    cadr_machine **out_machine)
+{
+    const cadr_snapshot_restore_hooks hooks = {
+        cadr_restore_rebuild, cadr_restore_validate, NULL
+    };
+    cadr_snapshot_metadata metadata;
+    cadr_machine_state *state = NULL;
+    cadr_machine *machine;
+    cadr_status status;
+    if (out_machine == NULL) return CADR_STATUS_INVALID_ARGUMENT;
+    *out_machine = NULL;
+    if (bytes == NULL) return CADR_STATUS_INVALID_ARGUMENT;
+    status = cadr_snapshot_request_validate(request);
+    if (status != CADR_STATUS_OK) return status;
+    status = cadr_snapshot_parse(bytes, byte_count, &hooks, &state, &metadata);
+    if (status != CADR_STATUS_OK) return status;
+    machine = malloc(sizeof(*machine));
+    if (machine == NULL) {
+        cadr_snapshot_state_destroy(state);
+        return CADR_STATUS_NO_MEMORY;
+    }
+    machine->state = *state;
+    free(state);
+    *out_machine = machine;
     return CADR_STATUS_OK;
 }
