@@ -66,6 +66,9 @@ machine-readable metadata layer while retaining ordinary Markdown as the source.
   specifies immutable artifact preflight, exact raw Cadet boot input, the
   source-defined Listener A/B/C oracle, post-observer quiescence, READY3, and
   three-run native/Wasm M6 conformance.
+- [CADR-WEB-303 M6-DEVID1 disk-evidence continuation policy](mit-cadr/cadr-m6-disk-evidence-continuation-policy.md)
+  records the separately compiled retained-prefix/SHA-256-tail continuation
+  witness and its explicit, still-unmet READY4 runtime gate.
 - [CADR-WEB portable core and host ABI](mit-cadr/cadr-web-core-architecture-decision.md)
   records the portable machine boundary and the deterministic pull-style contract
   between the CADR core and native or browser hosts.
