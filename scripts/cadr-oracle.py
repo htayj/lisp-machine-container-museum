@@ -22,12 +22,21 @@ DEFAULT_PROFILE = Path("cadr-web/profiles/cadr-web-303.json")
 DEFAULT_SOURCE_MANIFEST = Path("cadr-web/oracle/source-files.json")
 DEFAULT_OUTPUT = Path("build/cadr-oracle/prepared")
 DEFAULT_PATCH = Path("cadr-web/oracle/patches/0001-native-boundary-oracle.patch")
+PATCH_NAMES = {"0001-native-boundary-oracle.patch", "0002-m6-debug-ir-witness.patch"}
 NATIVE_SUPPORT = (
     Path("cadr-web/oracle/native/cadr_oracle_native.c"),
     Path("cadr-web/oracle/native/cadr_oracle_native.h"),
     Path("cadr-web/oracle/native/cadr_oracle_idle_stubs.c"),
     Path("cadr-web/oracle/native/cadr_oracle_lashup_stubs.c"),
 )
+M6_NATIVE_SUPPORT = NATIVE_SUPPORT + (
+    Path("cadr-web/oracle/native/cadr_m6_debug_ir_witness.c"),
+    Path("cadr-web/oracle/native/cadr_m6_debug_ir_witness.h"),
+    Path("cadr-web/oracle/native/cadr_m6_lashup_stubs.c"),
+)
+
+def native_support_for_patch(patch: Path) -> tuple[Path, ...]:
+    return M6_NATIVE_SUPPORT if patch.name == "0002-m6-debug-ir-witness.patch" else NATIVE_SUPPORT
 SOURCE_SUFFIXES = {".c", ".h", ".defs"}
 SOURCE_NAMES = {"Makefile.usim", "COPYING.md"}
 
@@ -339,13 +348,16 @@ def verify_output(source_roots: list[Path], output: Path) -> None:
 
 def tracked_patch_path(repo_root: Path, patch_path: Path) -> Path:
     """Require the patch itself to be a tracked oracle input, not a temp file."""
+    patches = (repo_root / "cadr-web/oracle/patches").resolve(strict=True)
+    if not patch_path.is_absolute():
+        patch_path = patches / patch_path
     try:
-        relative = patch_path.resolve(strict=True).relative_to((repo_root / "cadr-web/oracle/patches").resolve(strict=True))
+        relative = patch_path.resolve(strict=True).relative_to(patches)
     except (OSError, RuntimeError, ValueError) as exc:
         raise OracleError("instrumentation patch must be below cadr-web/oracle/patches") from exc
-    if patch_path.is_symlink() or relative.name != "0001-native-boundary-oracle.patch":
+    if patch_path.is_symlink() or relative.name not in PATCH_NAMES:
         raise OracleError("instrumentation patch is not the selected tracked patch")
-    return patch_path
+    return patch_path.resolve()
 
 
 def validate_patch(patch_path: Path) -> bytes:
@@ -400,10 +412,11 @@ def apply_patch_exactly(*, patch_path: Path, patch_bytes: bytes, source_root: Pa
     }
 
 
-def install_native_support(repo_root: Path, source_root: Path) -> list[dict[str, Any]]:
+def install_native_support(repo_root: Path, source_root: Path,
+                           support: tuple[Path, ...] = NATIVE_SUPPORT) -> list[dict[str, Any]]:
     """Install the separately tracked oracle adapter into the disposable tree."""
     installed: list[dict[str, Any]] = []
-    for relative in NATIVE_SUPPORT:
+    for relative in support:
         source = safe_path(repo_root, relative, "native support")
         reject_symlink_components(repo_root, relative, "native support")
         digest, byte_count = hash_regular_file_no_follow(source, relative.as_posix())
@@ -470,7 +483,7 @@ def prepare(*, repo_root: Path, profile_path: Path, source_manifest_path: Path, 
             else:
                 raise OracleError("multi-root instrumentation requires a usim source closure")
             patch_identity = apply_patch_exactly(patch_path=patch_path, patch_bytes=patch_bytes, source_root=patch_root)
-            native_support = install_native_support(repo_root, patch_root)
+            native_support = install_native_support(repo_root, patch_root, native_support_for_patch(patch_path))
         marker = {
             "schema": "cadr-oracle-prepare", "schema_version": 1,
             "profile_id": manifest["profile_id"],
@@ -513,10 +526,13 @@ def load_prepare_marker(repo_root: Path, prepared_value: str) -> tuple[Path, dic
     if not isinstance(marker, dict) or marker.get("schema") != "cadr-oracle-prepare":
         raise OracleError("prepared input has no recognized prepare marker")
     patch = marker.get("instrumentation_patch")
-    if not isinstance(patch, dict) or patch.get("sha256") != sha256_file(repo_root / DEFAULT_PATCH):
+    if not isinstance(patch, dict) or not isinstance(patch.get("path"), str):
+        raise OracleError("prepared instrumentation patch identity is stale")
+    patch_path = tracked_patch_path(repo_root, Path(patch["path"]))
+    if patch.get("sha256") != sha256_file(patch_path):
         raise OracleError("prepared instrumentation patch identity is stale")
     expected_support = {item["path"]: item for item in marker.get("native_support", [])}
-    for relative in NATIVE_SUPPORT:
+    for relative in native_support_for_patch(patch_path):
         item = expected_support.get(relative.as_posix())
         if not item or item.get("sha256") != sha256_file(repo_root / relative):
             raise OracleError(f"prepared native support identity is stale: {relative}")
@@ -556,8 +572,9 @@ def build(*, repo_root: Path, prepared_value: str) -> dict[str, Any]:
         prepared, marker = load_prepare_marker(repo_root, prepared_value)
         source = prepared / "source/usim"
         source_tree_sha256, source_entries = prepared_source_identity(prepared)
+        backend = "m6-oracle" if marker["instrumentation_patch"]["path"].endswith("0002-m6-debug-ir-witness.patch") else "oracle"
         completed = subprocess.run(
-            ["make", "-f", "Makefile.usim", "USIM_BACKEND=oracle",
+            ["make", "-f", "Makefile.usim", f"USIM_BACKEND={backend}",
              "USIM_BUILD_TYPE=release", "CHAOSDIR=../chaos", "LDFLAGS=-no-pie"],
             cwd=source, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
             check=False,
@@ -800,7 +817,8 @@ def capture(*, repo_root: Path, prepared_value: str, config_value: str,
             raise OracleError("profile identity drifted after build")
         if build_marker.get("source_manifest_sha256") != sha256_file(repo_root / DEFAULT_SOURCE_MANIFEST):
             raise OracleError("source-manifest identity drifted after build")
-        if build_marker.get("prepare_patch_sha256") != sha256_file(repo_root / DEFAULT_PATCH):
+        selected_patch = tracked_patch_path(repo_root, Path(prepare_marker["instrumentation_patch"]["path"]))
+        if build_marker.get("prepare_patch_sha256") != sha256_file(selected_patch):
             raise OracleError("instrumentation patch identity drifted after build")
         source_manifest, source_before = original_source_identity(repo_root)
         config_relative = relative_path(config_value, "config")

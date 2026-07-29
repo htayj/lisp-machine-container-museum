@@ -387,6 +387,7 @@ static void mutation_event(uint32_t family, uint32_t index,
 void cadr_oracle_write_u32(uint32_t family, uint32_t index,
                            uint32_t old_value, uint32_t new_value)
 {
+    if (!oracle_started) return;
     mutation_event(family,index,old_value,new_value,0);
     struct state_tree *t=find_tree(family);
     if (!t) fatal("write hook names an unregistered state family");
@@ -396,6 +397,7 @@ void cadr_oracle_write_u32(uint32_t family, uint32_t index,
 void cadr_oracle_write_u64(uint32_t family, uint32_t index,
                            uint64_t old_value, uint64_t new_value)
 {
+    if (!oracle_started) return;
     mutation_event(family,index,old_value,new_value,0);
     struct state_tree *t=find_tree(family);
     if (!t) fatal("write hook names an unregistered state family");
@@ -405,11 +407,13 @@ void cadr_oracle_write_u64(uint32_t family, uint32_t index,
 void cadr_oracle_event_u32(uint32_t family, uint32_t index,
                            uint32_t value, uint32_t disposition)
 {
+    if (!oracle_started) return;
     mutation_event(family,index,value,value,disposition);
 }
 
 void cadr_oracle_main_memory_page_changed(uint32_t page_number)
 {
+    if (!oracle_started) return;
     mutation_event(CADR_ORACLE_MAIN_MEMORY,page_number,0,0,1);
     tree_update(find_tree(CADR_ORACLE_MAIN_MEMORY),page_number);
 }
@@ -559,6 +563,7 @@ static void component_dump_boundary(const uint8_t state[32])
 void cadr_oracle_latch_fetched(uint64_t raw_word, uint32_t pc,
                                bool instruction_memory)
 {
+    if (!oracle_started) return;
     memset(&begin_latch,0,sizeof(begin_latch));
     begin_latch.raw_word=raw_word&0xffffffffffffu;
     begin_latch.effective_word=begin_latch.raw_word;
@@ -572,6 +577,7 @@ void cadr_oracle_latch_decoded(uint64_t effective_word, uint32_t operation,
                                uint32_t m_address, bool functional_m_source,
                                uint32_t a_value, uint32_t m_value)
 {
+    if (!oracle_started) return;
     begin_latch.effective_word=effective_word&0xffffffffffffu;
     begin_latch.operation=operation;
     begin_latch.effective_popj=effective_popj;
@@ -585,6 +591,7 @@ void cadr_oracle_latch_decoded(uint64_t effective_word, uint32_t operation,
 
 void cadr_oracle_latch_inhibited(void)
 {
+    if (!oracle_started) return;
     begin_latch.inhibited=true;
 }
 

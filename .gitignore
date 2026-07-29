@@ -25,6 +25,8 @@
 /build/cadr-m4-portability/
 /build/cadr-m4-smoke/
 /build/cadr-m5-differential/
+/build/cadr-m6-diagnostic/
+/build/cadr-m6-devid-o2-canary/
 /build/.cadr-computer-use-runtime.lock
 /build/.cadr-computer-use-display.lock
 /build/genera-computer-use/
@@ -32,6 +34,7 @@
 /build/.genera-computer-use-vlm.lock
 /build/genera-probe-*/
 /cadr-web/build/
+/cadr-web/oracle/*.failure.json
 /cadr-web/*.o
 /cadr-web/core/*.o
 /cadr-web/core/usim-port/*.o

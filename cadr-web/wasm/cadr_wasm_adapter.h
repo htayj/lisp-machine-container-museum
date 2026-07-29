@@ -38,6 +38,8 @@ uint32_t cadr_wasm_state_v4_digest(void);
 uint32_t cadr_wasm_state_v5_digest(void);
 uint32_t cadr_wasm_scheduler_digest(void);
 uint32_t cadr_wasm_state_v5_failure_digest(void);
+uint32_t cadr_wasm_boot_witness(void);
+uint32_t cadr_wasm_boot_witness_meta(void);
 uint32_t cadr_wasm_host_next_request(void);
 uint32_t cadr_wasm_host_complete(uint32_t operation, uint32_t host_status,
                                  uint32_t generation_low, uint32_t generation_high,

@@ -1,0 +1,61 @@
+diff --git a/scripts/run-cadr-m6-one-run-diagnostic-stage.mjs b/scripts/run-cadr-m6-one-run-diagnostic-stage.mjs
+index e12041f..bb0bb75 100644
+--- a/scripts/run-cadr-m6-one-run-diagnostic-stage.mjs
++++ b/scripts/run-cadr-m6-one-run-diagnostic-stage.mjs
+@@ -93,17 +93,17 @@ function parseArgs(argv) {
+ }
+ 
+ function expectedArtifacts(record) {
+-  const recordKeys = ["builder_sha256", "diagnostic_delta_sha256", "diagnostic_runner",
+-    "headless", "launcher", "schema", "stage_directory", "staged_tree_git_object",
+-    "wasm", "worker"];
++  const recordKeys = ["builder_sha256", "diagnostic_deltas", "diagnostic_runner",
++    "headless", "launcher", "receipt_bound_base", "schema", "stage_directory",
++    "staged_tree_git_object", "wasm", "worker"];
+   if (record === null || typeof record !== "object" ||
+       Object.keys(record).sort().join(",") !== recordKeys.sort().join(",") ||
+-      record?.schema !== "cadr-m6-isolated-diagnostic-build-v2" ||
++      record?.schema !== "cadr-m6-isolated-diagnostic-build-v3" ||
+       record.stage_directory !== ROOT) {
+     throw new Error("staged M6 cause witness was not given its own closed build record");
+   }
+   if (!/^[0-9a-f]{64}$/.test(record.builder_sha256 ?? "") ||
+-      !/^[0-9a-f]{64}$/.test(record.diagnostic_delta_sha256 ?? "") ||
++      !/^[0-9a-f]{40}$/.test(record.receipt_bound_base ?? "") ||
+       !/^[0-9a-f]{40}$/.test(record.staged_tree_git_object ?? "") ||
+       Object.keys(record.launcher ?? {}).sort().join(",") !== "path,sha256" ||
+       !/^[0-9a-f]{64}$/.test(record.launcher?.sha256 ?? "") ||
+@@ -111,6 +111,18 @@ function expectedArtifacts(record) {
+       !record.launcher.path.endsWith("/scripts/run-cadr-m6-one-run-diagnostic.mjs")) {
+     throw new Error("closed build record lacks a valid provenance identity");
+   }
++  const deltaPaths = [
++    "cadr-web/oracle/patches/0004-m6-postterminal-diagnostic.patch",
++    "cadr-web/oracle/patches/0005-m6-receipt-bound-diagnostic.patch",
++  ];
++  if (!Array.isArray(record.diagnostic_deltas) ||
++      record.diagnostic_deltas.length !== deltaPaths.length ||
++      !record.diagnostic_deltas.every((delta, index) =>
++        delta !== null && typeof delta === "object" && !Array.isArray(delta) &&
++        Object.keys(delta).sort().join(",") === "path,sha256" &&
++        delta.path === deltaPaths[index] && /^[0-9a-f]{64}$/.test(delta.sha256 ?? ""))) {
++    throw new Error("closed build record lacks the ordered diagnostic delta identities");
++  }
+   const paths = {
+     wasm: resolve(ROOT, "cadr-web/build/cadr-web-m6-diagnostic-O0.wasm"),
+     worker: resolve(ROOT, "cadr-web/wasm/cadr-worker.js"),
+@@ -481,11 +493,13 @@ async function main() {
+     const receipt = Object.freeze({
+       diagnostic_build: Object.freeze({
+         builder_sha256: options.buildRecord.builder_sha256,
+-        delta_sha256: options.buildRecord.diagnostic_delta_sha256,
++        diagnostic_deltas: Object.freeze(options.buildRecord.diagnostic_deltas.map(delta =>
++          Object.freeze({ path: delta.path, sha256: delta.sha256 }))),
+         launcher: Object.freeze({
+           script: "scripts/run-cadr-m6-one-run-diagnostic.mjs",
+           sha256: options.buildRecord.launcher.sha256,
+         }),
++        receipt_bound_base: options.buildRecord.receipt_bound_base,
+         staged_tree_git_object: options.buildRecord.staged_tree_git_object,
+         artifacts_at_start: startHashes,
+         artifacts_before_publication: endHashes,

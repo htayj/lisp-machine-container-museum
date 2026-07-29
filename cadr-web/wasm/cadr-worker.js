@@ -10,11 +10,14 @@ import { m5SlotAdvanceAllowed, runM5DigestBatch } from "./cadr-m5-batch.mjs";
  * operation still consumes its well-formed id, so retries cannot accidentally
  * replay a side-effecting request.  Protocol v1 freezes the M3 request tree;
  * protocol v2 adds the M4 media operations and request-payload framing.  The
- * first well-formed, in-order request selects one version for the session.
+ * protocol-v3 tree is the frozen M5 scheduler, while protocol v4 adds only
+ * M6's queue digest and CDRM6I1 observation. The first well-formed, in-order
+ * request selects one version for the session.
  */
 const CADR_M3_PROTOCOL_VERSION = 1;
 const CADR_M4_PROTOCOL_VERSION = 2;
 const CADR_M5_PROTOCOL_VERSION = 3;
+const CADR_M6_PROTOCOL_VERSION = 4;
 const CADR_STATUS_OK = 0;
 const CADR_STATUS_INVALID_ARGUMENT = 2;
 const CADR_STATUS_HOST_FAILURE = 7;
@@ -37,6 +40,12 @@ const CADR_M5_ONLY_OPERATIONS = new Set([
   "scheduler-state", "scheduler-visibility",
   "scheduler-transcript-start", "scheduler-transcript-drain", "scheduler-transcript-finish",
   "boundary-digest-v5", "run-digest-batch-m5",
+]);
+/* Protocol v4 is an additive M6 transport profile over the frozen M5 ABI.
+ * These observations are intentionally absent from the closed protocol-v3
+ * request tree. */
+const CADR_M6_ONLY_OPERATIONS = new Set([
+  "scheduler-queue-digest", "boot-witness",
 ]);
 const CADR_SCHED_EVENT_SEQUENCE_BREAK = 1;
 const CADR_SCHED_EVENT_CLOCK = 2;
@@ -74,6 +83,11 @@ let deferredControls = [];
 let pendingBoundaryDigest = false;
 let lastFailureEvidence = null;
 
+function isM5ProtocolVersion(version) {
+  return version === CADR_M5_PROTOCOL_VERSION ||
+    version === CADR_M6_PROTOCOL_VERSION;
+}
+
 const isNode = typeof process !== "undefined" &&
   process.versions !== undefined && process.versions.node !== undefined;
 
@@ -104,7 +118,7 @@ function response(id, op, status, extra = {}, transfers = []) {
     op,
     status: status >>> 0,
     ok: (status >>> 0) === CADR_STATUS_OK,
-    ...(protocolVersion === CADR_M5_PROTOCOL_VERSION ? { lifecycle: workerLifecycle } : {}),
+    ...(isM5ProtocolVersion(protocolVersion) ? { lifecycle: workerLifecycle } : {}),
     ...extra,
   }, transfers);
 }
@@ -436,8 +450,13 @@ async function handle(request) {
     response(id, op, CADR_STATUS_INVALID_ARGUMENT);
     return;
   }
-  if (protocolVersion !== CADR_M5_PROTOCOL_VERSION &&
+  if (!isM5ProtocolVersion(protocolVersion) &&
       CADR_M5_ONLY_OPERATIONS.has(op)) {
+    response(id, op, CADR_STATUS_INVALID_ARGUMENT);
+    return;
+  }
+  if (protocolVersion !== CADR_M6_PROTOCOL_VERSION &&
+      CADR_M6_ONLY_OPERATIONS.has(op)) {
     response(id, op, CADR_STATUS_INVALID_ARGUMENT);
     return;
   }
@@ -448,7 +467,7 @@ async function handle(request) {
     response(id, op, CADR_STATUS_NOT_READY, { lifecycle: workerLifecycle });
     return;
   }
-  if (protocolVersion === CADR_M5_PROTOCOL_VERSION &&
+  if (isM5ProtocolVersion(protocolVersion) &&
       ["run", "run-digest-batch", "run-digest-batch-v3", "run-digest-batch-m4"].includes(op)) {
     response(id, op, CADR_STATUS_INVALID_ARGUMENT, { lifecycle: workerLifecycle });
     return;
@@ -535,7 +554,10 @@ async function handle(request) {
         coreStateDigest: lastFailureEvidence.coreStateDigest.slice(0) } : null;
     response(id, op, CADR_STATUS_OK, { lifecycle: workerLifecycle, hidden,
       visibilityInitialized, snapshotVisibilityInitialized, controlOrdinal, controlBoundary,
-      controlWitness: witness.buffer, ...(failed ?? {}) },
+      controlWitness: witness.buffer, runActive,
+      deferredControlCount: deferredControls.length,
+      pendingBoundaryDigest, mediaBusy, mediaDirty, mediaSnapshotBlocked,
+      mediaOverlayGeneration, ...(failed ?? {}) },
     failed === null ? [witness.buffer] : [witness.buffer, failed.queueDigest, failed.coreStateDigest]);
   } else if (op === "scheduler-transcript-start") {
     if (workerLifecycle !== CADR_WORKER_PAUSED) { response(id, op, CADR_STATUS_NOT_READY); return; }
@@ -867,6 +889,117 @@ async function handle(request) {
     }
     const digest = new Uint8Array(e.memory.buffer, pointer, 32).slice();
     response(id, op, status, { digest: digest.buffer }, [digest.buffer]);
+  } else if (op === "scheduler-queue-digest") {
+    const pointer = e.cadr_wasm_output_pointer() >>> 0;
+    const status = pointer === 0 ? CADR_STATUS_NOT_READY :
+      (e.cadr_wasm_scheduler_digest() >>> 0);
+    if (status !== CADR_STATUS_OK || pointer + 32 > e.memory.buffer.byteLength) {
+      response(id, op, status); return;
+    }
+    const digest = new Uint8Array(e.memory.buffer, pointer, 32).slice();
+    response(id, op, status, { digest: digest.buffer }, [digest.buffer]);
+  } else if (op === "boot-witness") {
+    if (runActive || pendingBoundaryDigest || deferredControls.length !== 0 ||
+        mediaBusy || workerLifecycle !== CADR_WORKER_RUNNING ||
+        visibilityInitialized !== true || hidden) {
+      response(id, op, CADR_STATUS_NOT_READY, {
+        lifecycle: workerLifecycle,
+      });
+      return;
+    }
+    const pointer = e.cadr_wasm_output_pointer() >>> 0;
+    const status = pointer === 0 ? CADR_STATUS_NOT_READY :
+      (e.cadr_wasm_boot_witness() >>> 0);
+    if (status !== CADR_STATUS_OK || pointer + 96 > e.memory.buffer.byteLength) {
+      response(id, op, status); return;
+    }
+    const sample = new Uint8Array(e.memory.buffer, pointer, 96).slice();
+    const view = new DataView(sample.buffer);
+    const magic = new TextDecoder().decode(sample.subarray(0, 7));
+    if (magic !== "CDRM6I1" || sample[7] !== 0 ||
+        (view.getBigUint64(8, true) >> 48n) !== 0n ||
+        (view.getBigUint64(16, true) >> 48n) !== 0n ||
+        (view.getBigUint64(24, true) >> 48n) !== 0n ||
+        view.getUint32(92, true) !== 0) {
+      response(id, op, CADR_STATUS_INVALID_ARGUMENT);
+      return;
+    }
+    let generation = 0n;
+    let boundary = 0n;
+    let coreLifecycle = 0;
+    let persistentStatus = CADR_STATUS_NOT_READY;
+    let outstandingRequestId = 0n;
+    let lastCompletedRequestId = 0n;
+    const infoStatus = e.cadr_wasm_machine_info() >>> 0;
+    if (infoStatus !== CADR_STATUS_OK ||
+        pointer + 64 > e.memory.buffer.byteLength) {
+      response(id, op, infoStatus === CADR_STATUS_OK ?
+        CADR_STATUS_NOT_READY : infoStatus);
+      return;
+    }
+    const info = new DataView(e.memory.buffer, pointer, 64);
+    coreLifecycle = info.getUint32(0, true);
+    boundary = info.getBigUint64(8, true);
+    generation = info.getBigUint64(24, true);
+    outstandingRequestId = info.getBigUint64(40, true);
+    lastCompletedRequestId = info.getBigUint64(48, true);
+    persistentStatus = info.getUint32(56, true);
+    const metaStatus = e.cadr_wasm_boot_witness_meta() >>> 0;
+    if (metaStatus !== CADR_STATUS_OK ||
+        pointer + 28 > e.memory.buffer.byteLength) {
+      response(id, op, metaStatus === CADR_STATUS_OK ?
+        CADR_STATUS_NOT_READY : metaStatus);
+      return;
+    }
+    const witnessMeta = new DataView(e.memory.buffer, pointer, 28);
+    if (coreLifecycle !== 2 || witnessMeta.getUint32(0, true) !== 0) {
+      response(id, op, CADR_STATUS_NOT_READY, {
+        lifecycle: workerLifecycle,
+      });
+      return;
+    }
+    response(id, op, status, {
+      wireSchema: "CDRM6I1",
+      sample: sample.buffer,
+      debugInstruction: view.getBigUint64(8, true),
+      p0: view.getBigUint64(16, true),
+      p1: view.getBigUint64(24, true),
+      p0Pc: view.getUint32(32, true),
+      p1Pc: view.getUint32(36, true),
+      nextMicroPc: view.getUint32(40, true),
+      locationCounter: view.getUint32(44, true),
+      interruptControl: view.getUint32(48, true),
+      interruptStatus: view.getUint32(52, true),
+      interruptPending: view.getUint32(56, true),
+      iobCsr: view.getUint32(60, true),
+      iobFifoCount: view.getUint32(64, true),
+      iobScancode: view.getUint32(68, true),
+      diskStatus: view.getUint32(72, true),
+      diskTransferActive: view.getUint32(76, true),
+      outstandingOperation: view.getUint32(80, true),
+      diskInterruptRequest: view.getUint32(84, true),
+      hostRequestPending: view.getUint32(88, true),
+      hostCompletionQueued: view.getUint32(92, true),
+      schedulerPendingCount: witnessMeta.getUint32(24, true),
+      boundary,
+      generation,
+      coreLifecycle,
+      persistentStatus,
+      lastCompletedRequestId,
+      outstandingRequestId,
+      schedulerPhase: witnessMeta.getUint32(0, true),
+      expectedCompletionByteCount: witnessMeta.getBigUint64(8, true),
+      completionByteCount: witnessMeta.getBigUint64(16, true),
+      boundaryPendingHost: pendingBoundaryDigest,
+      runActive,
+      deferredControlCount: deferredControls.length,
+      mediaBusy,
+      mediaDirty,
+      mediaSnapshotBlocked,
+      mediaOverlayGeneration,
+      visibilityInitialized,
+      hidden,
+    }, [sample.buffer]);
   } else if (op === "host-next-request") {
     const input = e.cadr_wasm_input_reserve(CADR_HOST_DESCRIPTOR_LIMIT + CADR_HOST_REQUEST_PAYLOAD_LIMIT) >>> 0;
     const output = e.cadr_wasm_output_pointer() >>> 0;
@@ -1045,9 +1178,9 @@ async function handle(request) {
     const meta = status === CADR_STATUS_OK ? metadata(e) : null;
     if (meta === null) response(id, op, status === CADR_STATUS_OK ? CADR_STATUS_NOT_READY : status);
     else response(id, op, status, { byteCount: meta[0] +
-      (protocolVersion === CADR_M5_PROTOCOL_VERSION ? 104n : 0n) });
+      (isM5ProtocolVersion(protocolVersion) ? 104n : 0n) });
   } else if (op === "snapshot-save") {
-    if (protocolVersion === CADR_M5_PROTOCOL_VERSION &&
+    if (isM5ProtocolVersion(protocolVersion) &&
         (workerLifecycle !== CADR_WORKER_PAUSED || !visibilityInitialized)) {
       response(id, op, CADR_STATUS_NOT_READY); return;
     }
@@ -1068,7 +1201,7 @@ async function handle(request) {
       return;
     }
     const rawSnapshot = new Uint8Array(e.memory.buffer, pointer, byteCount).slice();
-    if (protocolVersion === CADR_M5_PROTOCOL_VERSION) {
+    if (isM5ProtocolVersion(protocolVersion)) {
       snapshotHidden = hidden;
       snapshotVisibilityInitialized = visibilityInitialized;
       snapshotControlOrdinal = controlOrdinal;
@@ -1081,7 +1214,7 @@ async function handle(request) {
       response(id, op, status, { snapshot: rawSnapshot.buffer }, [rawSnapshot.buffer]);
     }
   } else if (op === "snapshot-restore") {
-    if (protocolVersion === CADR_M5_PROTOCOL_VERSION && workerLifecycle !== CADR_WORKER_PAUSED) {
+    if (isM5ProtocolVersion(protocolVersion) && workerLifecycle !== CADR_WORKER_PAUSED) {
       response(id, op, CADR_STATUS_NOT_READY); return;
     }
     if (mediaBusy || mediaDirty || mediaSnapshotBlocked || pendingBoundaryDigest) {
@@ -1089,7 +1222,7 @@ async function handle(request) {
       return;
     }
     const status = e.cadr_wasm_snapshot_restore() >>> 0;
-    if (status === CADR_STATUS_OK && protocolVersion === CADR_M5_PROTOCOL_VERSION) {
+    if (status === CADR_STATUS_OK && isM5ProtocolVersion(protocolVersion)) {
       hidden = snapshotHidden; controlOrdinal = snapshotControlOrdinal;
       controlWitness = snapshotControlWitness.slice();
       controlBoundary = snapshotControlBoundary;
@@ -1097,7 +1230,7 @@ async function handle(request) {
     }
     response(id, op, status, { lifecycle: workerLifecycle, hidden });
   } else if (op === "snapshot-restore-import") {
-    if (protocolVersion === CADR_M5_PROTOCOL_VERSION && workerLifecycle !== CADR_WORKER_PAUSED &&
+    if (isM5ProtocolVersion(protocolVersion) && workerLifecycle !== CADR_WORKER_PAUSED &&
         workerLifecycle !== CADR_WORKER_NEW) {
       response(id, op, CADR_STATUS_NOT_READY); return;
     }
@@ -1107,7 +1240,7 @@ async function handle(request) {
     }
     const supplied = uint8Bytes(request.snapshot);
     let envelope;
-    if (protocolVersion === CADR_M5_PROTOCOL_VERSION && supplied !== null) {
+    if (isM5ProtocolVersion(protocolVersion) && supplied !== null) {
       envelope = await unwrapM5WorkerSnapshot(supplied);
       if (envelope !== null && envelope.legacy) {
         envelope = request.allowLegacyNativeImport === true ?
@@ -1126,7 +1259,7 @@ async function handle(request) {
     }
     new Uint8Array(e.memory.buffer, pointer, bytes.byteLength).set(bytes);
     const status = e.cadr_wasm_snapshot_restore_import(bytes.byteLength) >>> 0;
-    if (status === CADR_STATUS_OK && protocolVersion === CADR_M5_PROTOCOL_VERSION) {
+    if (status === CADR_STATUS_OK && isM5ProtocolVersion(protocolVersion)) {
       workerLifecycle = CADR_WORKER_PAUSED;
       hidden = envelope.hidden;
       controlOrdinal = envelope.legacy ? 0n : envelope.controlOrdinal;
@@ -1152,12 +1285,19 @@ async function handle(request) {
 async function receive(event) {
   const request = event.data;
   if (!isRecord(request) ||
-      ![CADR_M3_PROTOCOL_VERSION, CADR_M4_PROTOCOL_VERSION, CADR_M5_PROTOCOL_VERSION]
+      ![CADR_M3_PROTOCOL_VERSION, CADR_M4_PROTOCOL_VERSION,
+        CADR_M5_PROTOCOL_VERSION, CADR_M6_PROTOCOL_VERSION]
         .includes(request.version) ||
-      (request.version === CADR_M5_PROTOCOL_VERSION && request.op === "instantiate" &&
+      (isM5ProtocolVersion(request.version) && request.op === "instantiate" &&
        (!(request.module instanceof WebAssembly.Module) ||
         !WebAssembly.Module.exports(request.module).some(
           entry => entry.name === "cadr_wasm_schedule_event"))) ||
+      (request.version === CADR_M6_PROTOCOL_VERSION &&
+       request.op === "instantiate" &&
+       (!WebAssembly.Module.exports(request.module).some(
+         entry => entry.name === "cadr_wasm_boot_witness") ||
+        !WebAssembly.Module.exports(request.module).some(
+          entry => entry.name === "cadr_wasm_boot_witness_meta"))) ||
       (protocolVersion !== null && request.version !== protocolVersion) ||
       !validId(request.id) || typeof request.op !== "string") {
     error(isRecord(request) && validId(request.id) ? request.id : null,
@@ -1182,8 +1322,8 @@ async function receive(event) {
  * later message cannot observe half-completed state from an earlier one. */
 function queueLiveControl(event) {
   const request = event.data;
-  if (!runActive || !isRecord(request) || protocolVersion !== CADR_M5_PROTOCOL_VERSION ||
-      request.version !== CADR_M5_PROTOCOL_VERSION || request.id !== expectedId ||
+  if (!runActive || !isRecord(request) || !isM5ProtocolVersion(protocolVersion) ||
+      request.version !== protocolVersion || request.id !== expectedId ||
       !["scheduler-pause", "scheduler-stop", "scheduler-shutdown", "scheduler-visibility"].includes(request.op) ||
       (request.op === "scheduler-visibility" && typeof request.hidden !== "boolean")) return false;
   expectedId += 1;

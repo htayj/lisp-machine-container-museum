@@ -62,6 +62,10 @@ machine-readable metadata layer while retaining ordinary Markdown as the source.
 - [CADR-WEB-303 ABI1.4 deterministic machine scheduler specification](mit-cadr/cadr-deterministic-machine-scheduler-reimplementation-specification.md)
   specifies guest-slot event ordering, the selected I/O-board subset, worker
   lifecycle controls, CDRSTATE5, and the native/Wasm M5 gate.
+- [CADR-WEB-303 ABI1.4 headless System 303 Listener boot oracle specification](mit-cadr/cadr-system-303-headless-listener-boot-oracle-reimplementation-specification.md)
+  specifies immutable artifact preflight, exact raw Cadet boot input, the
+  source-defined Listener A/B/C oracle, post-observer quiescence, READY3, and
+  three-run native/Wasm M6 conformance.
 - [CADR-WEB portable core and host ABI](mit-cadr/cadr-web-core-architecture-decision.md)
   records the portable machine boundary and the deterministic pull-style contract
   between the CADR core and native or browser hosts.

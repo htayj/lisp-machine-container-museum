@@ -108,7 +108,7 @@ static void cadr_wasm_put32(uint8_t *bytes, uint32_t value)
 static cadr_status cadr_wasm_ensure_machine(void)
 {
     cadr_machine_config config = {
-        CADR_ABI_MAJOR, CADR_ABI_MINOR,
+        CADR_ABI_MAJOR, CADR_WASM_ACTIVE_ABI_MINOR,
         (uint32_t)sizeof(cadr_machine_config), 0U,
         CADR_PROFILE_CADR_WEB_303, 0U
     };
@@ -144,7 +144,7 @@ uint32_t cadr_wasm_stream_begin(uint32_t artifact_kind, uint32_t byte_count_low,
                                 uint32_t byte_count_high)
 {
     cadr_artifact_ingress ingress = {
-        CADR_ABI_MAJOR, CADR_ABI_MINOR,
+        CADR_ABI_MAJOR, CADR_WASM_ACTIVE_ABI_MINOR,
         (uint32_t)sizeof(cadr_artifact_ingress), artifact_kind,
         ((uint64_t)byte_count_high << 32U) | byte_count_low
     };
@@ -188,7 +188,7 @@ CADR_WASM_EXPORT("cadr_wasm_import")
 uint32_t cadr_wasm_import(uint32_t artifact_kind, uint32_t byte_count)
 {
     cadr_artifact_ingress ingress = {
-        CADR_ABI_MAJOR, CADR_ABI_MINOR,
+        CADR_ABI_MAJOR, CADR_WASM_ACTIVE_ABI_MINOR,
         (uint32_t)sizeof(cadr_artifact_ingress), artifact_kind, byte_count
     };
     cadr_status status = cadr_wasm_ensure_machine();
@@ -465,7 +465,8 @@ uint32_t cadr_wasm_host_complete(uint32_t operation, uint32_t host_status,
                                  uint32_t byte_count)
 {
     cadr_host_completion completion = {
-        CADR_ABI_MAJOR, CADR_ABI_MINOR, (uint32_t)sizeof(cadr_host_completion),
+        CADR_ABI_MAJOR, CADR_WASM_ACTIVE_ABI_MINOR,
+        (uint32_t)sizeof(cadr_host_completion),
         operation, host_status, 0U,
         ((uint64_t)generation_high << 32U) | generation_low,
         ((uint64_t)request_high << 32U) | request_low,
@@ -544,7 +545,7 @@ uint32_t cadr_wasm_machine_info(void)
 {
     cadr_machine_info info = {
         .abi_major = CADR_ABI_MAJOR,
-        .abi_minor = CADR_ABI_MINOR,
+        .abi_minor = CADR_WASM_ACTIVE_ABI_MINOR,
         .struct_size = (uint32_t)sizeof(cadr_machine_info)
     };
     uint32_t artifacts;
@@ -817,4 +818,76 @@ uint32_t cadr_wasm_state_v5_failure_digest(void)
 {
     if (cadr_wasm_machine == NULL || cadr_wasm_output == NULL) return CADR_STATUS_NOT_READY;
     return cadr_machine_state_v5_failure_digest(cadr_wasm_machine, cadr_wasm_output);
+}
+
+#if defined(CADR_M5_WASM)
+CADR_WASM_EXPORT("cadr_wasm_boot_witness")
+#endif
+uint32_t cadr_wasm_boot_witness(void)
+{
+    const cadr_machine_state *state;
+    if (cadr_wasm_machine == NULL || cadr_wasm_output == NULL) {
+        return CADR_STATUS_NOT_READY;
+    }
+    state = &cadr_wasm_machine->state;
+    (void)memset(cadr_wasm_output, 0, CADR_WASM_OUTPUT_BYTES);
+    (void)memcpy(cadr_wasm_output, "CDRM6I1", 7U);
+    cadr_wasm_put64(cadr_wasm_output + 8U,
+                    cadr_diagnostic_debug_instruction(state) &
+                    UINT64_C(0x0000ffffffffffff));
+    cadr_wasm_put64(cadr_wasm_output + 16U,
+                    state->cpu.p0 & UINT64_C(0x0000ffffffffffff));
+    cadr_wasm_put64(cadr_wasm_output + 24U,
+                    state->cpu.p1 & UINT64_C(0x0000ffffffffffff));
+    cadr_wasm_put32(cadr_wasm_output + 32U, state->cpu.p0_pc);
+    cadr_wasm_put32(cadr_wasm_output + 36U, state->cpu.p1_pc);
+    cadr_wasm_put32(cadr_wasm_output + 40U, state->cpu.next_micro_pc);
+    cadr_wasm_put32(cadr_wasm_output + 44U, state->cpu.location_counter);
+    cadr_wasm_put32(cadr_wasm_output + 48U, state->cpu.interrupt_control);
+    cadr_wasm_put32(cadr_wasm_output + 52U, state->bus.interrupt_status);
+    cadr_wasm_put32(cadr_wasm_output + 56U, state->bus.interrupt_pending);
+    cadr_wasm_put32(cadr_wasm_output + 60U, state->devices.iob.csr);
+    cadr_wasm_put32(cadr_wasm_output + 64U,
+                    state->devices.iob.key_queue_count);
+    cadr_wasm_put32(cadr_wasm_output + 68U, state->devices.iob.scancode);
+    cadr_wasm_put32(cadr_wasm_output + 72U,
+                    ((state->devices.disk.status &
+                      CADR_DISK_STATUS_NOT_ACTIVE) != 0U ? 1U : 0U) |
+                    ((state->devices.disk.status &
+                      CADR_DISK_STATUS_INTERRUPT) != 0U ? 2U : 0U));
+    cadr_wasm_put32(cadr_wasm_output + 76U,
+                    state->devices.disk.transfer_active);
+    cadr_wasm_put32(cadr_wasm_output + 80U,
+                    state->events.outstanding_operation);
+    /* CDRM6I1 offset 84 is the disk's retained guest interrupt request,
+     * distinct from the host-completion queue checked by witness metadata. */
+    cadr_wasm_put32(cadr_wasm_output + 84U,
+                    (state->devices.disk.status &
+                     CADR_DISK_STATUS_INTERRUPT) != 0U ? 1U : 0U);
+    cadr_wasm_put32(cadr_wasm_output + 88U,
+                    state->events.outstanding_request_id != 0U ? 1U : 0U);
+    cadr_wasm_put32(cadr_wasm_output + 92U,
+                    state->events.completion_queued);
+    return CADR_STATUS_OK;
+}
+
+#if defined(CADR_M5_WASM)
+CADR_WASM_EXPORT("cadr_wasm_boot_witness_meta")
+#endif
+uint32_t cadr_wasm_boot_witness_meta(void)
+{
+    const cadr_machine_state *state;
+    if (cadr_wasm_machine == NULL || cadr_wasm_output == NULL) {
+        return CADR_STATUS_NOT_READY;
+    }
+    state = &cadr_wasm_machine->state;
+    (void)memset(cadr_wasm_output, 0, CADR_WASM_OUTPUT_BYTES);
+    cadr_wasm_put32(cadr_wasm_output, state->scheduler.phase);
+    cadr_wasm_put32(cadr_wasm_output + 4U, state->events.persistent_status);
+    cadr_wasm_put64(cadr_wasm_output + 8U,
+                    state->events.expected_completion_byte_count);
+    cadr_wasm_put64(cadr_wasm_output + 16U,
+                    state->events.completion_byte_count);
+    cadr_wasm_put32(cadr_wasm_output + 24U, state->scheduler.count);
+    return CADR_STATUS_OK;
 }
