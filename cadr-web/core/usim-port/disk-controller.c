@@ -128,6 +128,16 @@ static void cadr_disk_set_inactive(cadr_machine_state *state)
     }
 }
 
+#if defined(CADR_M5_ORACLE_TEST)
+void cadr_m5_oracle_latch_disk_result(cadr_machine_state *const state)
+{
+    /* The maintained-usim oracle reaches this point after result acceptance.
+     * Do not expose it through the host ABI or scheduler event vocabulary. */
+    state->devices.disk.status |= CADR_DISK_STATUS_INTERRUPT;
+    cadr_bus_assert_xbus_interrupt(state);
+}
+#endif
+
 static void cadr_disk_reset(cadr_machine_state *state)
 {
     cadr_disk_state *disk = &state->devices.disk;

@@ -6,8 +6,10 @@
 #include "cadr_disk_evidence.h"
 #include "cadr_host_api.h"
 #include "cadr_machine.h"
+#include "cadr_bus_device.h"
 #include "cadr_state_v3.h"
 #include "cadr_state_v4.h"
+#include "cadr_state_v5.h"
 #include "cadr_wasm_adapter.h"
 #include "cadr_wasm_memory.h"
 #include "cadr_wasm_runtime.h"
@@ -37,6 +39,16 @@ static uint32_t cadr_wasm_restore_used;
 #define CADR_WASM_META_BYTES UINT32_C(32)
 #define CADR_WASM_HOST_REQUEST_BYTES \
     (CADR_MAX_HOST_DESCRIPTOR_BYTES + CADR_MAX_HOST_REQUEST_PAYLOAD_BYTES)
+#if defined(CADR_M5_WASM)
+#define CADR_WASM_SNAPSHOT_ABI_MINOR CADR_ABI_MINOR_M5
+#define CADR_WASM_ACTIVE_ABI_MINOR CADR_ABI_MINOR_M5
+#elif defined(CADR_M4_WASM)
+#define CADR_WASM_SNAPSHOT_ABI_MINOR CADR_ABI_MINOR_M3
+#define CADR_WASM_ACTIVE_ABI_MINOR CADR_ABI_MINOR_M4
+#else
+#define CADR_WASM_SNAPSHOT_ABI_MINOR CADR_ABI_MINOR_M3
+#define CADR_WASM_ACTIVE_ABI_MINOR CADR_ABI_MINOR_M3
+#endif
 
 static void cadr_wasm_meta_result(uint64_t first, uint64_t second);
 /* ABI1.2's nine-chunk CDRSNAP1 adds one directory entry and the D0 disk chunk. */
@@ -201,15 +213,27 @@ uint32_t cadr_wasm_boot(void)
         cadr_machine_boot(cadr_wasm_machine);
 }
 
+#if defined(CADR_M5_WASM)
+CADR_WASM_EXPORT("cadr_wasm_reset")
+#endif
+uint32_t cadr_wasm_reset(void)
+{
+    cadr_reset_request request = {
+        CADR_ABI_MAJOR, CADR_ABI_MINOR_M5, (uint32_t)sizeof(cadr_reset_request), 0U
+    };
+    return cadr_wasm_machine == NULL ? CADR_STATUS_NOT_READY :
+        cadr_machine_reset(cadr_wasm_machine, &request);
+}
+
 CADR_WASM_EXPORT("cadr_wasm_run")
 uint32_t cadr_wasm_run(uint32_t clock_slots)
 {
     cadr_run_request request = {
-        CADR_ABI_MAJOR, CADR_ABI_MINOR,
+        CADR_ABI_MAJOR, CADR_WASM_ACTIVE_ABI_MINOR,
         (uint32_t)sizeof(cadr_run_request), 0U, clock_slots
     };
     cadr_run_result result = {
-        CADR_ABI_MAJOR, CADR_ABI_MINOR,
+        CADR_ABI_MAJOR, CADR_WASM_ACTIVE_ABI_MINOR,
         (uint32_t)sizeof(cadr_run_result), 0U, 0U, 0U, 0U, 0U
     };
     cadr_status status;
@@ -219,6 +243,134 @@ uint32_t cadr_wasm_run(uint32_t clock_slots)
                           result.microinstructions_executed);
     return status;
 }
+
+#if defined(CADR_M5_WASM)
+CADR_WASM_EXPORT("cadr_wasm_schedule_event")
+#endif
+uint32_t cadr_wasm_schedule_event(uint32_t kind, uint32_t flags,
+                                  uint32_t due_low, uint32_t due_high,
+                                  uint32_t generation_low, uint32_t generation_high,
+                                  uint32_t value, uint32_t reserved0)
+{
+    cadr_scheduler_event event;
+    if (cadr_wasm_machine == NULL) return CADR_STATUS_NOT_READY;
+    (void)memset(&event, 0, sizeof(event));
+    event.abi_major = CADR_ABI_MAJOR;
+    event.abi_minor = CADR_ABI_MINOR_M5;
+    event.struct_size = (uint32_t)sizeof(event);
+    event.kind = kind;
+    event.flags = flags;
+    event.due_tick = ((uint64_t)due_high << 32U) | due_low;
+    event.generation = ((uint64_t)generation_high << 32U) | generation_low;
+    event.value = value;
+    event.reserved0 = reserved0;
+    return cadr_machine_schedule_event(cadr_wasm_machine, &event);
+}
+
+static uint32_t cadr_wasm_get32le(const uint8_t *bytes)
+{
+    return (uint32_t)bytes[0] | ((uint32_t)bytes[1] << 8U) |
+        ((uint32_t)bytes[2] << 16U) | ((uint32_t)bytes[3] << 24U);
+}
+
+#if defined(CADR_M5_WASM)
+CADR_WASM_EXPORT("cadr_wasm_schedule_events")
+#endif
+uint32_t cadr_wasm_schedule_events(uint32_t event_count, uint32_t byte_count)
+{
+    cadr_scheduler_event events[CADR_SCHEDULER_EVENT_CAPACITY];
+    uint32_t index;
+    if (cadr_wasm_machine == NULL || event_count == 0U ||
+        event_count > CADR_SCHEDULER_EVENT_CAPACITY ||
+        byte_count != event_count * UINT32_C(32) || cadr_wasm_input == NULL) {
+        return CADR_STATUS_INVALID_ARGUMENT;
+    }
+    for (index = 0U; index < event_count; ++index) {
+        const uint8_t *wire = cadr_wasm_input + index * UINT32_C(32);
+        cadr_scheduler_event *event = &events[index];
+        (void)memset(event, 0, sizeof(*event));
+        event->abi_major = CADR_ABI_MAJOR; event->abi_minor = CADR_ABI_MINOR_M5;
+        event->struct_size = (uint32_t)sizeof(*event);
+        event->kind = cadr_wasm_get32le(wire); event->flags = cadr_wasm_get32le(wire + 4U);
+        event->due_tick = (uint64_t)cadr_wasm_get32le(wire + 8U) |
+            ((uint64_t)cadr_wasm_get32le(wire + 12U) << 32U);
+        event->generation = (uint64_t)cadr_wasm_get32le(wire + 16U) |
+            ((uint64_t)cadr_wasm_get32le(wire + 20U) << 32U);
+        event->value = cadr_wasm_get32le(wire + 24U); event->reserved0 = cadr_wasm_get32le(wire + 28U);
+    }
+    return cadr_machine_schedule_events(cadr_wasm_machine, events, event_count);
+}
+
+#if defined(CADR_M5_WASM)
+CADR_WASM_EXPORT("cadr_wasm_scheduler_transcript_start")
+#endif
+uint32_t cadr_wasm_scheduler_transcript_start(void)
+{
+    return cadr_wasm_machine == NULL ? CADR_STATUS_NOT_READY :
+        cadr_machine_scheduler_transcript_start(cadr_wasm_machine);
+}
+
+#if defined(CADR_M5_WASM)
+CADR_WASM_EXPORT("cadr_wasm_scheduler_transcript")
+#endif
+uint32_t cadr_wasm_scheduler_transcript(void)
+{
+    uint64_t byte_count = 0U;
+    uint64_t written = 0U;
+    cadr_status status;
+    if (cadr_wasm_machine == NULL) return CADR_STATUS_NOT_READY;
+    status = cadr_machine_scheduler_transcript_size(cadr_wasm_machine, &byte_count);
+    if (status != CADR_STATUS_OK || byte_count > CADR_WASM_TRANSFER_BYTES) return
+        status == CADR_STATUS_OK ? CADR_STATUS_WRONG_LENGTH : status;
+    if (cadr_wasm_input_reserve((uint32_t)byte_count) == 0U) return CADR_STATUS_NO_MEMORY;
+    status = cadr_machine_scheduler_transcript_drain(cadr_wasm_machine, cadr_wasm_input,
+                                                      byte_count, &written);
+    cadr_wasm_meta_result(written, 0U);
+    return status;
+}
+
+#if defined(CADR_M5_WASM)
+CADR_WASM_EXPORT("cadr_wasm_scheduler_transcript_finish")
+#endif
+uint32_t cadr_wasm_scheduler_transcript_finish(void)
+{
+    return cadr_wasm_machine == NULL ? CADR_STATUS_NOT_READY :
+        cadr_machine_scheduler_transcript_finish(cadr_wasm_machine);
+}
+
+#if defined(CADR_M5_ORACLE_TEST)
+CADR_WASM_EXPORT("cadr_wasm_m5_oracle_latch_disk_result")
+uint32_t cadr_wasm_m5_oracle_latch_disk_result(void)
+{
+    if (cadr_wasm_machine == NULL) return CADR_STATUS_NOT_READY;
+    cadr_m5_oracle_latch_disk_result(&cadr_wasm_machine->state);
+    return CADR_STATUS_OK;
+}
+
+CADR_WASM_EXPORT("cadr_wasm_m5_oracle_observation")
+uint32_t cadr_wasm_m5_oracle_observation(void)
+{
+    const cadr_machine_state *state;
+    if (cadr_wasm_machine == NULL || cadr_wasm_output == NULL) return CADR_STATUS_NOT_READY;
+    state = &cadr_wasm_machine->state;
+    (void)memset(cadr_wasm_output, 0, CADR_WASM_OUTPUT_BYTES);
+    cadr_wasm_put64(cadr_wasm_output, state->clock_slots_completed);
+    cadr_wasm_put32(cadr_wasm_output + 8U, state->cpu.interrupt_control);
+    cadr_wasm_put32(cadr_wasm_output + 12U, state->cpu.location_counter);
+    cadr_wasm_put32(cadr_wasm_output + 16U, state->bus.interrupt_status);
+    cadr_wasm_put32(cadr_wasm_output + 20U, state->bus.interrupt_pending);
+    cadr_wasm_put32(cadr_wasm_output + 24U, state->devices.disk.status);
+    cadr_wasm_put32(cadr_wasm_output + 28U, state->devices.tv_mode);
+    cadr_wasm_put32(cadr_wasm_output + 32U, state->devices.iob.sixty_cycle_clock);
+    cadr_wasm_put32(cadr_wasm_output + 36U, state->devices.iob.usec_clock);
+    cadr_wasm_put32(cadr_wasm_output + 40U, state->devices.iob.csr);
+    cadr_wasm_put32(cadr_wasm_output + 44U, state->devices.iob.scancode);
+    cadr_wasm_put64(cadr_wasm_output + 48U, state->cpu.p0);
+    cadr_wasm_put64(cadr_wasm_output + 56U, state->cpu.p1);
+    cadr_wasm_put32(cadr_wasm_output + 64U, state->cpu.next_micro_pc);
+    return CADR_STATUS_OK;
+}
+#endif
 
 CADR_WASM_EXPORT("cadr_wasm_output_pointer")
 uint32_t cadr_wasm_output_pointer(void)
@@ -236,7 +388,10 @@ uint32_t cadr_wasm_meta_pointer(void)
 
 static void cadr_wasm_meta_result(uint64_t first, uint64_t second)
 {
-    if (cadr_wasm_meta == NULL) return;
+    if (cadr_wasm_meta == NULL) {
+        cadr_wasm_meta = malloc(CADR_WASM_META_BYTES);
+        if (cadr_wasm_meta == NULL) return;
+    }
     cadr_wasm_put64(cadr_wasm_meta, first);
     cadr_wasm_put64(cadr_wasm_meta + 8U, second);
 }
@@ -494,7 +649,7 @@ CADR_WASM_EXPORT("cadr_wasm_snapshot_size")
 uint32_t cadr_wasm_snapshot_size(void)
 {
     cadr_snapshot_request request = {
-        CADR_ABI_MAJOR, CADR_ABI_MINOR_M3, (uint32_t)sizeof(cadr_snapshot_request), 0U
+        CADR_ABI_MAJOR, CADR_WASM_SNAPSHOT_ABI_MINOR, (uint32_t)sizeof(cadr_snapshot_request), 0U
     };
     uint64_t size = 0U;
     cadr_status status;
@@ -508,7 +663,7 @@ CADR_WASM_EXPORT("cadr_wasm_snapshot_save")
 uint32_t cadr_wasm_snapshot_save(void)
 {
     cadr_snapshot_request request = {
-        CADR_ABI_MAJOR, CADR_ABI_MINOR_M3, (uint32_t)sizeof(cadr_snapshot_request), 0U
+        CADR_ABI_MAJOR, CADR_WASM_SNAPSHOT_ABI_MINOR, (uint32_t)sizeof(cadr_snapshot_request), 0U
     };
     uint64_t size = 0U;
     uint64_t written = 0U;
@@ -558,7 +713,7 @@ static uint32_t cadr_wasm_snapshot_replace(const uint8_t *bytes,
                                            uint64_t byte_count)
 {
     cadr_snapshot_request request = {
-        CADR_ABI_MAJOR, CADR_ABI_MINOR_M3, (uint32_t)sizeof(cadr_snapshot_request), 0U
+        CADR_ABI_MAJOR, CADR_WASM_SNAPSHOT_ABI_MINOR, (uint32_t)sizeof(cadr_snapshot_request), 0U
     };
     cadr_machine *restored = NULL;
     cadr_machine *old;
@@ -635,4 +790,31 @@ uint32_t cadr_wasm_state_v4_digest(void)
     }
     return cadr_state_v4_digest(&cadr_wasm_machine->state,
                                 cadr_wasm_output);
+}
+
+#if defined(CADR_M5_WASM)
+CADR_WASM_EXPORT("cadr_wasm_state_v5_digest")
+#endif
+uint32_t cadr_wasm_state_v5_digest(void)
+{
+    if (cadr_wasm_machine == NULL || cadr_wasm_output == NULL) return CADR_STATUS_NOT_READY;
+    return cadr_machine_state_v5_digest(cadr_wasm_machine, cadr_wasm_output);
+}
+
+#if defined(CADR_M5_WASM)
+CADR_WASM_EXPORT("cadr_wasm_scheduler_digest")
+#endif
+uint32_t cadr_wasm_scheduler_digest(void)
+{
+    if (cadr_wasm_machine == NULL || cadr_wasm_output == NULL) return CADR_STATUS_NOT_READY;
+    return cadr_machine_scheduler_digest(cadr_wasm_machine, cadr_wasm_output);
+}
+
+#if defined(CADR_M5_WASM)
+CADR_WASM_EXPORT("cadr_wasm_state_v5_failure_digest")
+#endif
+uint32_t cadr_wasm_state_v5_failure_digest(void)
+{
+    if (cadr_wasm_machine == NULL || cadr_wasm_output == NULL) return CADR_STATUS_NOT_READY;
+    return cadr_machine_state_v5_failure_digest(cadr_wasm_machine, cadr_wasm_output);
 }

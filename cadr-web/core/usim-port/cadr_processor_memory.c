@@ -11,6 +11,7 @@
  */
 
 #include "cadr_processor_memory.h"
+#include "cadr_bus_device.h"
 #include "cadr_m3_native_observer.h"
 #include "cadr_state_v2.h"
 
@@ -386,9 +387,7 @@ static void cadr_mfwrite(cadr_machine_state *const state,
         cpu->location_counter |= UINT32_C(1) << 31U;
         return;
     case 2U:
-        cpu->interrupt_control = data;
-        cpu->location_counter = (cpu->location_counter & ~(UINT32_C(0xf) << 26U)) |
-            (cpu->interrupt_control & (UINT32_C(0xf) << 26U));
+        cadr_processor_interrupt_control_write(state, data);
         return;
     case 8U:
         { const uint32_t index = cpu->pdl_pointer;

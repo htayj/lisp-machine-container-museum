@@ -16,11 +16,12 @@ extern "C" {
 #endif
 
 #define CADR_ABI_MAJOR UINT32_C(1)
-#define CADR_ABI_MINOR UINT32_C(3)
+#define CADR_ABI_MINOR UINT32_C(4)
 #define CADR_ABI_MINOR_M1 UINT32_C(0)
 #define CADR_ABI_MINOR_M2 UINT32_C(1)
 #define CADR_ABI_MINOR_M3 UINT32_C(2)
 #define CADR_ABI_MINOR_M4 UINT32_C(3)
+#define CADR_ABI_MINOR_M5 UINT32_C(4)
 #define CADR_SHA256_BYTES UINT32_C(32)
 #define CADR_MAX_HOST_REQUEST_PAYLOAD_BYTES UINT32_C(1024)
 
@@ -43,6 +44,8 @@ typedef uint32_t cadr_status;
 #define CADR_STATUS_REENTRANT             UINT32_C(14)
 #define CADR_STATUS_NO_MEMORY             UINT32_C(15)
 #define CADR_STATUS_HALTED                 UINT32_C(16)
+#define CADR_STATUS_QUEUE_FULL             UINT32_C(17)
+#define CADR_STATUS_AMBIGUOUS_SCHEDULE     UINT32_C(18)
 
 /* Lifecycle values are observable state, not a host control channel. */
 #define CADR_MACHINE_COLD                 UINT32_C(0)
@@ -192,6 +195,27 @@ typedef struct cadr_run_result {
     uint64_t reserved0;
 } cadr_run_result;
 
+/* ABI 1.4 deterministic scheduler ingress.  The caller supplies guest-time
+ * ordering; the core neither samples nor infers host time. */
+#define CADR_SCHED_EVENT_SEQUENCE_BREAK UINT32_C(1)
+#define CADR_SCHED_EVENT_CLOCK          UINT32_C(2)
+#define CADR_SCHED_EVENT_KEYBOARD       UINT32_C(3)
+
+/* No optional scheduler-event flags are defined by C-M5-SCHED-v1. */
+#define CADR_SCHED_EVENT_FLAGS_KNOWN     UINT32_C(0)
+
+typedef struct cadr_scheduler_event {
+    uint32_t abi_major;
+    uint32_t abi_minor;
+    uint32_t struct_size;
+    uint32_t kind;
+    uint32_t flags;
+    uint64_t due_tick;
+    uint64_t generation;
+    uint32_t value;
+    uint32_t reserved0;
+} cadr_scheduler_event;
+
 typedef struct cadr_machine_info {
     uint32_t abi_major;
     uint32_t abi_minor;
@@ -292,6 +316,7 @@ CADR_ABI_STATIC_ASSERT(sizeof(cadr_host_request_m4) == 56U, "cadr_host_request_m
 CADR_ABI_STATIC_ASSERT(sizeof(cadr_host_completion) == 48U, "cadr_host_completion layout");
 CADR_ABI_STATIC_ASSERT(sizeof(cadr_run_request) == 24U, "cadr_run_request layout");
 CADR_ABI_STATIC_ASSERT(sizeof(cadr_run_result) == 48U, "cadr_run_result layout");
+CADR_ABI_STATIC_ASSERT(sizeof(cadr_scheduler_event) == 48U, "scheduler event layout");
 CADR_ABI_STATIC_ASSERT(sizeof(cadr_machine_info) == 88U, "cadr_machine_info layout");
 CADR_ABI_STATIC_ASSERT(sizeof(cadr_block_read_descriptor) == 16U, "block read descriptor layout");
 CADR_ABI_STATIC_ASSERT(sizeof(cadr_block_write_descriptor) == 24U, "block write descriptor layout");
@@ -334,6 +359,27 @@ cadr_status cadr_machine_cold_power_on(cadr_machine *machine);
 cadr_status cadr_machine_boot(cadr_machine *machine);
 cadr_status cadr_machine_reset(cadr_machine *machine,
                                const cadr_reset_request *request);
+/* M5 accepts only explicitly timestamped, one-way scheduler events. */
+cadr_status cadr_machine_schedule_event(cadr_machine *machine,
+                                        const cadr_scheduler_event *event);
+/* One all-or-nothing M5 ingress transaction.  Sequence numbers are assigned
+ * only after every record and same-boundary ambiguity has been validated. */
+cadr_status cadr_machine_schedule_events(cadr_machine *machine,
+                                         const cadr_scheduler_event *events,
+                                         uint32_t event_count);
+/* Detailed CDRM5TR1 transport capture is opt-in.  The semantic cumulative
+ * witness advances whether or not capture is active; capture merely retains
+ * bounded per-event records until the host drains them. */
+cadr_status cadr_machine_scheduler_transcript_start(cadr_machine *machine);
+cadr_status cadr_machine_scheduler_transcript_size(const cadr_machine *machine,
+                                                    uint64_t *out_byte_count);
+cadr_status cadr_machine_scheduler_transcript_copy(const cadr_machine *machine,
+                                                    uint8_t *bytes, uint64_t capacity,
+                                                    uint64_t *out_written);
+cadr_status cadr_machine_scheduler_transcript_drain(cadr_machine *machine,
+                                                     uint8_t *bytes, uint64_t capacity,
+                                                     uint64_t *out_written);
+cadr_status cadr_machine_scheduler_transcript_finish(cadr_machine *machine);
 
 /* Hosts observe issued work here; they cannot create a request. */
 cadr_status cadr_machine_next_host_request(cadr_machine *machine,

@@ -3,7 +3,7 @@
 set -eu
 root=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
 web="$root/cadr-web"
-sources="core/cadr_core.c core/cadr_state_v2.c core/cadr_state_v3.c core/cadr_state_v4.c core/cadr_m4_media.c core/cadr_disk_evidence.c core/cadr_m4_controller_transcript.c core/cadr_snapshot.c trace/cadr_trace_engine.c core/usim-port/cadr_processor_memory.c core/usim-port/bus-adaptor.c core/usim-port/bus-interface.c core/usim-port/unibus-mapping.c core/usim-port/diagnostic-interface.c core/usim-port/tv.c core/usim-port/colortv.c core/usim-port/iob.c core/usim-port/disk-controller.c core/usim-port/tape-controller.c core/usim-port/uch11.c"
+sources="core/cadr_core.c core/cadr_state_v2.c core/cadr_state_v3.c core/cadr_state_v4.c core/cadr_state_v5.c core/cadr_m4_media.c core/cadr_disk_evidence.c core/cadr_m4_controller_transcript.c core/cadr_snapshot.c trace/cadr_trace_engine.c core/usim-port/cadr_processor_memory.c core/usim-port/bus-adaptor.c core/usim-port/bus-interface.c core/usim-port/unibus-mapping.c core/usim-port/diagnostic-interface.c core/usim-port/tv.c core/usim-port/colortv.c core/usim-port/iob.c core/usim-port/disk-controller.c core/usim-port/tape-controller.c core/usim-port/uch11.c"
 flags="-std=c11 -Wall -Wextra -Werror -Wpedantic -Wconversion -Wshadow -Wstrict-prototypes -Wmissing-prototypes -Wformat=2 -Iinclude -Icore -Icore/usim-port -Itrace"
 cd "$web"
 test "$(cc -dumpfullversion)" = 16.1.1

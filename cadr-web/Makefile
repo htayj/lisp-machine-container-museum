@@ -23,6 +23,7 @@ CORE_SOURCES := \
 	core/cadr_state_v2.c \
 	core/cadr_state_v3.c \
 	core/cadr_state_v4.c \
+	core/cadr_state_v5.c \
 	core/cadr_m4_media.c \
 	core/cadr_disk_evidence.c \
 	core/cadr_m4_controller_transcript.c \
@@ -50,7 +51,8 @@ TEST_BINARIES := \
 	build/test_cadr_m3_native_observer \
 	build/test_cadr_state_v4_media \
 	build/test_cadr_m4_controller_transcript \
-	build/test_cadr_m4_block_service
+	build/test_cadr_m4_block_service \
+	build/test_cadr_m5_scheduler
 MUTANT_TARGETS := 0 1 2 3
 MUTANT_BASE_BINARIES := $(MUTANT_TARGETS:%=build/test_cadr_m2_mutant_base_%)
 MUTANT_BINARIES := $(MUTANT_TARGETS:%=build/test_cadr_m2_mutant_%)
@@ -64,8 +66,9 @@ M4_HOST_BINARY := build/cadr-m4-native
 M4_MEDIA_COMPARE_BINARY := build/cadr-m4-media-compare
 M3_WASM_O0 := build/cadr-web-m3-O0.wasm
 M4_WASM_O2 := build/cadr-web-m4-O2.wasm
+M5_WASM_O0 := build/cadr-web-m5-O0.wasm
 
-.PHONY: all test clean audit forbidden-symbols exported-symbols mutable-globals dependency-audit header-audit mutant-audit python-cross-parse m3-wasm m3-browser m3-differential m3-conformance m3-snapshot-cross-target m4-unit m4-browser m4-differential m4-media-compare
+.PHONY: all test clean audit forbidden-symbols exported-symbols mutable-globals dependency-audit header-audit mutant-audit python-cross-parse m3-wasm m3-browser m3-differential m3-conformance m3-snapshot-cross-target m4-unit m4-browser m4-differential m4-media-compare m5-unit
 
 all: $(LIBRARY) $(HOST_BINARY) $(M2_HOST_BINARY) $(M3_HOST_BINARY) $(M3_SNAPSHOT_HOST_BINARY)
 
@@ -139,9 +142,12 @@ $(M3_WASM_O0): wasm/build-wasm.sh wasm/cadr_wasm_adapter.c wasm/cadr_wasm_runtim
 	sh wasm/build-wasm.sh --opt O0 $@
 
 $(M4_WASM_O2): wasm/build-wasm.sh wasm/cadr_wasm_adapter.c wasm/cadr_wasm_runtime.c $(CORE_SOURCES) $(CORE_HEADERS) | build
-	sh wasm/build-wasm.sh --opt O2 $@
+	sh wasm/build-wasm.sh --m4 --opt O2 $@
 
-test: $(TEST_BINARIES) $(HOST_BINARY) $(M2_HOST_BINARY) $(M3_HOST_BINARY) mutant-audit python-cross-parse m3-wasm m3-conformance m3-browser m4-unit m4-browser audit
+$(M5_WASM_O0): wasm/build-wasm.sh wasm/cadr_wasm_adapter.c wasm/cadr_wasm_runtime.c $(CORE_SOURCES) $(CORE_HEADERS) | build
+	sh wasm/build-wasm.sh --m5 --opt O0 $@
+
+test: $(TEST_BINARIES) $(HOST_BINARY) $(M2_HOST_BINARY) $(M3_HOST_BINARY) mutant-audit python-cross-parse m3-wasm m3-conformance m3-browser m4-unit m4-browser m5-unit audit
 	./build/test_cadr_host_api
 	./build/test_cadr_machine_state
 	./build/test_cadr_processor_microengine
@@ -159,6 +165,7 @@ test: $(TEST_BINARIES) $(HOST_BINARY) $(M2_HOST_BINARY) $(M3_HOST_BINARY) mutant
 	./build/test_cadr_m3_native_observer
 	./build/test_cadr_state_v4_media
 	./build/test_cadr_m4_block_service
+	./build/test_cadr_m5_scheduler
 
 m3-wasm: $(M3_WASM_O0)
 	guix shell node -- node --version | grep -x 'v22.14.0'
@@ -193,6 +200,15 @@ m4-unit: build/test_cadr_state_v4_media build/test_cadr_m4_controller_transcript
 
 m4-differential: $(M4_HOST_BINARY) m4-unit
 	../scripts/run-cadr-m4-differential.sh
+
+m5-unit: build/test_cadr_m5_scheduler $(M5_WASM_O0)
+	./build/test_cadr_m5_scheduler
+	python3 ../tests/test_cadr_m5_transcript.py
+	python3 ../tests/test_cadr_m5_differential_runner.py
+	guix shell node -- node ../tests/test_cadr_m5_worker.mjs
+	guix shell node -- node ../tests/test_cadr_m5_worker_protocol.mjs
+	guix shell node -- node ../tests/test_cadr_m5_visibility_adapter.mjs
+	guix shell node -- node ../tests/test_cadr_m5_wasm_exports.mjs
 
 mutant-audit: $(MUTANT_BASE_BINARIES) $(MUTANT_BINARIES)
 	@for target in $(MUTANT_TARGETS); do \

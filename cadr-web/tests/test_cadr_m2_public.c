@@ -977,6 +977,75 @@ done:
     return ok ? 0 : 1;
 }
 
+static int emit_m5_pending_snapshot(const char *path)
+{
+    cadr_machine *source = booted_machine();
+    cadr_snapshot_request request = snapshot_request();
+    cadr_network_descriptor descriptor = { UINT64_C(7), UINT64_C(0) };
+    uint8_t *bytes = NULL;
+    uint64_t size = 0U;
+    uint64_t written = 0U;
+    FILE *output = NULL;
+    int ok = 0;
+    if (source == NULL || path == NULL) goto done;
+    request.abi_minor = CADR_ABI_MINOR_M5;
+    if (cadr_machine_issue_host_request(source, CADR_HOST_OPERATION_NETWORK,
+                                        (const uint8_t *)&descriptor,
+                                        sizeof(descriptor), 0U) != CADR_STATUS_OK ||
+        cadr_machine_snapshot_size(source, &request, &size) != CADR_STATUS_OK ||
+        size > (uint64_t)SIZE_MAX) goto done;
+    bytes = malloc((size_t)size);
+    if (bytes == NULL ||
+        cadr_machine_snapshot_save(source, &request, bytes, size, &written) != CADR_STATUS_OK ||
+        written != size) goto done;
+    output = fopen(path, "wb");
+    if (output == NULL || fwrite(bytes, 1U, (size_t)written, output) != written ||
+        fclose(output) != 0) { output = NULL; goto done; }
+    output = NULL; ok = 1;
+done:
+    if (output != NULL) (void)fclose(output);
+    free(bytes); cadr_machine_destroy(source);
+    return ok ? 0 : 1;
+}
+
+/* Save a runnable ABI 1.4 machine immediately before a deterministic HALT
+ * slot.  The worker, rather than this fixture writer, must observe and record
+ * the terminal boundary. */
+static int emit_m5_fatal_snapshot(const char *path)
+{
+    cadr_machine *source = booted_machine();
+    cadr_snapshot_request request = snapshot_request();
+    uint8_t *bytes = NULL;
+    uint64_t size = 0U;
+    uint64_t written = 0U;
+    FILE *output = NULL;
+    int ok = 0;
+    if (source == NULL || path == NULL) goto done;
+    source->state.cpu.inhibit = 0U;
+    source->state.cpu.prom_disabled = 1U;
+    source->state.cpu.p1 = trace_fixture_word(1U,
+        (UINT32_C(1) << 10U) | (UINT32_C(1) << 5U) | UINT32_C(7));
+    source->state.cpu.p1_imem = 1U;
+    source->state.cpu.next_micro_pc = 1U;
+    request.abi_minor = CADR_ABI_MINOR_M5;
+    if (cadr_machine_snapshot_size(source, &request, &size) != CADR_STATUS_OK ||
+        size > (uint64_t)SIZE_MAX) goto done;
+    bytes = malloc((size_t)size);
+    if (bytes == NULL ||
+        cadr_machine_snapshot_save(source, &request, bytes, size, &written) !=
+            CADR_STATUS_OK || written != size) goto done;
+    output = fopen(path, "wb");
+    if (output == NULL || fwrite(bytes, 1U, (size_t)written, output) != written ||
+        fclose(output) != 0) { output = NULL; goto done; }
+    output = NULL;
+    ok = 1;
+done:
+    if (output != NULL) (void)fclose(output);
+    free(bytes);
+    cadr_machine_destroy(source);
+    return ok ? 0 : 1;
+}
+
 /* CDRSNAP1 format minor 0 remains an accepted, eight-chunk compatibility
  * format when D0 is in its implied default state.  Keep this callable as a
  * narrow external gate as well as part of the ordinary public-ABI suite. */
@@ -1034,6 +1103,12 @@ int main(int argc, char **argv)
     }
     if (argc == 3 && strcmp(argv[1], "--emit-m3-snapshot") == 0) {
         return emit_m3_snapshot(argv[2]);
+    }
+    if (argc == 3 && strcmp(argv[1], "--emit-m5-pending-snapshot") == 0) {
+        return emit_m5_pending_snapshot(argv[2]);
+    }
+    if (argc == 3 && strcmp(argv[1], "--emit-m5-fatal-snapshot") == 0) {
+        return emit_m5_fatal_snapshot(argv[2]);
     }
     if (argc == 2 && strcmp(argv[1], "--assert-minor0-compatibility") == 0) {
         return assert_minor0_snapshot_compatibility();

@@ -3,13 +3,17 @@
 set -eu
 
 usage() {
-    echo "usage: $0 [--conformance] --opt O0|O2 [OUTPUT]" >&2
+    echo "usage: $0 [--conformance] [--m4|--m5|--m5-oracle] --opt O0|O2 [OUTPUT]" >&2
     exit 2
 }
 
 opt=
 mode=core
+profile=m3
 if test "${1-}" = --conformance; then mode=conformance; shift; fi
+if test "${1-}" = --m4; then profile=m4; shift; fi
+if test "${1-}" = --m5; then profile=m5; shift; fi
+if test "${1-}" = --m5-oracle; then profile=m5-oracle; shift; fi
 case ${1-} in
     --opt) opt=${2-}; shift 2 ;;
     *) usage ;;
@@ -37,12 +41,15 @@ test "$actual_channel" = "$expected_channel" || {
 }
 
 exec guix shell clang-toolchain lld -- sh -eu -c '
-  root=$1 out=$2 opt=$3 mode=$4
+  root=$1 out=$2 opt=$3 mode=$4 profile=$5
   cd "$root"
   test "$(clang --version | sed -n "1s/.* \([0-9][0-9.]*\).*/\1/p")" = 21.1.5
   test "$(wasm-ld --version | sed -n "1s/.* \([0-9][0-9.]*\).*/\1/p")" = 21.1.5
   sources="wasm/cadr_wasm_runtime.c wasm/cadr_wasm_adapter.c"
   extra_defines=""
+  if test "$profile" = m4; then extra_defines="-DCADR_M4_WASM"; fi
+  if test "$profile" = m5; then extra_defines="-DCADR_M5_WASM"; fi
+  if test "$profile" = m5-oracle; then extra_defines="-DCADR_M5_WASM -DCADR_M5_ORACLE_TEST"; fi
   if test "$mode" = conformance; then
     sources="wasm/cadr_wasm_runtime.c tests/test_cadr_m3_conformance.c"
     extra_defines="-DCADR_M3_WASM_CONFORMANCE"
@@ -54,7 +61,7 @@ exec guix shell clang-toolchain lld -- sh -eu -c '
     -Iwasm/include -Iinclude -Icore -Icore/usim-port -Itrace \
     $sources \
     core/cadr_core.c core/cadr_state_v2.c core/cadr_state_v3.c \
-    core/cadr_state_v4.c core/cadr_m4_media.c core/cadr_disk_evidence.c \
+    core/cadr_state_v4.c core/cadr_state_v5.c core/cadr_m4_media.c core/cadr_disk_evidence.c \
     core/cadr_snapshot.c \
     trace/cadr_trace_engine.c core/usim-port/cadr_processor_memory.c \
     core/usim-port/bus-adaptor.c core/usim-port/bus-interface.c \
@@ -65,4 +72,4 @@ exec guix shell clang-toolchain lld -- sh -eu -c '
     -Wl,--initial-memory=134217728 -Wl,--max-memory=134217728 \
     -Wl,-z,stack-size=1048576 \
     -Wl,--gc-sections -Wl,--strip-all -o "$out"
-' sh "$root" "$out" "$opt" "$mode"
+' sh "$root" "$out" "$opt" "$mode" "$profile"

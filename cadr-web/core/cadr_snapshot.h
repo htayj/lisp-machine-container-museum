@@ -20,6 +20,7 @@ extern "C" {
 #define CADR_SNAPSHOT_FORMAT_MAJOR UINT16_C(1)
 #define CADR_SNAPSHOT_FORMAT_MINOR_M2 UINT16_C(0)
 #define CADR_SNAPSHOT_FORMAT_MINOR_M3 UINT16_C(1)
+#define CADR_SNAPSHOT_FORMAT_MINOR_M5 UINT16_C(2)
 /* Kept for source compatibility with callers that explicitly select M2. */
 #define CADR_SNAPSHOT_FORMAT_MINOR CADR_SNAPSHOT_FORMAT_MINOR_M2
 

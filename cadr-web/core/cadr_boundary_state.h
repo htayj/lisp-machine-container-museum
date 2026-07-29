@@ -77,5 +77,14 @@ cadr_status cadr_machine_boundary_digest(cadr_machine *machine,
 /* ABI 1.2: current CDRSTATE2 digest, rebuilding its derived Merkle cache if needed. */
 cadr_status cadr_machine_state_v2_digest(cadr_machine *machine,
                                          uint8_t digest[CADR_SHA256_BYTES]);
+/* ABI 1.4 additive scheduler/device witness. */
+cadr_status cadr_machine_state_v5_digest(cadr_machine *machine,
+                                         uint8_t digest[CADR_SHA256_BYTES]);
+/* M5 canonical pending-scheduler witness; transport transcript is excluded. */
+cadr_status cadr_machine_scheduler_digest(cadr_machine *machine,
+                                          uint8_t digest[CADR_SHA256_BYTES]);
+/* Failure-reporting variant: includes a valid staged M4 write payload. */
+cadr_status cadr_machine_state_v5_failure_digest(cadr_machine *machine,
+                                                 uint8_t digest[CADR_SHA256_BYTES]);
 
 #endif

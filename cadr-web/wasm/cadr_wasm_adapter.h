@@ -15,13 +15,29 @@ uint32_t cadr_wasm_stream_abort(void);
 uint32_t cadr_wasm_import(uint32_t artifact_kind, uint32_t byte_count);
 uint32_t cadr_wasm_cold_power_on(void);
 uint32_t cadr_wasm_boot(void);
+uint32_t cadr_wasm_reset(void);
 uint32_t cadr_wasm_run(uint32_t clock_slots);
+uint32_t cadr_wasm_schedule_event(uint32_t kind, uint32_t flags,
+                                  uint32_t due_low, uint32_t due_high,
+                                  uint32_t generation_low, uint32_t generation_high,
+                                  uint32_t value, uint32_t reserved0);
+uint32_t cadr_wasm_schedule_events(uint32_t event_count, uint32_t byte_count);
+uint32_t cadr_wasm_scheduler_transcript_start(void);
+uint32_t cadr_wasm_scheduler_transcript(void);
+uint32_t cadr_wasm_scheduler_transcript_finish(void);
+#if defined(CADR_M5_ORACLE_TEST)
+uint32_t cadr_wasm_m5_oracle_latch_disk_result(void);
+uint32_t cadr_wasm_m5_oracle_observation(void);
+#endif
 uint32_t cadr_wasm_output_pointer(void);
 uint32_t cadr_wasm_meta_pointer(void);
 uint32_t cadr_wasm_boundary_digest(void);
 uint32_t cadr_wasm_state_v2_digest(void);
 uint32_t cadr_wasm_state_v3_digest(void);
 uint32_t cadr_wasm_state_v4_digest(void);
+uint32_t cadr_wasm_state_v5_digest(void);
+uint32_t cadr_wasm_scheduler_digest(void);
+uint32_t cadr_wasm_state_v5_failure_digest(void);
 uint32_t cadr_wasm_host_next_request(void);
 uint32_t cadr_wasm_host_complete(uint32_t operation, uint32_t host_status,
                                  uint32_t generation_low, uint32_t generation_high,

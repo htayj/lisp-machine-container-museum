@@ -55,6 +55,16 @@ void cadr_bus_processor_interrupt_control_written(
     }
 }
 
+void cadr_processor_interrupt_control_write(cadr_machine_state *const state,
+                                            const uint32_t new_control)
+{
+    state->cpu.interrupt_control = new_control;
+    state->cpu.location_counter =
+        (state->cpu.location_counter & ~(UINT32_C(0xf) << 26U)) |
+        (new_control & (UINT32_C(0xf) << 26U));
+    cadr_bus_processor_interrupt_control_written(state, new_control);
+}
+
 void cadr_bus_set_xbus_nxm(cadr_machine_state *const state)
 {
     if (state->bus.nxm_inhibited == 0U) state->bus.error_status |= CADR_BUS_ERROR_XBUS_NXM;

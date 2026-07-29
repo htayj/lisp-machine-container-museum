@@ -23,7 +23,7 @@ python3 "$provenance" capture --root "$root" --config "$config" --prom "$prom" \
 preflight_sha=$(sha256sum "$preflight" | awk '{print $1}')
 before=$(sha256sum "$disk" | awk '{print $1}')
 cd "$root/cadr-web"
-sources='core/cadr_core.c core/cadr_state_v2.c core/cadr_state_v3.c core/cadr_state_v4.c core/cadr_m4_media.c core/cadr_disk_evidence.c core/cadr_m4_controller_transcript.c core/cadr_snapshot.c trace/cadr_trace_engine.c core/usim-port/cadr_processor_memory.c core/usim-port/bus-adaptor.c core/usim-port/bus-interface.c core/usim-port/unibus-mapping.c core/usim-port/diagnostic-interface.c core/usim-port/tv.c core/usim-port/colortv.c core/usim-port/iob.c core/usim-port/disk-controller.c core/usim-port/tape-controller.c core/usim-port/uch11.c'
+sources='core/cadr_core.c core/cadr_state_v2.c core/cadr_state_v3.c core/cadr_state_v4.c core/cadr_state_v5.c core/cadr_m4_media.c core/cadr_disk_evidence.c core/cadr_m4_controller_transcript.c core/cadr_snapshot.c trace/cadr_trace_engine.c core/usim-port/cadr_processor_memory.c core/usim-port/bus-adaptor.c core/usim-port/bus-interface.c core/usim-port/unibus-mapping.c core/usim-port/diagnostic-interface.c core/usim-port/tv.c core/usim-port/colortv.c core/usim-port/iob.c core/usim-port/disk-controller.c core/usim-port/tape-controller.c core/usim-port/uch11.c'
 host='host/cadr_m4_native.c host/cadr_m4_block_service.c host/cadr_m4_file_range_reader.c host/cadr_m3_projection.c host/cadr_m3_native_observer.c'
 flags='-std=c11 -Wall -Wextra -Werror -Wpedantic -Wconversion -Wshadow -Wstrict-prototypes -Wmissing-prototypes -Wformat=2 -DCADR_M3_NATIVE_OBSERVER -Iinclude -Icore -Icore/usim-port -Itrace -Ihost'
 for ccname in gcc clang; do for opt in O0 O2; do

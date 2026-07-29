@@ -48,6 +48,12 @@ The [MIT CADR/LM-3 TV window-system specification](mit-cadr/tv-window-system-rei
 is the common CADR display substrate for several topics, but it does not replace an
 application-level contract. The Dynamic Windows specification is D28.
 
+The application worklist is complemented by release-bounded platform contracts.
+The current CADR browser sequence reaches the
+[ABI1.4 deterministic machine scheduler](mit-cadr/cadr-deterministic-machine-scheduler-reimplementation-specification.md),
+which incorporates the earlier core, trace/snapshot, Wasm-worker, and boot-media
+profiles without treating those implementation milestones as application dossiers.
+
 ## Canonical specification worklist
 
 | ID | Software area or program family | Status | Specification |

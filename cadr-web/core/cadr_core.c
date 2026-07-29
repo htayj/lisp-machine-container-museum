@@ -3,6 +3,7 @@
 #include "cadr_host_api.h"
 #include "cadr_snapshot.h"
 #include "cadr_state_v2.h"
+#include "cadr_state_v5.h"
 #include "cadr_trace_engine.h"
 #include "usim-port/cadr_bus_device.h"
 #include "usim-port/cadr_processor_memory.h"
@@ -424,6 +425,17 @@ static cadr_status cadr_validate_m3_record(uint32_t abi_major,
         ? CADR_STATUS_ABI_MISMATCH : CADR_STATUS_OK;
 }
 
+static cadr_status cadr_validate_m5_record(uint32_t abi_major,
+                                           uint32_t abi_minor,
+                                           uint32_t struct_size,
+                                           size_t minimum_size)
+{
+    cadr_status status = cadr_validate_record(abi_major, abi_minor, struct_size,
+                                               minimum_size);
+    if (status != CADR_STATUS_OK) return status;
+    return abi_minor < CADR_ABI_MINOR_M5 ? CADR_STATUS_ABI_MISMATCH : CADR_STATUS_OK;
+}
+
 static const cadr_profile_artifact *cadr_profile_artifact_for(uint32_t kind)
 {
     size_t index;
@@ -816,6 +828,10 @@ cadr_status cadr_machine_cold_power_on(cadr_machine *machine)
     machine->state.events.persistent_status = CADR_STATUS_OK;
     machine->state.cpu.microinstructions_executed = 0U;
     machine->state.clock_slots_completed = 0U;
+    (void)memset(&machine->state.scheduler, 0,
+                 sizeof(machine->state.scheduler));
+    machine->state.scheduler.phase = CADR_SCHEDULER_PHASE_BOUNDARY_READY;
+    machine->state.scheduler.hidden_policy = CADR_SCHEDULER_HIDDEN_PAUSE;
     cadr_processor_memory_reset(&machine->state);
     cadr_bus_device_cold_power_on(&machine->state);
     machine->state.lifecycle = CADR_MACHINE_POWERED;
@@ -854,8 +870,331 @@ cadr_status cadr_machine_reset(cadr_machine *machine,
     machine->state.events.generation += UINT64_C(1);
     machine->state.events.persistent_status = CADR_STATUS_OK;
     cadr_processor_memory_reset(&machine->state);
+    /* A core reset invalidates host request generation but intentionally
+     * retains guest virtual time and latched I/O-board input/clock state.
+     * Pending scheduler ingress is a host-side schedule and is discarded. */
+    (void)memset(&machine->state.scheduler, 0,
+                 sizeof(machine->state.scheduler));
+    machine->state.scheduler.phase = CADR_SCHEDULER_PHASE_BOUNDARY_READY;
+    machine->state.scheduler.hidden_policy = CADR_SCHEDULER_HIDDEN_PAUSE;
     machine->state.lifecycle = CADR_MACHINE_POWERED;
     cadr_update_diagnostic_latches(machine);
+    return CADR_STATUS_OK;
+}
+
+static cadr_status cadr_scheduler_validate_event(const cadr_machine *machine,
+                                                 const cadr_scheduler_event *event)
+{
+    cadr_status status;
+    if (machine == NULL || event == NULL) return CADR_STATUS_INVALID_ARGUMENT;
+    status = cadr_validate_m5_record(event->abi_major, event->abi_minor,
+                                     event->struct_size, sizeof(*event));
+    if (status != CADR_STATUS_OK) return status;
+    if (event->reserved0 != 0U || event->flags != CADR_SCHED_EVENT_FLAGS_KNOWN ||
+        event->generation != machine->state.events.generation ||
+        machine->state.lifecycle != CADR_MACHINE_RUNNING ||
+        event->due_tick < machine->state.clock_slots_completed) {
+        return CADR_STATUS_INVALID_ARGUMENT;
+    }
+    if ((event->kind == CADR_SCHED_EVENT_SEQUENCE_BREAK && event->value != 0U) ||
+        (event->kind == CADR_SCHED_EVENT_CLOCK && event->value != 1U) ||
+        (event->kind == CADR_SCHED_EVENT_KEYBOARD && event->value > UINT16_MAX) ||
+        (event->kind != CADR_SCHED_EVENT_SEQUENCE_BREAK &&
+         event->kind != CADR_SCHED_EVENT_CLOCK &&
+         event->kind != CADR_SCHED_EVENT_KEYBOARD)) return CADR_STATUS_INVALID_ARGUMENT;
+    return CADR_STATUS_OK;
+}
+
+cadr_status cadr_machine_schedule_events(cadr_machine *machine,
+                                         const cadr_scheduler_event *events,
+                                         uint32_t event_count)
+{
+    uint32_t index;
+    uint32_t other;
+    cadr_status status;
+    if (machine == NULL || events == NULL || event_count == 0U ||
+        event_count > CADR_SCHEDULER_EVENT_CAPACITY ||
+        machine->state.scheduler.next_insertion_sequence >
+            UINT64_MAX - (uint64_t)event_count) return CADR_STATUS_INVALID_ARGUMENT;
+    if (event_count > CADR_SCHEDULER_EVENT_CAPACITY - machine->state.scheduler.count) {
+        return CADR_STATUS_QUEUE_FULL;
+    }
+    for (index = 0U; index < event_count; ++index) {
+        status = cadr_scheduler_validate_event(machine, &events[index]);
+        if (status != CADR_STATUS_OK) {
+            if (events[index].generation != machine->state.events.generation) {
+                return CADR_STATUS_STALE_GENERATION;
+            }
+            return status;
+        }
+        if (events[index].kind == CADR_SCHED_EVENT_KEYBOARD) {
+            for (other = 0U; other < machine->state.scheduler.count; ++other) {
+                const cadr_scheduler_event_state *existing = &machine->state.scheduler.events[other];
+                if (existing->due_tick == events[index].due_tick &&
+                    existing->kind == CADR_SCHED_EVENT_KEYBOARD) return CADR_STATUS_AMBIGUOUS_SCHEDULE;
+            }
+            for (other = 0U; other < index; ++other) {
+                if (events[other].kind == CADR_SCHED_EVENT_KEYBOARD &&
+                    events[other].due_tick == events[index].due_tick) return CADR_STATUS_AMBIGUOUS_SCHEDULE;
+            }
+        }
+    }
+    for (index = 0U; index < event_count; ++index) {
+        const cadr_scheduler_event *event = &events[index];
+        cadr_scheduler_event_state *destination =
+            &machine->state.scheduler.events[machine->state.scheduler.count + index];
+        destination->due_tick = event->due_tick;
+        destination->generation = event->generation;
+        destination->insertion_sequence = machine->state.scheduler.next_insertion_sequence + index;
+        destination->kind = event->kind; destination->flags = event->flags;
+        destination->value = event->value; destination->reserved0 = 0U;
+    }
+    machine->state.scheduler.count += event_count;
+    machine->state.scheduler.next_insertion_sequence += event_count;
+    return CADR_STATUS_OK;
+}
+
+cadr_status cadr_machine_schedule_event(cadr_machine *machine,
+                                        const cadr_scheduler_event *event)
+{
+    return cadr_machine_schedule_events(machine, event, 1U);
+}
+
+static uint32_t cadr_scheduler_priority(const cadr_scheduler_event_state *event)
+{
+    return event->kind == CADR_SCHED_EVENT_CLOCK ? 0U :
+        event->kind == CADR_SCHED_EVENT_KEYBOARD ? 1U : 2U;
+}
+
+/* Validate the entire pre-slot group before either trace reservation or device
+ * mutation.  The only fallible selected device action is placing raw input
+ * behind a full visible register/FIFO; rejecting it here keeps a same-boundary
+ * clock/SB group atomic. */
+static cadr_status cadr_scheduler_preflight_due(const cadr_machine *machine)
+{
+    const cadr_scheduler_state *scheduler = &machine->state.scheduler;
+    const cadr_iob_state *iob = &machine->state.devices.iob;
+    uint32_t index;
+    uint32_t due_count = 0U;
+    for (index = 0U; index < scheduler->count; ++index) {
+        const cadr_scheduler_event_state *event = &scheduler->events[index];
+        if (event->due_tick < machine->state.clock_slots_completed) {
+            return CADR_STATUS_INVALID_ARGUMENT;
+        }
+        if (event->due_tick > machine->state.clock_slots_completed) continue;
+        due_count += 1U;
+        if (event->generation != machine->state.events.generation ||
+            event->flags != CADR_SCHED_EVENT_FLAGS_KNOWN || event->reserved0 != 0U) {
+            return CADR_STATUS_INVALID_ARGUMENT;
+        }
+        if (event->kind == CADR_SCHED_EVENT_KEYBOARD &&
+            (iob->csr & (UINT32_C(1) << 5U)) != 0U &&
+            iob->key_queue_count == CADR_IOB_KEY_QUEUE_LEN) {
+            return CADR_STATUS_QUEUE_FULL;
+        }
+    }
+    if (scheduler->transcript_capture_enabled != 0U &&
+        due_count > CADR_SCHEDULER_TRANSCRIPT_CAPACITY - scheduler->transcript_count) {
+        return CADR_STATUS_QUEUE_FULL;
+    }
+    if (due_count > UINT64_MAX - scheduler->transcript_total_count) {
+        return CADR_STATUS_QUEUE_FULL;
+    }
+    return CADR_STATUS_OK;
+}
+
+static void cadr_scheduler_encode_transcript_record(
+    const cadr_scheduler_transcript_record *record, uint8_t bytes[120])
+{
+    cadr_put64(bytes, record->due_tick); cadr_put64(bytes + 8U, record->generation);
+    cadr_put64(bytes + 16U, record->insertion_sequence); cadr_put32(bytes + 24U, record->kind);
+    cadr_put32(bytes + 28U, record->order); cadr_put32(bytes + 32U, record->flags);
+    cadr_put32(bytes + 36U, record->value); cadr_put32(bytes + 40U, record->interrupt_before);
+    cadr_put32(bytes + 44U, record->interrupt_after); cadr_put32(bytes + 48U, record->iob_csr_before);
+    cadr_put32(bytes + 52U, record->iob_csr_after);
+    cadr_put32(bytes + 56U, record->interrupt_control_before); cadr_put32(bytes + 60U, record->interrupt_control_after);
+    cadr_put32(bytes + 64U, record->location_counter_before); cadr_put32(bytes + 68U, record->location_counter_after);
+    cadr_put32(bytes + 72U, record->tv_mode_before); cadr_put32(bytes + 76U, record->tv_mode_after);
+    cadr_put32(bytes + 80U, record->sixty_cycle_before); cadr_put32(bytes + 84U, record->sixty_cycle_after);
+    cadr_put32(bytes + 88U, record->usec_clock_before); cadr_put32(bytes + 92U, record->usec_clock_after);
+    cadr_put32(bytes + 96U, record->usec_phase_before); cadr_put32(bytes + 100U, record->usec_phase_after);
+    cadr_put32(bytes + 104U, record->scancode_before); cadr_put32(bytes + 108U, record->scancode_after);
+    cadr_put32(bytes + 112U, record->fifo_count_before); cadr_put32(bytes + 116U, record->fifo_count_after);
+}
+
+static void cadr_scheduler_witness_append(cadr_scheduler_state *scheduler,
+                                           const cadr_scheduler_transcript_record *record)
+{
+    static const uint8_t domain[] = "CDRM5W1";
+    uint8_t bytes[sizeof(domain) - 1U + CADR_SHA256_BYTES + 8U + 120U];
+    cadr_put64(bytes + sizeof(domain) - 1U + CADR_SHA256_BYTES,
+               scheduler->transcript_total_count + UINT64_C(1));
+    (void)memcpy(bytes, domain, sizeof(domain) - 1U);
+    (void)memcpy(bytes + sizeof(domain) - 1U, scheduler->transcript_witness_sha256,
+                 CADR_SHA256_BYTES);
+    cadr_scheduler_encode_transcript_record(record,
+        bytes + sizeof(domain) - 1U + CADR_SHA256_BYTES + 8U);
+    cadr_sha256(bytes, sizeof(bytes), scheduler->transcript_witness_sha256);
+    scheduler->transcript_total_count += 1U;
+}
+
+static cadr_status cadr_scheduler_dispatch_due(cadr_machine *machine)
+{
+    cadr_status status = CADR_STATUS_OK;
+    uint32_t order = 0U;
+    while (machine->state.scheduler.count != 0U) {
+        uint32_t index;
+        uint32_t selected = machine->state.scheduler.count;
+        uint32_t selected_priority = UINT32_MAX;
+        for (index = 0U; index < machine->state.scheduler.count; ++index) {
+            const cadr_scheduler_event_state *candidate =
+                &machine->state.scheduler.events[index];
+            uint32_t priority;
+            if (candidate->due_tick > machine->state.clock_slots_completed) continue;
+            priority = cadr_scheduler_priority(candidate);
+            if (selected == machine->state.scheduler.count || priority < selected_priority ||
+                (priority == selected_priority &&
+                 candidate->insertion_sequence <
+                 machine->state.scheduler.events[selected].insertion_sequence)) {
+                selected = index;
+                selected_priority = priority;
+            }
+        }
+        if (selected == machine->state.scheduler.count) break;
+        index = selected;
+        cadr_scheduler_event_state *event = &machine->state.scheduler.events[index];
+        const uint32_t interrupt_before = machine->state.bus.interrupt_status;
+        const uint32_t interrupt_control_before = machine->state.cpu.interrupt_control;
+        const uint32_t iob_csr_before = machine->state.devices.iob.csr;
+        const uint32_t location_counter_before = machine->state.cpu.location_counter;
+        const uint32_t tv_mode_before = machine->state.devices.tv_mode;
+        const uint32_t sixty_cycle_before = machine->state.devices.iob.sixty_cycle_clock;
+        const uint32_t usec_clock_before = machine->state.devices.iob.usec_clock;
+        const uint32_t usec_phase_before = machine->state.devices.iob.usec_phase;
+        const uint32_t scancode_before = machine->state.devices.iob.scancode;
+        const uint32_t fifo_count_before = machine->state.devices.iob.key_queue_count;
+        status = CADR_STATUS_OK;
+        if (event->kind == CADR_SCHED_EVENT_SEQUENCE_BREAK) {
+            cadr_processor_interrupt_control_write(
+                &machine->state,
+                machine->state.cpu.interrupt_control | (UINT32_C(1) << 26U));
+        } else if (event->kind == CADR_SCHED_EVENT_CLOCK) {
+            status = cadr_iob_clock_tick(&machine->state, 1U);
+        } else {
+            status = cadr_iob_keyboard_event(&machine->state, (uint16_t)event->value);
+        }
+        if (status != CADR_STATUS_OK) return status;
+        {
+            cadr_scheduler_transcript_record record;
+            record.due_tick = event->due_tick; record.generation = event->generation;
+            record.insertion_sequence = event->insertion_sequence; record.kind = event->kind;
+            record.order = order++; record.flags = event->flags; record.value = event->value;
+            record.interrupt_before = interrupt_before;
+            record.interrupt_after = machine->state.bus.interrupt_status;
+            record.interrupt_control_before = interrupt_control_before;
+            record.interrupt_control_after = machine->state.cpu.interrupt_control;
+            record.iob_csr_before = iob_csr_before;
+            record.iob_csr_after = machine->state.devices.iob.csr;
+            record.location_counter_before = location_counter_before;
+            record.location_counter_after = machine->state.cpu.location_counter;
+            record.tv_mode_before = tv_mode_before;
+            record.tv_mode_after = machine->state.devices.tv_mode;
+            record.sixty_cycle_before = sixty_cycle_before;
+            record.sixty_cycle_after = machine->state.devices.iob.sixty_cycle_clock;
+            record.usec_clock_before = usec_clock_before;
+            record.usec_clock_after = machine->state.devices.iob.usec_clock;
+            record.usec_phase_before = usec_phase_before;
+            record.usec_phase_after = machine->state.devices.iob.usec_phase;
+            record.scancode_before = scancode_before;
+            record.scancode_after = machine->state.devices.iob.scancode;
+            record.fifo_count_before = fifo_count_before;
+            record.fifo_count_after = machine->state.devices.iob.key_queue_count;
+            cadr_scheduler_witness_append(&machine->state.scheduler, &record);
+            if (machine->state.scheduler.transcript_capture_enabled != 0U) {
+                machine->state.scheduler.transcript[
+                    machine->state.scheduler.transcript_count++] = record;
+            }
+        }
+        machine->state.scheduler.count -= 1U;
+        if (index != machine->state.scheduler.count) {
+            uint32_t move;
+            for (move = index; move < machine->state.scheduler.count; ++move) {
+                machine->state.scheduler.events[move] =
+                    machine->state.scheduler.events[move + 1U];
+            }
+        }
+    }
+    return CADR_STATUS_OK;
+}
+
+cadr_status cadr_machine_scheduler_transcript_start(cadr_machine *machine)
+{
+    cadr_scheduler_state *scheduler;
+    if (machine == NULL) return CADR_STATUS_INVALID_ARGUMENT;
+    scheduler = &machine->state.scheduler;
+    if (scheduler->transcript_capture_enabled != 0U || scheduler->transcript_count != 0U) {
+        return CADR_STATUS_NOT_READY;
+    }
+    scheduler->transcript_capture_enabled = 1U;
+    return CADR_STATUS_OK;
+}
+
+cadr_status cadr_machine_scheduler_transcript_size(const cadr_machine *machine,
+                                                    uint64_t *out_byte_count)
+{
+    if (out_byte_count == NULL) return CADR_STATUS_INVALID_ARGUMENT;
+    *out_byte_count = 0U;
+    if (machine == NULL || machine->state.scheduler.transcript_count >
+        CADR_SCHEDULER_TRANSCRIPT_CAPACITY) return CADR_STATUS_INVALID_ARGUMENT;
+    *out_byte_count = UINT64_C(16) +
+        (uint64_t)machine->state.scheduler.transcript_count * UINT64_C(120);
+    return CADR_STATUS_OK;
+}
+
+cadr_status cadr_machine_scheduler_transcript_copy(const cadr_machine *machine,
+                                                    uint8_t *bytes, uint64_t capacity,
+                                                    uint64_t *out_written)
+{
+    uint64_t required;
+    uint32_t index;
+    cadr_status status;
+    if (out_written == NULL) return CADR_STATUS_INVALID_ARGUMENT;
+    *out_written = 0U;
+    status = cadr_machine_scheduler_transcript_size(machine, &required);
+    if (status != CADR_STATUS_OK || bytes == NULL || capacity < required) return
+        status == CADR_STATUS_OK ? CADR_STATUS_WRONG_LENGTH : status;
+    (void)memset(bytes, 0, (size_t)required);
+    (void)memcpy(bytes, "CDRM5TR1", 8U);
+    cadr_put32(bytes + 8U, 4U); cadr_put32(bytes + 12U, machine->state.scheduler.transcript_count);
+    for (index = 0U; index < machine->state.scheduler.transcript_count; ++index) {
+        const cadr_scheduler_transcript_record *record = &machine->state.scheduler.transcript[index];
+        uint8_t *out = bytes + 16U + (uint64_t)index * 120U;
+        cadr_scheduler_encode_transcript_record(record, out);
+    }
+    *out_written = required;
+    return CADR_STATUS_OK;
+}
+
+cadr_status cadr_machine_scheduler_transcript_drain(cadr_machine *machine,
+                                                     uint8_t *bytes, uint64_t capacity,
+                                                     uint64_t *out_written)
+{
+    cadr_status status = cadr_machine_scheduler_transcript_copy(machine, bytes, capacity, out_written);
+    if (status == CADR_STATUS_OK) {
+        machine->state.scheduler.transcript_count = 0U;
+    }
+    return status;
+}
+
+cadr_status cadr_machine_scheduler_transcript_finish(cadr_machine *machine)
+{
+    cadr_scheduler_state *scheduler;
+    if (machine == NULL) return CADR_STATUS_INVALID_ARGUMENT;
+    scheduler = &machine->state.scheduler;
+    if (scheduler->transcript_capture_enabled == 0U || scheduler->transcript_count != 0U) {
+        return CADR_STATUS_NOT_READY;
+    }
+    scheduler->transcript_capture_enabled = 0U;
     return CADR_STATUS_OK;
 }
 
@@ -1264,6 +1603,7 @@ cadr_status cadr_machine_run(cadr_machine *machine,
     uint64_t before_micro;
     uint64_t slots;
     uint32_t requested_minor;
+    uint32_t m5_scheduler_enabled;
     if (machine == NULL || request == NULL || out_result == NULL) {
         return CADR_STATUS_INVALID_ARGUMENT;
     }
@@ -1274,6 +1614,10 @@ cadr_status cadr_machine_run(cadr_machine *machine,
     status = cadr_validate_record(out_result->abi_major, out_result->abi_minor,
                                   out_result->struct_size, sizeof(*out_result));
     if (status != CADR_STATUS_OK) return status;
+    /* ABI 1.4 scheduler/device servicing is additive.  An older caller may
+     * run a machine which happens to contain M5 state, but its historical
+     * run loop must not observe that state or the new 0x10000 IOB poll. */
+    m5_scheduler_enabled = request->abi_minor >= CADR_ABI_MINOR_M5 ? 1U : 0U;
     if (request->reserved0 != 0U) return CADR_STATUS_INVALID_ARGUMENT;
     if (request->clock_slot_budget == 0U) return CADR_STATUS_INVALID_ARGUMENT;
     if (machine->state.clock_slots_completed >
@@ -1297,6 +1641,15 @@ cadr_status cadr_machine_run(cadr_machine *machine,
         out_result->terminal_status = CADR_STATUS_NOT_READY;
         return CADR_STATUS_NOT_READY;
     }
+    /* Do not let an older run ABI advance past queued M5-only work.  That
+     * would leave an event due before the next slot and create a state no M5
+     * snapshot or continuation can represent faithfully. */
+    if (m5_scheduler_enabled == 0U &&
+        (machine->state.scheduler.count != 0U ||
+         machine->state.devices.iob.key_queue_count != 0U)) {
+        out_result->terminal_status = CADR_STATUS_NOT_READY;
+        return CADR_STATUS_NOT_READY;
+    }
     if (machine->state.events.outstanding_request_id != 0U &&
         machine->state.events.completion_queued == 0U) {
         out_result->terminal_status = CADR_STATUS_WAITING_FOR_HOST;
@@ -1311,13 +1664,20 @@ cadr_status cadr_machine_run(cadr_machine *machine,
         }
         status = cadr_apply_completion(machine);
         out_result->completions_applied = 1U;
+        /* A disk completion may synchronously issue its next host request.
+         * Do not report that zero-slot turn as quiescent to an M5 boundary
+         * consumer; it still owes the same guest boundary after the chain. */
+        if (status == CADR_STATUS_OK &&
+            machine->state.events.outstanding_request_id != 0U &&
+            machine->state.events.completion_queued == 0U) {
+            status = CADR_STATUS_WAITING_FOR_HOST;
+        }
         out_result->terminal_status = status;
         return status;
     }
     before_micro = machine->state.cpu.microinstructions_executed;
     status = CADR_STATUS_OK;
     for (slots = 0U; slots < request->clock_slot_budget; ++slots) {
-        uint32_t old_interrupt_control;
         uint64_t tick_before;
         uint32_t interrupt_before;
         uint32_t fault_before;
@@ -1329,12 +1689,20 @@ cadr_status cadr_machine_run(cadr_machine *machine,
             machine->state.events.persistent_status = CADR_STATUS_GUEST_FAULT;
             break;
         }
+        if (m5_scheduler_enabled != 0U) {
+            status = cadr_scheduler_preflight_due(machine);
+            if (status != CADR_STATUS_OK) break;
+        }
+        status = cadr_trace_engine_slot_preflight(&machine->state);
+        if (status != CADR_STATUS_OK) break;
+        if (m5_scheduler_enabled != 0U) {
+            status = cadr_scheduler_dispatch_due(machine);
+            if (status != CADR_STATUS_OK) break;
+        }
         tick_before = machine->state.bus.guest_tick;
         interrupt_before = machine->state.bus.interrupt_status;
         fault_before = machine->state.cpu.guest_fault;
         halt_before = machine->state.cpu.halted;
-        status = cadr_trace_engine_slot_preflight(&machine->state);
-        if (status != CADR_STATUS_OK) break;
         machine->state.cpu.interrupt_pending = machine->state.bus.interrupt_pending;
         machine->state.cpu.debug_ir = cadr_diagnostic_debug_instruction(&machine->state);
         machine->state.trace.raw_fetched_word =
@@ -1355,7 +1723,6 @@ cadr_status cadr_machine_run(cadr_machine *machine,
         machine->state.trace.last_slot_inhibited =
             machine->state.cpu.inhibit != 0U ? 1U : 0U;
         machine->state.events.unexpected_bus_operation = 0U;
-        old_interrupt_control = machine->state.cpu.interrupt_control;
         cadr_canonical_slot_begin(&machine->state);
         cadr_processor_memory_step_with_bus(&machine->state, &guarded_bus);
         cadr_canonical_slot_end(&machine->state);
@@ -1380,12 +1747,16 @@ cadr_status cadr_machine_run(cadr_machine *machine,
             machine->state.trace.decoded = 1U;
         }
         machine->state.clock_slots_completed += 1U;
+        /* X11 polls raw keyboard after the outer step when that step began at
+         * a 0x10000-cycle phase, never as a 60 Hz side effect. */
+        if (m5_scheduler_enabled != 0U &&
+            ((machine->state.clock_slots_completed - UINT64_C(1)) &
+             UINT64_C(0xffff)) == 0U) {
+            status = cadr_iob_device_service(&machine->state);
+            if (status != CADR_STATUS_OK) break;
+        }
         machine->state.trace.instruction_ordinal =
             machine->state.cpu.microinstructions_executed;
-        if (machine->state.cpu.interrupt_control != old_interrupt_control) {
-            cadr_bus_processor_interrupt_control_written(
-                &machine->state, machine->state.cpu.interrupt_control);
-        }
         cadr_update_diagnostic_latches(machine);
         out_result->clock_slots_completed += 1U;
         boundary_flags = machine->state.trace.last_slot_inhibited != 0U
@@ -1798,6 +2169,90 @@ cadr_status cadr_machine_state_v2_digest(cadr_machine *machine,
     return cadr_state_v2_digest(&machine->state, digest);
 }
 
+cadr_status cadr_machine_state_v5_digest(cadr_machine *machine,
+                                         uint8_t digest[CADR_SHA256_BYTES])
+{
+    uint8_t v2[CADR_SHA256_BYTES];
+    cadr_status status;
+    if (machine == NULL || digest == NULL) return CADR_STATUS_INVALID_ARGUMENT;
+    /* CDRSTATE5 includes CDRSTATE4, which includes CDRSTATE2.  Use the same
+     * public readiness path as CDRSTATE2 so a lazy derived cache does not
+     * turn an otherwise valid machine into an M5-only failure. */
+    status = cadr_machine_state_v2_digest(machine, v2);
+    if (status != CADR_STATUS_OK) return status;
+    return cadr_state_v5_digest(&machine->state, digest);
+}
+
+cadr_status cadr_machine_scheduler_digest(cadr_machine *machine,
+                                          uint8_t digest[CADR_SHA256_BYTES])
+{
+    static const uint8_t domain[] = "CDRM5Q1";
+    cadr_sha256_context context;
+    const cadr_scheduler_state *scheduler;
+    uint8_t used[CADR_SCHEDULER_EVENT_CAPACITY] = { 0U };
+    uint32_t ordinal;
+    if (machine == NULL || digest == NULL) return CADR_STATUS_INVALID_ARGUMENT;
+    scheduler = &machine->state.scheduler;
+    if (scheduler->count > CADR_SCHEDULER_EVENT_CAPACITY) return CADR_STATUS_INVALID_ARGUMENT;
+    cadr_sha256_init(&context);
+    cadr_sha256_update(&context, domain, sizeof(domain) - 1U);
+    {
+        uint8_t bytes[8];
+        cadr_put32(bytes, scheduler->phase); cadr_sha256_update(&context, bytes, 4U);
+        cadr_put32(bytes, scheduler->hidden_policy); cadr_sha256_update(&context, bytes, 4U);
+        cadr_put64(bytes, scheduler->next_insertion_sequence); cadr_sha256_update(&context, bytes, 8U);
+        cadr_put32(bytes, scheduler->count); cadr_sha256_update(&context, bytes, 4U);
+    }
+    for (ordinal = 0U; ordinal < scheduler->count; ++ordinal) {
+        uint32_t index;
+        uint32_t selected = CADR_SCHEDULER_EVENT_CAPACITY;
+        for (index = 0U; index < scheduler->count; ++index) {
+            const cadr_scheduler_event_state *candidate = &scheduler->events[index];
+            const uint32_t priority = candidate->kind == CADR_SCHED_EVENT_CLOCK ? 0U :
+                (candidate->kind == CADR_SCHED_EVENT_KEYBOARD ? 1U : 2U);
+            if (used[index] == 0U && (selected == CADR_SCHEDULER_EVENT_CAPACITY ||
+                candidate->due_tick < scheduler->events[selected].due_tick ||
+                (candidate->due_tick == scheduler->events[selected].due_tick &&
+                 (priority < (scheduler->events[selected].kind == CADR_SCHED_EVENT_CLOCK ? 0U :
+                    (scheduler->events[selected].kind == CADR_SCHED_EVENT_KEYBOARD ? 1U : 2U)) ||
+                  (priority == (scheduler->events[selected].kind == CADR_SCHED_EVENT_CLOCK ? 0U :
+                    (scheduler->events[selected].kind == CADR_SCHED_EVENT_KEYBOARD ? 1U : 2U)) &&
+                   candidate->insertion_sequence < scheduler->events[selected].insertion_sequence))))) {
+                selected = index;
+            }
+        }
+        if (selected == CADR_SCHEDULER_EVENT_CAPACITY) return CADR_STATUS_INVALID_ARGUMENT;
+        used[selected] = 1U;
+        {
+            const cadr_scheduler_event_state *event = &scheduler->events[selected];
+            uint8_t bytes[8];
+            cadr_put64(bytes, event->due_tick); cadr_sha256_update(&context, bytes, 8U);
+            cadr_put64(bytes, event->generation); cadr_sha256_update(&context, bytes, 8U);
+            cadr_put64(bytes, event->insertion_sequence); cadr_sha256_update(&context, bytes, 8U);
+            cadr_put32(bytes, event->kind); cadr_sha256_update(&context, bytes, 4U);
+            cadr_put32(bytes, event->flags); cadr_sha256_update(&context, bytes, 4U);
+            cadr_put32(bytes, event->value); cadr_sha256_update(&context, bytes, 4U);
+            cadr_put32(bytes, event->reserved0); cadr_sha256_update(&context, bytes, 4U);
+        }
+    }
+    cadr_sha256_final(&context, digest);
+    return CADR_STATUS_OK;
+}
+
+cadr_status cadr_machine_state_v5_failure_digest(cadr_machine *machine,
+                                                  uint8_t digest[CADR_SHA256_BYTES])
+{
+    cadr_status status;
+    if (machine == NULL || digest == NULL || machine->state.artifacts.stream_active != 0U) {
+        return CADR_STATUS_INVALID_ARGUMENT;
+    }
+    if (machine->state.trace.state_v2.initialized == 0U) {
+        status = cadr_state_v2_rebuild(&machine->state);
+        if (status != CADR_STATUS_OK) return status;
+    }
+    return cadr_state_v5_digest(&machine->state, digest);
+}
+
 cadr_status cadr_machine_trace_start(cadr_machine *machine,
                                      const cadr_trace_config *config)
 {
@@ -1948,6 +2403,24 @@ static cadr_status cadr_snapshot_compute_digests(
     return cadr_state_v2_digest(state, cdrstate2);
 }
 
+static uint16_t cadr_snapshot_format_for_abi(uint32_t abi_minor)
+{
+    return abi_minor >= CADR_ABI_MINOR_M5 ? CADR_SNAPSHOT_FORMAT_MINOR_M5 :
+        (abi_minor >= CADR_ABI_MINOR_M3 ? CADR_SNAPSHOT_FORMAT_MINOR_M3 :
+         CADR_SNAPSHOT_FORMAT_MINOR_M2);
+}
+
+static cadr_status cadr_snapshot_state_ready(const cadr_machine *machine,
+                                             uint32_t abi_minor)
+{
+    if (machine->state.artifacts.stream_active != 0U) return CADR_STATUS_INVALID_ARGUMENT;
+    if (abi_minor < CADR_ABI_MINOR_M5 &&
+        (machine->state.events.request_payload_byte_count != 0U ||
+         machine->state.scheduler.count != 0U ||
+         machine->state.devices.iob.key_queue_count != 0U)) return CADR_STATUS_NOT_READY;
+    return CADR_STATUS_OK;
+}
+
 cadr_status cadr_machine_snapshot_size(cadr_machine *machine,
                                        const cadr_snapshot_request *request,
                                        uint64_t *out_byte_count)
@@ -1960,15 +2433,14 @@ cadr_status cadr_machine_snapshot_size(cadr_machine *machine,
     if (machine == NULL) return CADR_STATUS_INVALID_ARGUMENT;
     status = cadr_snapshot_request_validate(request);
     if (status != CADR_STATUS_OK) return status;
-    if (machine->state.artifacts.stream_active != 0U) return CADR_STATUS_INVALID_ARGUMENT;
-    if (machine->state.events.request_payload_byte_count != 0U) return CADR_STATUS_NOT_READY;
+    status = cadr_snapshot_state_ready(machine, request->abi_minor);
+    if (status != CADR_STATUS_OK) return status;
     status = cadr_snapshot_compute_digests(&machine->state, cdrstate1,
                                            cdrstate2);
     if (status != CADR_STATUS_OK) return status;
     return cadr_snapshot_size_versioned(
         &machine->state,
-        request->abi_minor >= CADR_ABI_MINOR_M3
-            ? CADR_SNAPSHOT_FORMAT_MINOR_M3 : CADR_SNAPSHOT_FORMAT_MINOR_M2,
+        cadr_snapshot_format_for_abi(request->abi_minor),
         cdrstate1, cdrstate2, out_byte_count);
 }
 
@@ -1982,18 +2454,17 @@ cadr_status cadr_machine_snapshot_save(cadr_machine *machine,
     cadr_status status;
     if (out_written == NULL) return CADR_STATUS_INVALID_ARGUMENT;
     *out_written = 0U;
-    if (machine == NULL || bytes == NULL ||
-        machine->state.artifacts.stream_active != 0U) return CADR_STATUS_INVALID_ARGUMENT;
-    if (machine->state.events.request_payload_byte_count != 0U) return CADR_STATUS_NOT_READY;
+    if (machine == NULL || bytes == NULL) return CADR_STATUS_INVALID_ARGUMENT;
     status = cadr_snapshot_request_validate(request);
+    if (status != CADR_STATUS_OK) return status;
+    status = cadr_snapshot_state_ready(machine, request->abi_minor);
     if (status != CADR_STATUS_OK) return status;
     status = cadr_snapshot_compute_digests(&machine->state, cdrstate1,
                                            cdrstate2);
     if (status != CADR_STATUS_OK) return status;
     return cadr_snapshot_serialize_versioned(
         &machine->state,
-        request->abi_minor >= CADR_ABI_MINOR_M3
-            ? CADR_SNAPSHOT_FORMAT_MINOR_M3 : CADR_SNAPSHOT_FORMAT_MINOR_M2,
+        cadr_snapshot_format_for_abi(request->abi_minor),
         cdrstate1, cdrstate2, bytes, capacity, out_written);
 }
 
@@ -2048,10 +2519,20 @@ cadr_status cadr_machine_snapshot_restore(
     if (status != CADR_STATUS_OK) return status;
     status = cadr_snapshot_parse(bytes, byte_count, &hooks, &state, &metadata);
     if (status != CADR_STATUS_OK) return status;
-    if (request->abi_minor < CADR_ABI_MINOR_M3 &&
-        metadata.format_minor != CADR_SNAPSHOT_FORMAT_MINOR_M2) {
+    if ((request->abi_minor < CADR_ABI_MINOR_M3 &&
+         metadata.format_minor != CADR_SNAPSHOT_FORMAT_MINOR_M2) ||
+        (request->abi_minor < CADR_ABI_MINOR_M5 &&
+         metadata.format_minor == CADR_SNAPSHOT_FORMAT_MINOR_M5)) {
         cadr_snapshot_state_destroy(state);
         return CADR_STATUS_ABI_MISMATCH;
+    }
+    if (request->abi_minor >= CADR_ABI_MINOR_M5 &&
+        metadata.format_minor != CADR_SNAPSHOT_FORMAT_MINOR_M5) {
+        /* Older snapshots have no scheduler chunk.  Their deterministic M5
+         * continuation begins with an empty, capture-disabled scheduler. */
+        (void)memset(&state->scheduler, 0, sizeof(state->scheduler));
+        state->scheduler.phase = CADR_SCHEDULER_PHASE_BOUNDARY_READY;
+        state->scheduler.hidden_policy = CADR_SCHEDULER_HIDDEN_PAUSE;
     }
     machine = malloc(sizeof(*machine));
     if (machine == NULL) {

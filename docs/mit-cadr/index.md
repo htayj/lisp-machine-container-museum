@@ -135,6 +135,9 @@ the public LM-3 software and the `usim` emulator.
 - [CADR-WEB-303 ABI1.3 boot-media controller specification](cadr-boot-media-controller-reimplementation-specification.md)
   defines the selected disk registers, CCWs, asynchronous range service, volatile
   block-1 overlay, controller/media evidence, failures, and M4 conformance gate.
+- [CADR-WEB-303 ABI1.4 deterministic machine scheduler specification](cadr-deterministic-machine-scheduler-reimplementation-specification.md)
+  defines guest-slot event ordering, pinned-X11 I/O-board behavior, worker lifecycle,
+  CDRSTATE5 and snapshot continuation, and the M5 simultaneous-event gate.
 - [CADR-WEB-303 ABI1.1 deterministic tracing and snapshot specification](cadr-deterministic-tracing-and-snapshot-reimplementation-specification.md)
   defines the new portable-core CDRGTRC1/CDRSNAP1 observation and continuation
   contract without presenting it as a historical CADR file format.

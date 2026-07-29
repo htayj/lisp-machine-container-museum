@@ -6,6 +6,16 @@ static int tv_sync_prom_enabled(const cadr_machine_state *const state)
     return (state->devices.tv_vert_spacing & UINT32_C(0200)) == 0U;
 }
 
+void cadr_tv_clock_assert(cadr_machine_state *const state)
+{
+    /* Pinned X11 tv.c path: vertical service is gated by TV enable, records
+     * a device request before it raises the shared Xbus interrupt. */
+    if ((state->devices.tv_mode & (UINT32_C(1) << 3U)) != 0U) {
+        state->devices.tv_mode |= UINT32_C(1) << 4U;
+        cadr_bus_assert_xbus_interrupt(state);
+    }
+}
+
 cadr_status cadr_tv_read(cadr_machine_state *const state, const uint32_t offset, uint32_t *const out_value)
 {
     if (out_value == NULL) return CADR_STATUS_INVALID_ARGUMENT;

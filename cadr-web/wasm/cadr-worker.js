@@ -1,3 +1,5 @@
+import { m5SlotAdvanceAllowed, runM5DigestBatch } from "./cadr-m5-batch.mjs";
+
 /*
  * CADR-WEB versioned dedicated-worker protocols.
  *
@@ -12,10 +14,15 @@
  */
 const CADR_M3_PROTOCOL_VERSION = 1;
 const CADR_M4_PROTOCOL_VERSION = 2;
+const CADR_M5_PROTOCOL_VERSION = 3;
 const CADR_STATUS_OK = 0;
 const CADR_STATUS_INVALID_ARGUMENT = 2;
+const CADR_STATUS_HOST_FAILURE = 7;
 const CADR_STATUS_WAITING_FOR_HOST = 8;
 const CADR_STATUS_NOT_READY = 9;
+const CADR_STATUS_GUEST_FAULT = 12;
+const CADR_STATUS_UNIMPLEMENTED_DEVICE = 13;
+const CADR_STATUS_HALTED = 16;
 const CADR_TRANSFER_LIMIT = 1048576;
 const CADR_DIGEST_BATCH_MAX = 4096;
 const CADR_HOST_DESCRIPTOR_LIMIT = 64;
@@ -24,6 +31,23 @@ const CADR_M4_ONLY_OPERATIONS = new Set([
   "media-overlay-state", "run-digest-batch-m4", "boundary-digest-v4",
   "boot-media-observation", "disk-evidence",
 ]);
+const CADR_M5_ONLY_OPERATIONS = new Set([
+  "scheduler-events", "scheduler-start", "scheduler-run", "scheduler-pause",
+  "scheduler-single-step", "scheduler-reset", "scheduler-stop", "scheduler-shutdown",
+  "scheduler-state", "scheduler-visibility",
+  "scheduler-transcript-start", "scheduler-transcript-drain", "scheduler-transcript-finish",
+  "boundary-digest-v5", "run-digest-batch-m5",
+]);
+const CADR_SCHED_EVENT_SEQUENCE_BREAK = 1;
+const CADR_SCHED_EVENT_CLOCK = 2;
+const CADR_SCHED_EVENT_KEYBOARD = 3;
+const CADR_WORKER_PAUSED = "PAUSED";
+const CADR_WORKER_NEW = "NEW";
+const CADR_WORKER_CORE_RESET = "CORE_RESET";
+const CADR_WORKER_RUNNING = "RUNNING";
+const CADR_WORKER_WAITING = "WAITING_FOR_HOST";
+const CADR_WORKER_STOPPED = "STOPPED";
+const CADR_WORKER_FAILED = "FAILED";
 
 let port;
 let instance = null;
@@ -33,6 +57,22 @@ let mediaBusy = false;
 let mediaDirty = false;
 let mediaSnapshotBlocked = false;
 let mediaOverlayGeneration = 0n;
+let workerLifecycle = CADR_WORKER_NEW;
+let hidden = false;
+let visibilityInitialized = false;
+let snapshotHidden = false;
+let controlOrdinal = 0n;
+let controlWitness = new Uint8Array(32);
+let controlBoundary = 0n;
+let snapshotControlOrdinal = 0n;
+let snapshotControlWitness = new Uint8Array(32);
+let snapshotControlBoundary = 0n;
+let snapshotVisibilityInitialized = false;
+let runActive = false;
+let deferredControls = [];
+/* A marker, not pre-completion bytes: completion can mutate guest state. */
+let pendingBoundaryDigest = false;
+let lastFailureEvidence = null;
 
 const isNode = typeof process !== "undefined" &&
   process.versions !== undefined && process.versions.node !== undefined;
@@ -64,6 +104,7 @@ function response(id, op, status, extra = {}, transfers = []) {
     op,
     status: status >>> 0,
     ok: (status >>> 0) === CADR_STATUS_OK,
+    ...(protocolVersion === CADR_M5_PROTOCOL_VERSION ? { lifecycle: workerLifecycle } : {}),
     ...extra,
   }, transfers);
 }
@@ -113,11 +154,162 @@ function split64(value) {
   return [Number(value & 0xffffffffn), Number(value >> 32n)];
 }
 
+async function workerSnapshotSha256(bytes) {
+  if (!globalThis.crypto || !globalThis.crypto.subtle) return null;
+  return new Uint8Array(await globalThis.crypto.subtle.digest("SHA-256", bytes));
+}
+
+function coreClockBoundary(e) {
+  const pointer = e.cadr_wasm_output_pointer() >>> 0;
+  if (pointer === 0 || pointer + 16 > e.memory.buffer.byteLength ||
+      (e.cadr_wasm_machine_info() >>> 0) !== CADR_STATUS_OK) return null;
+  return new DataView(e.memory.buffer, pointer, 16).getBigUint64(8, true);
+}
+
+function zeroWitness(value) {
+  return value.every(byte => byte === 0);
+}
+
+async function noteVisibilityControl(e, nextHidden, controlId) {
+  if (nextHidden === hidden) return true;
+  const boundary = coreClockBoundary(e);
+  if (boundary === null) return false;
+  const bytes = new Uint8Array(7 + 32 + 8 + 8 + 4 + 4);
+  bytes.set([0x43, 0x44, 0x52, 0x4d, 0x35, 0x43, 0x31], 0);
+  bytes.set(controlWitness, 7);
+  new DataView(bytes.buffer).setBigUint64(39, controlOrdinal + 1n, true);
+  new DataView(bytes.buffer).setBigUint64(47, boundary, true);
+  new DataView(bytes.buffer).setUint32(55, nextHidden ? 1 : 0, true);
+  new DataView(bytes.buffer).setUint32(59, controlId >>> 0, true);
+  const next = await workerSnapshotSha256(bytes);
+  if (next === null) throw new Error("worker control witness unavailable");
+  controlWitness = next;
+  controlOrdinal += 1n;
+  controlBoundary = boundary;
+  hidden = nextHidden;
+  return true;
+}
+
+function validInnerM5Snapshot(raw, boundary) {
+  const bytes = new Uint8Array(raw);
+  const magic = [0x43, 0x44, 0x52, 0x53, 0x4e, 0x41, 0x50, 0x31];
+  if (bytes.byteLength < 264 || !magic.every((value, index) => bytes[index] === value)) return false;
+  const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+  return view.getUint16(8, true) === 1 && view.getUint16(10, true) === 2 &&
+    view.getUint32(12, true) === 264 &&
+    view.getBigUint64(32, true) === BigInt(bytes.byteLength) &&
+    boundary <= view.getBigUint64(88, true);
+}
+
+async function wrapM5WorkerSnapshot(snapshot) {
+  const raw = new Uint8Array(snapshot);
+  const wrapped = new Uint8Array(raw.byteLength + 104);
+  wrapped.set([0x43, 0x44, 0x52, 0x4d, 0x35, 0x57, 0x4b, 0x31], 0);
+  const view = new DataView(wrapped.buffer);
+  view.setUint32(8, 3, true);
+  view.setUint32(12, (hidden ? 1 : 0) | (visibilityInitialized ? 2 : 0), true);
+  view.setBigUint64(16, BigInt(raw.byteLength), true);
+  view.setBigUint64(24, controlOrdinal, true);
+  view.setBigUint64(32, controlBoundary, true);
+  wrapped.set(controlWitness, 40);
+  wrapped.set(raw, 104);
+  const digestInput = new Uint8Array(72 + raw.byteLength);
+  digestInput.set(wrapped.slice(0, 72), 0); digestInput.set(raw, 72);
+  const digest = await workerSnapshotSha256(digestInput);
+  if (digest === null) return null;
+  wrapped.set(digest, 72);
+  return wrapped;
+}
+
+async function unwrapM5WorkerSnapshot(snapshot) {
+  const bytes = new Uint8Array(snapshot);
+  const magic = [0x43, 0x44, 0x52, 0x4d, 0x35, 0x57, 0x4b, 0x31];
+  if (bytes.byteLength < 8 || !magic.every((value, index) => bytes[index] === value)) return { legacy: true };
+  if (bytes.byteLength < 104) return null;
+  const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+  const version = view.getUint32(8, true);
+  const flags = view.getUint32(12, true);
+  const length = view.getBigUint64(16, true);
+  if (version !== 3 || (flags & ~3) !== 0 || length !== BigInt(bytes.byteLength - 104)) return null;
+  const ordinal = view.getBigUint64(24, true);
+  const boundary = view.getBigUint64(32, true);
+  const witness = bytes.slice(40, 72);
+  const initialized = (flags & 2) !== 0;
+  const witnessIsZero = zeroWitness(witness);
+  if (ordinal === 0xffffffffffffffffn ||
+      ((ordinal === 0n) !== witnessIsZero) ||
+      (ordinal === 0n && boundary !== 0n) ||
+      ((flags & 1) !== 0 && ordinal === 0n) ||
+      (!initialized && ((flags & 1) !== 0 || ordinal !== 0n || boundary !== 0n || !witnessIsZero))) return null;
+  const digestInput = new Uint8Array(72 + bytes.byteLength - 104);
+  digestInput.set(bytes.slice(0, 72), 0); digestInput.set(bytes.slice(104), 72);
+  const expected = await workerSnapshotSha256(digestInput);
+  if (expected === null) return null;
+  for (let index = 0; index < expected.byteLength; index += 1) {
+    if (expected[index] !== bytes[72 + index]) return null;
+  }
+  const raw = bytes.slice(104);
+  if (!validInnerM5Snapshot(raw, boundary)) return null;
+  return { raw, hidden: (flags & 1) !== 0, visibilityInitialized: initialized,
+    controlOrdinal: ordinal, controlBoundary: boundary, controlWitness: witness, legacy: false };
+}
+
 function metadata(e) {
   const pointer = e.cadr_wasm_meta_pointer() >>> 0;
   if (pointer === 0 || pointer + 16 > e.memory.buffer.byteLength) return null;
   const view = new DataView(e.memory.buffer, pointer, 16);
   return [view.getBigUint64(0, true), view.getBigUint64(8, true)];
+}
+
+function coreIsRunning(e) {
+  const pointer = e.cadr_wasm_output_pointer() >>> 0;
+  if (pointer === 0 || pointer + 4 > e.memory.buffer.byteLength ||
+      (e.cadr_wasm_machine_info() >>> 0) !== CADR_STATUS_OK) return false;
+  return new DataView(e.memory.buffer, pointer, 4).getUint32(0, true) === 2;
+}
+
+function discardWorkerState() {
+  instance = null; mediaBusy = false; mediaDirty = false;
+  mediaSnapshotBlocked = false; mediaOverlayGeneration = 0n;
+}
+
+function closeWorkerSoon() {
+  setTimeout(() => {
+    if (isNode) process.exit(0);
+    else self.close();
+  }, 0);
+}
+
+async function applyDeferredControls() {
+  let terminal = false;
+  let acceptedShutdown = false;
+  while (deferredControls.length !== 0) {
+    const control = deferredControls.shift();
+    if (terminal || workerLifecycle === CADR_WORKER_FAILED) {
+      response(control.id, control.op, CADR_STATUS_NOT_READY,
+        { lifecycle: workerLifecycle, hidden, discardedUnsavedState: false });
+      continue;
+    }
+    if (control.op === "scheduler-visibility") {
+      if (!await noteVisibilityControl(instance.exports, control.hidden, control.id)) {
+        response(control.id, control.op, CADR_STATUS_NOT_READY,
+          { lifecycle: workerLifecycle, hidden, discardedUnsavedState: false });
+        continue;
+      }
+      visibilityInitialized = true;
+      if (hidden && (workerLifecycle === CADR_WORKER_RUNNING || workerLifecycle === CADR_WORKER_WAITING)) workerLifecycle = CADR_WORKER_PAUSED;
+    } else if (control.op === "scheduler-pause") {
+      if (workerLifecycle === CADR_WORKER_RUNNING || workerLifecycle === CADR_WORKER_WAITING) workerLifecycle = CADR_WORKER_PAUSED;
+    } else {
+      workerLifecycle = CADR_WORKER_STOPPED;
+      terminal = true;
+      acceptedShutdown = control.op === "scheduler-shutdown";
+    }
+    response(control.id, control.op, CADR_STATUS_OK,
+      { lifecycle: workerLifecycle, hidden,
+        discardedUnsavedState: control.op === "scheduler-shutdown" });
+  }
+  if (acceptedShutdown) { discardWorkerState(); closeWorkerSoon(); }
 }
 
 function transferResult(e, status, firstName, secondName = null) {
@@ -157,6 +349,70 @@ function outputDigestsV3(e) {
   return { status: CADR_STATUS_OK, digests: new Uint8Array(e.memory.buffer, pointer, 96).slice() };
 }
 
+function outputDigestsM5(e) {
+  const v3 = outputDigestsV3(e);
+  const pointer = e.cadr_wasm_output_pointer() >>> 0;
+  if (v3 === null || v3.status !== CADR_STATUS_OK || pointer === 0 ||
+      pointer + 32 > e.memory.buffer.byteLength) return v3;
+  const status = e.cadr_wasm_state_v5_digest() >>> 0;
+  if (status !== CADR_STATUS_OK) return { status };
+  const bytes = new Uint8Array(128);
+  bytes.set(v3.digests, 0);
+  bytes.set(new Uint8Array(e.memory.buffer, pointer, 32), 96);
+  return { status: CADR_STATUS_OK, digests: bytes };
+}
+
+function schedulerEventWire(events) {
+  if (!Array.isArray(events) || events.length === 0 || events.length > 64) return null;
+  const bytes = new Uint8Array(events.length * 32);
+  const view = new DataView(bytes.buffer);
+  for (let index = 0; index < events.length; index += 1) {
+    const event = events[index];
+    if (!isRecord(event) || !unsigned32(event.kind) || !unsigned32(event.flags) ||
+        !unsigned64(event.dueTick) || !unsigned64(event.generation) ||
+        !unsigned32(event.value) || !unsigned32(event.reserved0) ||
+        ![CADR_SCHED_EVENT_SEQUENCE_BREAK, CADR_SCHED_EVENT_CLOCK, CADR_SCHED_EVENT_KEYBOARD]
+          .includes(event.kind) ||
+        (event.kind === CADR_SCHED_EVENT_SEQUENCE_BREAK && event.value !== 0) ||
+        (event.kind === CADR_SCHED_EVENT_CLOCK && event.value !== 1)) return null;
+    const offset = index * 32;
+    view.setUint32(offset, event.kind, true); view.setUint32(offset + 4, event.flags, true);
+    view.setBigUint64(offset + 8, event.dueTick, true);
+    view.setBigUint64(offset + 16, event.generation, true);
+    view.setUint32(offset + 24, event.value, true); view.setUint32(offset + 28, event.reserved0, true);
+  }
+  return bytes;
+}
+
+function failureEvidence(e, status) {
+  if ([CADR_STATUS_HOST_FAILURE, CADR_STATUS_GUEST_FAULT, CADR_STATUS_UNIMPLEMENTED_DEVICE, CADR_STATUS_HALTED].includes(status)) {
+    workerLifecycle = CADR_WORKER_FAILED;
+    const pointer = e.cadr_wasm_output_pointer() >>> 0;
+    if (pointer !== 0 && pointer + 32 <= e.memory.buffer.byteLength &&
+        (e.cadr_wasm_scheduler_digest() >>> 0) === CADR_STATUS_OK) {
+      const queueDigest = new Uint8Array(e.memory.buffer, pointer, 32).slice();
+      if ((e.cadr_wasm_state_v5_failure_digest() >>> 0) === CADR_STATUS_OK) {
+        const coreStateDigest = new Uint8Array(e.memory.buffer, pointer, 32).slice();
+        lastFailureEvidence = { lastCompleteBoundary: coreClockBoundary(e) ?? 0n,
+          queueDigest: queueDigest.buffer, coreStateDigest: coreStateDigest.buffer };
+        return { lastCompleteBoundary: lastFailureEvidence.lastCompleteBoundary,
+          queueDigest: lastFailureEvidence.queueDigest.slice(0),
+          coreStateDigest: lastFailureEvidence.coreStateDigest.slice(0) };
+      }
+    }
+  }
+  return null;
+}
+
+function schedulerResult(e, id, op, status, totals = null) {
+  const failed = failureEvidence(e, status);
+  const meta = totals ?? metadata(e);
+  response(id, op, status, { lifecycle: workerLifecycle,
+    completedSlots: meta === null ? 0n : meta[0],
+    microinstructionsExecuted: meta === null ? 0n : meta[1], ...(failed ?? {}) },
+  failed === null ? [] : [failed.queueDigest, failed.coreStateDigest]);
+}
+
 async function handle(request) {
   const { id, op } = request;
   if (op === "instantiate") {
@@ -169,6 +425,8 @@ async function handle(request) {
     mediaDirty = false;
     mediaSnapshotBlocked = false;
     mediaOverlayGeneration = 0n;
+    workerLifecycle = CADR_WORKER_NEW;
+    hidden = false; visibilityInitialized = false; controlOrdinal = 0n; controlWitness = new Uint8Array(32); controlBoundary = 0n; pendingBoundaryDigest = false; lastFailureEvidence = null;
     response(id, op, instance.exports.cadr_wasm_create() >>> 0);
     return;
   }
@@ -178,9 +436,23 @@ async function handle(request) {
     response(id, op, CADR_STATUS_INVALID_ARGUMENT);
     return;
   }
+  if (protocolVersion !== CADR_M5_PROTOCOL_VERSION &&
+      CADR_M5_ONLY_OPERATIONS.has(op)) {
+    response(id, op, CADR_STATUS_INVALID_ARGUMENT);
+    return;
+  }
 
   const e = exportsOrStatus(id, op);
   if (e === null) return;
+  if ((workerLifecycle === CADR_WORKER_STOPPED || workerLifecycle === CADR_WORKER_FAILED) && op !== "scheduler-state") {
+    response(id, op, CADR_STATUS_NOT_READY, { lifecycle: workerLifecycle });
+    return;
+  }
+  if (protocolVersion === CADR_M5_PROTOCOL_VERSION &&
+      ["run", "run-digest-batch", "run-digest-batch-v3", "run-digest-batch-m4"].includes(op)) {
+    response(id, op, CADR_STATUS_INVALID_ARGUMENT, { lifecycle: workerLifecycle });
+    return;
+  }
   if (op === "media-overlay-state") {
     if (typeof request.busy !== "boolean" ||
         typeof request.dirty !== "boolean" ||
@@ -239,9 +511,116 @@ async function handle(request) {
   } else if (op === "stream-abort") {
     response(id, op, e.cadr_wasm_stream_abort() >>> 0);
   } else if (op === "cold-power-on") {
-    response(id, op, e.cadr_wasm_cold_power_on() >>> 0);
+    const status = e.cadr_wasm_cold_power_on() >>> 0;
+    if (status === CADR_STATUS_OK) workerLifecycle = CADR_WORKER_CORE_RESET;
+    response(id, op, status, { lifecycle: workerLifecycle });
   } else if (op === "boot") {
-    response(id, op, e.cadr_wasm_boot() >>> 0);
+    const status = e.cadr_wasm_boot() >>> 0;
+    if (status === CADR_STATUS_OK) workerLifecycle = CADR_WORKER_PAUSED;
+    response(id, op, status, { lifecycle: workerLifecycle });
+  } else if (op === "scheduler-events") {
+    const bytes = schedulerEventWire(request.events);
+    if (bytes === null || copyInput(e, bytes) === 0) {
+      response(id, op, CADR_STATUS_INVALID_ARGUMENT);
+      return;
+    }
+    const status = e.cadr_wasm_schedule_events(request.events.length, bytes.byteLength) >>> 0;
+    response(id, op, status, { delivered: status === CADR_STATUS_OK ? request.events.length : 0,
+      lifecycle: workerLifecycle });
+  } else if (op === "scheduler-state") {
+    const witness = controlWitness.slice();
+    const failed = workerLifecycle === CADR_WORKER_FAILED && lastFailureEvidence !== null ?
+      { lastCompleteBoundary: lastFailureEvidence.lastCompleteBoundary,
+        queueDigest: lastFailureEvidence.queueDigest.slice(0),
+        coreStateDigest: lastFailureEvidence.coreStateDigest.slice(0) } : null;
+    response(id, op, CADR_STATUS_OK, { lifecycle: workerLifecycle, hidden,
+      visibilityInitialized, snapshotVisibilityInitialized, controlOrdinal, controlBoundary,
+      controlWitness: witness.buffer, ...(failed ?? {}) },
+    failed === null ? [witness.buffer] : [witness.buffer, failed.queueDigest, failed.coreStateDigest]);
+  } else if (op === "scheduler-transcript-start") {
+    if (workerLifecycle !== CADR_WORKER_PAUSED) { response(id, op, CADR_STATUS_NOT_READY); return; }
+    const status = e.cadr_wasm_scheduler_transcript_start() >>> 0;
+    response(id, op, status, { lifecycle: workerLifecycle });
+  } else if (op === "scheduler-transcript-drain") {
+    const status = e.cadr_wasm_scheduler_transcript() >>> 0;
+    const result = transferResult(e, status, "transcript");
+    if (result.status !== CADR_STATUS_OK) response(id, op, result.status);
+    else response(id, op, status, result, [result.transcript]);
+  } else if (op === "scheduler-transcript-finish") {
+    if (workerLifecycle !== CADR_WORKER_PAUSED) { response(id, op, CADR_STATUS_NOT_READY); return; }
+    const status = e.cadr_wasm_scheduler_transcript_finish() >>> 0;
+    response(id, op, status, { lifecycle: workerLifecycle });
+  } else if (op === "scheduler-start") {
+    if (visibilityInitialized === false || workerLifecycle !== CADR_WORKER_PAUSED || hidden || !coreIsRunning(e)) { response(id, op, CADR_STATUS_NOT_READY, { lifecycle: workerLifecycle }); return; }
+    workerLifecycle = CADR_WORKER_RUNNING;
+    response(id, op, CADR_STATUS_OK, { lifecycle: workerLifecycle });
+  } else if (op === "scheduler-pause") {
+    if (workerLifecycle !== CADR_WORKER_RUNNING && workerLifecycle !== CADR_WORKER_WAITING &&
+        workerLifecycle !== CADR_WORKER_PAUSED) {
+      response(id, op, CADR_STATUS_NOT_READY, { lifecycle: workerLifecycle }); return;
+    }
+    if (workerLifecycle === CADR_WORKER_RUNNING || workerLifecycle === CADR_WORKER_WAITING) workerLifecycle = CADR_WORKER_PAUSED;
+    response(id, op, CADR_STATUS_OK, { lifecycle: workerLifecycle });
+  } else if (op === "scheduler-visibility") {
+    if (typeof request.hidden !== "boolean") { response(id, op, CADR_STATUS_INVALID_ARGUMENT); return; }
+    if (!await noteVisibilityControl(e, request.hidden, id)) {
+      response(id, op, CADR_STATUS_NOT_READY, { lifecycle: workerLifecycle, hidden }); return;
+    }
+    visibilityInitialized = true;
+    if (hidden && (workerLifecycle === CADR_WORKER_RUNNING || workerLifecycle === CADR_WORKER_WAITING)) workerLifecycle = CADR_WORKER_PAUSED;
+    response(id, op, CADR_STATUS_OK, { lifecycle: workerLifecycle, hidden });
+  } else if (op === "scheduler-run") {
+    if (!unsigned32(request.clockSlots) || request.clockSlots === 0) {
+      response(id, op, CADR_STATUS_INVALID_ARGUMENT);
+      return;
+    }
+    if (!m5SlotAdvanceAllowed({ visibilityInitialized, lifecycle: workerLifecycle, hidden,
+      pendingBoundaryDigest }, CADR_WORKER_RUNNING)) {
+      response(id, op, CADR_STATUS_NOT_READY, { lifecycle: workerLifecycle });
+      return;
+    }
+    let status = CADR_STATUS_OK;
+    let completed = 0n;
+    let microinstructions = 0n;
+    runActive = true;
+    while (completed < request.clockSlots && workerLifecycle === CADR_WORKER_RUNNING) {
+      status = e.cadr_wasm_run(1) >>> 0;
+      const runMeta = metadata(e);
+      if (runMeta !== null) { completed += runMeta[0]; microinstructions += runMeta[1]; }
+      if (status !== CADR_STATUS_OK || completed >= BigInt(request.clockSlots)) break;
+      /* Yield a worker turn: a directly captured control request is observed
+       * only between complete outer slots. */
+      await new Promise((resolveYield) => setTimeout(resolveYield, 0));
+      if (deferredControls.length !== 0) break;
+    }
+    runActive = false;
+    if (status === CADR_STATUS_WAITING_FOR_HOST) workerLifecycle = CADR_WORKER_WAITING;
+    schedulerResult(e, id, op, status, [completed, microinstructions]);
+    await applyDeferredControls();
+  } else if (op === "scheduler-single-step") {
+    if (!m5SlotAdvanceAllowed({ visibilityInitialized, lifecycle: workerLifecycle, hidden,
+      pendingBoundaryDigest }, CADR_WORKER_PAUSED)) { response(id, op, CADR_STATUS_NOT_READY, { lifecycle: workerLifecycle }); return; }
+    workerLifecycle = CADR_WORKER_RUNNING;
+    let status = e.cadr_wasm_run(1) >>> 0;
+    /* Completion-only host turns do not satisfy a requested guest step. */
+    while (status === CADR_STATUS_OK && metadata(e) !== null && metadata(e)[0] === 0n) status = e.cadr_wasm_run(1) >>> 0;
+    workerLifecycle = status === CADR_STATUS_WAITING_FOR_HOST ? CADR_WORKER_WAITING : CADR_WORKER_PAUSED;
+    schedulerResult(e, id, op, status);
+  } else if (op === "scheduler-reset") {
+    if (workerLifecycle !== CADR_WORKER_PAUSED) { response(id, op, CADR_STATUS_NOT_READY, { lifecycle: workerLifecycle }); return; }
+    const status = e.cadr_wasm_reset() >>> 0;
+    if (status === CADR_STATUS_OK) pendingBoundaryDigest = false;
+    response(id, op, status, { lifecycle: workerLifecycle });
+  } else if (op === "scheduler-stop" || op === "scheduler-shutdown") {
+    if (workerLifecycle !== CADR_WORKER_RUNNING && workerLifecycle !== CADR_WORKER_PAUSED &&
+        workerLifecycle !== CADR_WORKER_WAITING) {
+      response(id, op, CADR_STATUS_NOT_READY, { lifecycle: workerLifecycle }); return;
+    }
+    workerLifecycle = CADR_WORKER_STOPPED;
+    pendingBoundaryDigest = false;
+    const discarded = op === "scheduler-shutdown";
+    response(id, op, CADR_STATUS_OK, { lifecycle: workerLifecycle, discardedUnsavedState: discarded });
+    if (discarded) { discardWorkerState(); closeWorkerSoon(); }
   } else if (op === "run") {
     if (!unsigned32(request.clockSlots) || request.clockSlots === 0) {
       response(id, op, CADR_STATUS_INVALID_ARGUMENT);
@@ -344,6 +723,7 @@ async function handle(request) {
     let boundaryCount = 0;
     let terminalStatus = CADR_STATUS_OK;
     let boundaryPendingHost = false;
+    runActive = true;
     while (boundaryCount < request.clockSlots) {
       if ((e.cadr_wasm_meta_pointer() >>> 0) === 0) {
         response(id, op, CADR_STATUS_NOT_READY, {
@@ -404,6 +784,59 @@ async function handle(request) {
       digests: returned.buffer,
       interrupts: returnedInterrupts.buffer,
     }, [returned.buffer, returnedInterrupts.buffer]);
+  } else if (op === "run-digest-batch-m5") {
+    if (!unsigned32(request.clockSlots) || request.clockSlots === 0 ||
+        request.clockSlots > CADR_DIGEST_BATCH_MAX) {
+      response(id, op, CADR_STATUS_INVALID_ARGUMENT); return;
+    }
+    if (visibilityInitialized === false || workerLifecycle !== CADR_WORKER_RUNNING || hidden) {
+      response(id, op, CADR_STATUS_NOT_READY, { lifecycle: workerLifecycle }); return;
+    }
+    const batchState = { pendingBoundaryDigest, lifecycle: workerLifecycle };
+    runActive = true;
+    const batch = await runM5DigestBatch({
+      clockSlots: request.clockSlots, state: batchState,
+      runOne: () => e.cadr_wasm_run(1) >>> 0,
+      metadata: () => metadata(e),
+      outputDigest: () => outputDigestsM5(e),
+      isFailure: status => [CADR_STATUS_HOST_FAILURE, CADR_STATUS_GUEST_FAULT,
+        CADR_STATUS_UNIMPLEMENTED_DEVICE, CADR_STATUS_HALTED].includes(status),
+      collectFailure: status => {
+        const evidence = failureEvidence(e, status);
+        batchState.lifecycle = workerLifecycle;
+        return evidence;
+      },
+      statusOk: CADR_STATUS_OK, statusWaiting: CADR_STATUS_WAITING_FOR_HOST,
+      waitingLifecycle: CADR_WORKER_WAITING,
+      yieldTurn: () => new Promise((resolveYield) => setTimeout(resolveYield, 0)),
+      hasDeferredControl: () => deferredControls.length !== 0,
+    });
+    runActive = false;
+    pendingBoundaryDigest = batchState.pendingBoundaryDigest;
+    workerLifecycle = batchState.lifecycle;
+    if (batch.invalidMetadata) {
+      response(id, op, CADR_STATUS_INVALID_ARGUMENT, {
+        boundaryCount: batch.boundaryCount, terminalStatus: batch.terminalStatus,
+        boundaryPendingHost: batch.boundaryPendingHost,
+      });
+      return;
+    }
+    if (batch.digestStatus !== CADR_STATUS_OK) {
+      response(id, op, batch.digestStatus === null ? CADR_STATUS_NOT_READY : batch.digestStatus, {
+        boundaryCount: batch.boundaryCount, terminalStatus: batch.terminalStatus,
+        boundaryPendingHost: batch.boundaryPendingHost,
+      });
+      return;
+    }
+    const bytes = new Uint8Array(batch.boundaryCount * 128);
+    for (let index = 0; index < batch.rows.length; index += 1) bytes.set(batch.rows[index], index * 128);
+    const failed = batch.failure;
+    response(id, op, CADR_STATUS_OK, { boundaryCount: batch.boundaryCount,
+      terminalStatus: batch.terminalStatus, boundaryPendingHost: batch.boundaryPendingHost,
+      lifecycle: workerLifecycle,
+      digests: bytes.buffer, ...(failed ?? {}) },
+    failed === null ? [bytes.buffer] : [bytes.buffer, failed.queueDigest, failed.coreStateDigest]);
+    await applyDeferredControls();
   } else if (op === "boundary-digests") {
     const result = outputDigests(e);
     if (result === null) response(id, op, CADR_STATUS_NOT_READY);
@@ -422,6 +855,15 @@ async function handle(request) {
         pointer + 32 > e.memory.buffer.byteLength) {
       response(id, op, status);
       return;
+    }
+    const digest = new Uint8Array(e.memory.buffer, pointer, 32).slice();
+    response(id, op, status, { digest: digest.buffer }, [digest.buffer]);
+  } else if (op === "boundary-digest-v5") {
+    const pointer = e.cadr_wasm_output_pointer() >>> 0;
+    const status = pointer === 0 ? CADR_STATUS_NOT_READY :
+      (e.cadr_wasm_state_v5_digest() >>> 0);
+    if (status !== CADR_STATUS_OK || pointer + 32 > e.memory.buffer.byteLength) {
+      response(id, op, status); return;
     }
     const digest = new Uint8Array(e.memory.buffer, pointer, 32).slice();
     response(id, op, status, { digest: digest.buffer }, [digest.buffer]);
@@ -490,7 +932,10 @@ async function handle(request) {
     }
     const status = e.cadr_wasm_host_complete(request.operation, request.hostStatus,
       generation[0], generation[1], requestId[0], requestId[1], bytes.byteLength) >>> 0;
-    response(id, op, status, { byteCount: bytes.byteLength });
+    if (status === CADR_STATUS_OK && workerLifecycle === CADR_WORKER_WAITING) {
+      workerLifecycle = CADR_WORKER_RUNNING;
+    }
+    response(id, op, status, { byteCount: bytes.byteLength, lifecycle: workerLifecycle });
   } else if (op === "disk-observation") {
     if ((e.cadr_wasm_meta_pointer() >>> 0) === 0) {
       response(id, op, CADR_STATUS_NOT_READY);
@@ -592,16 +1037,21 @@ async function handle(request) {
     }
     response(id, op, e.cadr_wasm_trace_finish(request.reason) >>> 0);
   } else if (op === "snapshot-size") {
-    if (mediaBusy || mediaDirty || mediaSnapshotBlocked) {
+    if (mediaBusy || mediaDirty || mediaSnapshotBlocked || pendingBoundaryDigest) {
       response(id, op, CADR_STATUS_NOT_READY);
       return;
     }
     const status = e.cadr_wasm_snapshot_size() >>> 0;
     const meta = status === CADR_STATUS_OK ? metadata(e) : null;
     if (meta === null) response(id, op, status === CADR_STATUS_OK ? CADR_STATUS_NOT_READY : status);
-    else response(id, op, status, { byteCount: meta[0] });
+    else response(id, op, status, { byteCount: meta[0] +
+      (protocolVersion === CADR_M5_PROTOCOL_VERSION ? 104n : 0n) });
   } else if (op === "snapshot-save") {
-    if (mediaBusy || mediaDirty || mediaSnapshotBlocked) {
+    if (protocolVersion === CADR_M5_PROTOCOL_VERSION &&
+        (workerLifecycle !== CADR_WORKER_PAUSED || !visibilityInitialized)) {
+      response(id, op, CADR_STATUS_NOT_READY); return;
+    }
+    if (mediaBusy || mediaDirty || mediaSnapshotBlocked || pendingBoundaryDigest) {
       response(id, op, CADR_STATUS_NOT_READY);
       return;
     }
@@ -617,20 +1067,54 @@ async function handle(request) {
       response(id, op, CADR_STATUS_NOT_READY);
       return;
     }
-    const snapshot = new Uint8Array(e.memory.buffer, pointer, byteCount).slice();
-    response(id, op, status, { snapshot: snapshot.buffer }, [snapshot.buffer]);
+    const rawSnapshot = new Uint8Array(e.memory.buffer, pointer, byteCount).slice();
+    if (protocolVersion === CADR_M5_PROTOCOL_VERSION) {
+      snapshotHidden = hidden;
+      snapshotVisibilityInitialized = visibilityInitialized;
+      snapshotControlOrdinal = controlOrdinal;
+      snapshotControlWitness = controlWitness.slice();
+      snapshotControlBoundary = controlBoundary;
+      const snapshot = await wrapM5WorkerSnapshot(rawSnapshot);
+      if (snapshot === null) response(id, op, CADR_STATUS_NOT_READY);
+      else response(id, op, status, { snapshot: snapshot.buffer }, [snapshot.buffer]);
+    } else {
+      response(id, op, status, { snapshot: rawSnapshot.buffer }, [rawSnapshot.buffer]);
+    }
   } else if (op === "snapshot-restore") {
-    if (mediaBusy || mediaDirty || mediaSnapshotBlocked) {
+    if (protocolVersion === CADR_M5_PROTOCOL_VERSION && workerLifecycle !== CADR_WORKER_PAUSED) {
+      response(id, op, CADR_STATUS_NOT_READY); return;
+    }
+    if (mediaBusy || mediaDirty || mediaSnapshotBlocked || pendingBoundaryDigest) {
       response(id, op, CADR_STATUS_NOT_READY);
       return;
     }
-    response(id, op, e.cadr_wasm_snapshot_restore() >>> 0);
+    const status = e.cadr_wasm_snapshot_restore() >>> 0;
+    if (status === CADR_STATUS_OK && protocolVersion === CADR_M5_PROTOCOL_VERSION) {
+      hidden = snapshotHidden; controlOrdinal = snapshotControlOrdinal;
+      controlWitness = snapshotControlWitness.slice();
+      controlBoundary = snapshotControlBoundary;
+      visibilityInitialized = snapshotVisibilityInitialized;
+    }
+    response(id, op, status, { lifecycle: workerLifecycle, hidden });
   } else if (op === "snapshot-restore-import") {
-    if (mediaBusy || mediaDirty || mediaSnapshotBlocked) {
+    if (protocolVersion === CADR_M5_PROTOCOL_VERSION && workerLifecycle !== CADR_WORKER_PAUSED &&
+        workerLifecycle !== CADR_WORKER_NEW) {
+      response(id, op, CADR_STATUS_NOT_READY); return;
+    }
+    if (mediaBusy || mediaDirty || mediaSnapshotBlocked || pendingBoundaryDigest) {
       response(id, op, CADR_STATUS_NOT_READY);
       return;
     }
-    const bytes = uint8Bytes(request.snapshot);
+    const supplied = uint8Bytes(request.snapshot);
+    let envelope;
+    if (protocolVersion === CADR_M5_PROTOCOL_VERSION && supplied !== null) {
+      envelope = await unwrapM5WorkerSnapshot(supplied);
+      if (envelope !== null && envelope.legacy) {
+        envelope = request.allowLegacyNativeImport === true ?
+          { raw: supplied, hidden: false, visibilityInitialized: false, legacy: true } : null;
+      }
+    } else envelope = supplied === null ? null : { raw: supplied, hidden: false };
+    const bytes = envelope === null ? null : envelope.raw;
     if (bytes === null || bytes.byteLength === 0 || bytes.byteLength > 0xffffffff) {
       response(id, op, CADR_STATUS_INVALID_ARGUMENT);
       return;
@@ -641,7 +1125,25 @@ async function handle(request) {
       return;
     }
     new Uint8Array(e.memory.buffer, pointer, bytes.byteLength).set(bytes);
-    response(id, op, e.cadr_wasm_snapshot_restore_import(bytes.byteLength) >>> 0);
+    const status = e.cadr_wasm_snapshot_restore_import(bytes.byteLength) >>> 0;
+    if (status === CADR_STATUS_OK && protocolVersion === CADR_M5_PROTOCOL_VERSION) {
+      workerLifecycle = CADR_WORKER_PAUSED;
+      hidden = envelope.hidden;
+      controlOrdinal = envelope.legacy ? 0n : envelope.controlOrdinal;
+      controlWitness = envelope.legacy ? new Uint8Array(32) : envelope.controlWitness;
+      controlBoundary = envelope.legacy ? 0n : envelope.controlBoundary;
+      snapshotControlOrdinal = controlOrdinal;
+      snapshotControlWitness = controlWitness.slice();
+      snapshotControlBoundary = controlBoundary;
+      snapshotVisibilityInitialized = envelope.legacy ? false : envelope.visibilityInitialized;
+      /* A wrapped record tells us whether its source tab had established a
+       * visibility policy, but a restored worker still needs this tab's
+       * explicit handshake before it may advance guest time. */
+      visibilityInitialized = false;
+      snapshotHidden = hidden;
+      pendingBoundaryDigest = false;
+    }
+    response(id, op, status, { lifecycle: workerLifecycle, hidden });
   } else {
     response(id, op, CADR_STATUS_INVALID_ARGUMENT);
   }
@@ -650,8 +1152,12 @@ async function handle(request) {
 async function receive(event) {
   const request = event.data;
   if (!isRecord(request) ||
-      ![CADR_M3_PROTOCOL_VERSION, CADR_M4_PROTOCOL_VERSION]
+      ![CADR_M3_PROTOCOL_VERSION, CADR_M4_PROTOCOL_VERSION, CADR_M5_PROTOCOL_VERSION]
         .includes(request.version) ||
+      (request.version === CADR_M5_PROTOCOL_VERSION && request.op === "instantiate" &&
+       (!(request.module instanceof WebAssembly.Module) ||
+        !WebAssembly.Module.exports(request.module).some(
+          entry => entry.name === "cadr_wasm_schedule_event"))) ||
       (protocolVersion !== null && request.version !== protocolVersion) ||
       !validId(request.id) || typeof request.op !== "string") {
     error(isRecord(request) && validId(request.id) ? request.id : null,
@@ -674,8 +1180,20 @@ async function receive(event) {
 /* Web Worker delivery is ordered, but `handle` awaits module instantiation and
  * host requests.  Serialize the complete request transaction as well, so a
  * later message cannot observe half-completed state from an earlier one. */
+function queueLiveControl(event) {
+  const request = event.data;
+  if (!runActive || !isRecord(request) || protocolVersion !== CADR_M5_PROTOCOL_VERSION ||
+      request.version !== CADR_M5_PROTOCOL_VERSION || request.id !== expectedId ||
+      !["scheduler-pause", "scheduler-stop", "scheduler-shutdown", "scheduler-visibility"].includes(request.op) ||
+      (request.op === "scheduler-visibility" && typeof request.hidden !== "boolean")) return false;
+  expectedId += 1;
+  deferredControls.push(request);
+  return true;
+}
+
 let receive_tail = Promise.resolve();
 function enqueue_receive(event) {
+  if (queueLiveControl(event)) return;
   receive_tail = receive_tail.then(() => receive(event), () => receive(event));
 }
 

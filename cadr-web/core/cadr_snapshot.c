@@ -12,7 +12,8 @@
 #define CADR_SNAPSHOT_TRAILER_BYTES UINT64_C(32)
 #define CADR_SNAPSHOT_M2_CHUNK_COUNT UINT32_C(8)
 #define CADR_SNAPSHOT_M3_CHUNK_COUNT UINT32_C(9)
-#define CADR_SNAPSHOT_MAX_KNOWN_CHUNK_COUNT CADR_SNAPSHOT_M3_CHUNK_COUNT
+#define CADR_SNAPSHOT_M5_CHUNK_COUNT UINT32_C(10)
+#define CADR_SNAPSHOT_MAX_KNOWN_CHUNK_COUNT CADR_SNAPSHOT_M5_CHUNK_COUNT
 #define CADR_SNAPSHOT_MAX_CHUNKS UINT32_C(1024)
 #define CADR_SNAPSHOT_REQUIRED_FLAG UINT32_C(1)
 #define CADR_SNAPSHOT_MAX_COMPLETION_BYTES UINT64_C(1048576)
@@ -27,6 +28,7 @@
 #define CADR_SNAPSHOT_CHUNK_EVENTS UINT32_C(7)
 #define CADR_SNAPSHOT_CHUNK_TRACE UINT32_C(8)
 #define CADR_SNAPSHOT_CHUNK_DISK UINT32_C(9)
+#define CADR_SNAPSHOT_CHUNK_SCHEDULER UINT32_C(10)
 #define CADR_SNAPSHOT_DISK_CHUNK_BYTES UINT64_C(96)
 #define CADR_SNAPSHOT_DISK_STATUS_KNOWN \
     (CADR_DISK_STATUS_READ_COMPARE | CADR_DISK_STATUS_CCW_CYCLE | \
@@ -634,6 +636,194 @@ static int cadr_snapshot_validate_devices(const cadr_device_state *devices)
            devices->tv_sync_ptr < sizeof(devices->tv_sync_ram);
 }
 
+/* Transcript records are a replay witness, not merely a collection of
+ * plausible register values.  Check each selected event's exact transition
+ * without requiring the bounded, drainable transport buffer to start at an
+ * arbitrary historic machine state. */
+static int cadr_snapshot_transcript_transition_valid(
+    const cadr_scheduler_transcript_record *record)
+{
+    const uint32_t keyboard_ready = UINT32_C(1) << 5U;
+    const uint32_t keyboard_interrupt = UINT32_C(1) << 2U;
+    const uint32_t sequence_break = UINT32_C(1) << 26U;
+    const uint32_t location_interrupt_mask = UINT32_C(0xf) << 26U;
+    if (record->kind == CADR_SCHED_EVENT_CLOCK) {
+        const uint32_t phase = record->usec_phase_before + UINT32_C(1000000);
+        const uint32_t expected_tv = (record->tv_mode_before & (UINT32_C(1) << 3U)) != 0U
+            ? record->tv_mode_before | (UINT32_C(1) << 4U) : record->tv_mode_before;
+        const uint32_t expected_interrupt =
+            (record->tv_mode_before & (UINT32_C(1) << 3U)) != 0U
+            ? record->interrupt_before | UINT32_C(040000) : record->interrupt_before;
+        return record->interrupt_after == expected_interrupt &&
+               record->interrupt_control_after == record->interrupt_control_before &&
+               record->iob_csr_after == record->iob_csr_before &&
+               record->location_counter_after == record->location_counter_before &&
+               record->tv_mode_after == expected_tv &&
+               record->sixty_cycle_after ==
+                   (uint32_t)(uint16_t)(record->sixty_cycle_before + UINT32_C(1)) &&
+               record->usec_clock_after == record->usec_clock_before + phase / UINT32_C(60) &&
+               record->usec_phase_after == phase % UINT32_C(60) &&
+               record->scancode_after == record->scancode_before &&
+               record->fifo_count_after == record->fifo_count_before;
+    }
+    if (record->kind == CADR_SCHED_EVENT_KEYBOARD) {
+        uint32_t expected_csr = record->iob_csr_before;
+        uint32_t expected_scancode = record->scancode_before;
+        uint32_t expected_fifo = record->fifo_count_before;
+        uint32_t expected_interrupt = record->interrupt_before;
+        if ((record->iob_csr_before & keyboard_ready) == 0U) {
+            expected_scancode = (UINT32_C(1) << 16U) | record->value;
+            if ((record->iob_csr_before & keyboard_interrupt) != 0U) {
+                expected_csr |= keyboard_ready;
+                if ((record->interrupt_before & UINT32_C(02000)) != 0U) {
+                    expected_interrupt = (record->interrupt_before & ~UINT32_C(01774)) |
+                        UINT32_C(0100000) | UINT32_C(0260);
+                }
+            }
+        } else {
+            if (record->fifo_count_before >= CADR_IOB_KEY_QUEUE_LEN) return 0;
+            expected_fifo += 1U;
+        }
+        return record->interrupt_after == expected_interrupt &&
+               record->interrupt_control_after == record->interrupt_control_before &&
+               record->iob_csr_after == expected_csr &&
+               record->location_counter_after == record->location_counter_before &&
+               record->tv_mode_after == record->tv_mode_before &&
+               record->sixty_cycle_after == record->sixty_cycle_before &&
+               record->usec_clock_after == record->usec_clock_before &&
+               record->usec_phase_after == record->usec_phase_before &&
+               record->scancode_after == expected_scancode &&
+               record->fifo_count_after == expected_fifo;
+    }
+    return record->interrupt_after == record->interrupt_before &&
+           record->interrupt_control_after ==
+               (record->interrupt_control_before | sequence_break) &&
+           record->iob_csr_after == record->iob_csr_before &&
+           record->location_counter_after ==
+               ((record->location_counter_before & ~location_interrupt_mask) |
+                (record->interrupt_control_after & location_interrupt_mask)) &&
+           record->tv_mode_after == record->tv_mode_before &&
+           record->sixty_cycle_after == record->sixty_cycle_before &&
+           record->usec_clock_after == record->usec_clock_before &&
+           record->usec_phase_after == record->usec_phase_before &&
+           record->scancode_after == record->scancode_before &&
+           record->fifo_count_after == record->fifo_count_before;
+}
+
+static int cadr_snapshot_validate_transcript_record(
+    const cadr_machine_state *state, const cadr_scheduler_state *scheduler,
+    const cadr_scheduler_transcript_record *record, uint32_t index)
+{
+    uint32_t prior;
+    if (record->due_tick > state->clock_slots_completed ||
+        record->generation != state->events.generation ||
+        record->insertion_sequence >= scheduler->next_insertion_sequence ||
+        record->flags != CADR_SCHED_EVENT_FLAGS_KNOWN ||
+        record->fifo_count_before > CADR_IOB_KEY_QUEUE_LEN ||
+        record->fifo_count_after > CADR_IOB_KEY_QUEUE_LEN ||
+        record->usec_phase_before >= 60U || record->usec_phase_after >= 60U ||
+        record->sixty_cycle_before > UINT16_MAX || record->sixty_cycle_after > UINT16_MAX ||
+        record->interrupt_before > UINT16_MAX || record->interrupt_after > UINT16_MAX ||
+        (record->iob_csr_before & ~UINT32_C(057)) != 0U ||
+        (record->iob_csr_after & ~UINT32_C(057)) != 0U ||
+        record->scancode_before > UINT32_C(0x1ffff) ||
+        record->scancode_after > UINT32_C(0x1ffff) ||
+        (record->kind != CADR_SCHED_EVENT_SEQUENCE_BREAK &&
+         record->kind != CADR_SCHED_EVENT_CLOCK &&
+         record->kind != CADR_SCHED_EVENT_KEYBOARD) ||
+        (record->kind == CADR_SCHED_EVENT_SEQUENCE_BREAK && record->value != 0U) ||
+        (record->kind == CADR_SCHED_EVENT_CLOCK && record->value != 1U) ||
+        (record->kind == CADR_SCHED_EVENT_KEYBOARD && record->value > UINT16_MAX) ||
+        !cadr_snapshot_transcript_transition_valid(record)) {
+        return 0;
+    }
+    /* Insertion sequences are unique machine-wide, including records that
+     * have been removed from the pending event queue and captured here. */
+    for (prior = 0U; prior < index; ++prior) {
+        if (scheduler->transcript[prior].insertion_sequence ==
+            record->insertion_sequence) return 0;
+    }
+    for (prior = 0U; prior < scheduler->count; ++prior) {
+        if (scheduler->events[prior].insertion_sequence ==
+            record->insertion_sequence) return 0;
+    }
+    if (index != 0U) {
+        const cadr_scheduler_transcript_record *previous =
+            &scheduler->transcript[index - 1U];
+        const uint32_t priority = record->kind == CADR_SCHED_EVENT_CLOCK ? 0U :
+            (record->kind == CADR_SCHED_EVENT_KEYBOARD ? 1U : 2U);
+        const uint32_t previous_priority = previous->kind == CADR_SCHED_EVENT_CLOCK ? 0U :
+            (previous->kind == CADR_SCHED_EVENT_KEYBOARD ? 1U : 2U);
+        if (record->due_tick < previous->due_tick ||
+            (record->due_tick > previous->due_tick && record->order != 0U) ||
+            (record->due_tick == previous->due_tick &&
+             (record->order != previous->order + 1U || priority < previous_priority ||
+              (priority == previous_priority &&
+               record->insertion_sequence <= previous->insertion_sequence)))) {
+            return 0;
+        }
+    } else if (record->order != 0U) return 0;
+    return 1;
+}
+
+static int cadr_snapshot_validate_scheduler(const cadr_machine_state *state)
+{
+    const cadr_iob_state *iob = &state->devices.iob;
+    const cadr_scheduler_state *scheduler = &state->scheduler;
+    uint64_t last_sequence = 0U;
+    uint32_t index;
+    if (iob->usec_phase >= 60U || (iob->csr & ~UINT32_C(057)) != 0U ||
+        iob->scancode > UINT32_C(0x1ffff) ||
+        iob->key_queue_read >= CADR_IOB_KEY_QUEUE_LEN ||
+        iob->key_queue_write >= CADR_IOB_KEY_QUEUE_LEN ||
+        iob->key_queue_count > CADR_IOB_KEY_QUEUE_LEN ||
+        iob->key_queue_write != (iob->key_queue_read + iob->key_queue_count) % CADR_IOB_KEY_QUEUE_LEN ||
+        scheduler->count > CADR_SCHEDULER_EVENT_CAPACITY ||
+        scheduler->phase != CADR_SCHEDULER_PHASE_BOUNDARY_READY ||
+        scheduler->hidden_policy != CADR_SCHEDULER_HIDDEN_PAUSE ||
+        scheduler->reserved0 != 0U ||
+        scheduler->transcript_count > CADR_SCHEDULER_TRANSCRIPT_CAPACITY ||
+        scheduler->transcript_total_count < scheduler->transcript_count ||
+        scheduler->transcript_total_count > UINT64_MAX - (uint64_t)scheduler->count ||
+        scheduler->next_insertion_sequence !=
+            scheduler->transcript_total_count + (uint64_t)scheduler->count ||
+        ((scheduler->transcript_total_count == 0U) !=
+         (memcmp(scheduler->transcript_witness_sha256,
+                 (const uint8_t[CADR_SHA256_BYTES]){0}, CADR_SHA256_BYTES) == 0)) ||
+        !cadr_snapshot_is_boolean(scheduler->transcript_capture_enabled) ||
+        (scheduler->transcript_capture_enabled == 0U && scheduler->transcript_count != 0U) ||
+        scheduler->transcript_reserved0 != 0U) return 0;
+    for (index = 0U; index < scheduler->count; ++index) {
+        const cadr_scheduler_event_state *event = &scheduler->events[index];
+        uint32_t other;
+        if (event->generation != state->events.generation ||
+            event->due_tick < state->clock_slots_completed ||
+            event->flags != CADR_SCHED_EVENT_FLAGS_KNOWN || event->reserved0 != 0U ||
+            event->insertion_sequence >= scheduler->next_insertion_sequence ||
+            (index != 0U && event->insertion_sequence <= last_sequence) ||
+            (event->kind != CADR_SCHED_EVENT_SEQUENCE_BREAK &&
+             event->kind != CADR_SCHED_EVENT_CLOCK &&
+             event->kind != CADR_SCHED_EVENT_KEYBOARD) ||
+            (event->kind == CADR_SCHED_EVENT_SEQUENCE_BREAK && event->value != 0U) ||
+            (event->kind == CADR_SCHED_EVENT_CLOCK && event->value != 1U) ||
+            (event->kind == CADR_SCHED_EVENT_KEYBOARD && event->value > UINT16_MAX)) return 0;
+        if (event->kind == CADR_SCHED_EVENT_KEYBOARD) {
+            for (other = 0U; other < index; ++other) {
+                if (scheduler->events[other].kind == CADR_SCHED_EVENT_KEYBOARD &&
+                    scheduler->events[other].due_tick == event->due_tick) return 0;
+            }
+        }
+        last_sequence = event->insertion_sequence;
+    }
+    for (index = 0U; index < scheduler->transcript_count; ++index) {
+        if (!cadr_snapshot_validate_transcript_record(state, scheduler,
+                                                       &scheduler->transcript[index], index)) {
+            return 0;
+        }
+    }
+    return 1;
+}
+
 /* CDRSNAP1 1.0 predates D0.  It may represent only this implied quiescent
  * controller state; active or configured disk work requires the M3 extension. */
 static int cadr_snapshot_disk_is_default(const cadr_disk_state *disk)
@@ -785,8 +975,10 @@ static cadr_status cadr_snapshot_validate_state(const cadr_machine_state *state,
         (format_minor == CADR_SNAPSHOT_FORMAT_MINOR_M2
              ? !cadr_snapshot_disk_is_default(&state->devices.disk)
              : !cadr_snapshot_validate_disk(&state->devices.disk)) ||
-        (format_minor == CADR_SNAPSHOT_FORMAT_MINOR_M3 &&
+        (format_minor >= CADR_SNAPSHOT_FORMAT_MINOR_M3 &&
              !cadr_snapshot_validate_disk_continuation(state)) ||
+        (format_minor == CADR_SNAPSHOT_FORMAT_MINOR_M5 &&
+             !cadr_snapshot_validate_scheduler(state)) ||
         !cadr_snapshot_validate_canonical(&state->canonical) ||
         !cadr_snapshot_validate_events(&state->events) ||
         cadr_trace_latches_validate(state) != CADR_STATUS_OK ||
@@ -1113,6 +1305,65 @@ static void cadr_snapshot_encode_disk(const cadr_machine_state *state,
     cadr_snapshot_sink_bytes(sink, witness, sizeof(witness));
 }
 
+static void cadr_snapshot_encode_scheduler(const cadr_machine_state *state,
+                                           cadr_snapshot_sink *sink)
+{
+    const cadr_iob_state *iob = &state->devices.iob;
+    const cadr_scheduler_state *scheduler = &state->scheduler;
+    uint32_t index;
+    cadr_snapshot_sink_u32(sink, iob->csr); cadr_snapshot_sink_u32(sink, iob->scancode);
+    cadr_snapshot_sink_u32(sink, iob->usec_clock); cadr_snapshot_sink_u32(sink, iob->usec_latched);
+    cadr_snapshot_sink_u32(sink, iob->usec_phase); cadr_snapshot_sink_u16(sink, iob->sixty_cycle_clock);
+    cadr_snapshot_sink_u16(sink, 0U);
+    cadr_snapshot_sink_u32(sink, iob->key_queue_read); cadr_snapshot_sink_u32(sink, iob->key_queue_write);
+    cadr_snapshot_sink_u32(sink, iob->key_queue_count);
+    for (index = 0U; index < CADR_IOB_KEY_QUEUE_LEN; ++index) cadr_snapshot_sink_u16(sink, iob->key_queue[index]);
+    cadr_snapshot_sink_u64(sink, scheduler->next_insertion_sequence);
+    cadr_snapshot_sink_u32(sink, scheduler->count); cadr_snapshot_sink_u32(sink, scheduler->phase);
+    cadr_snapshot_sink_u32(sink, scheduler->hidden_policy); cadr_snapshot_sink_u32(sink, scheduler->reserved0);
+    for (index = 0U; index < scheduler->count; ++index) {
+        const cadr_scheduler_event_state *event = &scheduler->events[index];
+        cadr_snapshot_sink_u64(sink, event->due_tick); cadr_snapshot_sink_u64(sink, event->generation);
+        cadr_snapshot_sink_u64(sink, event->insertion_sequence); cadr_snapshot_sink_u32(sink, event->kind);
+        cadr_snapshot_sink_u32(sink, event->flags); cadr_snapshot_sink_u32(sink, event->value);
+        cadr_snapshot_sink_u32(sink, event->reserved0);
+    }
+    /* The pending records are host transport state.  The append-only witness
+     * remains semantic state after a host drains that transport buffer. */
+    cadr_snapshot_sink_u64(sink, scheduler->transcript_total_count);
+    cadr_snapshot_sink_bytes(sink, scheduler->transcript_witness_sha256,
+                             sizeof(scheduler->transcript_witness_sha256));
+    cadr_snapshot_sink_u32(sink, scheduler->transcript_count);
+    cadr_snapshot_sink_u32(sink, scheduler->transcript_capture_enabled);
+    cadr_snapshot_sink_u32(sink, scheduler->transcript_reserved0);
+    for (index = 0U; index < scheduler->transcript_count; ++index) {
+        const cadr_scheduler_transcript_record *record = &scheduler->transcript[index];
+        cadr_snapshot_sink_u64(sink, record->due_tick); cadr_snapshot_sink_u64(sink, record->generation);
+        cadr_snapshot_sink_u64(sink, record->insertion_sequence); cadr_snapshot_sink_u32(sink, record->kind);
+        cadr_snapshot_sink_u32(sink, record->order); cadr_snapshot_sink_u32(sink, record->flags);
+        cadr_snapshot_sink_u32(sink, record->value); cadr_snapshot_sink_u32(sink, record->interrupt_before);
+        cadr_snapshot_sink_u32(sink, record->interrupt_after);
+        cadr_snapshot_sink_u32(sink, record->interrupt_control_before);
+        cadr_snapshot_sink_u32(sink, record->interrupt_control_after);
+        cadr_snapshot_sink_u32(sink, record->iob_csr_before);
+        cadr_snapshot_sink_u32(sink, record->iob_csr_after);
+        cadr_snapshot_sink_u32(sink, record->location_counter_before);
+        cadr_snapshot_sink_u32(sink, record->location_counter_after);
+        cadr_snapshot_sink_u32(sink, record->tv_mode_before);
+        cadr_snapshot_sink_u32(sink, record->tv_mode_after);
+        cadr_snapshot_sink_u32(sink, record->sixty_cycle_before);
+        cadr_snapshot_sink_u32(sink, record->sixty_cycle_after);
+        cadr_snapshot_sink_u32(sink, record->usec_clock_before);
+        cadr_snapshot_sink_u32(sink, record->usec_clock_after);
+        cadr_snapshot_sink_u32(sink, record->usec_phase_before);
+        cadr_snapshot_sink_u32(sink, record->usec_phase_after);
+        cadr_snapshot_sink_u32(sink, record->scancode_before);
+        cadr_snapshot_sink_u32(sink, record->scancode_after);
+        cadr_snapshot_sink_u32(sink, record->fifo_count_before);
+        cadr_snapshot_sink_u32(sink, record->fifo_count_after);
+    }
+}
+
 static void cadr_snapshot_encode_chunk(uint32_t type,
                                        const cadr_machine_state *state,
                                        cadr_snapshot_sink *sink)
@@ -1145,6 +1396,9 @@ static void cadr_snapshot_encode_chunk(uint32_t type,
     case CADR_SNAPSHOT_CHUNK_DISK:
         cadr_snapshot_encode_disk(state, sink);
         break;
+    case CADR_SNAPSHOT_CHUNK_SCHEDULER:
+        cadr_snapshot_encode_scheduler(state, sink);
+        break;
     default:
         sink->failed = 1;
         break;
@@ -1158,13 +1412,16 @@ static cadr_status cadr_snapshot_layout_for_state(const cadr_machine_state *stat
     uint32_t type;
     uint64_t value;
     if (layout == NULL || (format_minor != CADR_SNAPSHOT_FORMAT_MINOR_M2 &&
-                           format_minor != CADR_SNAPSHOT_FORMAT_MINOR_M3)) {
+                           format_minor != CADR_SNAPSHOT_FORMAT_MINOR_M3 &&
+                           format_minor != CADR_SNAPSHOT_FORMAT_MINOR_M5)) {
         return CADR_STATUS_INVALID_ARGUMENT;
     }
     (void)memset(layout, 0, sizeof(*layout));
     layout->format_minor = format_minor;
-    layout->chunk_count = format_minor == CADR_SNAPSHOT_FORMAT_MINOR_M3
-        ? CADR_SNAPSHOT_M3_CHUNK_COUNT : CADR_SNAPSHOT_M2_CHUNK_COUNT;
+    layout->chunk_count = format_minor == CADR_SNAPSHOT_FORMAT_MINOR_M5
+        ? CADR_SNAPSHOT_M5_CHUNK_COUNT :
+        (format_minor == CADR_SNAPSHOT_FORMAT_MINOR_M3
+            ? CADR_SNAPSHOT_M3_CHUNK_COUNT : CADR_SNAPSHOT_M2_CHUNK_COUNT);
     for (type = CADR_SNAPSHOT_CHUNK_CORE;
          type <= layout->chunk_count; ++type) {
         cadr_snapshot_sink count_sink = { NULL, UINT64_MAX, 0U, NULL, 0 };
@@ -1201,7 +1458,8 @@ static cadr_status cadr_snapshot_semantic_fingerprint(const cadr_machine_state *
     uint32_t type;
     if (state == NULL || digest == NULL ||
         (format_minor != CADR_SNAPSHOT_FORMAT_MINOR_M2 &&
-         format_minor != CADR_SNAPSHOT_FORMAT_MINOR_M3)) return CADR_STATUS_INVALID_ARGUMENT;
+         format_minor != CADR_SNAPSHOT_FORMAT_MINOR_M3 &&
+         format_minor != CADR_SNAPSHOT_FORMAT_MINOR_M5)) return CADR_STATUS_INVALID_ARGUMENT;
     cadr_snapshot_sha256_init(&context);
     sink.bytes = NULL;
     sink.capacity = UINT64_MAX;
@@ -1212,8 +1470,11 @@ static cadr_status cadr_snapshot_semantic_fingerprint(const cadr_machine_state *
          type <= CADR_SNAPSHOT_CHUNK_TRACE; ++type) {
         cadr_snapshot_encode_chunk(type, state, &sink);
     }
-    if (format_minor == CADR_SNAPSHOT_FORMAT_MINOR_M3) {
+    if (format_minor >= CADR_SNAPSHOT_FORMAT_MINOR_M3) {
         cadr_snapshot_encode_disk_fields(state, &sink);
+    }
+    if (format_minor == CADR_SNAPSHOT_FORMAT_MINOR_M5) {
+        cadr_snapshot_encode_scheduler(state, &sink);
     }
     if (sink.failed != 0) return CADR_STATUS_INVALID_ARGUMENT;
     cadr_snapshot_sha256_final(&context, digest);
@@ -1443,8 +1704,10 @@ typedef struct cadr_snapshot_header {
 static int cadr_snapshot_known_chunk(uint16_t format_minor, uint32_t type)
 {
     return type >= CADR_SNAPSHOT_CHUNK_CORE &&
-        type <= (format_minor == CADR_SNAPSHOT_FORMAT_MINOR_M3
-                     ? CADR_SNAPSHOT_CHUNK_DISK : CADR_SNAPSHOT_CHUNK_TRACE);
+        type <= (format_minor == CADR_SNAPSHOT_FORMAT_MINOR_M5
+                     ? CADR_SNAPSHOT_CHUNK_SCHEDULER :
+                     (format_minor == CADR_SNAPSHOT_FORMAT_MINOR_M3
+                         ? CADR_SNAPSHOT_CHUNK_DISK : CADR_SNAPSHOT_CHUNK_TRACE));
 }
 
 static cadr_status cadr_snapshot_parse_header(const uint8_t *bytes,
@@ -1512,11 +1775,14 @@ static cadr_status cadr_snapshot_parse_header(const uint8_t *bytes,
     if (reader.failed != 0 || reader.offset != CADR_SNAPSHOT_HEADER_BYTES ||
         major != CADR_SNAPSHOT_FORMAT_MAJOR ||
         (minor != CADR_SNAPSHOT_FORMAT_MINOR_M2 &&
-         minor != CADR_SNAPSHOT_FORMAT_MINOR_M3) ||
+         minor != CADR_SNAPSHOT_FORMAT_MINOR_M3 &&
+         minor != CADR_SNAPSHOT_FORMAT_MINOR_M5) ||
         header_bytes != CADR_SNAPSHOT_HEADER_BYTES || flags != 0U || reserved0 != 0U ||
-        header->chunk_count < (minor == CADR_SNAPSHOT_FORMAT_MINOR_M3
-                                   ? CADR_SNAPSHOT_M3_CHUNK_COUNT
-                                   : CADR_SNAPSHOT_M2_CHUNK_COUNT) ||
+        header->chunk_count < (minor == CADR_SNAPSHOT_FORMAT_MINOR_M5
+                                   ? CADR_SNAPSHOT_M5_CHUNK_COUNT :
+                                   (minor == CADR_SNAPSHOT_FORMAT_MINOR_M3
+                                      ? CADR_SNAPSHOT_M3_CHUNK_COUNT
+                                      : CADR_SNAPSHOT_M2_CHUNK_COUNT)) ||
         header->chunk_count > CADR_SNAPSHOT_MAX_CHUNKS ||
         directory_entry_bytes != CADR_SNAPSHOT_DIRECTORY_ENTRY_BYTES ||
         header->total_bytes != byte_count ||
@@ -1639,8 +1905,10 @@ static cadr_status cadr_snapshot_parse_directory(
         return CADR_STATUS_INVALID_ARGUMENT;
     }
     for (index = 0U;
-         index < (header->format_minor == CADR_SNAPSHOT_FORMAT_MINOR_M3
-                      ? CADR_SNAPSHOT_M3_CHUNK_COUNT : CADR_SNAPSHOT_M2_CHUNK_COUNT);
+         index < (header->format_minor == CADR_SNAPSHOT_FORMAT_MINOR_M5
+                      ? CADR_SNAPSHOT_M5_CHUNK_COUNT :
+                      (header->format_minor == CADR_SNAPSHOT_FORMAT_MINOR_M3
+                         ? CADR_SNAPSHOT_M3_CHUNK_COUNT : CADR_SNAPSHOT_M2_CHUNK_COUNT));
          ++index) {
         if (seen[index] == 0U) {
             free(entries);
@@ -1845,6 +2113,65 @@ static void cadr_snapshot_decode_disk(cadr_snapshot_reader *reader,
     cadr_snapshot_reader_bytes(reader, witness, CADR_SHA256_BYTES);
 }
 
+static void cadr_snapshot_decode_scheduler(cadr_snapshot_reader *reader,
+                                           cadr_machine_state *state)
+{
+    cadr_iob_state *iob = &state->devices.iob;
+    cadr_scheduler_state *scheduler = &state->scheduler;
+    uint32_t index;
+    iob->csr = cadr_snapshot_reader_u32(reader); iob->scancode = cadr_snapshot_reader_u32(reader);
+    iob->usec_clock = cadr_snapshot_reader_u32(reader); iob->usec_latched = cadr_snapshot_reader_u32(reader);
+    iob->usec_phase = cadr_snapshot_reader_u32(reader); iob->sixty_cycle_clock = cadr_snapshot_reader_u16(reader);
+    if (cadr_snapshot_reader_u16(reader) != 0U) reader->failed = 1;
+    iob->key_queue_read = cadr_snapshot_reader_u32(reader); iob->key_queue_write = cadr_snapshot_reader_u32(reader);
+    iob->key_queue_count = cadr_snapshot_reader_u32(reader);
+    for (index = 0U; index < CADR_IOB_KEY_QUEUE_LEN; ++index) iob->key_queue[index] = cadr_snapshot_reader_u16(reader);
+    scheduler->next_insertion_sequence = cadr_snapshot_reader_u64(reader);
+    scheduler->count = cadr_snapshot_reader_u32(reader); scheduler->phase = cadr_snapshot_reader_u32(reader);
+    scheduler->hidden_policy = cadr_snapshot_reader_u32(reader); scheduler->reserved0 = cadr_snapshot_reader_u32(reader);
+    if (scheduler->count > CADR_SCHEDULER_EVENT_CAPACITY) { reader->failed = 1; return; }
+    for (index = 0U; index < scheduler->count; ++index) {
+        cadr_scheduler_event_state *event = &scheduler->events[index];
+        event->due_tick = cadr_snapshot_reader_u64(reader); event->generation = cadr_snapshot_reader_u64(reader);
+        event->insertion_sequence = cadr_snapshot_reader_u64(reader); event->kind = cadr_snapshot_reader_u32(reader);
+        event->flags = cadr_snapshot_reader_u32(reader); event->value = cadr_snapshot_reader_u32(reader);
+        event->reserved0 = cadr_snapshot_reader_u32(reader);
+    }
+    scheduler->transcript_total_count = cadr_snapshot_reader_u64(reader);
+    cadr_snapshot_reader_bytes(reader, scheduler->transcript_witness_sha256,
+                               sizeof(scheduler->transcript_witness_sha256));
+    scheduler->transcript_count = cadr_snapshot_reader_u32(reader);
+    scheduler->transcript_capture_enabled = cadr_snapshot_reader_u32(reader);
+    scheduler->transcript_reserved0 = cadr_snapshot_reader_u32(reader);
+    if (scheduler->transcript_count > CADR_SCHEDULER_TRANSCRIPT_CAPACITY) { reader->failed = 1; return; }
+    for (index = 0U; index < scheduler->transcript_count; ++index) {
+        cadr_scheduler_transcript_record *record = &scheduler->transcript[index];
+        record->due_tick = cadr_snapshot_reader_u64(reader); record->generation = cadr_snapshot_reader_u64(reader);
+        record->insertion_sequence = cadr_snapshot_reader_u64(reader); record->kind = cadr_snapshot_reader_u32(reader);
+        record->order = cadr_snapshot_reader_u32(reader); record->flags = cadr_snapshot_reader_u32(reader);
+        record->value = cadr_snapshot_reader_u32(reader); record->interrupt_before = cadr_snapshot_reader_u32(reader);
+        record->interrupt_after = cadr_snapshot_reader_u32(reader);
+        record->interrupt_control_before = cadr_snapshot_reader_u32(reader);
+        record->interrupt_control_after = cadr_snapshot_reader_u32(reader);
+        record->iob_csr_before = cadr_snapshot_reader_u32(reader);
+        record->iob_csr_after = cadr_snapshot_reader_u32(reader);
+        record->location_counter_before = cadr_snapshot_reader_u32(reader);
+        record->location_counter_after = cadr_snapshot_reader_u32(reader);
+        record->tv_mode_before = cadr_snapshot_reader_u32(reader);
+        record->tv_mode_after = cadr_snapshot_reader_u32(reader);
+        record->sixty_cycle_before = cadr_snapshot_reader_u32(reader);
+        record->sixty_cycle_after = cadr_snapshot_reader_u32(reader);
+        record->usec_clock_before = cadr_snapshot_reader_u32(reader);
+        record->usec_clock_after = cadr_snapshot_reader_u32(reader);
+        record->usec_phase_before = cadr_snapshot_reader_u32(reader);
+        record->usec_phase_after = cadr_snapshot_reader_u32(reader);
+        record->scancode_before = cadr_snapshot_reader_u32(reader);
+        record->scancode_after = cadr_snapshot_reader_u32(reader);
+        record->fifo_count_before = cadr_snapshot_reader_u32(reader);
+        record->fifo_count_after = cadr_snapshot_reader_u32(reader);
+    }
+}
+
 static void cadr_snapshot_decode_canonical(cadr_snapshot_reader *reader,
                                            cadr_machine_state *state)
 {
@@ -2037,9 +2364,15 @@ cadr_status cadr_snapshot_parse(const uint8_t *bytes,
     cadr_snapshot_decode_devices(&reader, state);
     status = cadr_snapshot_finish_chunk(&reader);
     if (status != CADR_STATUS_OK) goto fail;
-    if (header.format_minor == CADR_SNAPSHOT_FORMAT_MINOR_M3) {
+    if (header.format_minor >= CADR_SNAPSHOT_FORMAT_MINOR_M3) {
         reader = cadr_snapshot_chunk_reader(bytes, known_entries[8]);
         cadr_snapshot_decode_disk(&reader, state, disk_witness);
+        status = cadr_snapshot_finish_chunk(&reader);
+        if (status != CADR_STATUS_OK) goto fail;
+    }
+    if (header.format_minor == CADR_SNAPSHOT_FORMAT_MINOR_M5) {
+        reader = cadr_snapshot_chunk_reader(bytes, known_entries[9]);
+        cadr_snapshot_decode_scheduler(&reader, state);
         status = cadr_snapshot_finish_chunk(&reader);
         if (status != CADR_STATUS_OK) goto fail;
     }
@@ -2081,7 +2414,7 @@ cadr_status cadr_snapshot_parse(const uint8_t *bytes,
         status = CADR_STATUS_INVALID_ARGUMENT;
         goto fail;
     }
-    if (header.format_minor == CADR_SNAPSHOT_FORMAT_MINOR_M3) {
+    if (header.format_minor >= CADR_SNAPSHOT_FORMAT_MINOR_M3) {
         status = cadr_state_v3_digest(state, computed_disk_witness);
         if (status != CADR_STATUS_OK ||
             memcmp(disk_witness, computed_disk_witness,

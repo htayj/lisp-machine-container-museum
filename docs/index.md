@@ -59,6 +59,9 @@ machine-readable metadata layer while retaining ordinary Markdown as the source.
 - [CADR-WEB-303 ABI1.3 boot-media controller specification](mit-cadr/cadr-boot-media-controller-reimplementation-specification.md)
   specifies the selected disk path, volatile boot-scratch overlay, canonical
   controller/media witnesses, and native/Wasm M4 gate.
+- [CADR-WEB-303 ABI1.4 deterministic machine scheduler specification](mit-cadr/cadr-deterministic-machine-scheduler-reimplementation-specification.md)
+  specifies guest-slot event ordering, the selected I/O-board subset, worker
+  lifecycle controls, CDRSTATE5, and the native/Wasm M5 gate.
 - [CADR-WEB portable core and host ABI](mit-cadr/cadr-web-core-architecture-decision.md)
   records the portable machine boundary and the deterministic pull-style contract
   between the CADR core and native or browser hosts.

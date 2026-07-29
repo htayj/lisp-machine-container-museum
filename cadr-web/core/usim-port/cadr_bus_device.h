@@ -32,6 +32,10 @@ void cadr_bus_assert_xbus_interrupt(cadr_machine_state *state);
 void cadr_bus_deassert_xbus_interrupt(cadr_machine_state *state);
 void cadr_bus_processor_interrupt_control_written(cadr_machine_state *state,
                                                   uint32_t new_control);
+/* All IC writes, including synthetic scheduler sequence breaks, use this
+ * coupling point so LC mirror bits and BUS.INIT side effects cannot diverge. */
+void cadr_processor_interrupt_control_write(cadr_machine_state *state,
+                                            uint32_t new_control);
 void cadr_bus_set_xbus_nxm(cadr_machine_state *state);
 void cadr_bus_set_unibus_nxm(cadr_machine_state *state);
 void cadr_bus_set_unibus_map_error(cadr_machine_state *state);
@@ -48,14 +52,24 @@ cadr_status cadr_tv_read(cadr_machine_state *state, uint32_t offset, uint32_t *o
 cadr_status cadr_tv_write(cadr_machine_state *state, uint32_t offset, uint32_t value);
 cadr_status cadr_tv_control_read(cadr_machine_state *state, uint32_t offset, uint32_t *out_value);
 cadr_status cadr_tv_control_write(cadr_machine_state *state, uint32_t offset, uint32_t value);
+void cadr_tv_clock_assert(cadr_machine_state *state);
 cadr_status cadr_colortv_read(cadr_machine_state *state, uint32_t offset, uint32_t *out_value);
 cadr_status cadr_colortv_write(cadr_machine_state *state, uint32_t offset, uint32_t value);
 cadr_status cadr_colortv_control_read(cadr_machine_state *state, uint32_t offset, uint32_t *out_value);
 cadr_status cadr_colortv_control_write(cadr_machine_state *state, uint32_t offset, uint32_t value);
 cadr_status cadr_iob_read(cadr_machine_state *state, uint32_t uaddr, uint16_t *out_value);
 cadr_status cadr_iob_write(cadr_machine_state *state, uint32_t uaddr, uint16_t value);
+/* M5 scheduler-to-device seam: no host clock or callback crosses this boundary. */
+cadr_status cadr_iob_clock_tick(cadr_machine_state *state, uint32_t ticks);
+cadr_status cadr_iob_device_service(cadr_machine_state *state);
+cadr_status cadr_iob_keyboard_event(cadr_machine_state *state, uint16_t event);
 cadr_status cadr_disk_read(cadr_machine_state *state, uint32_t offset, uint32_t *out_value);
 cadr_status cadr_disk_write(cadr_machine_state *state, uint32_t offset, uint32_t value);
+#if defined(CADR_M5_ORACLE_TEST)
+/* Test-only source-oracle seam.  It models the already-accepted maintained-usim
+ * disk result latch; normal M5 ingress deliberately has no DISK_READY event. */
+void cadr_m5_oracle_latch_disk_result(cadr_machine_state *state);
+#endif
 cadr_status cadr_disk_apply_block_read_completion(cadr_machine_state *state,
                                                   uint32_t host_status,
                                                   const uint8_t *bytes,

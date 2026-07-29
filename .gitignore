@@ -24,6 +24,7 @@
 /build/cadr-m4-live/
 /build/cadr-m4-portability/
 /build/cadr-m4-smoke/
+/build/cadr-m5-differential/
 /build/.cadr-computer-use-runtime.lock
 /build/.cadr-computer-use-display.lock
 /build/genera-computer-use/

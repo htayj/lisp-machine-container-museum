@@ -3,7 +3,7 @@ type: Implementation Roadmap
 title: MIT CADR System 303 browser and WebAssembly implementation roadmap
 description: A milestone-complete plan for porting the pinned System 303 CADR emulator to a deterministic, locally persistent, browser-hosted WebAssembly machine.
 tags: [mit-cadr, lm-3, system-303, webassembly, browser, emulator, roadmap]
-timestamp: 2026-07-29T02:35:00-04:00
+timestamp: 2026-07-29T06:34:00-04:00
 ---
 
 # MIT CADR System 303 browser and WebAssembly implementation roadmap
@@ -564,11 +564,11 @@ Deliverables:
 State machine:
 
 ```text
-NEW -> INPUTS_VALIDATED -> RESET -> RUNNING
-RUNNING <-> PAUSED
-RUNNING -> WAITING_FOR_HOST -> RUNNING
-RUNNING|PAUSED -> STOPPING -> STOPPED
-any pre-commit phase -> FAILED
+NEW --cold-power-on--> CORE_RESET --boot--> PAUSED --start--> RUNNING
+RUNNING --host request--> WAITING_FOR_HOST --completion--> RUNNING
+RUNNING|WAITING_FOR_HOST --pause or hide--> PAUSED
+RUNNING|PAUSED|WAITING_FOR_HOST --stop or shutdown--> STOPPED
+RUNNING|WAITING_FOR_HOST --fatal status--> FAILED
 ```
 
 The scheduler MUST NOT derive guest correctness from host frame rate. When a tab is
@@ -577,6 +577,43 @@ the choice is recorded in the save metadata and trace.
 
 Exit gate `C-M5`: injected simultaneous disk, clock, keyboard, and sequence-break
 events reproduce the native priority and restart results.
+
+#### M5 implementation status
+
+M5 is **closed** for
+`CADR-WEB-303/ABI1.4/C-M5-SCHED-v1`. The implementation supplies the
+guest-boundary queue and selected I/O-board subset, fixed simultaneous-event
+order, rational 60 Hz clock, protocol-v3 lifecycle, pause-on-hidden policy,
+deferred boundary controls, M4 host-completion integration, CDRSTATE5,
+CDRSNAP1 1.2 scheduler state, and the normative `CDRM5TR1`, `CDRM5Q1`, and
+companion `CDRM5C1`/`CDRM5WK1` witnesses. Protocol v3 replaces and rejects the
+legacy execution operations; it does not add scheduler behavior invisibly to
+the frozen v1/v2 trees.
+
+The portable gate is strong: native and Wasm repeated byte-identically through
+boundary 565,536 under the selected simultaneous schedule, and the shared raw
+`CDRM5TR1` v4 parser accepted the sidecars. Core scheduler, snapshot-corruption,
+worker envelope, visibility adapter, Wasm export, parser, and differential
+tests pass, including the complete M5 unit target. The worker protocol exits
+normally. Its production batch-helper
+fixture proves the exact one-slot-wait, chained zero-slot-wait, zero-slot-settle
+sequence and proves fatal evidence is collected before an ordinary digest;
+the actual core/Wasm test separately proves the staged-write-safe failure
+digest. The closing pre-HALT ABI1.4 worker fixture reaches `FAILED` through the
+real version-3 batch path, returns immediate `CDRM5Q1` and failed-state
+`CDRSTATE5`, and proves the terminal `scheduler-state` co-reports those same
+values with the actual two-record `CDRM5C1` chain. Exact schemas, hashes,
+commands, and release evidence are recorded in the
+[ABI1.4 scheduler specification](cadr-deterministic-machine-scheduler-reimplementation-specification.md).
+
+This status is not a natural-host-arrival priority claim, complete keyboard or
+pointer profile, historical real-time clock claim, renderer, Listener-ready
+boot, filesystem, persistence, networking, full live-browser lifecycle, or
+museum release. The patched maintained-`usim` capture proves only the named
+instrumented reconstruction schedule. The closing commit is the repository
+commit containing this status record; the specification binds the examined
+source and tests by content hash rather than embedding a self-referential
+commit identity.
 
 ### M6 — Reach a headless System 303 boot oracle
 
