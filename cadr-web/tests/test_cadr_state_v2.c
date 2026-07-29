@@ -326,6 +326,22 @@ static void test_derived_storage_is_not_logical_state(void)
     destroy_state(state);
 }
 
+static void test_rebuild_ordinal_overflow_is_fail_closed(void)
+{
+    cadr_machine_state *state = new_state();
+    uint8_t root_before[CADR_STATE_V2_SHA256_BYTES];
+    if (state == NULL) {
+        CHECK(0);
+        return;
+    }
+    state->trace.state_v2.rebuild_ordinal = UINT64_MAX;
+    (void)memcpy(root_before, state->trace.state_v2.roots[0], sizeof(root_before));
+    CHECK(cadr_state_v2_rebuild(state) == CADR_STATUS_GUEST_FAULT);
+    CHECK(state->trace.state_v2.rebuild_ordinal == UINT64_MAX);
+    CHECK(memcmp(root_before, state->trace.state_v2.roots[0], sizeof(root_before)) == 0);
+    destroy_state(state);
+}
+
 /*
  * Exercise the production bounded-write paths after a cache rebuild.  The
  * root-coverage test above proves the hook algorithms; this one catches a
@@ -379,6 +395,7 @@ int main(void)
     test_root_coverage_and_incremental_cache();
     test_bus_map_root_exact_u16_vector();
     test_derived_storage_is_not_logical_state();
+    test_rebuild_ordinal_overflow_is_fail_closed();
     test_production_write_hooks();
     if (failures != 0) return 1;
     (void)puts("cadr_state_v2: ok");

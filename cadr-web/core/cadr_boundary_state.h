@@ -74,5 +74,8 @@ cadr_status cadr_machine_boundary_state(cadr_machine *machine,
                                         cadr_boundary_state *out_state);
 cadr_status cadr_machine_boundary_digest(cadr_machine *machine,
                                          uint8_t digest[CADR_SHA256_BYTES]);
+/* ABI 1.2: current CDRSTATE2 digest, rebuilding its derived Merkle cache if needed. */
+cadr_status cadr_machine_state_v2_digest(cadr_machine *machine,
+                                         uint8_t digest[CADR_SHA256_BYTES]);
 
 #endif

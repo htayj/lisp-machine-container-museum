@@ -56,6 +56,11 @@ cadr_status cadr_iob_read(cadr_machine_state *state, uint32_t uaddr, uint16_t *o
 cadr_status cadr_iob_write(cadr_machine_state *state, uint32_t uaddr, uint16_t value);
 cadr_status cadr_disk_read(cadr_machine_state *state, uint32_t offset, uint32_t *out_value);
 cadr_status cadr_disk_write(cadr_machine_state *state, uint32_t offset, uint32_t value);
+cadr_status cadr_disk_apply_block_read_completion(cadr_machine_state *state,
+                                                   uint32_t host_status,
+                                                   const uint8_t *bytes,
+                                                   uint64_t byte_count);
+cadr_status cadr_disk_continue(cadr_machine_state *state);
 cadr_status cadr_tape_read(cadr_machine_state *state, uint32_t uaddr, uint16_t *out_value);
 cadr_status cadr_tape_write(cadr_machine_state *state, uint32_t uaddr, uint16_t value);
 cadr_status cadr_uch11_read_csr(cadr_machine_state *state, uint16_t *out_value);

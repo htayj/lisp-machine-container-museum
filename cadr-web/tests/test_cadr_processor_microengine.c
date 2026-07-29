@@ -41,25 +41,43 @@ static void execute_primed(const uint64_t instruction)
     cadr_processor_memory_step(&state);
 }
 
-static int32_t reference_abs32(const int32_t value)
+static uint32_t reference_abs32_bits(const int32_t value)
 {
-    return value < 0 ? (int32_t)(~(uint32_t)value + UINT32_C(1)) : value;
+    const uint32_t bits = (uint32_t)value;
+    return value < 0 ? ~bits + UINT32_C(1) : bits;
 }
 
-static void reference_add32(const int32_t a, const int32_t b, const uint32_t carry_in,
+static uint32_t reference_signed_ge(const uint32_t left, const uint32_t right)
+{
+    if ((left >> 31U) != (right >> 31U)) return (left >> 31U) == 0U ? 1U : 0U;
+    return left >= right ? 1U : 0U;
+}
+
+static uint32_t reference_signed_gt(const uint32_t left, const uint32_t right)
+{
+    if ((left >> 31U) != (right >> 31U)) return (left >> 31U) == 0U ? 1U : 0U;
+    return left > right ? 1U : 0U;
+}
+
+static void reference_add32(const uint32_t a, const uint32_t b, const uint32_t carry_in,
                             uint32_t *const result, uint32_t *const carry_out)
 {
-    *result = (uint32_t)a + (uint32_t)b + (carry_in != 0U ? 1U : 0U);
+    *result = a + b + (carry_in != 0U ? 1U : 0U);
     *carry_out = carry_in != 0U
-        ? (b >= ~a ? 0U : 1U)
-        : (b > ~a ? 0U : 1U);
+        ? (reference_signed_ge(b, ~a) != 0U ? 0U : 1U)
+        : (reference_signed_gt(b, ~a) != 0U ? 0U : 1U);
 }
 
-static void reference_sub32(const int32_t a, const int32_t b, const uint32_t carry_in,
+static void reference_sub32(const uint32_t a, const uint32_t b, const uint32_t carry_in,
                             uint32_t *const result, uint32_t *const carry_out)
 {
-    *result = (uint32_t)a - (uint32_t)b - (carry_in != 0U ? 0U : 1U);
-    *carry_out = *result < (uint32_t)a ? 1U : 0U;
+    *result = a - b - (carry_in != 0U ? 0U : 1U);
+    *carry_out = *result < a ? 1U : 0U;
+}
+
+static uint32_t reference_signed_wide_carry(const int64_t value)
+{
+    return value < 0 || (uint64_t)value > UINT64_C(0xffffffff) ? 1U : 0U;
 }
 
 static void reference_alu(const uint32_t operation, const uint32_t carry_in,
@@ -91,35 +109,35 @@ static void reference_alu(const uint32_t operation, const uint32_t carry_in,
     case 14U: *alu_out = ~mdata | ~adata; break;
     case 15U: *alu_out = UINT32_MAX; break;
     case 16U: *alu_out = carry_in != 0U ? 0U : UINT32_MAX; break;
-    case 17U: long_value = (int64_t)(int32_t)(mdata & adata) - (carry_in != 0U ? 0 : 1); *alu_out = (uint32_t)long_value; *carry_out = (long_value >> 32) != 0 ? 1U : 0U; break;
-    case 18U: long_value = (int64_t)(int32_t)(mdata & ~adata) - (carry_in != 0U ? 0 : 1); *alu_out = (uint32_t)long_value; *carry_out = (long_value >> 32) != 0 ? 1U : 0U; break;
-    case 19U: long_value = (int64_t)signed_mdata - (carry_in != 0U ? 0 : 1); *alu_out = (uint32_t)long_value; *carry_out = (long_value >> 32) != 0 ? 1U : 0U; break;
-    case 20U: long_value = (int64_t)(int32_t)(mdata | ~adata) + (carry_in != 0U ? 1 : 0); *alu_out = (uint32_t)long_value; *carry_out = (long_value >> 32) != 0 ? 1U : 0U; break;
-    case 21U: long_value = (int64_t)(int32_t)(mdata | ~adata) + (int32_t)(mdata & adata) + (carry_in != 0U ? 1 : 0); *alu_out = (uint32_t)long_value; *carry_out = (long_value >> 32) != 0 ? 1U : 0U; break;
-    case 22U: reference_sub32(signed_mdata, signed_adata, carry_in, alu_out, carry_out); break;
-    case 23U: long_value = (int64_t)(int32_t)(mdata | ~adata) + signed_mdata + (carry_in != 0U ? 1 : 0); *alu_out = (uint32_t)long_value; *carry_out = (long_value >> 32) != 0 ? 1U : 0U; break;
-    case 24U: long_value = (int64_t)(int32_t)(mdata | adata) + (carry_in != 0U ? 1 : 0); *alu_out = (uint32_t)long_value; *carry_out = (long_value >> 32) != 0 ? 1U : 0U; break;
-    case 25U: reference_add32(signed_mdata, signed_adata, carry_in, alu_out, carry_out); break;
-    case 26U: long_value = (int64_t)(int32_t)(mdata | adata) + (int32_t)(mdata & ~adata) + (carry_in != 0U ? 1 : 0); *alu_out = (uint32_t)long_value; *carry_out = (long_value >> 32) != 0 ? 1U : 0U; break;
-    case 27U: long_value = (int64_t)(int32_t)(mdata | adata) + signed_mdata + (carry_in != 0U ? 1 : 0); *alu_out = (uint32_t)long_value; *carry_out = (long_value >> 32) != 0 ? 1U : 0U; break;
+    case 17U: long_value = (int64_t)(int32_t)(mdata & adata) - (carry_in != 0U ? 0 : 1); *alu_out = (uint32_t)long_value; *carry_out = reference_signed_wide_carry(long_value); break;
+    case 18U: long_value = (int64_t)(int32_t)(mdata & ~adata) - (carry_in != 0U ? 0 : 1); *alu_out = (uint32_t)long_value; *carry_out = reference_signed_wide_carry(long_value); break;
+    case 19U: long_value = (int64_t)signed_mdata - (carry_in != 0U ? 0 : 1); *alu_out = (uint32_t)long_value; *carry_out = reference_signed_wide_carry(long_value); break;
+    case 20U: long_value = (int64_t)(int32_t)(mdata | ~adata) + (carry_in != 0U ? 1 : 0); *alu_out = (uint32_t)long_value; *carry_out = reference_signed_wide_carry(long_value); break;
+    case 21U: long_value = (int64_t)(int32_t)(mdata | ~adata) + (int32_t)(mdata & adata) + (carry_in != 0U ? 1 : 0); *alu_out = (uint32_t)long_value; *carry_out = reference_signed_wide_carry(long_value); break;
+    case 22U: reference_sub32(mdata, adata, carry_in, alu_out, carry_out); break;
+    case 23U: long_value = (int64_t)(int32_t)(mdata | ~adata) + signed_mdata + (carry_in != 0U ? 1 : 0); *alu_out = (uint32_t)long_value; *carry_out = reference_signed_wide_carry(long_value); break;
+    case 24U: long_value = (int64_t)(int32_t)(mdata | adata) + (carry_in != 0U ? 1 : 0); *alu_out = (uint32_t)long_value; *carry_out = reference_signed_wide_carry(long_value); break;
+    case 25U: reference_add32(mdata, adata, carry_in, alu_out, carry_out); break;
+    case 26U: long_value = (int64_t)(int32_t)(mdata | adata) + (int32_t)(mdata & ~adata) + (carry_in != 0U ? 1 : 0); *alu_out = (uint32_t)long_value; *carry_out = reference_signed_wide_carry(long_value); break;
+    case 27U: long_value = (int64_t)(int32_t)(mdata | adata) + signed_mdata + (carry_in != 0U ? 1 : 0); *alu_out = (uint32_t)long_value; *carry_out = reference_signed_wide_carry(long_value); break;
     case 28U: *alu_out = mdata + (carry_in != 0U ? 1U : 0U); *carry_out = mdata == UINT32_MAX && carry_in != 0U ? 1U : 0U; break;
-    case 29U: long_value = (int64_t)signed_mdata + (int32_t)(mdata & adata) + (carry_in != 0U ? 1 : 0); *alu_out = (uint32_t)long_value; *carry_out = (long_value >> 32) != 0 ? 1U : 0U; break;
-    case 30U: long_value = (int64_t)signed_mdata + (int32_t)(mdata | ~adata) + (carry_in != 0U ? 1 : 0); *alu_out = (uint32_t)long_value; *carry_out = (long_value >> 32) != 0 ? 1U : 0U; break;
-    case 31U: reference_add32(signed_mdata, signed_mdata, carry_in, alu_out, carry_out); break;
+    case 29U: long_value = (int64_t)signed_mdata + (int32_t)(mdata & adata) + (carry_in != 0U ? 1 : 0); *alu_out = (uint32_t)long_value; *carry_out = reference_signed_wide_carry(long_value); break;
+    case 30U: long_value = (int64_t)signed_mdata + (int32_t)(mdata | ~adata) + (carry_in != 0U ? 1 : 0); *alu_out = (uint32_t)long_value; *carry_out = reference_signed_wide_carry(long_value); break;
+    case 31U: reference_add32(mdata, mdata, carry_in, alu_out, carry_out); break;
     case 32U:
-        if ((q & 1U) != 0U) { reference_add32(signed_adata, signed_mdata, carry_in, alu_out, carry_out); }
+        if ((q & 1U) != 0U) { reference_add32(adata, mdata, carry_in, alu_out, carry_out); }
         else { *alu_out = mdata; *carry_out = (mdata >> 31U) & 1U; }
         break;
     case 33U:
-        if ((q & 1U) != 0U) { reference_sub32(signed_mdata, reference_abs32(signed_adata), carry_in == 0U ? 1U : 0U, alu_out, carry_out); }
-        else { reference_add32(signed_mdata, reference_abs32(signed_adata), carry_in, alu_out, carry_out); }
+        if ((q & 1U) != 0U) { reference_sub32(mdata, reference_abs32_bits(signed_adata), carry_in == 0U ? 1U : 0U, alu_out, carry_out); }
+        else { reference_add32(mdata, reference_abs32_bits(signed_adata), carry_in, alu_out, carry_out); }
         break;
     case 37U:
         if ((q & 1U) != 0U) { *carry_out = 0U; }
-        else { reference_add32((int32_t)*alu_out, reference_abs32(signed_adata), carry_in, alu_out, carry_out); }
+        else { reference_add32(*alu_out, reference_abs32_bits(signed_adata), carry_in, alu_out, carry_out); }
         break;
     case 41U:
-        reference_sub32(signed_mdata, reference_abs32(signed_adata),
+        reference_sub32(mdata, reference_abs32_bits(signed_adata),
                         carry_in == 0U ? 1U : 0U, alu_out, carry_out);
         break;
     default: break;

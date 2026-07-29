@@ -135,6 +135,9 @@ the public LM-3 software and the `usim` emulator.
 - [CADR-WEB-303 ABI1.1 deterministic tracing and snapshot specification](cadr-deterministic-tracing-and-snapshot-reimplementation-specification.md)
   defines the new portable-core CDRGTRC1/CDRSNAP1 observation and continuation
   contract without presenting it as a historical CADR file format.
+- [CADR-WEB-303 ABI1.2 headless WebAssembly core specification](cadr-webassembly-headless-core-reimplementation-specification.md)
+  defines the bare-module, dedicated-worker, streamed-artifact, fixed-memory,
+  native/Wasm differential, and cross-target snapshot contract for M3.
 - [CADR-WEB portable core, host ABI, trace, and snapshot boundary](cadr-web-core-architecture-decision.md)
   records the instance-owned core boundary, versioned pull-style host ABI, lifecycle,
   deterministic request protocol, and staged trace and snapshot contract.

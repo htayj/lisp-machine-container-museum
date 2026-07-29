@@ -3,7 +3,7 @@ type: Implementation Roadmap
 title: MIT CADR System 303 browser and WebAssembly implementation roadmap
 description: A milestone-complete plan for porting the pinned System 303 CADR emulator to a deterministic, locally persistent, browser-hosted WebAssembly machine.
 tags: [mit-cadr, lm-3, system-303, webassembly, browser, emulator, roadmap]
-timestamp: 2026-07-28T19:25:34-04:00
+timestamp: 2026-07-28T23:46:14-04:00
 ---
 
 # MIT CADR System 303 browser and WebAssembly implementation roadmap
@@ -461,6 +461,42 @@ Tasks:
 Exit gate `C-M3`: all core conformance vectors and a minimum one-million-step boot
 prefix match native boundary state exactly.
 
+#### M3 implementation status
+
+M3 is **closed** for the bounded `CADR-WEB-303/ABI1.2/M3` profile.  The tracked ABI1.2 work adds a bare
+`wasm32` adapter and runtime, a dedicated-worker protocol, bounded streamed
+verification of the excluded local disk, a fixed-width portability probe, native
+and worker CDRSTATE1/2 transcript runners, U01--U05 processor vectors, and
+reproducible-build plus Node/Chromium test entry points.  Its normative ownership,
+integer rules, signed-carry portability decision, worker request tree, artifact
+failure semantics, transcript grammar, and release-evidence requirements are in
+the [CADR-WEB-303 ABI1.2 headless WebAssembly core specification](cadr-webassembly-headless-core-reimplementation-specification.md).
+
+The release record in the companion specification closes U01--U05 under GCC and
+Clang at O0/O2 and Wasm, the 100,001-boundary M1 identity regression, ABI1.2
+snapshot continuation in both directions, Node worker and Chromium smoke tests,
+the one-million-slot native/Wasm transcript gate, and the maintained-usim M3-P2
+oracle.  It records the exact commands, local-input boundary, toolchain, artifact
+and transcript hashes, and the selected browser version.  This closure is a
+headless prefix claim; it does not extend to the M4 media profile below.
+
+Direct native-usim observation established a forward dependency which the original
+linear graph concealed.  The startup reaches the page-zero parity probe at raw
+cycle 505,068, diagnostic control at 505,074, its first disk-status read at 505,078,
+and its first disk START at 505,198.  The named `M4-D0` slice therefore covers every
+real disk operation exercised through S1,000,000; substituting a synthetic
+processor-only fixture would not close this gate.  The measured slice is narrower
+than the rest of M4: seven register reads, nine writes, two interrupt-deassert
+attempts, and no CCW, DMA, request, block, completion, or interrupt assertion.
+Those validated zero media counts do not close the implemented media path.
+
+The closed `C-M3` record remains deliberately narrower than an M4 claim: the
+observed M3-P2 prefix has seven disk-register reads, nine writes, two interrupt
+deassert attempts, and zero CCW, DMA, request, block, completion, and interrupt
+assertion events.  A source build, portable-native self-comparison, or isolated
+browser smoke was not used as a substitute for the named one-million-slot and
+pinned-usim comparisons.
+
 ### M4 — Port disk-controller execution without persistence
 
 Deliverables:
@@ -475,8 +511,21 @@ range reads so large images do not require duplication in JavaScript and WASM me
 Controller timing is expressed in guest scheduler ticks, not fetch latency from the
 browser cache.
 
-Exit gate `C-M4`: native and WASM perform the same block requests, controller state
-changes, interrupts, and boot trace through the first filesystem mount.
+Exit gate `C-M4-BOOT-MEDIA`: for the selected immutable System 303 image, native
+and Wasm emit the same ordered register accesses, CCW reads, block requests and
+completions, page-transfer witnesses, controller-state changes, and interrupts
+from disk START through the first source-identified terminal boot-media read chain.
+The release record names exact start and terminal predicates, leaves no pending or
+orphaned host request, and proves the selected base-image SHA-256 unchanged.  This
+is not a filesystem-mount claim.
+
+`C-LMFS-MOUNT` is a later, separate `CADR-WEB-303-LMFS-OVERLAY` profile.  It uses
+identified media containing the selected LMFS partition and a private copy-on-write
+overlay; native and Wasm then reach `FILE-SYSTEM-RUNNING` with expected
+`PACK-LIST` membership and identical ordered mount reads and writes, including
+pack-header incarnation and clean-flag changes.  The base image remains unchanged
+and every write enters the overlay.  It is neither an M3 result nor a prerequisite
+for `C-M4-BOOT-MEDIA`.
 
 ### M5 — Implement the deterministic machine scheduler
 
@@ -767,9 +816,10 @@ planned test or passing static build is not a runtime compatibility result.
 
 ```text
 M0
-└─ M1 -> M2 -> M3 -> M4 -> M5 -> M6
-                         ├─ M7 -> M8 -> M9
-                         └─ M10
+└─ M1 -> M2 -> C-M3 (closed) -> C-M4-BOOT-MEDIA -> M5 -> M6
+                                  └─ C-LMFS-MOUNT (later overlay profile)
+                                                                  ├─ M7 -> M8 -> M9
+                                                                  └─ M10
 M7/M9 ─> M11
 M2/M6/M9/M10 ─> M12 -> M13 -> M14
 M14 ─> M15

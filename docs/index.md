@@ -53,6 +53,9 @@ machine-readable metadata layer while retaining ordinary Markdown as the source.
   and optional networking or translation.
 - [CADR-WEB-303 ABI1.1 deterministic tracing and snapshot specification](mit-cadr/cadr-deterministic-tracing-and-snapshot-reimplementation-specification.md)
   defines the new portable-core CDRGTRC1/CDRSNAP1 trace and continuation boundary.
+- [CADR-WEB-303 ABI1.2 headless WebAssembly core specification](mit-cadr/cadr-webassembly-headless-core-reimplementation-specification.md)
+  specifies the bare Wasm module, dedicated worker, streamed immutable-artifact
+  verifier, bounded memory, and native/Wasm conformance boundary.
 - [CADR-WEB portable core and host ABI](mit-cadr/cadr-web-core-architecture-decision.md)
   records the portable machine boundary and the deterministic pull-style contract
   between the CADR core and native or browser hosts.

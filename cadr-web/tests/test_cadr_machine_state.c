@@ -66,7 +66,7 @@ static cadr_run_result run_result(void)
     return value;
 }
 
-static void test_descriptor_copy_backpressure_and_persistent_failure(void)
+static void test_descriptor_copy_backpressure_and_block_completion(void)
 {
     cadr_machine *machine = NULL;
     cadr_machine_config machine_config = config();
@@ -103,11 +103,9 @@ static void test_descriptor_copy_backpressure_and_persistent_failure(void)
               sizeof(completion_bytes)) == CADR_STATUS_OK);
     completion_bytes[0] = 1U;
     CHECK(machine->state.events.completion_bytes[0] == 0U);
-    CHECK(cadr_machine_run(machine, &run, &result) ==
-          CADR_STATUS_UNIMPLEMENTED_DEVICE);
+    CHECK(cadr_machine_run(machine, &run, &result) == CADR_STATUS_OK);
     CHECK(result.completions_applied == 1U);
-    CHECK(cadr_machine_run(machine, &run, &result) ==
-          CADR_STATUS_UNIMPLEMENTED_DEVICE);
+    CHECK(cadr_machine_run(machine, &run, &result) == CADR_STATUS_OK);
     cadr_machine_destroy(machine);
 }
 
@@ -235,7 +233,7 @@ static void test_known_reserved_fields_reject_without_mutation(void)
 
 int main(void)
 {
-    test_descriptor_copy_backpressure_and_persistent_failure();
+    test_descriptor_copy_backpressure_and_block_completion();
     test_two_machine_interleaving();
     test_reset_preserves_machine_cycles();
     test_known_reserved_fields_reject_without_mutation();

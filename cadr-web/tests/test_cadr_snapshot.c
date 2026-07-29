@@ -2,6 +2,7 @@
 #include "cadr_machine.h"
 #include "cadr_snapshot.h"
 #include "cadr_state_v2.h"
+#include "cadr_state_v3.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -372,6 +373,9 @@ static void assert_rejected(const uint8_t *bytes, size_t length,
 static uint8_t *append_unknown_optional(const uint8_t *source, size_t source_length,
                                         size_t *out_length)
 {
+    const uint32_t old_chunk_count = (uint32_t)source[20U] |
+        ((uint32_t)source[21U] << 8U) | ((uint32_t)source[22U] << 16U) |
+        ((uint32_t)source[23U] << 24U);
     const uint64_t old_directory_bytes = get_u64(source + 48U);
     const uint64_t old_payload_offset = get_u64(source + 56U);
     const uint64_t payload_bytes = (uint64_t)source_length - old_payload_offset - SNAP_TRAILER_BYTES;
@@ -386,19 +390,20 @@ static uint8_t *append_unknown_optional(const uint8_t *source, size_t source_len
                  (size_t)old_directory_bytes);
     (void)memcpy(result + (size_t)new_payload_offset,
                  source + (size_t)old_payload_offset, (size_t)payload_bytes);
-    for (index = 0U; index < 8U; ++index) {
+    for (index = 0U; index < old_chunk_count; ++index) {
         uint8_t *entry = result + SNAP_HEADER_BYTES + index * SNAP_DIRECTORY_ENTRY_BYTES;
         put_u64(entry + 8U, get_u64(entry + 8U) + SNAP_DIRECTORY_ENTRY_BYTES);
     }
     test_sha256(NULL, 0U, empty_sha256);
-    put_u32(result + SNAP_HEADER_BYTES + 8U * SNAP_DIRECTORY_ENTRY_BYTES, 9U);
-    put_u32(result + SNAP_HEADER_BYTES + 8U * SNAP_DIRECTORY_ENTRY_BYTES + 4U, 0U);
-    put_u64(result + SNAP_HEADER_BYTES + 8U * SNAP_DIRECTORY_ENTRY_BYTES + 8U,
+    put_u32(result + SNAP_HEADER_BYTES + (size_t)old_chunk_count * SNAP_DIRECTORY_ENTRY_BYTES,
+            10U);
+    put_u32(result + SNAP_HEADER_BYTES + (size_t)old_chunk_count * SNAP_DIRECTORY_ENTRY_BYTES + 4U, 0U);
+    put_u64(result + SNAP_HEADER_BYTES + (size_t)old_chunk_count * SNAP_DIRECTORY_ENTRY_BYTES + 8U,
             new_payload_offset + payload_bytes);
-    put_u64(result + SNAP_HEADER_BYTES + 8U * SNAP_DIRECTORY_ENTRY_BYTES + 16U, 0U);
-    (void)memcpy(result + SNAP_HEADER_BYTES + 8U * SNAP_DIRECTORY_ENTRY_BYTES + 32U,
+    put_u64(result + SNAP_HEADER_BYTES + (size_t)old_chunk_count * SNAP_DIRECTORY_ENTRY_BYTES + 16U, 0U);
+    (void)memcpy(result + SNAP_HEADER_BYTES + (size_t)old_chunk_count * SNAP_DIRECTORY_ENTRY_BYTES + 32U,
                  empty_sha256, sizeof(empty_sha256));
-    put_u32(result + 20U, 9U);
+    put_u32(result + 20U, old_chunk_count + 1U);
     put_u64(result + 32U, result_length);
     put_u64(result + 48U, old_directory_bytes + SNAP_DIRECTORY_ENTRY_BYTES);
     put_u64(result + 56U, new_payload_offset);
@@ -679,8 +684,8 @@ static void test_integrity_directory_and_extension_rejections(void)
     uint8_t *bytes;
     uint8_t *mutated;
     uint8_t *optional;
-    size_t length;
     size_t optional_length;
+    size_t length;
     cadr_machine_state *parsed = NULL;
     cadr_snapshot_metadata metadata;
     if (machine == NULL) return;
@@ -940,6 +945,183 @@ static void test_shared_trace_latch_negative_matrix(void)
     cadr_machine_destroy(machine);
 }
 
+/* High bits are semantically masked by older digests, so reseal these fixtures. */
+static void test_noncanonical_instruction_words_are_rejected(void)
+{
+    static const struct {
+        uint32_t type;
+        uint32_t offset;
+    } fields[] = {
+        { 2U, 12U }, /* CPU p0 */
+        { 2U, 20U }, /* CPU p1 */
+        { 2U, 28U }, /* CPU debug IR */
+        { 2U, 36U }, /* CPU instruction-write register */
+        { 3U, 16U }, /* PROM[0] */
+        { 3U, 16U + 512U * 8U }, /* IMEM[0] */
+        { 4U, 16U + 4U * CADR_UNIBUS_MAP_PAGES }, /* diagnostic instruction */
+        { 4U, 24U + 4U * CADR_UNIBUS_MAP_PAGES } /* diagnostic debug instruction */
+    };
+    cadr_machine *machine = booted_machine();
+    restore_context context = {0};
+    cadr_snapshot_restore_hooks hooks;
+    uint8_t digest[32];
+    uint8_t *bytes;
+    size_t length;
+    uint32_t index;
+    if (machine == NULL) return;
+    CHECK(state_digest(&machine->state, digest));
+    bytes = serialize_state(&machine->state, digest, &length);
+    if (bytes == NULL) {
+        cadr_machine_destroy(machine);
+        return;
+    }
+    context.expected_digest = digest;
+    hooks = hooks_for(&context);
+    for (index = 0U; index < sizeof(fields) / sizeof(fields[0]); ++index) {
+        uint8_t *mutated = malloc(length);
+        uint8_t *payload;
+        CHECK(mutated != NULL);
+        if (mutated == NULL) continue;
+        (void)memcpy(mutated, bytes, length);
+        payload = chunk_payload(mutated, fields[index].type);
+        put_u64(payload + fields[index].offset,
+                get_u64(payload + fields[index].offset) |
+                UINT64_C(0x0001000000000000));
+        reseal_chunk(mutated, length, fields[index].type);
+        context.rebuild_calls = 0U;
+        context.validate_calls = 0U;
+        assert_rejected(mutated, length, &hooks);
+        CHECK(context.rebuild_calls == 0U);
+        CHECK(context.validate_calls == 0U);
+        free(mutated);
+    }
+    free(bytes);
+    cadr_machine_destroy(machine);
+}
+
+static void test_m3_disk_chunk_and_witness(void)
+{
+    cadr_machine *machine = booted_machine();
+    cadr_machine_state *parsed = NULL;
+    cadr_snapshot_metadata metadata;
+    restore_context context = {0};
+    cadr_snapshot_restore_hooks hooks;
+    uint8_t digest[32];
+    uint8_t witness[32];
+    uint8_t *bytes;
+    uint8_t *mutated;
+    uint8_t *optional;
+    size_t optional_length;
+    uint64_t length = 0U;
+    uint64_t written = 0U;
+    if (machine == NULL) return;
+    machine->state.devices.disk.compatibility_profile = CADR_DISK_COMPAT_USIM_330D;
+    machine->state.devices.disk.command = UINT32_C(012);
+    machine->state.devices.disk.command_list_pointer = UINT32_C(0x12340000);
+    machine->state.devices.disk.disk_address = UINT32_C(0x00110203);
+    machine->state.devices.disk.last_memory_address = UINT32_C(0x00ff01ff);
+    machine->state.devices.disk.pending_ccw_address = UINT32_C(0x12340005);
+    machine->state.devices.disk.pending_memory_address = UINT32_C(0x00002000);
+    machine->state.devices.disk.pending_ccw = UINT32_C(5);
+    machine->state.devices.disk.status = CADR_DISK_STATUS_NOT_ACTIVE |
+        CADR_DISK_STATUS_INTERRUPT;
+    machine->state.devices.disk.done_interrupt_enable = 1U;
+    CHECK(state_digest(&machine->state, digest));
+    CHECK(cadr_snapshot_size_versioned(&machine->state,
+                                       CADR_SNAPSHOT_FORMAT_MINOR_M3,
+                                       digest, digest, &length) == CADR_STATUS_OK);
+    bytes = malloc((size_t)length);
+    CHECK(bytes != NULL);
+    if (bytes == NULL) {
+        cadr_machine_destroy(machine);
+        return;
+    }
+    CHECK(cadr_snapshot_serialize_versioned(&machine->state,
+                                            CADR_SNAPSHOT_FORMAT_MINOR_M3,
+                                            digest, digest, bytes, length,
+                                            &written) == CADR_STATUS_OK);
+    CHECK(written == length);
+    CHECK(bytes[10U] == UINT8_C(1) && bytes[11U] == 0U);
+    CHECK(bytes[20U] == UINT8_C(9) && bytes[21U] == 0U &&
+          bytes[22U] == 0U && bytes[23U] == 0U);
+    CHECK(get_u64(const_chunk_entry(bytes, 9U) + 16U) == UINT64_C(96));
+    CHECK(cadr_state_v3_digest(&machine->state, witness) == CADR_STATUS_OK);
+    CHECK(memcmp(chunk_payload(bytes, 9U) + 64U, witness, sizeof(witness)) == 0);
+    context.expected_digest = digest;
+    hooks = hooks_for(&context);
+    CHECK(cadr_snapshot_parse(bytes, (size_t)length, &hooks, &parsed, &metadata) ==
+          CADR_STATUS_OK);
+    CHECK(parsed != NULL && metadata.format_minor == CADR_SNAPSHOT_FORMAT_MINOR_M3);
+    if (parsed != NULL) {
+        CHECK(memcmp(&parsed->devices.disk, &machine->state.devices.disk,
+                     sizeof(parsed->devices.disk)) == 0);
+        cadr_snapshot_state_destroy(parsed);
+        parsed = NULL;
+    }
+    optional = append_unknown_optional(bytes, (size_t)length, &optional_length);
+    CHECK(optional != NULL);
+    if (optional != NULL) {
+        context.rebuild_calls = 0U;
+        context.validate_calls = 0U;
+        CHECK(cadr_snapshot_parse(optional, optional_length, &hooks, &parsed,
+                                  &metadata) == CADR_STATUS_OK);
+        CHECK(parsed != NULL && metadata.format_minor ==
+              CADR_SNAPSHOT_FORMAT_MINOR_M3);
+        cadr_snapshot_state_destroy(parsed);
+        parsed = NULL;
+        free(optional);
+    }
+
+    /* Rehashing the chunk cannot turn an inactive controller into an active
+     * one without the corresponding resumable BLOCK_READ request. */
+    mutated = malloc((size_t)length);
+    CHECK(mutated != NULL);
+    if (mutated != NULL) {
+        (void)memcpy(mutated, bytes, (size_t)length);
+        put_u32(chunk_payload(mutated, 9U) + 44U, 1U);
+        reseal_chunk(mutated, (size_t)length, 9U);
+        context.rebuild_calls = 0U;
+        context.validate_calls = 0U;
+        assert_rejected(mutated, (size_t)length, &hooks);
+        CHECK(context.rebuild_calls == 0U);
+        CHECK(context.validate_calls == 0U);
+        free(mutated);
+    }
+
+    mutated = malloc((size_t)length);
+    CHECK(mutated != NULL);
+    if (mutated != NULL) {
+        (void)memcpy(mutated, bytes, (size_t)length);
+        chunk_payload(mutated, 9U)[64U] ^= UINT8_C(1);
+        reseal_chunk(mutated, (size_t)length, 9U);
+        context.rebuild_calls = 0U;
+        context.validate_calls = 0U;
+        assert_rejected(mutated, (size_t)length, &hooks);
+        CHECK(context.rebuild_calls == 1U);
+        CHECK(context.validate_calls == 0U);
+        free(mutated);
+    }
+    free(bytes);
+    cadr_machine_destroy(machine);
+}
+
+/* wasm32 must reject a u64 length before any address-sized conversion. */
+static void test_parse_rejects_unrepresentable_length(void)
+{
+    restore_context context = {0};
+    cadr_snapshot_restore_hooks hooks = hooks_for(&context);
+    cadr_machine_state *parsed = (cadr_machine_state *)(uintptr_t)UINT32_C(1);
+    cadr_snapshot_metadata metadata;
+    uint8_t byte = 0U;
+    if ((uint64_t)SIZE_MAX == UINT64_MAX) return;
+    (void)memset(&metadata, UINT8_C(0xa5), sizeof(metadata));
+    CHECK(cadr_snapshot_parse(&byte, UINT64_MAX, &hooks, &parsed, &metadata) ==
+          CADR_STATUS_INVALID_ARGUMENT);
+    CHECK(parsed == NULL);
+    CHECK(context.rebuild_calls == 0U);
+    CHECK(context.validate_calls == 0U);
+}
+
 int main(void)
 {
     test_sha256_and_chunk_integrity_vectors();
@@ -951,6 +1133,9 @@ int main(void)
     test_self_consistent_semantic_negative_matrix();
     test_derived_storage_and_pointer_are_omitted();
     test_shared_trace_latch_negative_matrix();
+    test_noncanonical_instruction_words_are_rejected();
+    test_m3_disk_chunk_and_witness();
+    test_parse_rejects_unrepresentable_length();
     if (failures != 0) return 1;
     (void)puts("cadr_snapshot: ok");
     return 0;

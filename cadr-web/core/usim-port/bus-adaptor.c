@@ -1,4 +1,5 @@
 #include "cadr_bus_device.h"
+#include "cadr_m3_native_observer.h"
 #include "cadr_processor_memory.h"
 #include "cadr_state_v2.h"
 #include "cadr_trace_engine.h"
@@ -41,6 +42,8 @@ void cadr_bus_device_cold_power_on(cadr_machine_state *const state)
     cadr_state_v2_invalidate(state);
     (void)memset(&state->bus, 0, sizeof(state->bus));
     (void)memset(&state->devices, 0, sizeof(state->devices));
+    state->devices.disk.compatibility_profile = CADR_DISK_COMPAT_SYSTEM_303;
+    state->devices.disk.status = CADR_DISK_STATUS_NOT_ACTIVE;
     cadr_bus_set_interrupt_status(state, 0U);
     state->devices.initialized = 1U;
 }
@@ -194,6 +197,7 @@ cadr_status cadr_bus_read32(cadr_machine_state *const state, const uint32_t padd
                                    error_before) != CADR_STATUS_OK) {
         return CADR_STATUS_GUEST_FAULT;
     }
+    cadr_m3_native_observer_bus(state, "read", paddr, 0U, *out_value);
     return status;
 }
 
@@ -222,5 +226,6 @@ cadr_status cadr_bus_write32(cadr_machine_state *const state, const uint32_t pad
                                    error_before) != CADR_STATUS_OK) {
         return CADR_STATUS_GUEST_FAULT;
     }
+    cadr_m3_native_observer_bus(state, "write", paddr, value, 0U);
     return status;
 }

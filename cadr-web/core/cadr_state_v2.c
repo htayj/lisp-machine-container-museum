@@ -603,6 +603,8 @@ cadr_status cadr_state_v2_rebuild(cadr_machine_state *state)
     uint64_t prior_ordinal;
     if (state == NULL) return CADR_STATUS_INVALID_ARGUMENT;
     prior_ordinal = state->trace.state_v2.rebuild_ordinal;
+    /* The ordinal is an observable continuation-state field: never wrap it. */
+    if (prior_ordinal == UINT64_MAX) return CADR_STATUS_GUEST_FAULT;
     (void)memset(&state->trace.state_v2, 0, sizeof(state->trace.state_v2));
     for (root = 0U; root < CADR_STATE_V2_ROOT_COUNT; ++root) {
         cadr_state_v2_tree_build(state, (enum cadr_state_v2_root)root);

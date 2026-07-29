@@ -1,9 +1,9 @@
 ---
 type: Reimplementation Format Specification
 title: CDRSNAP1 CADR core snapshot format
-description: A deterministic, integrity-checked internal snapshot format for the CADR-WEB-303 core at an instruction boundary.
+description: A deterministic, integrity-checked internal snapshot format for the CADR-WEB-303 ABI 1.1 and ABI 1.2 cores at an instruction boundary.
 tags: [mit-cadr, cadr-web, snapshot, serialization, reimplementation]
-timestamp: 2026-07-27T18:05:00-04:00
+timestamp: 2026-07-28T23:55:00-04:00
 ---
 
 # CDRSNAP1 CADR core snapshot format
@@ -13,8 +13,8 @@ CDRSNAP1 is the internal state-transfer format for one selected
 little-endian, chunked representation: it never copies a C structure, pointer,
 padding byte, derived cache node, or operational pointer. A valid restore is
 staged, rebuilds all derived canonical and CDRSTATE2 caches, verifies the
-integrated core's state digests, and only then becomes available to the machine
-owner.
+integrated core's state digests and, for format minor 1, the CDRSTATE3 disk
+witness, and only then becomes available to the machine owner.
 
 This is a new reconstruction format, not a claim that historical CADR save-state
 files used this layout. Its target profile is the M0/M1 `CADR-WEB-303` profile
@@ -50,22 +50,32 @@ They do not describe historical CADR behavior.
 
 ## Reconstruction claim and nonclaim
 
-The claim is file-representation compatibility for CDRSNAP1 version 1.0 and the
-named profile. It guarantees a deterministic byte representation for equivalent
-semantic M2 core state and atomic rejection of malformed or mismatched input. It
-does not claim compatibility with a historical CADR, LM-3, or usim saved-state
-format, nor does it make an archive authentic or authorize use of media outside
-the profile's artifact boundary.
+The claim is file-representation compatibility for CDRSNAP1 versions 1.0 and 1.1
+and their named profiles. Version 1.0 is the frozen ABI 1.1/M2 representation.
+Version 1.1 adds the required D0 disk state used by ABI 1.2/M3 without changing
+the first eight chunks. Both guarantee a deterministic byte representation for
+equivalent semantic state and atomic rejection of malformed or mismatched input.
+Nonclaim: these versions are not compatible with a historical CADR, LM-3, or
+usim saved-state format, do not make an archive authentic, and do not authorize
+use of media outside the profile's artifact boundary.
+
+Reserved claims: later disk-unit models, writable overlays, active-host-I/O
+checkpointing, persistence, and historical save formats require separate versioned
+profiles and conformance evidence.
 
 ## Profile and conformance level
 
-The sole version-1.0 profile is `CADR-WEB-303/file-representation/M2-snapshot`.
-A conforming writer MUST emit the fixed header, eight required chunks, explicit
-little-endian fields, directory and chunk hashes, and final trailer described
-here. A conforming reader MUST reject another profile, artifact-set identity,
-overlay binding, byte layout, or required semantic field rather than applying a
-default. It may ignore an integrity-checked unknown optional chunk exactly as the
-directory rules specify.
+The version-1.0 profile is
+`CADR-WEB-303/file-representation/M2-snapshot`; it emits eight required chunks
+and is valid only when the disk controller has the implied quiescent default
+state. The version-1.1 profile is
+`CADR-WEB-303/file-representation/M3-snapshot`; it emits the same eight chunks
+plus required type 9 containing explicit D0 disk state and its CDRSTATE3 witness.
+An ABI 1.1 writer MUST reject nondefault disk state instead of silently omitting
+it, and an ABI 1.1 reader MUST reject minor 1. A conforming reader MUST reject
+another profile, artifact-set identity, overlay binding, byte layout, or required
+semantic field rather than applying a default. It may ignore an integrity-checked
+unknown optional chunk exactly as the directory rules specify.
 
 ## Primitive encoding
 
@@ -93,7 +103,7 @@ signature or origin authentication.
 | Offset | Field | Rule |
 | ---: | --- | --- |
 | 0 | `magic[8]` | ASCII `CDRSNAP1` |
-| 8 | `major:u16`, `minor:u16` | exactly 1, 0 |
+| 8 | `major:u16`, `minor:u16` | major exactly 1; minor 0 for ABI 1.1 or 1 for ABI 1.2 |
 | 12 | `header_bytes:u32` | exactly 264 |
 | 16 | `flags:u32` | zero |
 | 20 | `chunk_count:u32` | 8 or more, bounded by parser limit |
@@ -139,10 +149,11 @@ ranges beginning at `payload_offset` and ending exactly before the final trailer
 Ranges may not overlap, leave gaps, point into the header/directory/trailer, or
 overflow an unsigned 64-bit calculation.
 
-Bit 0 of `flags` means *required*. All known chunks are required. An unknown
+Bit 0 of `flags` means *required*. All chunks known for the selected minor are
+required. An unknown
 required chunk rejects the archive. An unknown optional chunk (zero flags) is
 integrity-checked and then ignored; it is not preserved by a subsequent canonical
-re-serialization. This is the only forward-extension path in version 1.0.
+re-serialization. This is the only forward-extension path within major version 1.
 
 | Type | Name | Required payload |
 | ---: | --- | --- |
@@ -154,13 +165,14 @@ re-serialization. This is the only forward-extension path in version 1.0.
 | 6 | CANONICAL | semantic canonical mutation fields and exactly `mutation_count` 32-byte events |
 | 7 | EVENTS | request scalars, the operation-selected canonical descriptor record, and exactly queued copied completion bytes |
 | 8 | TRACE | every logical `cadr_trace_state` ordinal and latch scalar through `interrupt_level` |
+| 9 | DISK | minor 1 only: 64 bytes of D0 disk semantic fields followed by a 32-byte CDRSTATE3 witness |
 
-The canonical writer emits exactly these eight required chunks in this order.
-Their fields are emitted in declaration order with nested arrays in ascending
-index order. CANONICAL includes `mutation_sha256` but omits every Merkle-node
-array; the parser recomputes and compares the hash before the restore hook
-recreates the derived nodes. TRACE omits nested `state_v2` cache storage and the
-engine pointer.
+The minor-0 canonical writer emits exactly chunks 1 through 8 in order. The
+minor-1 canonical writer emits exactly chunks 1 through 9 in order. Their fields
+are emitted in declaration order with nested arrays in ascending index order.
+CANONICAL includes `mutation_sha256` but omits every Merkle-node array; the parser
+recomputes and compares the hash before the restore hook recreates the derived
+nodes. TRACE omits nested `state_v2` cache storage and the engine pointer.
 EVENTS omits bytes after the active descriptor and does not encode the completion
 pointer itself. Descriptor bytes are not copied from a native C structure. After
 the 80-byte EVENTS scalar prefix, the selected operation has the following
@@ -178,6 +190,42 @@ The operation discriminant and descriptor length must select exactly one row.
 The reader decodes each field, initializes a fresh native descriptor to zero, and
 copies that reconstructed native value into staged request state. Thus host
 endianness, alignment, and padding are not part of CDRSNAP1.
+
+### Minor-1 DISK payload
+
+The 96-byte type-9 payload is:
+
+```text
+pending_first_block:u64
+compatibility_profile:u32
+command:u32
+command_list_pointer:u32
+disk_address:u32
+last_memory_address:u32
+pending_ccw_address:u32
+pending_memory_address:u32
+pending_ccw:u32
+status:u32
+transfer_active:u32
+reset_condition:u32
+done_interrupt_enable:u32
+attention_interrupt_enable:u32
+reserved0:u32
+cdrstate3_witness[32]
+```
+
+The compatibility profile is exactly the selected System 303 rule or the pinned
+maintained-usim rule. Booleans are zero or one, reserved is zero, pending CCW and
+page-address fields obey their declared widths and alignment, and status contains
+only known D0 bits. An active transfer requires a valid in-range block, an active
+controller status, and a matching outstanding one-block, 1,024-byte `BLOCK_READ`
+request. A reset or not-active controller cannot carry an active transfer.
+
+The witness is the canonical CDRSTATE3 digest of the decoded state. The reader
+recomputes it only after structural and semantic validation and requires exact
+equality before publication. Minor 0 instead initializes the documented default
+disk state: System 303 compatibility, `NOT_ACTIVE`, and every other disk field
+zero. It may not be used to erase nondefault disk state.
 
 ## Validation and atomic restore
 
@@ -229,7 +277,8 @@ The parser fingerprints all serialized semantic fields before and after that
 callback and rejects any semantic mutation or non-null engine. The second, const
 validator receives the staged state and fixed-header metadata and must recompute
 and verify both the frozen M1 `CDRSTATE1` boundary digest and the full
-`CDRSTATE2` continuation digest before the state is published. On any error,
+`CDRSTATE2` continuation digest before the state is published. Minor 1 additionally
+requires the type-9 witness to equal the recomputed CDRSTATE3 digest. On any error,
 including allocation or either callback,
 the output state is null and the metadata is zero.
 
@@ -256,6 +305,10 @@ widths, booleans, source/destination relationships, interrupt relationships,
 and class outcomes; and callback/allocation atomicity. The
 integrated M2 trace suite additionally proves that a restored instruction-boundary
 state produces the same continuation trace and CDRSTATE2/M1 boundary digests.
+The M3 suite proves that minor 0 remains byte-stable for default disk state,
+minor 0 rejects nondefault disk state, minor 1 requires and validates type 9,
+and native-to-Wasm and Wasm-to-native minor-1 restores preserve identical
+CDRSTATE1/2/3 continuations from a nondefault valid D0 state.
 
 ## Integration boundary
 

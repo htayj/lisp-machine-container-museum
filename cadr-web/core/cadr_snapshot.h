@@ -18,9 +18,14 @@ extern "C" {
 #define CADR_SNAPSHOT_CDRSTATE2_BYTES CADR_SHA256_BYTES
 #define CADR_SNAPSHOT_CDRSTATE1_BYTES CADR_SHA256_BYTES
 #define CADR_SNAPSHOT_FORMAT_MAJOR UINT16_C(1)
-#define CADR_SNAPSHOT_FORMAT_MINOR UINT16_C(0)
+#define CADR_SNAPSHOT_FORMAT_MINOR_M2 UINT16_C(0)
+#define CADR_SNAPSHOT_FORMAT_MINOR_M3 UINT16_C(1)
+/* Kept for source compatibility with callers that explicitly select M2. */
+#define CADR_SNAPSHOT_FORMAT_MINOR CADR_SNAPSHOT_FORMAT_MINOR_M2
 
 typedef struct cadr_snapshot_metadata {
+    uint16_t format_minor;
+    uint16_t reserved0;
     uint32_t profile;
     uint32_t lifecycle;
     uint32_t artifact_mask;
@@ -75,9 +80,29 @@ cadr_status cadr_snapshot_size(const cadr_machine_state *state,
                                    CADR_SNAPSHOT_CDRSTATE2_BYTES],
                                uint64_t *out_byte_count);
 
+/*
+ * Version-selecting form used by the public ABI bridge.  Minor 0 is the
+ * byte-for-byte frozen M2 format; minor 1 adds the required D0 state chunk.
+ */
+cadr_status cadr_snapshot_size_versioned(
+    const cadr_machine_state *state,
+    uint16_t format_minor,
+    const uint8_t cdrstate1_digest[CADR_SNAPSHOT_CDRSTATE1_BYTES],
+    const uint8_t cdrstate2_digest[CADR_SNAPSHOT_CDRSTATE2_BYTES],
+    uint64_t *out_byte_count);
+
 /* Writes exactly cadr_snapshot_size bytes; out_written is zero on failure. */
 cadr_status cadr_snapshot_serialize(
     const cadr_machine_state *state,
+    const uint8_t cdrstate1_digest[CADR_SNAPSHOT_CDRSTATE1_BYTES],
+    const uint8_t cdrstate2_digest[CADR_SNAPSHOT_CDRSTATE2_BYTES],
+    uint8_t *out_bytes,
+    uint64_t out_capacity,
+    uint64_t *out_written);
+
+cadr_status cadr_snapshot_serialize_versioned(
+    const cadr_machine_state *state,
+    uint16_t format_minor,
     const uint8_t cdrstate1_digest[CADR_SNAPSHOT_CDRSTATE1_BYTES],
     const uint8_t cdrstate2_digest[CADR_SNAPSHOT_CDRSTATE2_BYTES],
     uint8_t *out_bytes,

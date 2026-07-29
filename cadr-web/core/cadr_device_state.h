@@ -3,6 +3,8 @@
 
 #include <stdint.h>
 
+#include "cadr_disk_state.h"
+
 #define CADR_TV_WORDS 32768U
 
 /*
@@ -18,6 +20,7 @@ typedef struct cadr_device_state {
     uint32_t tv_sync_ptr;
     uint8_t tv_sync_ram[4096];
     uint32_t tv_screen[CADR_TV_WORDS];
+    cadr_disk_state disk;
 } cadr_device_state;
 
 #endif

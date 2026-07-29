@@ -1,4 +1,5 @@
 #include "cadr_snapshot.h"
+#include "cadr_state_v3.h"
 #include "cadr_trace_engine.h"
 
 #include <stddef.h>
@@ -9,10 +10,13 @@
 #define CADR_SNAPSHOT_HEADER_BYTES UINT64_C(264)
 #define CADR_SNAPSHOT_DIRECTORY_ENTRY_BYTES UINT64_C(64)
 #define CADR_SNAPSHOT_TRAILER_BYTES UINT64_C(32)
-#define CADR_SNAPSHOT_KNOWN_CHUNK_COUNT UINT32_C(8)
+#define CADR_SNAPSHOT_M2_CHUNK_COUNT UINT32_C(8)
+#define CADR_SNAPSHOT_M3_CHUNK_COUNT UINT32_C(9)
+#define CADR_SNAPSHOT_MAX_KNOWN_CHUNK_COUNT CADR_SNAPSHOT_M3_CHUNK_COUNT
 #define CADR_SNAPSHOT_MAX_CHUNKS UINT32_C(1024)
 #define CADR_SNAPSHOT_REQUIRED_FLAG UINT32_C(1)
 #define CADR_SNAPSHOT_MAX_COMPLETION_BYTES UINT64_C(1048576)
+#define CADR_SNAPSHOT_U48_MASK UINT64_C(0x0000ffffffffffff)
 
 #define CADR_SNAPSHOT_CHUNK_CORE UINT32_C(1)
 #define CADR_SNAPSHOT_CHUNK_CPU UINT32_C(2)
@@ -22,6 +26,15 @@
 #define CADR_SNAPSHOT_CHUNK_CANONICAL UINT32_C(6)
 #define CADR_SNAPSHOT_CHUNK_EVENTS UINT32_C(7)
 #define CADR_SNAPSHOT_CHUNK_TRACE UINT32_C(8)
+#define CADR_SNAPSHOT_CHUNK_DISK UINT32_C(9)
+#define CADR_SNAPSHOT_DISK_CHUNK_BYTES UINT64_C(96)
+#define CADR_SNAPSHOT_DISK_STATUS_KNOWN \
+    (CADR_DISK_STATUS_READ_COMPARE | CADR_DISK_STATUS_CCW_CYCLE | \
+     CADR_DISK_STATUS_NXM | CADR_DISK_STATUS_SEEK_ERROR | \
+     CADR_DISK_STATUS_OFFLINE | CADR_DISK_STATUS_READ_ONLY | \
+     CADR_DISK_STATUS_FAULT | CADR_DISK_STATUS_INTERRUPT | \
+     CADR_DISK_STATUS_ATTENTION | CADR_DISK_STATUS_ANY_ATTENTION | \
+     CADR_DISK_STATUS_NOT_ACTIVE)
 
 #define CADR_SNAPSHOT_ARTIFACT_BOOT UINT32_C(1)
 #define CADR_SNAPSHOT_ARTIFACT_CONTROL UINT32_C(2)
@@ -94,7 +107,9 @@ typedef struct cadr_snapshot_directory_entry {
 } cadr_snapshot_directory_entry;
 
 typedef struct cadr_snapshot_layout {
-    uint64_t chunk_lengths[CADR_SNAPSHOT_KNOWN_CHUNK_COUNT];
+    uint16_t format_minor;
+    uint32_t chunk_count;
+    uint64_t chunk_lengths[CADR_SNAPSHOT_MAX_KNOWN_CHUNK_COUNT];
     uint64_t directory_bytes;
     uint64_t payload_offset;
     uint64_t total_bytes;
@@ -551,7 +566,11 @@ static int cadr_snapshot_zero_bytes(const uint8_t *bytes, size_t byte_count)
 
 static int cadr_snapshot_validate_cpu(const cadr_cpu_state *cpu)
 {
-    if (!cadr_snapshot_is_boolean(cpu->guest_fault) ||
+    if ((cpu->p0 & ~CADR_SNAPSHOT_U48_MASK) != 0U ||
+        (cpu->p1 & ~CADR_SNAPSHOT_U48_MASK) != 0U ||
+        (cpu->debug_ir & ~CADR_SNAPSHOT_U48_MASK) != 0U ||
+        (cpu->instruction_write_register & ~CADR_SNAPSHOT_U48_MASK) != 0U ||
+        !cadr_snapshot_is_boolean(cpu->guest_fault) ||
         !cadr_snapshot_is_boolean((uint32_t)cpu->p0_imem) ||
         !cadr_snapshot_is_boolean((uint32_t)cpu->p1_imem) ||
         !cadr_snapshot_is_boolean((uint32_t)cpu->inhibit) ||
@@ -571,15 +590,25 @@ static int cadr_snapshot_validate_memory(const cadr_memory_state *memory)
 {
     const uint64_t expected_words = (uint64_t)memory->main_memory_pages *
         (uint64_t)CADR_MAIN_MEMORY_WORDS_PER_PAGE;
-    return cadr_snapshot_is_boolean(memory->initialized) &&
-           memory->main_memory_pages <= CADR_MAIN_MEMORY_MAX_PAGES &&
-           memory->mapped_words == expected_words;
+    uint32_t index;
+    if (!cadr_snapshot_is_boolean(memory->initialized) ||
+        memory->main_memory_pages > CADR_MAIN_MEMORY_MAX_PAGES ||
+        memory->mapped_words != expected_words) return 0;
+    for (index = 0U; index < 512U; ++index) {
+        if ((memory->prom[index] & ~CADR_SNAPSHOT_U48_MASK) != 0U) return 0;
+    }
+    for (index = 0U; index < 16U * 1024U; ++index) {
+        if ((memory->imem[index] & ~CADR_SNAPSHOT_U48_MASK) != 0U) return 0;
+    }
+    return 1;
 }
 
 static int cadr_snapshot_validate_bus(const cadr_bus_state *bus)
 {
     const cadr_diagnostic_latches *diagnostic = &bus->diagnostic;
-    return cadr_snapshot_is_boolean(bus->interrupt_pending) &&
+    return (diagnostic->instruction & ~CADR_SNAPSHOT_U48_MASK) == 0U &&
+           (diagnostic->debug_instruction & ~CADR_SNAPSHOT_U48_MASK) == 0U &&
+           cadr_snapshot_is_boolean(bus->interrupt_pending) &&
            cadr_snapshot_is_boolean((uint32_t)bus->nxm_inhibited) &&
            cadr_snapshot_zero_bytes(bus->reserved0, sizeof(bus->reserved0)) &&
            cadr_snapshot_is_boolean((uint32_t)diagnostic->machine_error) &&
@@ -603,6 +632,73 @@ static int cadr_snapshot_validate_devices(const cadr_device_state *devices)
 {
     return cadr_snapshot_is_boolean(devices->initialized) &&
            devices->tv_sync_ptr < sizeof(devices->tv_sync_ram);
+}
+
+/* CDRSNAP1 1.0 predates D0.  It may represent only this implied quiescent
+ * controller state; active or configured disk work requires the M3 extension. */
+static int cadr_snapshot_disk_is_default(const cadr_disk_state *disk)
+{
+    return disk->pending_first_block == 0U &&
+        disk->compatibility_profile == CADR_DISK_COMPAT_SYSTEM_303 &&
+        disk->command == 0U && disk->command_list_pointer == 0U &&
+        disk->disk_address == 0U && disk->last_memory_address == 0U &&
+        disk->pending_ccw_address == 0U && disk->pending_memory_address == 0U &&
+        disk->pending_ccw == 0U && disk->status == CADR_DISK_STATUS_NOT_ACTIVE &&
+        disk->transfer_active == 0U && disk->reset_condition == 0U &&
+        disk->done_interrupt_enable == 0U && disk->attention_interrupt_enable == 0U &&
+        disk->reserved0 == 0U;
+}
+
+static void cadr_snapshot_initialize_default_disk(cadr_device_state *devices)
+{
+    (void)memset(&devices->disk, 0, sizeof(devices->disk));
+    devices->disk.compatibility_profile = CADR_DISK_COMPAT_SYSTEM_303;
+    devices->disk.status = CADR_DISK_STATUS_NOT_ACTIVE;
+}
+
+/* The disk chunk has no padding: all reserved and boolean encodings are
+ * explicit, and address/continuation values are constrained to the state
+ * machine's representable domain before the CDRSTATE3 witness is accepted. */
+static int cadr_snapshot_validate_disk(const cadr_disk_state *disk)
+{
+    const uint64_t total_blocks = (uint64_t)CADR_DISK_T300_CYLINDERS *
+        CADR_DISK_T300_HEADS * CADR_DISK_T300_BLOCKS_PER_TRACK;
+    if (disk->compatibility_profile != CADR_DISK_COMPAT_SYSTEM_303 &&
+        disk->compatibility_profile != CADR_DISK_COMPAT_USIM_330D) return 0;
+    if ((disk->status & ~CADR_SNAPSHOT_DISK_STATUS_KNOWN) != 0U ||
+        !cadr_snapshot_is_boolean(disk->transfer_active) ||
+        !cadr_snapshot_is_boolean(disk->reset_condition) ||
+        !cadr_snapshot_is_boolean(disk->done_interrupt_enable) ||
+        !cadr_snapshot_is_boolean(disk->attention_interrupt_enable) ||
+        disk->reserved0 != 0U || disk->pending_ccw > UINT32_C(0xffff) ||
+        disk->pending_memory_address > UINT32_C(0x00ffff00) ||
+        (disk->pending_memory_address & UINT32_C(0xff)) != 0U) return 0;
+    if (disk->transfer_active != 0U &&
+        (disk->pending_first_block >= total_blocks ||
+         (disk->status & CADR_DISK_STATUS_NOT_ACTIVE) != 0U)) return 0;
+    return 1;
+}
+
+static int cadr_snapshot_validate_disk_continuation(const cadr_machine_state *state)
+{
+    const cadr_disk_state *disk = &state->devices.disk;
+    const cadr_event_state *events = &state->events;
+    cadr_block_read_descriptor descriptor;
+    if (disk->transfer_active == 0U) {
+        return 1;
+    }
+    if (disk->reset_condition != 0U ||
+        (disk->status & CADR_DISK_STATUS_NOT_ACTIVE) != 0U ||
+        events->outstanding_request_id == 0U ||
+        events->outstanding_operation != CADR_HOST_OPERATION_BLOCK_READ ||
+        events->request_descriptor_byte_count != sizeof(descriptor) ||
+        events->expected_completion_byte_count != CADR_DISK_BLOCK_BYTES) {
+        return 0;
+    }
+    (void)memcpy(&descriptor, events->request_descriptor, sizeof(descriptor));
+    return descriptor.first_block == disk->pending_first_block &&
+           descriptor.block_count == 1U &&
+           descriptor.block_bytes == CADR_DISK_BLOCK_BYTES;
 }
 
 static int cadr_snapshot_validate_canonical(const cadr_canonical_state *canonical)
@@ -674,7 +770,8 @@ static int cadr_snapshot_validate_events(const cadr_event_state *events)
             events->completion_host_status == CADR_HOST_RESULT_FAILED);
 }
 
-static cadr_status cadr_snapshot_validate_state(const cadr_machine_state *state)
+static cadr_status cadr_snapshot_validate_state(const cadr_machine_state *state,
+                                                uint16_t format_minor)
 {
     uint32_t index;
     if (state == NULL || state->profile != CADR_PROFILE_CADR_WEB_303 ||
@@ -684,6 +781,11 @@ static cadr_status cadr_snapshot_validate_state(const cadr_machine_state *state)
         !cadr_snapshot_validate_memory(&state->memory) ||
         !cadr_snapshot_validate_bus(&state->bus) ||
         !cadr_snapshot_validate_devices(&state->devices) ||
+        (format_minor == CADR_SNAPSHOT_FORMAT_MINOR_M2
+             ? !cadr_snapshot_disk_is_default(&state->devices.disk)
+             : !cadr_snapshot_validate_disk(&state->devices.disk)) ||
+        (format_minor == CADR_SNAPSHOT_FORMAT_MINOR_M3 &&
+             !cadr_snapshot_validate_disk_continuation(state)) ||
         !cadr_snapshot_validate_canonical(&state->canonical) ||
         !cadr_snapshot_validate_events(&state->events) ||
         cadr_trace_latches_validate(state) != CADR_STATUS_OK ||
@@ -752,10 +854,10 @@ static void cadr_snapshot_encode_cpu(const cadr_machine_state *state,
     uint32_t index;
     cadr_snapshot_sink_u64(sink, cpu->microinstructions_executed);
     cadr_snapshot_sink_u32(sink, cpu->guest_fault);
-    cadr_snapshot_sink_u64(sink, cpu->p0);
-    cadr_snapshot_sink_u64(sink, cpu->p1);
-    cadr_snapshot_sink_u64(sink, cpu->debug_ir);
-    cadr_snapshot_sink_u64(sink, cpu->instruction_write_register);
+    cadr_snapshot_sink_u64(sink, cpu->p0 & CADR_SNAPSHOT_U48_MASK);
+    cadr_snapshot_sink_u64(sink, cpu->p1 & CADR_SNAPSHOT_U48_MASK);
+    cadr_snapshot_sink_u64(sink, cpu->debug_ir & CADR_SNAPSHOT_U48_MASK);
+    cadr_snapshot_sink_u64(sink, cpu->instruction_write_register & CADR_SNAPSHOT_U48_MASK);
     cadr_snapshot_sink_u32(sink, cpu->p0_pc);
     cadr_snapshot_sink_u32(sink, cpu->p1_pc);
     cadr_snapshot_sink_u32(sink, cpu->next_micro_pc);
@@ -810,8 +912,8 @@ static void cadr_snapshot_encode_memory(const cadr_machine_state *state,
     cadr_snapshot_sink_u64(sink, memory->mapped_words);
     cadr_snapshot_sink_u32(sink, memory->initialized);
     cadr_snapshot_sink_u32(sink, memory->main_memory_pages);
-    for (index = 0U; index < 512U; ++index) cadr_snapshot_sink_u64(sink, memory->prom[index]);
-    for (index = 0U; index < 16U * 1024U; ++index) cadr_snapshot_sink_u64(sink, memory->imem[index]);
+    for (index = 0U; index < 512U; ++index) cadr_snapshot_sink_u64(sink, memory->prom[index] & CADR_SNAPSHOT_U48_MASK);
+    for (index = 0U; index < 16U * 1024U; ++index) cadr_snapshot_sink_u64(sink, memory->imem[index] & CADR_SNAPSHOT_U48_MASK);
     for (index = 0U; index < 2048U; ++index) cadr_snapshot_sink_u32(sink, memory->l1_map[index]);
     for (index = 0U; index < 1024U; ++index) cadr_snapshot_sink_u32(sink, memory->l2_map[index]);
     for (page = 0U; page < CADR_MAIN_MEMORY_MAX_PAGES; ++page) {
@@ -837,8 +939,8 @@ static void cadr_snapshot_encode_bus(const cadr_machine_state *state,
     for (index = 0U; index < CADR_UNIBUS_MAP_PAGES; ++index) {
         cadr_snapshot_sink_u16(sink, bus->unibus_halfword[index]);
     }
-    cadr_snapshot_sink_u64(sink, diagnostic->instruction);
-    cadr_snapshot_sink_u64(sink, diagnostic->debug_instruction);
+    cadr_snapshot_sink_u64(sink, diagnostic->instruction & CADR_SNAPSHOT_U48_MASK);
+    cadr_snapshot_sink_u64(sink, diagnostic->debug_instruction & CADR_SNAPSHOT_U48_MASK);
     cadr_snapshot_sink_u32(sink, diagnostic->opc);
     cadr_snapshot_sink_u32(sink, diagnostic->next_micro_pc);
     cadr_snapshot_sink_u32(sink, diagnostic->output_bus);
@@ -977,6 +1079,39 @@ static void cadr_snapshot_encode_trace(const cadr_machine_state *state,
     cadr_snapshot_sink_u32(sink, trace->reserved0);
 }
 
+static void cadr_snapshot_encode_disk_fields(const cadr_machine_state *state,
+                                             cadr_snapshot_sink *sink)
+{
+    const cadr_disk_state *disk = &state->devices.disk;
+    cadr_snapshot_sink_u64(sink, disk->pending_first_block);
+    cadr_snapshot_sink_u32(sink, disk->compatibility_profile);
+    cadr_snapshot_sink_u32(sink, disk->command);
+    cadr_snapshot_sink_u32(sink, disk->command_list_pointer);
+    cadr_snapshot_sink_u32(sink, disk->disk_address);
+    cadr_snapshot_sink_u32(sink, disk->last_memory_address);
+    cadr_snapshot_sink_u32(sink, disk->pending_ccw_address);
+    cadr_snapshot_sink_u32(sink, disk->pending_memory_address);
+    cadr_snapshot_sink_u32(sink, disk->pending_ccw);
+    cadr_snapshot_sink_u32(sink, disk->status);
+    cadr_snapshot_sink_u32(sink, disk->transfer_active);
+    cadr_snapshot_sink_u32(sink, disk->reset_condition);
+    cadr_snapshot_sink_u32(sink, disk->done_interrupt_enable);
+    cadr_snapshot_sink_u32(sink, disk->attention_interrupt_enable);
+    cadr_snapshot_sink_u32(sink, disk->reserved0);
+}
+
+static void cadr_snapshot_encode_disk(const cadr_machine_state *state,
+                                      cadr_snapshot_sink *sink)
+{
+    uint8_t witness[CADR_SHA256_BYTES];
+    cadr_snapshot_encode_disk_fields(state, sink);
+    if (cadr_state_v3_digest(state, witness) != CADR_STATUS_OK) {
+        sink->failed = 1;
+        return;
+    }
+    cadr_snapshot_sink_bytes(sink, witness, sizeof(witness));
+}
+
 static void cadr_snapshot_encode_chunk(uint32_t type,
                                        const cadr_machine_state *state,
                                        cadr_snapshot_sink *sink)
@@ -1006,6 +1141,9 @@ static void cadr_snapshot_encode_chunk(uint32_t type,
     case CADR_SNAPSHOT_CHUNK_TRACE:
         cadr_snapshot_encode_trace(state, sink);
         break;
+    case CADR_SNAPSHOT_CHUNK_DISK:
+        cadr_snapshot_encode_disk(state, sink);
+        break;
     default:
         sink->failed = 1;
         break;
@@ -1013,20 +1151,27 @@ static void cadr_snapshot_encode_chunk(uint32_t type,
 }
 
 static cadr_status cadr_snapshot_layout_for_state(const cadr_machine_state *state,
+                                                  uint16_t format_minor,
                                                   cadr_snapshot_layout *layout)
 {
     uint32_t type;
     uint64_t value;
-    if (layout == NULL) return CADR_STATUS_INVALID_ARGUMENT;
+    if (layout == NULL || (format_minor != CADR_SNAPSHOT_FORMAT_MINOR_M2 &&
+                           format_minor != CADR_SNAPSHOT_FORMAT_MINOR_M3)) {
+        return CADR_STATUS_INVALID_ARGUMENT;
+    }
     (void)memset(layout, 0, sizeof(*layout));
+    layout->format_minor = format_minor;
+    layout->chunk_count = format_minor == CADR_SNAPSHOT_FORMAT_MINOR_M3
+        ? CADR_SNAPSHOT_M3_CHUNK_COUNT : CADR_SNAPSHOT_M2_CHUNK_COUNT;
     for (type = CADR_SNAPSHOT_CHUNK_CORE;
-         type <= CADR_SNAPSHOT_CHUNK_TRACE; ++type) {
+         type <= layout->chunk_count; ++type) {
         cadr_snapshot_sink count_sink = { NULL, UINT64_MAX, 0U, NULL, 0 };
         cadr_snapshot_encode_chunk(type, state, &count_sink);
         if (count_sink.failed != 0) return CADR_STATUS_INVALID_ARGUMENT;
         layout->chunk_lengths[type - CADR_SNAPSHOT_CHUNK_CORE] = count_sink.offset;
     }
-    if (!cadr_snapshot_u64_multiply((uint64_t)CADR_SNAPSHOT_KNOWN_CHUNK_COUNT,
+    if (!cadr_snapshot_u64_multiply((uint64_t)layout->chunk_count,
                                     CADR_SNAPSHOT_DIRECTORY_ENTRY_BYTES,
                                     &layout->directory_bytes) ||
         !cadr_snapshot_u64_add(CADR_SNAPSHOT_HEADER_BYTES, layout->directory_bytes,
@@ -1034,7 +1179,7 @@ static cadr_status cadr_snapshot_layout_for_state(const cadr_machine_state *stat
         return CADR_STATUS_INVALID_ARGUMENT;
     }
     value = layout->payload_offset;
-    for (type = 0U; type < CADR_SNAPSHOT_KNOWN_CHUNK_COUNT; ++type) {
+    for (type = 0U; type < layout->chunk_count; ++type) {
         if (!cadr_snapshot_u64_add(value, layout->chunk_lengths[type], &value)) {
             return CADR_STATUS_INVALID_ARGUMENT;
         }
@@ -1047,12 +1192,15 @@ static cadr_status cadr_snapshot_layout_for_state(const cadr_machine_state *stat
 }
 
 static cadr_status cadr_snapshot_semantic_fingerprint(const cadr_machine_state *state,
+                                                       uint16_t format_minor,
                                                        uint8_t digest[CADR_SHA256_BYTES])
 {
     cadr_snapshot_sha256_context context;
     cadr_snapshot_sink sink;
     uint32_t type;
-    if (state == NULL || digest == NULL) return CADR_STATUS_INVALID_ARGUMENT;
+    if (state == NULL || digest == NULL ||
+        (format_minor != CADR_SNAPSHOT_FORMAT_MINOR_M2 &&
+         format_minor != CADR_SNAPSHOT_FORMAT_MINOR_M3)) return CADR_STATUS_INVALID_ARGUMENT;
     cadr_snapshot_sha256_init(&context);
     sink.bytes = NULL;
     sink.capacity = UINT64_MAX;
@@ -1062,6 +1210,9 @@ static cadr_status cadr_snapshot_semantic_fingerprint(const cadr_machine_state *
     for (type = CADR_SNAPSHOT_CHUNK_CORE;
          type <= CADR_SNAPSHOT_CHUNK_TRACE; ++type) {
         cadr_snapshot_encode_chunk(type, state, &sink);
+    }
+    if (format_minor == CADR_SNAPSHOT_FORMAT_MINOR_M3) {
+        cadr_snapshot_encode_disk_fields(state, &sink);
     }
     if (sink.failed != 0) return CADR_STATUS_INVALID_ARGUMENT;
     cadr_snapshot_sha256_final(&context, digest);
@@ -1103,10 +1254,10 @@ static void cadr_snapshot_encode_header(const cadr_snapshot_layout *layout,
     };
     cadr_snapshot_sink_bytes(&sink, cadr_snapshot_magic, sizeof(cadr_snapshot_magic));
     cadr_snapshot_sink_u16(&sink, CADR_SNAPSHOT_FORMAT_MAJOR);
-    cadr_snapshot_sink_u16(&sink, CADR_SNAPSHOT_FORMAT_MINOR);
+    cadr_snapshot_sink_u16(&sink, layout->format_minor);
     cadr_snapshot_sink_u32(&sink, (uint32_t)CADR_SNAPSHOT_HEADER_BYTES);
     cadr_snapshot_sink_u32(&sink, 0U);
-    cadr_snapshot_sink_u32(&sink, CADR_SNAPSHOT_KNOWN_CHUNK_COUNT);
+    cadr_snapshot_sink_u32(&sink, layout->chunk_count);
     cadr_snapshot_sink_u32(&sink, (uint32_t)CADR_SNAPSHOT_DIRECTORY_ENTRY_BYTES);
     cadr_snapshot_sink_u32(&sink, 0U);
     cadr_snapshot_sink_u64(&sink, layout->total_bytes);
@@ -1159,12 +1310,11 @@ static void cadr_snapshot_encode_directory(const cadr_snapshot_directory_entry *
     }
 }
 
-cadr_status cadr_snapshot_size(const cadr_machine_state *state,
-                               const uint8_t cdrstate1_digest[
-                                   CADR_SNAPSHOT_CDRSTATE1_BYTES],
-                               const uint8_t cdrstate2_digest[
-                                   CADR_SNAPSHOT_CDRSTATE2_BYTES],
-                               uint64_t *out_byte_count)
+cadr_status cadr_snapshot_size_versioned(
+    const cadr_machine_state *state, uint16_t format_minor,
+    const uint8_t cdrstate1_digest[CADR_SNAPSHOT_CDRSTATE1_BYTES],
+    const uint8_t cdrstate2_digest[CADR_SNAPSHOT_CDRSTATE2_BYTES],
+    uint64_t *out_byte_count)
 {
     cadr_snapshot_layout layout;
     cadr_status status;
@@ -1173,16 +1323,26 @@ cadr_status cadr_snapshot_size(const cadr_machine_state *state,
     if (cdrstate1_digest == NULL || cdrstate2_digest == NULL) {
         return CADR_STATUS_INVALID_ARGUMENT;
     }
-    status = cadr_snapshot_validate_state(state);
+    status = cadr_snapshot_validate_state(state, format_minor);
     if (status != CADR_STATUS_OK) return status;
-    status = cadr_snapshot_layout_for_state(state, &layout);
+    status = cadr_snapshot_layout_for_state(state, format_minor, &layout);
     if (status != CADR_STATUS_OK) return status;
     *out_byte_count = layout.total_bytes;
     return CADR_STATUS_OK;
 }
 
-cadr_status cadr_snapshot_serialize(
-    const cadr_machine_state *state,
+cadr_status cadr_snapshot_size(const cadr_machine_state *state,
+                               const uint8_t cdrstate1_digest[CADR_SNAPSHOT_CDRSTATE1_BYTES],
+                               const uint8_t cdrstate2_digest[CADR_SNAPSHOT_CDRSTATE2_BYTES],
+                               uint64_t *out_byte_count)
+{
+    return cadr_snapshot_size_versioned(state, CADR_SNAPSHOT_FORMAT_MINOR_M2,
+                                        cdrstate1_digest, cdrstate2_digest,
+                                        out_byte_count);
+}
+
+cadr_status cadr_snapshot_serialize_versioned(
+    const cadr_machine_state *state, uint16_t format_minor,
     const uint8_t cdrstate1_digest[CADR_SNAPSHOT_CDRSTATE1_BYTES],
     const uint8_t cdrstate2_digest[CADR_SNAPSHOT_CDRSTATE2_BYTES],
     uint8_t *out_bytes,
@@ -1190,7 +1350,7 @@ cadr_status cadr_snapshot_serialize(
     uint64_t *out_written)
 {
     cadr_snapshot_layout layout;
-    cadr_snapshot_directory_entry entries[CADR_SNAPSHOT_KNOWN_CHUNK_COUNT];
+    cadr_snapshot_directory_entry entries[CADR_SNAPSHOT_MAX_KNOWN_CHUNK_COUNT];
     cadr_snapshot_metadata metadata;
     uint8_t directory_sha256[CADR_SHA256_BYTES];
     uint8_t final_sha256[CADR_SHA256_BYTES];
@@ -1202,9 +1362,9 @@ cadr_status cadr_snapshot_serialize(
     *out_written = 0U;
     if (cdrstate1_digest == NULL || cdrstate2_digest == NULL ||
         out_bytes == NULL) return CADR_STATUS_INVALID_ARGUMENT;
-    status = cadr_snapshot_validate_state(state);
+    status = cadr_snapshot_validate_state(state, format_minor);
     if (status != CADR_STATUS_OK) return status;
-    status = cadr_snapshot_layout_for_state(state, &layout);
+    status = cadr_snapshot_layout_for_state(state, format_minor, &layout);
     if (status != CADR_STATUS_OK || layout.total_bytes > (uint64_t)SIZE_MAX ||
         out_capacity < layout.total_bytes) {
         return status == CADR_STATUS_OK ? CADR_STATUS_WRONG_LENGTH : status;
@@ -1214,7 +1374,7 @@ cadr_status cadr_snapshot_serialize(
     payload_offset = layout.payload_offset;
     (void)memset(entries, 0, sizeof(entries));
     for (type = CADR_SNAPSHOT_CHUNK_CORE;
-         type <= CADR_SNAPSHOT_CHUNK_TRACE; ++type) {
+         type <= layout.chunk_count; ++type) {
         const uint32_t entry_index = type - CADR_SNAPSHOT_CHUNK_CORE;
         cadr_snapshot_sha256_context chunk_context;
         cadr_snapshot_sink chunk_sink;
@@ -1238,7 +1398,7 @@ cadr_status cadr_snapshot_serialize(
             return CADR_STATUS_INVALID_ARGUMENT;
         }
     }
-    cadr_snapshot_encode_directory(entries, CADR_SNAPSHOT_KNOWN_CHUNK_COUNT,
+    cadr_snapshot_encode_directory(entries, layout.chunk_count,
                                    out_bytes + (size_t)CADR_SNAPSHOT_HEADER_BYTES);
     cadr_snapshot_sha256(out_bytes + (size_t)CADR_SNAPSHOT_HEADER_BYTES,
                          layout.directory_bytes, directory_sha256);
@@ -1251,7 +1411,19 @@ cadr_status cadr_snapshot_serialize(
     return CADR_STATUS_OK;
 }
 
+cadr_status cadr_snapshot_serialize(
+    const cadr_machine_state *state,
+    const uint8_t cdrstate1_digest[CADR_SNAPSHOT_CDRSTATE1_BYTES],
+    const uint8_t cdrstate2_digest[CADR_SNAPSHOT_CDRSTATE2_BYTES],
+    uint8_t *out_bytes, uint64_t out_capacity, uint64_t *out_written)
+{
+    return cadr_snapshot_serialize_versioned(
+        state, CADR_SNAPSHOT_FORMAT_MINOR_M2, cdrstate1_digest,
+        cdrstate2_digest, out_bytes, out_capacity, out_written);
+}
+
 typedef struct cadr_snapshot_header {
+    uint16_t format_minor;
     uint32_t chunk_count;
     uint64_t total_bytes;
     uint64_t directory_offset;
@@ -1261,9 +1433,11 @@ typedef struct cadr_snapshot_header {
     uint8_t directory_sha256[CADR_SHA256_BYTES];
 } cadr_snapshot_header;
 
-static int cadr_snapshot_known_chunk(uint32_t type)
+static int cadr_snapshot_known_chunk(uint16_t format_minor, uint32_t type)
 {
-    return type >= CADR_SNAPSHOT_CHUNK_CORE && type <= CADR_SNAPSHOT_CHUNK_TRACE;
+    return type >= CADR_SNAPSHOT_CHUNK_CORE &&
+        type <= (format_minor == CADR_SNAPSHOT_FORMAT_MINOR_M3
+                     ? CADR_SNAPSHOT_CHUNK_DISK : CADR_SNAPSHOT_CHUNK_TRACE);
 }
 
 static cadr_status cadr_snapshot_parse_header(const uint8_t *bytes,
@@ -1329,9 +1503,13 @@ static cadr_status cadr_snapshot_parse_header(const uint8_t *bytes,
     cadr_snapshot_reader_bytes(&reader, header->directory_sha256,
                                sizeof(header->directory_sha256));
     if (reader.failed != 0 || reader.offset != CADR_SNAPSHOT_HEADER_BYTES ||
-        major != CADR_SNAPSHOT_FORMAT_MAJOR || minor != CADR_SNAPSHOT_FORMAT_MINOR ||
+        major != CADR_SNAPSHOT_FORMAT_MAJOR ||
+        (minor != CADR_SNAPSHOT_FORMAT_MINOR_M2 &&
+         minor != CADR_SNAPSHOT_FORMAT_MINOR_M3) ||
         header_bytes != CADR_SNAPSHOT_HEADER_BYTES || flags != 0U || reserved0 != 0U ||
-        header->chunk_count < CADR_SNAPSHOT_KNOWN_CHUNK_COUNT ||
+        header->chunk_count < (minor == CADR_SNAPSHOT_FORMAT_MINOR_M3
+                                   ? CADR_SNAPSHOT_M3_CHUNK_COUNT
+                                   : CADR_SNAPSHOT_M2_CHUNK_COUNT) ||
         header->chunk_count > CADR_SNAPSHOT_MAX_CHUNKS ||
         directory_entry_bytes != CADR_SNAPSHOT_DIRECTORY_ENTRY_BYTES ||
         header->total_bytes != byte_count ||
@@ -1349,6 +1527,8 @@ static cadr_status cadr_snapshot_parse_header(const uint8_t *bytes,
     }
     header->metadata.lifecycle = lifecycle;
     header->metadata.artifact_mask = artifact_mask;
+    header->metadata.format_minor = minor;
+    header->format_minor = minor;
     if (!cadr_snapshot_u64_multiply((uint64_t)header->chunk_count,
                                     CADR_SNAPSHOT_DIRECTORY_ENTRY_BYTES,
                                     &expected_directory_bytes) ||
@@ -1380,7 +1560,7 @@ static cadr_status cadr_snapshot_parse_directory(
     const uint8_t *bytes,
     const cadr_snapshot_header *header,
     cadr_snapshot_directory_entry **out_entries,
-    const cadr_snapshot_directory_entry *known_entries[CADR_SNAPSHOT_KNOWN_CHUNK_COUNT])
+    const cadr_snapshot_directory_entry *known_entries[CADR_SNAPSHOT_MAX_KNOWN_CHUNK_COUNT])
 {
     cadr_snapshot_directory_entry *entries;
     cadr_snapshot_reader reader;
@@ -1388,12 +1568,12 @@ static cadr_status cadr_snapshot_parse_directory(
     uint32_t previous_type = 0U;
     int have_previous_type = 0;
     uint32_t index;
-    uint8_t seen[CADR_SNAPSHOT_KNOWN_CHUNK_COUNT] = {0U};
+    uint8_t seen[CADR_SNAPSHOT_MAX_KNOWN_CHUNK_COUNT] = {0U};
     if (bytes == NULL || header == NULL || out_entries == NULL || known_entries == NULL) {
         return CADR_STATUS_INVALID_ARGUMENT;
     }
     *out_entries = NULL;
-    for (index = 0U; index < CADR_SNAPSHOT_KNOWN_CHUNK_COUNT; ++index) {
+    for (index = 0U; index < CADR_SNAPSHOT_MAX_KNOWN_CHUNK_COUNT; ++index) {
         known_entries[index] = NULL;
     }
     entries = calloc((size_t)header->chunk_count, sizeof(*entries));
@@ -1430,7 +1610,7 @@ static cadr_status cadr_snapshot_parse_directory(
             free(entries);
             return CADR_STATUS_INVALID_ARGUMENT;
         }
-        if (cadr_snapshot_known_chunk(entries[index].type)) {
+        if (cadr_snapshot_known_chunk(header->format_minor, entries[index].type)) {
             const uint32_t known_index = entries[index].type - CADR_SNAPSHOT_CHUNK_CORE;
             if (entries[index].flags != CADR_SNAPSHOT_REQUIRED_FLAG || seen[known_index] != 0U) {
                 free(entries);
@@ -1451,7 +1631,10 @@ static cadr_status cadr_snapshot_parse_directory(
         free(entries);
         return CADR_STATUS_INVALID_ARGUMENT;
     }
-    for (index = 0U; index < CADR_SNAPSHOT_KNOWN_CHUNK_COUNT; ++index) {
+    for (index = 0U;
+         index < (header->format_minor == CADR_SNAPSHOT_FORMAT_MINOR_M3
+                      ? CADR_SNAPSHOT_M3_CHUNK_COUNT : CADR_SNAPSHOT_M2_CHUNK_COUNT);
+         ++index) {
         if (seen[index] == 0U) {
             free(entries);
             return CADR_STATUS_INVALID_ARGUMENT;
@@ -1629,6 +1812,30 @@ static void cadr_snapshot_decode_devices(cadr_snapshot_reader *reader,
     for (index = 0U; index < CADR_TV_WORDS; ++index) {
         devices->tv_screen[index] = cadr_snapshot_reader_u32(reader);
     }
+    cadr_snapshot_initialize_default_disk(devices);
+}
+
+static void cadr_snapshot_decode_disk(cadr_snapshot_reader *reader,
+                                      cadr_machine_state *state,
+                                      uint8_t witness[CADR_SHA256_BYTES])
+{
+    cadr_disk_state *disk = &state->devices.disk;
+    disk->pending_first_block = cadr_snapshot_reader_u64(reader);
+    disk->compatibility_profile = cadr_snapshot_reader_u32(reader);
+    disk->command = cadr_snapshot_reader_u32(reader);
+    disk->command_list_pointer = cadr_snapshot_reader_u32(reader);
+    disk->disk_address = cadr_snapshot_reader_u32(reader);
+    disk->last_memory_address = cadr_snapshot_reader_u32(reader);
+    disk->pending_ccw_address = cadr_snapshot_reader_u32(reader);
+    disk->pending_memory_address = cadr_snapshot_reader_u32(reader);
+    disk->pending_ccw = cadr_snapshot_reader_u32(reader);
+    disk->status = cadr_snapshot_reader_u32(reader);
+    disk->transfer_active = cadr_snapshot_reader_u32(reader);
+    disk->reset_condition = cadr_snapshot_reader_u32(reader);
+    disk->done_interrupt_enable = cadr_snapshot_reader_u32(reader);
+    disk->attention_interrupt_enable = cadr_snapshot_reader_u32(reader);
+    disk->reserved0 = cadr_snapshot_reader_u32(reader);
+    cadr_snapshot_reader_bytes(reader, witness, CADR_SHA256_BYTES);
 }
 
 static void cadr_snapshot_decode_canonical(cadr_snapshot_reader *reader,
@@ -1776,10 +1983,12 @@ cadr_status cadr_snapshot_parse(const uint8_t *bytes,
 {
     cadr_snapshot_header header;
     cadr_snapshot_directory_entry *entries = NULL;
-    const cadr_snapshot_directory_entry *known_entries[CADR_SNAPSHOT_KNOWN_CHUNK_COUNT];
+    const cadr_snapshot_directory_entry *known_entries[CADR_SNAPSHOT_MAX_KNOWN_CHUNK_COUNT];
     cadr_machine_state *state = NULL;
     uint8_t before_rebuild[CADR_SHA256_BYTES];
     uint8_t after_rebuild[CADR_SHA256_BYTES];
+    uint8_t disk_witness[CADR_SHA256_BYTES];
+    uint8_t computed_disk_witness[CADR_SHA256_BYTES];
     cadr_snapshot_reader reader;
     cadr_status status;
 
@@ -1789,6 +1998,8 @@ cadr_status cadr_snapshot_parse(const uint8_t *bytes,
         hooks->rebuild_derived == NULL || hooks->validate_state == NULL) {
         return CADR_STATUS_INVALID_ARGUMENT;
     }
+    /* The parser's byte-addressable storage is bounded by native size_t. */
+    if (byte_count > (uint64_t)SIZE_MAX) return CADR_STATUS_INVALID_ARGUMENT;
     status = cadr_snapshot_parse_header(bytes, byte_count, &header);
     if (status != CADR_STATUS_OK) return status;
     status = cadr_snapshot_parse_directory(bytes, &header, &entries, known_entries);
@@ -1819,6 +2030,12 @@ cadr_status cadr_snapshot_parse(const uint8_t *bytes,
     cadr_snapshot_decode_devices(&reader, state);
     status = cadr_snapshot_finish_chunk(&reader);
     if (status != CADR_STATUS_OK) goto fail;
+    if (header.format_minor == CADR_SNAPSHOT_FORMAT_MINOR_M3) {
+        reader = cadr_snapshot_chunk_reader(bytes, known_entries[8]);
+        cadr_snapshot_decode_disk(&reader, state, disk_witness);
+        status = cadr_snapshot_finish_chunk(&reader);
+        if (status != CADR_STATUS_OK) goto fail;
+    }
     reader = cadr_snapshot_chunk_reader(bytes, known_entries[5]);
     cadr_snapshot_decode_canonical(&reader, state);
     status = cadr_snapshot_finish_chunk(&reader);
@@ -1842,18 +2059,29 @@ cadr_status cadr_snapshot_parse(const uint8_t *bytes,
         status = CADR_STATUS_INVALID_ARGUMENT;
         goto fail;
     }
-    status = cadr_snapshot_validate_state(state);
+    status = cadr_snapshot_validate_state(state, header.format_minor);
     if (status != CADR_STATUS_OK) goto fail;
-    status = cadr_snapshot_semantic_fingerprint(state, before_rebuild);
+    status = cadr_snapshot_semantic_fingerprint(state, header.format_minor,
+                                                before_rebuild);
     if (status != CADR_STATUS_OK) goto fail;
     status = hooks->rebuild_derived(state, hooks->context);
     if (status != CADR_STATUS_OK) goto fail;
-    status = cadr_snapshot_semantic_fingerprint(state, after_rebuild);
+    status = cadr_snapshot_semantic_fingerprint(state, header.format_minor,
+                                                after_rebuild);
     if (status != CADR_STATUS_OK ||
         memcmp(before_rebuild, after_rebuild, sizeof(before_rebuild)) != 0 ||
         state->trace.engine != NULL) {
         status = CADR_STATUS_INVALID_ARGUMENT;
         goto fail;
+    }
+    if (header.format_minor == CADR_SNAPSHOT_FORMAT_MINOR_M3) {
+        status = cadr_state_v3_digest(state, computed_disk_witness);
+        if (status != CADR_STATUS_OK ||
+            memcmp(disk_witness, computed_disk_witness,
+                   sizeof(disk_witness)) != 0) {
+            status = CADR_STATUS_ARTIFACT_MISMATCH;
+            goto fail;
+        }
     }
     status = hooks->validate_state(state, &header.metadata, hooks->context);
     if (status != CADR_STATUS_OK) goto fail;

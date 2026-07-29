@@ -11,6 +11,7 @@
  */
 
 #include "cadr_processor_memory.h"
+#include "cadr_m3_native_observer.h"
 #include "cadr_state_v2.h"
 
 #include <stddef.h>
@@ -35,25 +36,50 @@ static uint32_t cadr_rol32(const uint32_t value, const uint32_t bitstorotate)
     return result;
 }
 
-static int32_t cadr_abs32(const int32_t value)
+/* Return two's-complement magnitude bits; INT32_MIN remains 0x80000000. */
+static uint32_t cadr_abs32_bits(const int32_t value)
 {
-    return value < 0 ? (int32_t)(~(uint32_t)value + UINT32_C(1)) : value;
+    const uint32_t bits = (uint32_t)value;
+    return value < 0 ? ~bits + UINT32_C(1) : bits;
 }
 
-static void cadr_add32(const int32_t a, const int32_t b, const uint32_t carry_in,
+/* Signed int32 ordering on raw two's-complement bit patterns, without casts. */
+static uint32_t cadr_signed32_ge(const uint32_t left, const uint32_t right)
+{
+    const uint32_t left_negative = left >> 31U;
+    const uint32_t right_negative = right >> 31U;
+    if (left_negative != right_negative) return left_negative == 0U ? 1U : 0U;
+    return left >= right ? 1U : 0U;
+}
+
+static uint32_t cadr_signed32_gt(const uint32_t left, const uint32_t right)
+{
+    const uint32_t left_negative = left >> 31U;
+    const uint32_t right_negative = right >> 31U;
+    if (left_negative != right_negative) return left_negative == 0U ? 1U : 0U;
+    return left > right ? 1U : 0U;
+}
+
+static void cadr_add32(const uint32_t a, const uint32_t b, const uint32_t carry_in,
                        uint32_t *const result, uint32_t *const carry_out)
 {
-    *result = (uint32_t)a + (uint32_t)b + (carry_in != 0U ? 1U : 0U);
+    *result = a + b + (carry_in != 0U ? 1U : 0U);
     *carry_out = carry_in != 0U
-        ? (b >= ~a ? 0U : 1U)
-        : (b > ~a ? 0U : 1U);
+        ? (cadr_signed32_ge(b, ~a) != 0U ? 0U : 1U)
+        : (cadr_signed32_gt(b, ~a) != 0U ? 0U : 1U);
 }
 
-static void cadr_sub32(const int32_t a, const int32_t b, const uint32_t carry_in,
+static void cadr_sub32(const uint32_t a, const uint32_t b, const uint32_t carry_in,
                        uint32_t *const result, uint32_t *const carry_out)
 {
-    *result = (uint32_t)a - (uint32_t)b - (carry_in != 0U ? 0U : 1U);
-    *carry_out = *result < (uint32_t)a ? 1U : 0U;
+    *result = a - b - (carry_in != 0U ? 0U : 1U);
+    *carry_out = *result < a ? 1U : 0U;
+}
+
+/* Equivalent to testing a nonzero arithmetic high half, without signed shift. */
+static uint32_t cadr_signed_wide_carry(const int64_t value)
+{
+    return value < 0 || (uint64_t)value > UINT64_C(0xffffffff) ? 1U : 0U;
 }
 
 static uint32_t cadr_ir(const cadr_cpu_state *const cpu, const uint32_t pos,
@@ -233,7 +259,13 @@ cadr_status cadr_processor_memory_virtual_access(
         paddr = 017000000U | (vaddr & 077777U);
     }
     if (page <= 035773U) {
-        return cadr_processor_memory_main_access(state, write, paddr, value);
+        const cadr_status status = cadr_processor_memory_main_access(state, write, paddr, value);
+        /* Main RAM transfers bypass the XBUS adaptor but are still physical
+         * transfers in the upstream observer contract. */
+        cadr_m3_native_observer_bus(state, write != 0U ? "write" : "read",
+                                    paddr, write != 0U ? *value : 0U,
+                                    write != 0U ? 0U : *value);
+        return status;
     }
     if (bus != NULL && ((write != 0U && bus->write32 != NULL) ||
                         (write == 0U && bus->read32 != NULL))) {
@@ -454,35 +486,35 @@ static void cadr_alu(cadr_machine_state *const state,
     case 14U: cpu->alu_out = ~mdata | ~adata; break;
     case 15U: cpu->alu_out = UINT32_MAX; break;
     case 16U: cpu->alu_out = cin != 0U ? 0U : UINT32_MAX; break;
-    case 17U: long_value = (int64_t)(int32_t)(mdata & adata) - (cin != 0U ? 0 : 1); cpu->alu_out = (uint32_t)long_value; cpu->alu_carry = (long_value >> 32) != 0 ? 1U : 0U; break;
-    case 18U: long_value = (int64_t)(int32_t)(mdata & ~adata) - (cin != 0U ? 0 : 1); cpu->alu_out = (uint32_t)long_value; cpu->alu_carry = (long_value >> 32) != 0 ? 1U : 0U; break;
-    case 19U: long_value = (int64_t)signed_mdata - (cin != 0U ? 0 : 1); cpu->alu_out = (uint32_t)long_value; cpu->alu_carry = (long_value >> 32) != 0 ? 1U : 0U; break;
-    case 20U: long_value = (int64_t)(int32_t)(mdata | ~adata) + (cin != 0U ? 1 : 0); cpu->alu_out = (uint32_t)long_value; cpu->alu_carry = (long_value >> 32) != 0 ? 1U : 0U; break;
-    case 21U: long_value = (int64_t)(int32_t)(mdata | ~adata) + (int32_t)(mdata & adata) + (cin != 0U ? 1 : 0); cpu->alu_out = (uint32_t)long_value; cpu->alu_carry = (long_value >> 32) != 0 ? 1U : 0U; break;
-    case 22U: cadr_sub32(signed_mdata, signed_adata, cin, &cpu->alu_out, &cpu->alu_carry); break;
-    case 23U: long_value = (int64_t)(int32_t)(mdata | ~adata) + signed_mdata + (cin != 0U ? 1 : 0); cpu->alu_out = (uint32_t)long_value; cpu->alu_carry = (long_value >> 32) != 0 ? 1U : 0U; break;
-    case 24U: long_value = (int64_t)(int32_t)(mdata | adata) + (cin != 0U ? 1 : 0); cpu->alu_out = (uint32_t)long_value; cpu->alu_carry = (long_value >> 32) != 0 ? 1U : 0U; break;
-    case 25U: cadr_add32(signed_mdata, signed_adata, cin, &cpu->alu_out, &cpu->alu_carry); break;
-    case 26U: long_value = (int64_t)(int32_t)(mdata | adata) + (int32_t)(mdata & ~adata) + (cin != 0U ? 1 : 0); cpu->alu_out = (uint32_t)long_value; cpu->alu_carry = (long_value >> 32) != 0 ? 1U : 0U; break;
-    case 27U: long_value = (int64_t)(int32_t)(mdata | adata) + signed_mdata + (cin != 0U ? 1 : 0); cpu->alu_out = (uint32_t)long_value; cpu->alu_carry = (long_value >> 32) != 0 ? 1U : 0U; break;
+    case 17U: long_value = (int64_t)(int32_t)(mdata & adata) - (cin != 0U ? 0 : 1); cpu->alu_out = (uint32_t)long_value; cpu->alu_carry = cadr_signed_wide_carry(long_value); break;
+    case 18U: long_value = (int64_t)(int32_t)(mdata & ~adata) - (cin != 0U ? 0 : 1); cpu->alu_out = (uint32_t)long_value; cpu->alu_carry = cadr_signed_wide_carry(long_value); break;
+    case 19U: long_value = (int64_t)signed_mdata - (cin != 0U ? 0 : 1); cpu->alu_out = (uint32_t)long_value; cpu->alu_carry = cadr_signed_wide_carry(long_value); break;
+    case 20U: long_value = (int64_t)(int32_t)(mdata | ~adata) + (cin != 0U ? 1 : 0); cpu->alu_out = (uint32_t)long_value; cpu->alu_carry = cadr_signed_wide_carry(long_value); break;
+    case 21U: long_value = (int64_t)(int32_t)(mdata | ~adata) + (int32_t)(mdata & adata) + (cin != 0U ? 1 : 0); cpu->alu_out = (uint32_t)long_value; cpu->alu_carry = cadr_signed_wide_carry(long_value); break;
+    case 22U: cadr_sub32(mdata, adata, cin, &cpu->alu_out, &cpu->alu_carry); break;
+    case 23U: long_value = (int64_t)(int32_t)(mdata | ~adata) + signed_mdata + (cin != 0U ? 1 : 0); cpu->alu_out = (uint32_t)long_value; cpu->alu_carry = cadr_signed_wide_carry(long_value); break;
+    case 24U: long_value = (int64_t)(int32_t)(mdata | adata) + (cin != 0U ? 1 : 0); cpu->alu_out = (uint32_t)long_value; cpu->alu_carry = cadr_signed_wide_carry(long_value); break;
+    case 25U: cadr_add32(mdata, adata, cin, &cpu->alu_out, &cpu->alu_carry); break;
+    case 26U: long_value = (int64_t)(int32_t)(mdata | adata) + (int32_t)(mdata & ~adata) + (cin != 0U ? 1 : 0); cpu->alu_out = (uint32_t)long_value; cpu->alu_carry = cadr_signed_wide_carry(long_value); break;
+    case 27U: long_value = (int64_t)(int32_t)(mdata | adata) + signed_mdata + (cin != 0U ? 1 : 0); cpu->alu_out = (uint32_t)long_value; cpu->alu_carry = cadr_signed_wide_carry(long_value); break;
     case 28U: cpu->alu_out = mdata + (cin != 0U ? 1U : 0U); cpu->alu_carry = (mdata == UINT32_MAX && cin != 0U) ? 1U : 0U; break;
-    case 29U: long_value = (int64_t)signed_mdata + (int32_t)(mdata & adata) + (cin != 0U ? 1 : 0); cpu->alu_out = (uint32_t)long_value; cpu->alu_carry = (long_value >> 32) != 0 ? 1U : 0U; break;
-    case 30U: long_value = (int64_t)signed_mdata + (int32_t)(mdata | ~adata) + (cin != 0U ? 1 : 0); cpu->alu_out = (uint32_t)long_value; cpu->alu_carry = (long_value >> 32) != 0 ? 1U : 0U; break;
-    case 31U: cadr_add32(signed_mdata, signed_mdata, cin, &cpu->alu_out, &cpu->alu_carry); break;
+    case 29U: long_value = (int64_t)signed_mdata + (int32_t)(mdata & adata) + (cin != 0U ? 1 : 0); cpu->alu_out = (uint32_t)long_value; cpu->alu_carry = cadr_signed_wide_carry(long_value); break;
+    case 30U: long_value = (int64_t)signed_mdata + (int32_t)(mdata | ~adata) + (cin != 0U ? 1 : 0); cpu->alu_out = (uint32_t)long_value; cpu->alu_carry = cadr_signed_wide_carry(long_value); break;
+    case 31U: cadr_add32(mdata, mdata, cin, &cpu->alu_out, &cpu->alu_carry); break;
     case 32U:
-        if ((cpu->q & 1U) != 0U) { cadr_add32(signed_adata, signed_mdata, cin, &cpu->alu_out, &cpu->alu_carry); }
+        if ((cpu->q & 1U) != 0U) { cadr_add32(adata, mdata, cin, &cpu->alu_out, &cpu->alu_carry); }
         else { cpu->alu_out = mdata; cpu->alu_carry = (mdata >> 31U) & 1U; }
         break;
     case 33U:
-        if ((cpu->q & 1U) != 0U) { cadr_sub32(signed_mdata, cadr_abs32(signed_adata), cin == 0U ? 1U : 0U, &cpu->alu_out, &cpu->alu_carry); }
-        else { cadr_add32(signed_mdata, cadr_abs32(signed_adata), cin, &cpu->alu_out, &cpu->alu_carry); }
+        if ((cpu->q & 1U) != 0U) { cadr_sub32(mdata, cadr_abs32_bits(signed_adata), cin == 0U ? 1U : 0U, &cpu->alu_out, &cpu->alu_carry); }
+        else { cadr_add32(mdata, cadr_abs32_bits(signed_adata), cin, &cpu->alu_out, &cpu->alu_carry); }
         break;
     case 37U:
         if ((cpu->q & 1U) != 0U) { cpu->alu_carry = 0U; }
-        else { cadr_add32((int32_t)cpu->alu_out, cadr_abs32(signed_adata), cin, &cpu->alu_out, &cpu->alu_carry); }
+        else { cadr_add32(cpu->alu_out, cadr_abs32_bits(signed_adata), cin, &cpu->alu_out, &cpu->alu_carry); }
         break;
     case 41U:
-        cadr_sub32(signed_mdata, cadr_abs32(signed_adata),
+        cadr_sub32(mdata, cadr_abs32_bits(signed_adata),
                    cin == 0U ? 1U : 0U, &cpu->alu_out, &cpu->alu_carry);
         break;
     default: break;
@@ -547,7 +579,7 @@ static void cadr_jump(cadr_machine_state *const state,
     uint32_t condition;
     if (cadr_ir(cpu, 10U, 2U) == 1U) { cpu->halted = 1U; }
     if (p != 0U && r != 0U) {
-        state->memory.imem[target] = cpu->instruction_write_register;
+        state->memory.imem[target] = cpu->instruction_write_register & CADR_U48_MASK;
         cadr_state_v2_note_u64_write(state, CADR_STATE_V2_ROOT_IMEM, target);
         return;
     }

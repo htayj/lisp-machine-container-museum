@@ -7,6 +7,19 @@
 
 static int failures;
 
+static const uint8_t trace_profile_sha256[CADR_SHA256_BYTES] = {
+    0x1bU,0x8dU,0x63U,0xdbU,0x98U,0xacU,0xd4U,0x6eU,
+    0x40U,0xadU,0xf9U,0x9aU,0x8aU,0x3cU,0xebU,0x5eU,
+    0x05U,0x58U,0xd4U,0xacU,0x02U,0x7cU,0xb2U,0xcbU,
+    0x4aU,0x43U,0x96U,0x65U,0xb1U,0x4bU,0x5dU,0x2aU
+};
+static const uint8_t trace_artifact_sha256[CADR_SHA256_BYTES] = {
+    0xe9U,0x6eU,0x6fU,0xf9U,0x03U,0xc2U,0x3cU,0xceU,
+    0xa7U,0x07U,0xecU,0xe0U,0xe9U,0xa8U,0x72U,0xa8U,
+    0xa7U,0x77U,0x71U,0xa6U,0x66U,0x3eU,0x3bU,0x91U,
+    0x9eU,0xabU,0xa2U,0x1eU,0x22U,0xf2U,0xf9U,0x41U
+};
+
 #define CHECK(expression) do { \
     if (!(expression)) { \
         (void)fprintf(stderr, "FAIL %s:%d: %s\n", __FILE__, __LINE__, #expression); \
@@ -106,7 +119,7 @@ static void test_clock_slots_and_interleaving(void)
     cadr_machine_destroy(second);
 }
 
-static void test_m1_prefix_limit_is_fail_closed(void)
+static void test_run_budget_overflow_is_fail_closed(void)
 {
     cadr_machine *machine = synthetic_machine();
     cadr_run_request request = {
@@ -119,16 +132,93 @@ static void test_m1_prefix_limit_is_fail_closed(void)
         0U, 0U, 0U, 0U
     };
     if (machine == NULL) return;
-    machine->state.clock_slots_completed = UINT64_C(100000);
+    machine->state.clock_slots_completed = UINT64_MAX;
     CHECK(cadr_machine_run(machine, &request, &result) ==
           CADR_STATUS_INVALID_ARGUMENT);
+    CHECK(machine->state.clock_slots_completed == UINT64_MAX);
+    machine->state.clock_slots_completed = 0U;
+    machine->state.cpu.microinstructions_executed = UINT64_MAX;
+    CHECK(cadr_machine_run(machine, &request, &result) ==
+          CADR_STATUS_INVALID_ARGUMENT);
+    CHECK(machine->state.cpu.microinstructions_executed == UINT64_MAX);
+    cadr_machine_destroy(machine);
+}
+
+static void test_streaming_ingress_fail_closed(void)
+{
+    cadr_machine_config config = {
+        CADR_ABI_MAJOR, CADR_ABI_MINOR, (uint32_t)sizeof(cadr_machine_config),
+        0U, CADR_PROFILE_CADR_WEB_303, 0U
+    };
+    cadr_artifact_ingress ingress = {
+        CADR_ABI_MAJOR, CADR_ABI_MINOR, (uint32_t)sizeof(cadr_artifact_ingress),
+        CADR_ARTIFACT_BASE_DISK, UINT64_C(269562880)
+    };
+    cadr_snapshot_request snapshot = {
+        CADR_ABI_MAJOR, CADR_ABI_MINOR_M2, (uint32_t)sizeof(cadr_snapshot_request), 0U
+    };
+    cadr_machine *machine = NULL;
+    uint64_t snapshot_size = UINT64_C(99);
+    uint8_t byte = 0U;
+    cadr_trace_config trace = {
+        CADR_ABI_MAJOR, CADR_ABI_MINOR_M2, (uint32_t)sizeof(cadr_trace_config),
+        0U, 0U, CADR_TRACE_SELECTOR_KNOWN, CADR_TRACE_EVENT_KNOWN,
+        8U, CADR_TRACE_TRANSPORT_FULL, 0U, 0U, {0}, {0}, {0}
+    };
+
+    CHECK(cadr_machine_create(&config, &machine) == CADR_STATUS_OK);
+    if (machine == NULL) return;
+    ingress.abi_minor = CADR_ABI_MINOR_M2;
+    CHECK(cadr_machine_import_artifact_stream_begin(machine, &ingress) ==
+          CADR_STATUS_ABI_MISMATCH);
+    ingress.abi_minor = CADR_ABI_MINOR;
+    CHECK(cadr_machine_import_artifact_stream_begin(machine, &ingress) == CADR_STATUS_OK);
+    (void)memcpy(trace.profile_sha256, trace_profile_sha256, CADR_SHA256_BYTES);
+    (void)memcpy(trace.artifact_set_sha256, trace_artifact_sha256, CADR_SHA256_BYTES);
+    CHECK(cadr_machine_import_artifact_stream_chunk(machine, 0U, NULL, 0U) ==
+          CADR_STATUS_INVALID_ARGUMENT);
+    CHECK(machine->state.artifacts.stream_active == 0U);
+    CHECK(machine->state.artifacts.base_disk_verified == 0U);
+    CHECK(cadr_machine_import_artifact_stream_begin(machine, &ingress) == CADR_STATUS_OK);
+    /* One-shot ingress and snapshots cannot observe/commit a partial stream. */
+    CHECK(cadr_machine_import_artifact(machine, &ingress, &byte, 1U) ==
+          CADR_STATUS_INVALID_ARGUMENT);
+    CHECK(cadr_machine_snapshot_size(machine, &snapshot, &snapshot_size) ==
+          CADR_STATUS_INVALID_ARGUMENT);
+    CHECK(snapshot_size == 0U);
+    CHECK(cadr_machine_trace_start(machine, &trace) == CADR_STATUS_NOT_READY);
+    CHECK(cadr_machine_import_artifact_stream_chunk(machine, 1U, &byte, 1U) ==
+          CADR_STATUS_INVALID_ARGUMENT);
+    CHECK(machine->state.artifacts.stream_active == 0U);
+    CHECK(machine->state.artifacts.base_disk_verified == 0U);
+    /* A bad interleaving clears scratch and permits a fresh, independent retry. */
+    CHECK(cadr_machine_import_artifact_stream_begin(machine, &ingress) == CADR_STATUS_OK);
+    CHECK(cadr_machine_import_artifact_stream_finish(machine) == CADR_STATUS_WRONG_LENGTH);
+    CHECK(machine->state.artifacts.stream_active == 0U);
+    CHECK(machine->state.artifacts.base_disk_verified == 0U);
+    cadr_machine_destroy(machine);
+}
+
+static void test_mutation_ordinal_overflow_is_fail_closed(void)
+{
+    cadr_machine *machine = synthetic_machine();
+    if (machine == NULL) return;
+    machine->state.canonical.mutation_ordinal = UINT64_MAX;
+    machine->state.canonical.mutation_count = 0U;
+    machine->state.canonical.overflowed = 0U;
+    cadr_canonical_write_u32(&machine->state, 2U, 0U, 0U, 1U);
+    CHECK(machine->state.canonical.mutation_ordinal == UINT64_MAX);
+    CHECK(machine->state.canonical.mutation_count == 0U);
+    CHECK(machine->state.canonical.overflowed == 1U);
     cadr_machine_destroy(machine);
 }
 
 int main(void)
 {
     test_clock_slots_and_interleaving();
-    test_m1_prefix_limit_is_fail_closed();
+    test_run_budget_overflow_is_fail_closed();
+    test_streaming_ingress_fail_closed();
+    test_mutation_ordinal_overflow_is_fail_closed();
     if (failures != 0) return 1;
     (void)puts("cadr_core_integration: ok");
     return 0;

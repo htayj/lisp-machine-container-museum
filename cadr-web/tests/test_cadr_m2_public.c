@@ -2,6 +2,7 @@
 #include "cadr_boundary_state.h"
 #include "cadr_machine.h"
 #include "cadr_state_v2.h"
+#include "cadr_state_v3.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -566,6 +567,26 @@ static void test_trace_backpressure_is_nonmutating(void)
     cadr_machine_destroy(machine);
 }
 
+/* The public u64 capacity has to be rejected before a wasm32 size_t cast. */
+static void test_trace_drain_rejects_unrepresentable_capacity(void)
+{
+    cadr_machine *machine = booted_machine();
+    cadr_trace_config config = trace_config(CADR_TRACE_TRANSPORT_FULL);
+    uint8_t byte = 0U;
+    uint64_t written = UINT64_C(99);
+    uint64_t records = UINT64_C(99);
+    if (machine == NULL || (uint64_t)SIZE_MAX == UINT64_MAX) {
+        cadr_machine_destroy(machine);
+        return;
+    }
+    CHECK(cadr_machine_trace_start(machine, &config) == CADR_STATUS_OK);
+    CHECK(cadr_machine_trace_drain(machine, &byte, UINT64_MAX, &written, &records) ==
+          CADR_STATUS_INVALID_ARGUMENT);
+    CHECK(written == 0U);
+    CHECK(records == 0U);
+    cadr_machine_destroy(machine);
+}
+
 static void test_finished_trace_rejects_later_public_run(void)
 {
     cadr_machine *machine = booted_machine();
@@ -857,6 +878,152 @@ static void test_restored_continuation_trace_is_identical(void)
     cadr_machine_destroy(restored);
 }
 
+static void test_m3_snapshot_selects_disk_extension(void)
+{
+    cadr_machine *source = booted_machine();
+    cadr_machine *restored = NULL;
+    cadr_snapshot_request m2 = snapshot_request();
+    cadr_snapshot_request m3 = snapshot_request();
+    uint8_t *bytes;
+    uint64_t m2_size = 0U;
+    uint64_t m3_size = 0U;
+    uint64_t written = 0U;
+    uint8_t source_state1[CADR_SHA256_BYTES];
+    uint8_t source_state2[CADR_SHA256_BYTES];
+    uint8_t source_state3[CADR_SHA256_BYTES];
+    uint8_t restored_state1[CADR_SHA256_BYTES];
+    uint8_t restored_state2[CADR_SHA256_BYTES];
+    uint8_t restored_state3[CADR_SHA256_BYTES];
+    if (source == NULL) return;
+    source->state.devices.disk.command = UINT32_C(012);
+    source->state.devices.disk.command_list_pointer = UINT32_C(0x12340000);
+    source->state.devices.disk.pending_memory_address = UINT32_C(0x00002000);
+    source->state.devices.disk.pending_ccw = UINT32_C(5);
+    source->state.devices.disk.status = CADR_DISK_STATUS_NOT_ACTIVE |
+        CADR_DISK_STATUS_INTERRUPT;
+    source->state.devices.disk.done_interrupt_enable = 1U;
+    m3.abi_minor = CADR_ABI_MINOR_M3;
+    /* ABI 1.1 must retain its frozen eight-chunk representation. */
+    CHECK(cadr_machine_snapshot_size(source, &m2, &m2_size) ==
+          CADR_STATUS_INVALID_ARGUMENT);
+    CHECK(cadr_machine_snapshot_size(source, &m3, &m3_size) == CADR_STATUS_OK);
+    CHECK(cadr_machine_boundary_digest(source, source_state1) == CADR_STATUS_OK);
+    CHECK(cadr_machine_state_v2_digest(source, source_state2) == CADR_STATUS_OK);
+    CHECK(cadr_state_v3_digest(&source->state, source_state3) == CADR_STATUS_OK);
+    bytes = malloc((size_t)m3_size);
+    CHECK(bytes != NULL);
+    if (bytes == NULL) {
+        cadr_machine_destroy(source);
+        return;
+    }
+    CHECK(cadr_machine_snapshot_save(source, &m3, bytes, m3_size, &written) ==
+          CADR_STATUS_OK);
+    CHECK(written == m3_size && bytes[10U] == UINT8_C(1) &&
+          bytes[20U] == UINT8_C(9));
+    CHECK(cadr_machine_snapshot_restore(&m2, bytes, written, &restored) ==
+          CADR_STATUS_ABI_MISMATCH);
+    CHECK(restored == NULL);
+    CHECK(cadr_machine_snapshot_restore(&m3, bytes, written, &restored) ==
+          CADR_STATUS_OK);
+    if (restored != NULL) {
+        CHECK(memcmp(&restored->state.devices.disk, &source->state.devices.disk,
+                     sizeof(source->state.devices.disk)) == 0);
+        CHECK(cadr_machine_boundary_digest(restored, restored_state1) == CADR_STATUS_OK);
+        CHECK(cadr_machine_state_v2_digest(restored, restored_state2) == CADR_STATUS_OK);
+        CHECK(cadr_state_v3_digest(&restored->state, restored_state3) == CADR_STATUS_OK);
+        CHECK(memcmp(restored_state1, source_state1, sizeof(source_state1)) == 0);
+        CHECK(memcmp(restored_state2, source_state2, sizeof(source_state2)) == 0);
+        CHECK(memcmp(restored_state3, source_state3, sizeof(source_state3)) == 0);
+        cadr_machine_destroy(restored);
+    }
+    free(bytes);
+    cadr_machine_destroy(source);
+}
+
+static int emit_m3_snapshot(const char *path)
+{
+    cadr_machine *source = booted_machine();
+    cadr_snapshot_request request = snapshot_request();
+    uint8_t *bytes = NULL;
+    uint64_t size = 0U;
+    uint64_t written = 0U;
+    FILE *output = NULL;
+    int ok = 0;
+    if (source == NULL || path == NULL) goto done;
+    /* A nondefault, source-only D0 state makes the browser restore assertion
+     * distinguish an omitted minor-1 disk chunk from a retained one. */
+    source->state.devices.disk.status = CADR_DISK_STATUS_NOT_ACTIVE |
+        CADR_DISK_STATUS_ATTENTION;
+    source->state.devices.disk.command = UINT32_C(012);
+    request.abi_minor = CADR_ABI_MINOR_M3;
+    if (cadr_machine_snapshot_size(source, &request, &size) != CADR_STATUS_OK ||
+        size > (uint64_t)SIZE_MAX) goto done;
+    bytes = malloc((size_t)size);
+    if (bytes == NULL ||
+        cadr_machine_snapshot_save(source, &request, bytes, size, &written) != CADR_STATUS_OK ||
+        written != size) goto done;
+    output = fopen(path, "wb");
+    if (output == NULL || fwrite(bytes, 1U, (size_t)written, output) != written ||
+        fclose(output) != 0) {
+        output = NULL;
+        goto done;
+    }
+    output = NULL;
+    ok = 1;
+done:
+    if (output != NULL) (void)fclose(output);
+    free(bytes);
+    cadr_machine_destroy(source);
+    return ok ? 0 : 1;
+}
+
+/* CDRSNAP1 format minor 0 remains an accepted, eight-chunk compatibility
+ * format when D0 is in its implied default state.  Keep this callable as a
+ * narrow external gate as well as part of the ordinary public-ABI suite. */
+static int assert_minor0_snapshot_compatibility(void)
+{
+    cadr_machine *source = booted_machine();
+    cadr_machine *restored = NULL;
+    cadr_snapshot_request writer = snapshot_request();
+    cadr_snapshot_request reader = snapshot_request();
+    uint8_t *bytes = NULL;
+    uint8_t source_state1[CADR_SHA256_BYTES];
+    uint8_t restored_state1[CADR_SHA256_BYTES];
+    uint8_t source_state2[CADR_SHA256_BYTES];
+    uint8_t restored_state2[CADR_SHA256_BYTES];
+    uint8_t source_state3[CADR_SHA256_BYTES];
+    uint8_t restored_state3[CADR_SHA256_BYTES];
+    uint64_t size = 0U, written = 0U;
+    int ok = 0;
+    if (source == NULL ||
+        cadr_machine_snapshot_size(source, &writer, &size) != CADR_STATUS_OK ||
+        size > (uint64_t)SIZE_MAX) goto done;
+    bytes = malloc((size_t)size);
+    if (bytes == NULL ||
+        cadr_machine_snapshot_save(source, &writer, bytes, size, &written) != CADR_STATUS_OK ||
+        written != size || memcmp(bytes, "CDRSNAP1", 8U) != 0 ||
+        bytes[10U] != UINT8_C(0) || bytes[11U] != UINT8_C(0) ||
+        bytes[20U] != UINT8_C(8) ||
+        cadr_machine_boundary_digest(source, source_state1) != CADR_STATUS_OK ||
+        cadr_machine_state_v2_digest(source, source_state2) != CADR_STATUS_OK ||
+        cadr_state_v3_digest(&source->state, source_state3) != CADR_STATUS_OK) goto done;
+    reader.abi_minor = CADR_ABI_MINOR_M3;
+    if (cadr_machine_snapshot_restore(&reader, bytes, written, &restored) != CADR_STATUS_OK ||
+        restored == NULL ||
+        cadr_machine_boundary_digest(restored, restored_state1) != CADR_STATUS_OK ||
+        cadr_machine_state_v2_digest(restored, restored_state2) != CADR_STATUS_OK ||
+        cadr_state_v3_digest(&restored->state, restored_state3) != CADR_STATUS_OK ||
+        memcmp(source_state1, restored_state1, sizeof(source_state1)) != 0 ||
+        memcmp(source_state2, restored_state2, sizeof(source_state2)) != 0 ||
+        memcmp(source_state3, restored_state3, sizeof(source_state3)) != 0) goto done;
+    ok = 1;
+done:
+    free(bytes);
+    cadr_machine_destroy(restored);
+    cadr_machine_destroy(source);
+    return ok ? 0 : 1;
+}
+
 int main(int argc, char **argv)
 {
     if (argc == 3 && strcmp(argv[1], "--emit") == 0) {
@@ -864,6 +1031,12 @@ int main(int argc, char **argv)
     }
     if (argc == 3 && strcmp(argv[1], "--emit-completion") == 0) {
         return emit_public_completion_trace(argv[2]);
+    }
+    if (argc == 3 && strcmp(argv[1], "--emit-m3-snapshot") == 0) {
+        return emit_m3_snapshot(argv[2]);
+    }
+    if (argc == 2 && strcmp(argv[1], "--assert-minor0-compatibility") == 0) {
+        return assert_minor0_snapshot_compatibility();
     }
     if (argc != 1) return 2;
     test_minor_negotiation();
@@ -874,11 +1047,14 @@ int main(int argc, char **argv)
     test_preboundary_host_events_are_retryable();
     test_completion_trace_transport_parity();
     test_trace_backpressure_is_nonmutating();
+    test_trace_drain_rejects_unrepresentable_capacity();
     test_finished_trace_rejects_later_public_run();
     test_finished_trace_blocks_host_ingress(0U);
     test_finished_trace_blocks_host_ingress(CADR_TRACE_EVENT_DEVICE);
     test_completion_apply_backpressure_is_nonmutating();
     test_restored_continuation_trace_is_identical();
+    test_m3_snapshot_selects_disk_extension();
+    CHECK(assert_minor0_snapshot_compatibility() == 0);
     if (failures != 0) return 1;
     (void)puts("cadr_m2_public: ok");
     return 0;

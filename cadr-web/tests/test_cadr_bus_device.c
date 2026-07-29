@@ -89,9 +89,8 @@ static void test_disabled_color_probe_and_typed_stubs(void)
     CHECK(cadr_colortv_read(state, 0U, &value) ==
           CADR_STATUS_UNIMPLEMENTED_DEVICE);
     CHECK(value == UINT32_C(0xa5a5a5a5));
-    CHECK(cadr_disk_read(state, 0U, &value) ==
-          CADR_STATUS_UNIMPLEMENTED_DEVICE);
-    CHECK(value == UINT32_C(0xa5a5a5a5));
+    CHECK(cadr_disk_read(state, 0U, &value) == CADR_STATUS_OK);
+    CHECK(value == 1U);
     CHECK(cadr_tape_read(state, 0772520U, &value16) ==
           CADR_STATUS_UNIMPLEMENTED_DEVICE);
     CHECK(value16 == UINT16_C(0xa5a5));

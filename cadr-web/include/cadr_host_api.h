@@ -16,9 +16,10 @@ extern "C" {
 #endif
 
 #define CADR_ABI_MAJOR UINT32_C(1)
-#define CADR_ABI_MINOR UINT32_C(1)
+#define CADR_ABI_MINOR UINT32_C(2)
 #define CADR_ABI_MINOR_M1 UINT32_C(0)
 #define CADR_ABI_MINOR_M2 UINT32_C(1)
+#define CADR_ABI_MINOR_M3 UINT32_C(2)
 #define CADR_SHA256_BYTES UINT32_C(32)
 
 typedef uint32_t cadr_status;
@@ -298,6 +299,21 @@ cadr_status cadr_machine_import_artifact(cadr_machine *machine,
                                          const cadr_artifact_ingress *ingress,
                                          const uint8_t *bytes,
                                          uint64_t byte_count);
+/*
+ * Ordered zero-copy ingress for artifacts too large for a WASM transfer
+ * buffer.  M3 supports the selected immutable base-disk artifact only.
+ * Begin and every chunk are non-committing; finish publishes the verified
+ * artifact bit atomically. A malformed active chunk or failed active finish
+ * discards that stream. Rejection of an unrelated operation while a stream is
+ * active leaves the stream intact.
+ */
+cadr_status cadr_machine_import_artifact_stream_begin(
+    cadr_machine *machine, const cadr_artifact_ingress *ingress);
+cadr_status cadr_machine_import_artifact_stream_chunk(
+    cadr_machine *machine, uint64_t offset, const uint8_t *bytes,
+    uint64_t byte_count);
+cadr_status cadr_machine_import_artifact_stream_finish(cadr_machine *machine);
+cadr_status cadr_machine_import_artifact_stream_abort(cadr_machine *machine);
 cadr_status cadr_machine_cold_power_on(cadr_machine *machine);
 cadr_status cadr_machine_boot(cadr_machine *machine);
 cadr_status cadr_machine_reset(cadr_machine *machine,

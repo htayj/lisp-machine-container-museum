@@ -12,6 +12,16 @@
 /build/research/
 /build/cadr-computer-use/
 /build/cadr-oracle/
+/build/cadr-m3-differential/
+/build/cadr-m3-regression/
+/build/cadr-m3-snapshot-cross-target/
+/build/cadr-m3-p2-*/
+/build/cadr-m3p2-*/
+/build/cadr-m3native-p2-*/
+/build/cadr-m3-smoke/
+/build/cadr-m3-wasm-fixture-check/
+/build/cadr-m4-differential/
+/build/cadr-m4-smoke/
 /build/.cadr-computer-use-runtime.lock
 /build/.cadr-computer-use-display.lock
 /build/genera-computer-use/
