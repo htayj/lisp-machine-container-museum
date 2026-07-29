@@ -56,6 +56,9 @@ machine-readable metadata layer while retaining ordinary Markdown as the source.
 - [CADR-WEB-303 ABI1.2 headless WebAssembly core specification](mit-cadr/cadr-webassembly-headless-core-reimplementation-specification.md)
   specifies the bare Wasm module, dedicated worker, streamed immutable-artifact
   verifier, bounded memory, and native/Wasm conformance boundary.
+- [CADR-WEB-303 ABI1.3 boot-media controller specification](mit-cadr/cadr-boot-media-controller-reimplementation-specification.md)
+  specifies the selected disk path, volatile boot-scratch overlay, canonical
+  controller/media witnesses, and native/Wasm M4 gate.
 - [CADR-WEB portable core and host ABI](mit-cadr/cadr-web-core-architecture-decision.md)
   records the portable machine boundary and the deterministic pull-style contract
   between the CADR core and native or browser hosts.

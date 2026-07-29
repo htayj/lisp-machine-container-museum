@@ -3,7 +3,7 @@ type: Implementation Roadmap
 title: MIT CADR System 303 browser and WebAssembly implementation roadmap
 description: A milestone-complete plan for porting the pinned System 303 CADR emulator to a deterministic, locally persistent, browser-hosted WebAssembly machine.
 tags: [mit-cadr, lm-3, system-303, webassembly, browser, emulator, roadmap]
-timestamp: 2026-07-28T23:46:14-04:00
+timestamp: 2026-07-29T02:35:00-04:00
 ---
 
 # MIT CADR System 303 browser and WebAssembly implementation roadmap
@@ -526,6 +526,30 @@ overlay; native and Wasm then reach `FILE-SYSTEM-RUNNING` with expected
 pack-header incarnation and clean-flag changes.  The base image remains unchanged
 and every write enters the overlay.  It is neither an M3 result nor a prerequisite
 for `C-M4-BOOT-MEDIA`.
+
+#### M4 implementation status
+
+M4 is **closed** for
+`CADR-WEB-303/ABI1.3/C-M4-BOOT-MEDIA-v1`, the selected zero-latency controller
+chain from the first disk START through S1,030,044. The implementation supplies
+typed asynchronous range requests, a volatile boot-scratch overlay, exact replay
+and stale-generation rejection, reset/detach/snapshot fencing, CDRSTATE4,
+canonical media and controller witnesses, targeted faults, native and worker
+runners, and a real-Chromium adapter smoke.
+
+The release gate matched every one of the 1,030,045 native/Wasm boundary records,
+the complete host actor schedule, and the 67-event/13-turn controller witness. An
+independently rebuilt maintained-`usim` oracle repeated byte-for-byte, the selected
+base and disposable copies remained unchanged, and GCC/Clang O0/O2 plus Wasm
+O0/O2 emitted identical semantic artifacts. The M3 compiler matrix, M3
+cross-target snapshot continuation, and full repository test target were rerun as
+regressions. Exact commands, tool versions, hashes, selected-profile limits, and
+nonclaims are in the
+[ABI1.3 boot-media controller specification](cadr-boot-media-controller-reimplementation-specification.md).
+
+This closure is not an LMFS mount, persistent overlay, nonzero-latency scheduler,
+arbitrary disk command, full live-browser boot, or filesystem compatibility claim.
+Those remain later profiles and milestones.
 
 ### M5 — Implement the deterministic machine scheduler
 

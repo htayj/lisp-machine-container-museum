@@ -2,6 +2,7 @@
 #include "cadr_processor_memory.h"
 #include "cadr_state_v2.h"
 #include "cadr_state_v3.h"
+#include "cadr_disk_evidence.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -161,6 +162,79 @@ static void test_chained_ccw_uses_chs_carry(void)
     free(state);
 }
 
+static void test_block_write_copies_one_page_and_accepts_empty_completion(void)
+{
+    cadr_machine_state *state = new_state();
+    cadr_block_write_descriptor descriptor;
+    uint32_t word = 0U;
+    if (state == NULL) return;
+    CHECK(cadr_processor_memory_main_write(state, 0U, UINT32_C(0x00000100)) ==
+          CADR_STATUS_OK);
+    CHECK(cadr_processor_memory_main_write(state, UINT32_C(0x100), UINT32_C(0x78563412)) ==
+          CADR_STATUS_OK);
+    CHECK(cadr_processor_memory_main_write(state, UINT32_C(0x101), UINT32_C(0xfedcba98)) ==
+          CADR_STATUS_OK);
+    CHECK(cadr_disk_write(state, 0U, UINT32_C(011)) == CADR_STATUS_OK);
+    CHECK(cadr_disk_write(state, 1U, 0U) == CADR_STATUS_OK);
+    CHECK(cadr_disk_write(state, 2U, 1U) == CADR_STATUS_OK);
+    CHECK(cadr_disk_write(state, 3U, 0U) == CADR_STATUS_OK);
+    CHECK(state->events.outstanding_operation == CADR_HOST_OPERATION_BLOCK_WRITE);
+    CHECK(state->events.expected_completion_byte_count == 0U);
+    CHECK(state->events.request_payload_byte_count == CADR_DISK_BLOCK_BYTES);
+    (void)memcpy(&descriptor, state->events.request_descriptor, sizeof(descriptor));
+    CHECK(descriptor.first_block == 1U && descriptor.block_count == 1U &&
+          descriptor.block_bytes == CADR_DISK_BLOCK_BYTES);
+    CHECK(state->events.request_payload[0] == UINT8_C(0x12));
+    CHECK(state->events.request_payload[1] == UINT8_C(0x34));
+    CHECK(state->events.request_payload[4] == UINT8_C(0x98));
+    CHECK(cadr_processor_memory_main_read(state, UINT32_C(0x100), &word) ==
+          CADR_STATUS_OK && word == UINT32_C(0x78563412));
+    CHECK(cadr_disk_apply_block_write_completion(state, CADR_HOST_RESULT_OK,
+                                                 NULL, 0U) == CADR_STATUS_OK);
+    CHECK((state->devices.disk.status & CADR_DISK_STATUS_NOT_ACTIVE) != 0U);
+    CHECK((state->devices.disk.status & CADR_DISK_STATUS_FAULT) == 0U);
+    free(state);
+}
+
+static void test_offline_and_end_of_media_are_distinct(void)
+{
+    cadr_machine_state *state = new_state();
+    uint8_t block[CADR_DISK_BLOCK_BYTES] = {0};
+    const uint32_t final_address =
+        ((CADR_DISK_T300_CYLINDERS - 1U) << 16U) |
+        ((CADR_DISK_T300_HEADS - 1U) << 8U) |
+        (CADR_DISK_T300_BLOCKS_PER_TRACK - 1U);
+    if (state == NULL) return;
+
+    CHECK(cadr_disk_write(state, 1U, 0U) == CADR_STATUS_OK);
+    CHECK(cadr_disk_write(state, 2U, UINT32_C(0x10000000)) == CADR_STATUS_OK);
+    CHECK(cadr_disk_write(state, 3U, 0U) == CADR_STATUS_OK);
+    CHECK((state->devices.disk.status & CADR_DISK_STATUS_OFFLINE) != 0U);
+    CHECK((state->devices.disk.status & CADR_DISK_STATUS_SEEK_ERROR) == 0U);
+    CHECK(state->events.outstanding_operation == CADR_HOST_OPERATION_NONE);
+
+    free(state);
+    state = new_state();
+    if (state == NULL) return;
+    CHECK(cadr_processor_memory_main_write(state, 0U, UINT32_C(0x00000101)) ==
+          CADR_STATUS_OK);
+    CHECK(cadr_processor_memory_main_write(state, 1U, UINT32_C(0x00000200)) ==
+          CADR_STATUS_OK);
+    CHECK(cadr_disk_write(state, 1U, 0U) == CADR_STATUS_OK);
+    CHECK(cadr_disk_write(state, 2U, final_address) == CADR_STATUS_OK);
+    CHECK(cadr_disk_write(state, 3U, 0U) == CADR_STATUS_OK);
+    CHECK(state->events.next_request_id == 2U);
+    CHECK(cadr_disk_apply_block_read_completion(state, CADR_HOST_RESULT_OK,
+                                                block, sizeof(block)) ==
+          CADR_STATUS_OK);
+    CHECK((state->devices.disk.status & CADR_DISK_STATUS_SEEK_ERROR) != 0U);
+    CHECK((state->devices.disk.status & CADR_DISK_STATUS_OFFLINE) == 0U);
+    CHECK((state->devices.disk.status & CADR_DISK_STATUS_NOT_ACTIVE) != 0U);
+    CHECK(state->devices.disk.transfer_active == 0U);
+    CHECK(state->events.next_request_id == 2U);
+    free(state);
+}
+
 static void test_state_v3_includes_disk_only_state(void)
 {
     cadr_machine_state *state = new_state();
@@ -186,6 +260,42 @@ static void test_state_v3_includes_disk_only_state(void)
     free(state);
 }
 
+static void test_disk_evidence_wire_bounds_and_reset_history(void)
+{
+    cadr_machine_state *state = new_state();
+    uint8_t bytes[CADR_DISK_EVIDENCE_HEADER_BYTES + CADR_DISK_EVIDENCE_RECORD_BYTES + 16U];
+    uint64_t written = UINT64_MAX;
+    uint32_t before;
+    if (state == NULL) return;
+    CHECK(cadr_disk_evidence_record(&state->disk_evidence,
+                                    CADR_DISK_EVIDENCE_REGISTER_WRITE, 0U,
+                                    1U, 2U, 3U, 4U, NULL, 0U) == CADR_STATUS_OK);
+    (void)memset(bytes, UINT8_C(0xa5), sizeof(bytes));
+    CHECK(cadr_disk_evidence_serialize(&state->disk_evidence, bytes,
+                                       CADR_DISK_EVIDENCE_HEADER_BYTES + CADR_DISK_EVIDENCE_RECORD_BYTES,
+                                       &written) == CADR_STATUS_OK);
+    CHECK(written == CADR_DISK_EVIDENCE_HEADER_BYTES + CADR_DISK_EVIDENCE_RECORD_BYTES);
+    CHECK(bytes[written] == UINT8_C(0xa5));
+    CHECK(bytes[written + 15U] == UINT8_C(0xa5));
+    written = UINT64_MAX;
+    CHECK(cadr_disk_evidence_serialize(&state->disk_evidence, bytes,
+                                       CADR_DISK_EVIDENCE_HEADER_BYTES + CADR_DISK_EVIDENCE_RECORD_BYTES - 1U,
+                                       &written) == CADR_STATUS_WRONG_LENGTH);
+    CHECK(written == 0U);
+    before = state->disk_evidence.count;
+    CHECK(cadr_disk_write(state, 0U, UINT32_C(016)) == CADR_STATUS_OK);
+    CHECK(state->disk_evidence.count > before);
+    state->disk_evidence.count = CADR_DISK_EVIDENCE_CAPACITY;
+    state->disk_evidence.overflowed = 0U;
+    CHECK(cadr_disk_evidence_record(&state->disk_evidence,
+                                    CADR_DISK_EVIDENCE_STATE, 0U, 0U, 0U,
+                                    0U, 0U, NULL, 0U) == CADR_STATUS_GUEST_FAULT);
+    CHECK(cadr_disk_evidence_serialize(&state->disk_evidence, bytes,
+                                       sizeof(bytes), &written) == CADR_STATUS_NOT_READY);
+    CHECK(cadr_disk_write(state, 0U, 0U) == CADR_STATUS_GUEST_FAULT);
+    free(state);
+}
+
 int main(void)
 {
     test_cold_reset_and_0405();
@@ -193,7 +303,10 @@ int main(void)
     test_ccw_read_completion_and_interrupt();
     test_ccw_nxm_and_profile_delta();
     test_chained_ccw_uses_chs_carry();
+    test_block_write_copies_one_page_and_accepts_empty_completion();
+    test_offline_and_end_of_media_are_distinct();
     test_state_v3_includes_disk_only_state();
+    test_disk_evidence_wire_bounds_and_reset_history();
     if (failures != 0) return 1;
     (void)puts("cadr_disk_controller: ok");
     return 0;

@@ -26,6 +26,11 @@ cadr_status cadr_core_issue_host_request(cadr_machine_state *state,
                                          const uint8_t *descriptor_bytes,
                                          uint64_t descriptor_byte_count,
                                          uint64_t completion_byte_count);
+cadr_status cadr_core_issue_host_request_m4(
+    cadr_machine_state *state, uint32_t operation,
+    const uint8_t *descriptor_bytes, uint64_t descriptor_byte_count,
+    const uint8_t *request_payload_bytes, uint64_t request_payload_byte_count,
+    uint64_t completion_byte_count);
 
 void cadr_canonical_write_u32(cadr_machine_state *state, uint32_t family,
                               uint32_t index, uint32_t old_value,

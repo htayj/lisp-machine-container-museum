@@ -9,6 +9,7 @@
 #include "cadr_cpu_state.h"
 #include "cadr_device_state.h"
 #include "cadr_event_state.h"
+#include "cadr_disk_evidence.h"
 #include "cadr_memory_state.h"
 #include "cadr_trace_state.h"
 
@@ -24,6 +25,7 @@ typedef struct cadr_machine_state {
     cadr_event_state events;
     cadr_trace_state trace;
     cadr_artifact_state artifacts;
+    cadr_disk_evidence_log disk_evidence;
     uint64_t clock_slots_completed;
     uint32_t lifecycle;
     uint32_t in_host_completion;

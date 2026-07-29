@@ -1090,6 +1090,36 @@ cadr_status cadr_trace_engine_record_device_request_issue(
     return cadr_trace_record_event(state, CADR_TRACE_EVENT_DEVICE, 1U, payload, sizeof(payload));
 }
 
+cadr_status cadr_trace_engine_record_device_request_issue_m4(
+    cadr_machine_state *state, const uint32_t operation, const uint32_t status,
+    const uint64_t generation, const uint64_t request_id,
+    const uint8_t descriptor_sha256[CADR_SHA256_BYTES],
+    const uint64_t descriptor_length,
+    const uint8_t request_payload_sha256[CADR_SHA256_BYTES],
+    const uint64_t request_payload_length,
+    const uint64_t expected_completion_length)
+{
+    uint8_t payload[112];
+    if (!cadr_trace_valid_host_operation(operation) ||
+        !cadr_trace_valid_cadr_status(status) ||
+        generation == 0U || request_id == 0U ||
+        descriptor_sha256 == NULL || request_payload_sha256 == NULL) {
+        return CADR_STATUS_INVALID_ARGUMENT;
+    }
+    cadr_trace_put32(payload, operation);
+    cadr_trace_put32(payload + 4U, status);
+    cadr_trace_put64(payload + 8U, generation);
+    cadr_trace_put64(payload + 16U, request_id);
+    cadr_trace_put64(payload + 24U, descriptor_length);
+    (void)memcpy(payload + 32U, descriptor_sha256, CADR_TRACE_SHA256_BYTES);
+    cadr_trace_put64(payload + 64U, expected_completion_length);
+    cadr_trace_put64(payload + 72U, request_payload_length);
+    (void)memcpy(payload + 80U, request_payload_sha256,
+                 CADR_TRACE_SHA256_BYTES);
+    return cadr_trace_record_event(state, CADR_TRACE_EVENT_DEVICE, 6U,
+                                   payload, sizeof(payload));
+}
+
 cadr_status cadr_trace_engine_record_device_completion(
     cadr_machine_state *state, const uint32_t code, const uint32_t operation,
     const uint32_t result, const uint32_t status, const uint64_t generation,

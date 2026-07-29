@@ -195,7 +195,7 @@ def _validate_event_schema(event_class: int, code: int, payload: bytes) -> None:
         if event_class==EVENT_FAULT and any(field not in (0,1) for field in fields): raise TraceError("fault event is not boolean")
         if event_class==EVENT_HALT and fields[0] != CADR_STATUS_HALTED: raise TraceError("halt event code")
         return
-    if event_class != EVENT_DEVICE or code not in (1,2,3,4,5): raise TraceError("event code or class")
+    if event_class != EVENT_DEVICE or code not in (1,2,3,4,5,6): raise TraceError("event code or class")
     if code == 1:
         if len(payload)!=72: raise TraceError("device request issue schema")
         operation,status,generation,request_id,descriptor_length,_descriptor_sha256,expected_completion_length=struct.unpack("<IIQQQ32sQ",payload)
@@ -205,6 +205,10 @@ def _validate_event_schema(event_class: int, code: int, payload: bytes) -> None:
         operation,result,status,generation,request_id,payload_length,_payload_sha256=struct.unpack("<IIIQQQ32s",payload)
         if operation not in CADR_HOST_OPERATIONS or result not in (CADR_HOST_RESULT_OK,CADR_HOST_RESULT_FAILED) or status not in CADR_STATUS_VALUES or generation==0 or request_id==0: raise TraceError("device completion enum or identity")
     if code == 5: _validate_transactions(payload,"device transaction event schema")
+    if code == 6:
+        if len(payload)!=112: raise TraceError("M4 device request issue schema")
+        operation,status,generation,request_id,descriptor_length,_descriptor_sha256,expected_completion_length,request_payload_length,_request_payload_sha256=struct.unpack("<IIQQQ32sQQ32s",payload)
+        if operation not in CADR_HOST_OPERATIONS or status not in CADR_STATUS_VALUES or generation==0 or request_id==0 or request_payload_length>1024: raise TraceError("M4 device request issue enum, identity, or payload length")
 def event_digest(event_class: int, code: int, payload: bytes) -> bytes:
     _u(event_class,32,"event class"); _u(code,32,"event code")
     return _sha(b"CDRGEVENT1\0",_U32.pack(event_class),_U32.pack(code),payload)

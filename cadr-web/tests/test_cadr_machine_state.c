@@ -127,6 +127,7 @@ static void test_two_machine_interleaving(void)
     CHECK(cadr_machine_create(&machine_config, &second) == CADR_STATUS_OK);
     first->state.lifecycle = CADR_MACHINE_RUNNING;
     second->state.lifecycle = CADR_MACHINE_RUNNING;
+    second_request.abi_minor = CADR_ABI_MINOR_M3;
     CHECK(cadr_machine_issue_host_request(
               first, CADR_HOST_OPERATION_NETWORK,
               (const uint8_t *)&first_descriptor, sizeof(first_descriptor), 0U) ==

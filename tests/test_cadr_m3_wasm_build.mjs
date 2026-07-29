@@ -14,12 +14,15 @@ const EXPECTED = [
   "cadr_wasm_cold_power_on", "cadr_wasm_boot", "cadr_wasm_run",
   "cadr_wasm_output_pointer", "cadr_wasm_meta_pointer", "cadr_wasm_boundary_digest",
   "cadr_wasm_state_v2_digest", "cadr_wasm_state_v3_digest", "cadr_wasm_host_next_request",
-  "cadr_wasm_host_complete", "cadr_wasm_disk_observation", "cadr_wasm_machine_info", "cadr_wasm_trace_start", "cadr_wasm_trace_header",
+  "cadr_wasm_host_complete", "cadr_wasm_disk_observation",
+  "cadr_wasm_boot_media_observation", "cadr_wasm_disk_evidence",
+  "cadr_wasm_machine_info", "cadr_wasm_trace_start", "cadr_wasm_trace_header",
   "cadr_wasm_trace_drain", "cadr_wasm_trace_digest", "cadr_wasm_trace_count",
   "cadr_wasm_trace_finish",
   "cadr_wasm_snapshot_size", "cadr_wasm_snapshot_save", "cadr_wasm_snapshot_pointer",
   "cadr_wasm_snapshot_input_reserve", "cadr_wasm_snapshot_restore_import",
   "cadr_wasm_snapshot_restore", "cadr_wasm_portability_probe",
+  "cadr_wasm_state_v4_digest",
 ];
 
 function build(opt, label) {

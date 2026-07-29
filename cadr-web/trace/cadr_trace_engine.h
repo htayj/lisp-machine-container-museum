@@ -159,6 +159,13 @@ cadr_status cadr_trace_engine_record_device_request_issue(
     uint64_t generation, uint64_t request_id,
     const uint8_t descriptor_sha256[CADR_SHA256_BYTES],
     uint64_t descriptor_length, uint64_t expected_completion_length);
+cadr_status cadr_trace_engine_record_device_request_issue_m4(
+    cadr_machine_state *state, uint32_t operation, uint32_t status,
+    uint64_t generation, uint64_t request_id,
+    const uint8_t descriptor_sha256[CADR_SHA256_BYTES],
+    uint64_t descriptor_length,
+    const uint8_t request_payload_sha256[CADR_SHA256_BYTES],
+    uint64_t request_payload_length, uint64_t expected_completion_length);
 cadr_status cadr_trace_engine_record_device_completion(
     cadr_machine_state *state, uint32_t code, uint32_t operation,
     uint32_t result, uint32_t status, uint64_t generation, uint64_t request_id,

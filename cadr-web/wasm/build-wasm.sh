@@ -53,7 +53,9 @@ exec guix shell clang-toolchain lld -- sh -eu -c '
     -fno-fast-math -fno-strict-overflow -fvisibility=hidden -nostdinc \
     -Iwasm/include -Iinclude -Icore -Icore/usim-port -Itrace \
     $sources \
-    core/cadr_core.c core/cadr_state_v2.c core/cadr_state_v3.c core/cadr_snapshot.c \
+    core/cadr_core.c core/cadr_state_v2.c core/cadr_state_v3.c \
+    core/cadr_state_v4.c core/cadr_m4_media.c core/cadr_disk_evidence.c \
+    core/cadr_snapshot.c \
     trace/cadr_trace_engine.c core/usim-port/cadr_processor_memory.c \
     core/usim-port/bus-adaptor.c core/usim-port/bus-interface.c \
     core/usim-port/unibus-mapping.c core/usim-port/diagnostic-interface.c \

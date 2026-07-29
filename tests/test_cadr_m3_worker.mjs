@@ -39,7 +39,7 @@ try {
   let result = await probe.next();
   assert.equal(result.type, "cadr-error");
   assert.equal(result.code, "malformed-message");
-  probe.send({ version: 2, id: 1, op: "instantiate", module });
+  probe.send({ version: 3, id: 1, op: "instantiate", module });
   result = await probe.next();
   assert.equal(result.code, "malformed-message");
   /* Out of order does not consume the expected request. */
@@ -135,6 +135,84 @@ try {
   assert.equal(result.status, 0);
   assert.deepEqual([result.diskStatus, result.interruptPending], [5n, 0n],
     "ABI1.2 snapshot restore retains the fixture's nondefault D0 disk state");
+  probe.send({ version: 1, id: 24, op: "media-overlay-state",
+    busy: true, dirty: false, snapshotBlocked: false,
+    overlayGeneration: 0n });
+  result = await probe.next();
+  assert.equal(result.status, 2,
+    "protocol v1 remains the exhaustive M3 request tree");
+
+  const m4Worker = new Worker(WORKER, { type: "module" });
+  const m4Probe = new Probe(m4Worker);
+  try {
+    m4Probe.send({ version: 2, id: 1, op: "instantiate", module });
+    result = await m4Probe.next();
+    assert.equal(result.version, 2);
+    assert.equal(result.status, 0);
+    m4Probe.send({ version: 2, id: 2, op: "snapshot-restore-import",
+      snapshot: fixture.buffer.slice(
+        fixture.byteOffset, fixture.byteOffset + fixture.byteLength) });
+    result = await m4Probe.next();
+    assert.equal(result.status, 0);
+    m4Probe.send({ version: 2, id: 3, op: "media-overlay-state",
+      busy: true, dirty: false, snapshotBlocked: false,
+      overlayGeneration: 0n });
+    result = await m4Probe.next();
+    assert.equal(result.status, 0);
+    m4Probe.send({ version: 2, id: 4, op: "snapshot-save" });
+    result = await m4Probe.next();
+    assert.equal(result.status, 9, "pending host media blocks snapshots");
+    m4Probe.send({ version: 2, id: 5, op: "media-overlay-state",
+      busy: false, dirty: true, snapshotBlocked: false,
+      overlayGeneration: 1n });
+    result = await m4Probe.next();
+    assert.equal(result.status, 0);
+    m4Probe.send({ version: 2, id: 6, op: "snapshot-restore-import",
+      snapshot: fixture.buffer.slice(
+        fixture.byteOffset, fixture.byteOffset + fixture.byteLength) });
+    result = await m4Probe.next();
+    assert.equal(result.status, 9, "committed volatile media blocks restore");
+    m4Probe.send({ version: 2, id: 7, op: "media-overlay-state",
+      busy: false, dirty: false, snapshotBlocked: false,
+      overlayGeneration: 0n, detached: true });
+    result = await m4Probe.next();
+    assert.equal(result.status, 0);
+    m4Probe.send({ version: 2, id: 8, op: "snapshot-save" });
+    result = await m4Probe.next();
+    assert.equal(result.status, 0, "explicit detach re-enables core snapshots");
+    m4Probe.send({ version: 2, id: 9, op: "media-overlay-state",
+      busy: false, dirty: false, snapshotBlocked: true,
+      overlayGeneration: 0n });
+    result = await m4Probe.next();
+    assert.equal(result.status, 0);
+    m4Probe.send({ version: 2, id: 10, op: "media-overlay-state",
+      busy: false, dirty: false, snapshotBlocked: false,
+      overlayGeneration: 0n });
+    result = await m4Probe.next();
+    assert.equal(result.status, 2,
+      "fault-progress snapshot fence cannot clear without detach");
+    m4Probe.send({ version: 2, id: 11, op: "snapshot-size" });
+    result = await m4Probe.next();
+    assert.equal(result.status, 9, "fault progress blocks snapshot sizing");
+    m4Probe.send({ version: 2, id: 12, op: "snapshot-save" });
+    result = await m4Probe.next();
+    assert.equal(result.status, 9, "fault progress blocks snapshot save");
+    m4Probe.send({ version: 2, id: 13, op: "snapshot-restore" });
+    result = await m4Probe.next();
+    assert.equal(result.status, 9, "fault progress blocks prepared restore");
+    m4Probe.send({ version: 2, id: 14, op: "snapshot-restore-import",
+      snapshot: fixture.buffer.slice(
+        fixture.byteOffset, fixture.byteOffset + fixture.byteLength) });
+    result = await m4Probe.next();
+    assert.equal(result.status, 9, "fault progress blocks restore import");
+    m4Probe.send({ version: 2, id: 15, op: "media-overlay-state",
+      busy: false, dirty: false, snapshotBlocked: false,
+      overlayGeneration: 0n, detached: true });
+    result = await m4Probe.next();
+    assert.equal(result.status, 0);
+  } finally {
+    await m4Worker.terminate();
+  }
   console.log("cadr_m3_worker: ok");
 } finally {
   await worker.terminate();

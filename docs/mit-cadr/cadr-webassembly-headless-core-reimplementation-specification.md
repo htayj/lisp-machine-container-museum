@@ -3,7 +3,7 @@ type: Reimplementation Specification
 title: CADR-WEB-303 ABI 1.2 headless WebAssembly core reimplementation specification
 description: A release-bounded contract for the CADR-WEB-303 ABI 1.2 bare WebAssembly core, dedicated-worker protocol, streamed artifact boundary, portability rules, and native/WASM differential evidence.
 tags: [mit-cadr, lm-3, system-303, webassembly, reimplementation, browser, worker]
-timestamp: 2026-07-28T23:46:14-04:00
+timestamp: 2026-07-29T03:30:01-04:00
 ---
 
 # CADR-WEB-303 ABI 1.2 headless WebAssembly core reimplementation specification
@@ -146,6 +146,13 @@ CDRSTATE1/2/3 records.  Neither form pads an incomplete batch.  All JavaScript u
 stream, selector, and event-mask fields are `BigInt`; a
 Number, negative value, or value above `2^64-1` is rejected before splitting it
 into low/high u32 words.
+
+Protocol version 1 remains frozen at this exact M3 tree. ABI1.3 media support
+does not add operations or response fields to it; the separately specified
+[boot-media controller profile](cadr-boot-media-controller-reimplementation-specification.md)
+uses worker protocol version 2. A version-1 session rejects those M4-only
+operations with `INVALID_ARGUMENT` and retains the payload-free
+`host-next-request` response shape above.
 
 ## Streamed artifact verification and failure semantics
 

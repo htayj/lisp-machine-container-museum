@@ -182,6 +182,10 @@ def lifecycle_event(code: int) -> tuple[int, int, bytes]:
     if code == 1:
         return (t.EVENT_DEVICE, code, struct.pack(
             "<IIQQQ32sQ", 5, 0, 1, 2, 0, D(b"request"), 0))
+    if code == 6:
+        return (t.EVENT_DEVICE, code, struct.pack(
+            "<IIQQQ32sQQ32s", 2, 0, 1, 2, 24,
+            D(b"write descriptor"), 0, 1024, D(b"write payload")))
     return (t.EVENT_DEVICE, code, struct.pack(
         "<IIIQQQ32s", 5, t.CADR_HOST_RESULT_OK, 0, 1, 2, 0,
         D(b"completion")))
@@ -725,13 +729,14 @@ class GeneralTraceTests(unittest.TestCase):
 
         # Codes 1--4 are source-order host lifecycle observations after slot
         # close, not the code-5 aggregate that belongs in the slot.
-        completion = ordered + [lifecycle_event(code) for code in (1, 4, 2, 3)]
+        completion = ordered + [
+            lifecycle_event(code) for code in (1, 6, 4, 2, 3)]
         parsed = t.parse_trace(boundary_events_trace(completion))
         self.assertEqual(
             [struct.unpack("<I", t._item(record.tlvs, t.TLV_EVENT_CODE))[0]
              for record in parsed["records"]
              if record.kind == t.KIND_EVENT and record.event_class == t.EVENT_DEVICE],
-            [5, 1, 4, 2, 3],
+            [5, 1, 6, 4, 2, 3],
         )
         for lifecycle_code in (1, 2, 3, 4):
             for event_class in slot_classes:

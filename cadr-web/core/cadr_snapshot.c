@@ -736,6 +736,7 @@ static int cadr_snapshot_validate_events(const cadr_event_state *events)
         events->reserved0 != 0U ||
         !cadr_snapshot_persistent_status_valid(events->persistent_status) ||
         events->request_descriptor_byte_count > CADR_MAX_HOST_DESCRIPTOR_BYTES ||
+        events->request_payload_byte_count != 0U ||
         events->expected_completion_byte_count > CADR_SNAPSHOT_MAX_COMPLETION_BYTES ||
         events->completion_byte_count > CADR_SNAPSHOT_MAX_COMPLETION_BYTES) {
         return 0;
@@ -1323,6 +1324,9 @@ cadr_status cadr_snapshot_size_versioned(
     if (cdrstate1_digest == NULL || cdrstate2_digest == NULL) {
         return CADR_STATUS_INVALID_ARGUMENT;
     }
+    if (state != NULL && state->events.request_payload_byte_count != 0U) {
+        return CADR_STATUS_NOT_READY;
+    }
     status = cadr_snapshot_validate_state(state, format_minor);
     if (status != CADR_STATUS_OK) return status;
     status = cadr_snapshot_layout_for_state(state, format_minor, &layout);
@@ -1362,6 +1366,9 @@ cadr_status cadr_snapshot_serialize_versioned(
     *out_written = 0U;
     if (cdrstate1_digest == NULL || cdrstate2_digest == NULL ||
         out_bytes == NULL) return CADR_STATUS_INVALID_ARGUMENT;
+    if (state != NULL && state->events.request_payload_byte_count != 0U) {
+        return CADR_STATUS_NOT_READY;
+    }
     status = cadr_snapshot_validate_state(state, format_minor);
     if (status != CADR_STATUS_OK) return status;
     status = cadr_snapshot_layout_for_state(state, format_minor, &layout);

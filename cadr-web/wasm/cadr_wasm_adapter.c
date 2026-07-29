@@ -3,9 +3,11 @@
  * all CADR execution continues through the portable cadr_machine ABI.
  */
 #include "cadr_boundary_state.h"
+#include "cadr_disk_evidence.h"
 #include "cadr_host_api.h"
 #include "cadr_machine.h"
 #include "cadr_state_v3.h"
+#include "cadr_state_v4.h"
 #include "cadr_wasm_adapter.h"
 #include "cadr_wasm_memory.h"
 #include "cadr_wasm_runtime.h"
@@ -33,6 +35,8 @@ static uint32_t cadr_wasm_restore_used;
 #define CADR_WASM_TRANSFER_BYTES UINT32_C(1048576)
 #define CADR_WASM_OUTPUT_BYTES UINT32_C(96)
 #define CADR_WASM_META_BYTES UINT32_C(32)
+#define CADR_WASM_HOST_REQUEST_BYTES \
+    (CADR_MAX_HOST_DESCRIPTOR_BYTES + CADR_MAX_HOST_REQUEST_PAYLOAD_BYTES)
 
 static void cadr_wasm_meta_result(uint64_t first, uint64_t second);
 /* ABI1.2's nine-chunk CDRSNAP1 adds one directory entry and the D0 disk chunk. */
@@ -257,32 +261,37 @@ CADR_WASM_EXPORT("cadr_wasm_state_v3_digest")
 uint32_t cadr_wasm_state_v3_digest(void)
 {
     if (cadr_wasm_machine == NULL || cadr_wasm_output == NULL) return CADR_STATUS_NOT_READY;
+    if (cadr_wasm_machine->state.events.request_payload_byte_count != 0U) {
+        return CADR_STATUS_NOT_READY;
+    }
     return cadr_state_v3_digest(&cadr_wasm_machine->state,
                                 cadr_wasm_output + CADR_SHA256_BYTES * 2U);
 }
 
 /*
- * Output record at cadr_wasm_output (all little-endian, 40 bytes):
+ * Output record at cadr_wasm_output (all little-endian, 48 bytes):
  * u32 operation, u32 reserved, u64 generation, u64 request-id,
- * u64 descriptor-byte-count, u64 completion-byte-count.  The descriptor
- * itself is copied into the bounded cadr_wasm_input arena.  Neither record
- * is a C struct across the JS boundary.
+ * u64 descriptor-byte-count, u64 completion-byte-count,
+ * u64 request-payload-byte-count. The descriptor and copied request payload
+ * occupy adjacent bounded regions in cadr_wasm_input. Neither record is a C
+ * struct across the JS boundary.
  */
 CADR_WASM_EXPORT("cadr_wasm_host_next_request")
 uint32_t cadr_wasm_host_next_request(void)
 {
-    cadr_host_request request = {
-        CADR_ABI_MAJOR, CADR_ABI_MINOR, (uint32_t)sizeof(cadr_host_request),
-        CADR_HOST_OPERATION_NONE, 0U, 0U, 0U, 0U
+    cadr_host_request_m4 request = {
+        CADR_ABI_MAJOR, CADR_ABI_MINOR_M4, (uint32_t)sizeof(cadr_host_request_m4),
+        CADR_HOST_OPERATION_NONE, 0U, 0U, 0U, 0U, 0U
     };
     cadr_status status;
     if (cadr_wasm_machine == NULL || cadr_wasm_input == NULL ||
-        cadr_wasm_output == NULL || cadr_wasm_input_capacity < CADR_MAX_HOST_DESCRIPTOR_BYTES) {
+        cadr_wasm_output == NULL || cadr_wasm_input_capacity < CADR_WASM_HOST_REQUEST_BYTES) {
         return CADR_STATUS_NOT_READY;
     }
-    status = cadr_machine_next_host_request(cadr_wasm_machine, &request,
-                                            cadr_wasm_input,
-                                            cadr_wasm_input_capacity);
+    status = cadr_machine_next_host_request_m4(
+        cadr_wasm_machine, &request, cadr_wasm_input, CADR_MAX_HOST_DESCRIPTOR_BYTES,
+        cadr_wasm_input + CADR_MAX_HOST_DESCRIPTOR_BYTES,
+        cadr_wasm_input_capacity - CADR_MAX_HOST_DESCRIPTOR_BYTES);
     if (status != CADR_STATUS_OK) return status;
     (void)memset(cadr_wasm_output, 0, CADR_WASM_OUTPUT_BYTES);
     cadr_wasm_put32(cadr_wasm_output, request.operation);
@@ -290,6 +299,7 @@ uint32_t cadr_wasm_host_next_request(void)
     cadr_wasm_put64(cadr_wasm_output + 16U, request.request_id);
     cadr_wasm_put64(cadr_wasm_output + 24U, request.descriptor_byte_count);
     cadr_wasm_put64(cadr_wasm_output + 32U, request.completion_byte_count);
+    cadr_wasm_put64(cadr_wasm_output + 40U, request.request_payload_byte_count);
     return CADR_STATUS_OK;
 }
 
@@ -321,6 +331,49 @@ uint32_t cadr_wasm_disk_observation(void)
     if (cadr_wasm_machine == NULL || cadr_wasm_meta == NULL) return CADR_STATUS_NOT_READY;
     cadr_wasm_meta_result(cadr_wasm_machine->state.devices.disk.status,
                           cadr_wasm_machine->state.bus.interrupt_pending);
+    return CADR_STATUS_OK;
+}
+
+CADR_WASM_EXPORT("cadr_wasm_boot_media_observation")
+uint32_t cadr_wasm_boot_media_observation(void)
+{
+    if (cadr_wasm_machine == NULL || cadr_wasm_meta == NULL) {
+        return CADR_STATUS_NOT_READY;
+    }
+    cadr_wasm_put64(cadr_wasm_meta,
+                    cadr_wasm_machine->state.cpu.p0_pc);
+    cadr_wasm_put64(cadr_wasm_meta + 8U,
+                    cadr_wasm_machine->state.cpu.p1_pc);
+    cadr_wasm_put64(cadr_wasm_meta + 16U,
+                    cadr_wasm_machine->state.cpu.next_micro_pc);
+    cadr_wasm_put64(cadr_wasm_meta + 24U,
+                    cadr_wasm_machine->state.events.outstanding_request_id);
+    return CADR_STATUS_OK;
+}
+
+CADR_WASM_EXPORT("cadr_wasm_disk_evidence")
+uint32_t cadr_wasm_disk_evidence(void)
+{
+    uint64_t byte_count;
+    uint64_t written = 0U;
+    cadr_status status;
+    if (cadr_wasm_machine == NULL) return CADR_STATUS_NOT_READY;
+    status = cadr_disk_evidence_serialized_size(
+        &cadr_wasm_machine->state.disk_evidence, &byte_count);
+    if (status != CADR_STATUS_OK) return status;
+    if (byte_count == 0U || byte_count > CADR_WASM_TRANSFER_BYTES) {
+        return CADR_STATUS_WRONG_LENGTH;
+    }
+    if (cadr_wasm_input_reserve((uint32_t)byte_count) == 0U) {
+        return CADR_STATUS_NO_MEMORY;
+    }
+    status = cadr_disk_evidence_serialize(
+        &cadr_wasm_machine->state.disk_evidence, cadr_wasm_input,
+        byte_count, &written);
+    if (status != CADR_STATUS_OK || written != byte_count) {
+        return status == CADR_STATUS_OK ? CADR_STATUS_HOST_FAILURE : status;
+    }
+    cadr_wasm_meta_result(byte_count, 0U);
     return CADR_STATUS_OK;
 }
 
@@ -572,4 +625,14 @@ uint32_t cadr_wasm_portability_probe(void)
     out[6] = (uint32_t)sizeof(void *);
     out[7] = UINT32_C(0xffffffff) * UINT32_C(2);
     return CADR_STATUS_OK;
+}
+
+CADR_WASM_EXPORT("cadr_wasm_state_v4_digest")
+uint32_t cadr_wasm_state_v4_digest(void)
+{
+    if (cadr_wasm_machine == NULL || cadr_wasm_output == NULL) {
+        return CADR_STATUS_NOT_READY;
+    }
+    return cadr_state_v4_digest(&cadr_wasm_machine->state,
+                                cadr_wasm_output);
 }

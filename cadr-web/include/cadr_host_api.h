@@ -16,11 +16,13 @@ extern "C" {
 #endif
 
 #define CADR_ABI_MAJOR UINT32_C(1)
-#define CADR_ABI_MINOR UINT32_C(2)
+#define CADR_ABI_MINOR UINT32_C(3)
 #define CADR_ABI_MINOR_M1 UINT32_C(0)
 #define CADR_ABI_MINOR_M2 UINT32_C(1)
 #define CADR_ABI_MINOR_M3 UINT32_C(2)
+#define CADR_ABI_MINOR_M4 UINT32_C(3)
 #define CADR_SHA256_BYTES UINT32_C(32)
+#define CADR_MAX_HOST_REQUEST_PAYLOAD_BYTES UINT32_C(1024)
 
 typedef uint32_t cadr_status;
 
@@ -144,6 +146,19 @@ typedef struct cadr_host_request {
     uint64_t descriptor_byte_count;
     uint64_t completion_byte_count;
 } cadr_host_request;
+
+/* ABI 1.3 request record with a copied core-owned request payload. */
+typedef struct cadr_host_request_m4 {
+    uint32_t abi_major;
+    uint32_t abi_minor;
+    uint32_t struct_size;
+    uint32_t operation;
+    uint64_t generation;
+    uint64_t request_id;
+    uint64_t descriptor_byte_count;
+    uint64_t completion_byte_count;
+    uint64_t request_payload_byte_count;
+} cadr_host_request_m4;
 
 /* completion_byte_count must exactly equal the transient byte_count argument. */
 typedef struct cadr_host_completion {
@@ -273,6 +288,7 @@ CADR_ABI_STATIC_ASSERT(sizeof(cadr_machine_config) == 24U, "cadr_machine_config 
 CADR_ABI_STATIC_ASSERT(sizeof(cadr_artifact_ingress) == 24U, "cadr_artifact_ingress layout");
 CADR_ABI_STATIC_ASSERT(sizeof(cadr_reset_request) == 16U, "cadr_reset_request layout");
 CADR_ABI_STATIC_ASSERT(sizeof(cadr_host_request) == 48U, "cadr_host_request layout");
+CADR_ABI_STATIC_ASSERT(sizeof(cadr_host_request_m4) == 56U, "cadr_host_request_m4 layout");
 CADR_ABI_STATIC_ASSERT(sizeof(cadr_host_completion) == 48U, "cadr_host_completion layout");
 CADR_ABI_STATIC_ASSERT(sizeof(cadr_run_request) == 24U, "cadr_run_request layout");
 CADR_ABI_STATIC_ASSERT(sizeof(cadr_run_result) == 48U, "cadr_run_result layout");
@@ -324,6 +340,10 @@ cadr_status cadr_machine_next_host_request(cadr_machine *machine,
                                            cadr_host_request *out_request,
                                            uint8_t *descriptor_bytes,
                                            uint64_t descriptor_capacity);
+cadr_status cadr_machine_next_host_request_m4(
+    cadr_machine *machine, cadr_host_request_m4 *out_request,
+    uint8_t *descriptor_bytes, uint64_t descriptor_capacity,
+    uint8_t *request_payload_bytes, uint64_t request_payload_capacity);
 cadr_status cadr_machine_complete_host_request(cadr_machine *machine,
                                                const cadr_host_completion *completion,
                                                const uint8_t *bytes,

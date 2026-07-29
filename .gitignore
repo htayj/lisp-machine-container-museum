@@ -21,6 +21,8 @@
 /build/cadr-m3-smoke/
 /build/cadr-m3-wasm-fixture-check/
 /build/cadr-m4-differential/
+/build/cadr-m4-live/
+/build/cadr-m4-portability/
 /build/cadr-m4-smoke/
 /build/.cadr-computer-use-runtime.lock
 /build/.cadr-computer-use-display.lock

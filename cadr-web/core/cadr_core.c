@@ -548,6 +548,9 @@ static void cadr_invalidate_requests(cadr_machine *machine)
     machine->state.events.outstanding_request_id = 0U;
     machine->state.events.last_completed_request_id = 0U;
     machine->state.events.request_descriptor_byte_count = 0U;
+    machine->state.events.request_payload_byte_count = 0U;
+    (void)memset(machine->state.events.request_payload, 0,
+                 sizeof(machine->state.events.request_payload));
     machine->state.events.expected_completion_byte_count = 0U;
     machine->state.events.outstanding_operation = CADR_HOST_OPERATION_NONE;
 }
@@ -866,7 +869,8 @@ cadr_status cadr_core_issue_host_request(cadr_machine_state *state,
     uint8_t descriptor_sha256[CADR_SHA256_BYTES];
     uint64_t request_id;
     cadr_status status;
-    if (state == NULL || !cadr_valid_operation(operation) ||
+    if (state == NULL || state->events.request_payload_byte_count != 0U ||
+        !cadr_valid_operation(operation) ||
         descriptor_byte_count != required ||
         descriptor_byte_count > CADR_MAX_HOST_DESCRIPTOR_BYTES ||
         completion_byte_count > CADR_MAX_COMPLETION_BYTES ||
@@ -907,6 +911,67 @@ cadr_status cadr_core_issue_host_request(cadr_machine_state *state,
     return CADR_STATUS_OK;
 }
 
+cadr_status cadr_core_issue_host_request_m4(
+    cadr_machine_state *state, uint32_t operation,
+    const uint8_t *descriptor_bytes, uint64_t descriptor_byte_count,
+    const uint8_t *request_payload_bytes, uint64_t request_payload_byte_count,
+    uint64_t completion_byte_count)
+{
+    uint64_t required = cadr_descriptor_size(operation);
+    uint8_t descriptor_sha256[CADR_SHA256_BYTES];
+    uint8_t request_payload_sha256[CADR_SHA256_BYTES];
+    uint64_t request_id;
+    cadr_status status;
+    if (state == NULL || state->events.request_payload_byte_count != 0U ||
+        !cadr_valid_operation(operation) ||
+        descriptor_byte_count != required ||
+        descriptor_byte_count > CADR_MAX_HOST_DESCRIPTOR_BYTES ||
+        completion_byte_count > CADR_MAX_COMPLETION_BYTES ||
+        (descriptor_byte_count != 0U && descriptor_bytes == NULL) ||
+        request_payload_byte_count > CADR_MAX_HOST_REQUEST_PAYLOAD_BYTES ||
+        (request_payload_byte_count != 0U && request_payload_bytes == NULL)) {
+        return CADR_STATUS_INVALID_ARGUMENT;
+    }
+    if (state->lifecycle != CADR_MACHINE_RUNNING ||
+        state->events.persistent_status != CADR_STATUS_OK) {
+        return CADR_STATUS_NOT_READY;
+    }
+    if (state->artifacts.stream_active != 0U ||
+        state->events.outstanding_request_id != 0U ||
+        state->events.completion_queued != 0U ||
+        state->events.next_request_id == UINT64_MAX) {
+        return CADR_STATUS_WAITING_FOR_HOST;
+    }
+    cadr_sha256(descriptor_bytes, descriptor_byte_count, descriptor_sha256);
+    cadr_sha256(request_payload_bytes, request_payload_byte_count,
+                request_payload_sha256);
+    status = cadr_trace_engine_preflight_event(state, CADR_TRACE_EVENT_DEVICE);
+    if (status != CADR_STATUS_OK) return status;
+    request_id = state->events.next_request_id;
+    (void)memcpy(state->events.request_descriptor, descriptor_bytes,
+                 (size_t)descriptor_byte_count);
+    state->events.request_descriptor_byte_count = descriptor_byte_count;
+    if (request_payload_byte_count != 0U) {
+        (void)memcpy(state->events.request_payload, request_payload_bytes,
+                     (size_t)request_payload_byte_count);
+    }
+    state->events.request_payload_byte_count = request_payload_byte_count;
+    state->events.outstanding_request_id = state->events.next_request_id++;
+    state->events.outstanding_operation = operation;
+    state->events.expected_completion_byte_count = completion_byte_count;
+    cadr_state_v2_note_completion_changed(state);
+    status = cadr_trace_engine_record_device_request_issue_m4(
+        state, operation, CADR_STATUS_OK, state->events.generation, request_id,
+        descriptor_sha256, descriptor_byte_count, request_payload_sha256,
+        request_payload_byte_count, completion_byte_count);
+    if (status != CADR_STATUS_OK) {
+        state->events.persistent_status = CADR_STATUS_GUEST_FAULT;
+        state->lifecycle = CADR_MACHINE_GUEST_FAULTED;
+        return CADR_STATUS_GUEST_FAULT;
+    }
+    return CADR_STATUS_OK;
+}
+
 cadr_status cadr_machine_issue_host_request(cadr_machine *machine,
                                             uint32_t operation,
                                             const uint8_t *descriptor_bytes,
@@ -933,6 +998,9 @@ cadr_status cadr_machine_next_host_request(cadr_machine *machine,
     if (status != CADR_STATUS_OK) return status;
     if (machine->state.events.outstanding_request_id == 0U ||
         machine->state.events.completion_queued != 0U) return CADR_STATUS_NOT_READY;
+    if (machine->state.events.request_payload_byte_count != 0U) {
+        return CADR_STATUS_ABI_MISMATCH;
+    }
     needed = machine->state.events.request_descriptor_byte_count;
     if (descriptor_capacity < needed || (needed != 0U && descriptor_bytes == NULL) ||
         descriptor_capacity > (uint64_t)SIZE_MAX) {
@@ -947,6 +1015,59 @@ cadr_status cadr_machine_next_host_request(cadr_machine *machine,
     out_request->generation = machine->state.events.generation;
     out_request->request_id = machine->state.events.outstanding_request_id;
     out_request->descriptor_byte_count = needed;
+    out_request->completion_byte_count =
+        machine->state.events.expected_completion_byte_count;
+    return CADR_STATUS_OK;
+}
+
+cadr_status cadr_machine_next_host_request_m4(
+    cadr_machine *machine, cadr_host_request_m4 *out_request,
+    uint8_t *descriptor_bytes, uint64_t descriptor_capacity,
+    uint8_t *request_payload_bytes, uint64_t request_payload_capacity)
+{
+    cadr_status status;
+    uint64_t descriptor_needed;
+    uint64_t payload_needed;
+    uint32_t requested_minor;
+    if (machine == NULL || out_request == NULL) return CADR_STATUS_INVALID_ARGUMENT;
+    requested_minor = out_request->abi_minor;
+    status = cadr_validate_record(out_request->abi_major, out_request->abi_minor,
+                                  out_request->struct_size, sizeof(*out_request));
+    if (status != CADR_STATUS_OK || requested_minor < CADR_ABI_MINOR_M4) {
+        return status == CADR_STATUS_OK ? CADR_STATUS_ABI_MISMATCH : status;
+    }
+    if (machine->state.events.outstanding_request_id == 0U ||
+        machine->state.events.completion_queued != 0U) return CADR_STATUS_NOT_READY;
+    descriptor_needed = machine->state.events.request_descriptor_byte_count;
+    payload_needed = machine->state.events.request_payload_byte_count;
+    if (descriptor_capacity < descriptor_needed ||
+        request_payload_capacity < payload_needed ||
+        (descriptor_needed != 0U && descriptor_bytes == NULL) ||
+        (payload_needed != 0U && request_payload_bytes == NULL) ||
+        descriptor_capacity > (uint64_t)SIZE_MAX ||
+        request_payload_capacity > (uint64_t)SIZE_MAX) return CADR_STATUS_WRONG_LENGTH;
+    if (descriptor_needed != 0U && payload_needed != 0U) {
+        const uintptr_t descriptor_begin = (uintptr_t)descriptor_bytes;
+        const uintptr_t payload_begin = (uintptr_t)request_payload_bytes;
+        if ((descriptor_begin <= payload_begin &&
+             payload_begin - descriptor_begin < descriptor_needed) ||
+            (payload_begin < descriptor_begin &&
+             descriptor_begin - payload_begin < payload_needed)) {
+            return CADR_STATUS_INVALID_ARGUMENT;
+        }
+    }
+    (void)memcpy(descriptor_bytes, machine->state.events.request_descriptor,
+                 (size_t)descriptor_needed);
+    (void)memcpy(request_payload_bytes, machine->state.events.request_payload,
+                 (size_t)payload_needed);
+    out_request->abi_major = CADR_ABI_MAJOR;
+    out_request->abi_minor = requested_minor;
+    out_request->struct_size = (uint32_t)sizeof(*out_request);
+    out_request->operation = machine->state.events.outstanding_operation;
+    out_request->generation = machine->state.events.generation;
+    out_request->request_id = machine->state.events.outstanding_request_id;
+    out_request->descriptor_byte_count = descriptor_needed;
+    out_request->request_payload_byte_count = payload_needed;
     out_request->completion_byte_count =
         machine->state.events.expected_completion_byte_count;
     return CADR_STATUS_OK;
@@ -1100,12 +1221,19 @@ static cadr_status cadr_apply_completion(cadr_machine *machine)
         status = cadr_disk_apply_block_read_completion(
             &machine->state, result, machine->state.events.completion_bytes,
             byte_count);
+    } else if (operation == CADR_HOST_OPERATION_BLOCK_WRITE) {
+        status = cadr_disk_apply_block_write_completion(
+            &machine->state, result, machine->state.events.completion_bytes,
+            byte_count);
     }
     machine->state.events.last_completed_request_id =
         machine->state.events.outstanding_request_id;
     cadr_discard_completion(machine);
     machine->state.events.outstanding_request_id = 0U;
     machine->state.events.request_descriptor_byte_count = 0U;
+    machine->state.events.request_payload_byte_count = 0U;
+    (void)memset(machine->state.events.request_payload, 0,
+                 sizeof(machine->state.events.request_payload));
     machine->state.events.expected_completion_byte_count = 0U;
     machine->state.events.outstanding_operation = CADR_HOST_OPERATION_NONE;
     machine->state.events.persistent_status =
@@ -1646,6 +1774,9 @@ cadr_status cadr_machine_boundary_digest(cadr_machine *machine,
     if (machine == NULL || machine->state.artifacts.stream_active != 0U) {
         return CADR_STATUS_INVALID_ARGUMENT;
     }
+    if (machine->state.events.request_payload_byte_count != 0U) {
+        return CADR_STATUS_NOT_READY;
+    }
     return cadr_boundary_digest_state(&machine->state, digest);
 }
 
@@ -1656,6 +1787,9 @@ cadr_status cadr_machine_state_v2_digest(cadr_machine *machine,
     if (machine == NULL || digest == NULL ||
         machine->state.artifacts.stream_active != 0U) {
         return CADR_STATUS_INVALID_ARGUMENT;
+    }
+    if (machine->state.events.request_payload_byte_count != 0U) {
+        return CADR_STATUS_NOT_READY;
     }
     if (machine->state.trace.state_v2.initialized == 0U) {
         status = cadr_state_v2_rebuild(&machine->state);
@@ -1827,6 +1961,7 @@ cadr_status cadr_machine_snapshot_size(cadr_machine *machine,
     status = cadr_snapshot_request_validate(request);
     if (status != CADR_STATUS_OK) return status;
     if (machine->state.artifacts.stream_active != 0U) return CADR_STATUS_INVALID_ARGUMENT;
+    if (machine->state.events.request_payload_byte_count != 0U) return CADR_STATUS_NOT_READY;
     status = cadr_snapshot_compute_digests(&machine->state, cdrstate1,
                                            cdrstate2);
     if (status != CADR_STATUS_OK) return status;
@@ -1849,6 +1984,7 @@ cadr_status cadr_machine_snapshot_save(cadr_machine *machine,
     *out_written = 0U;
     if (machine == NULL || bytes == NULL ||
         machine->state.artifacts.stream_active != 0U) return CADR_STATUS_INVALID_ARGUMENT;
+    if (machine->state.events.request_payload_byte_count != 0U) return CADR_STATUS_NOT_READY;
     status = cadr_snapshot_request_validate(request);
     if (status != CADR_STATUS_OK) return status;
     status = cadr_snapshot_compute_digests(&machine->state, cdrstate1,

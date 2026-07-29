@@ -181,7 +181,12 @@ u32 status,u64 generation,u64 request-id,u64 descriptor-length,sha256 descriptor
 u64 expected-completion-length`.  Codes 2=completion accepted, 3=completion
 applied and 4=completion rejected each have `u32 operation,u32 result,u32 status,
 u64 generation,u64 request-id,u64 payload-length,sha256 payload`.  Code 5 is the
-same count-plus-normalized-transactions structure as selector 12.  The decoder
+same count-plus-normalized-transactions structure as selector 12.  Additive M4
+device code 6 is a payload-bearing request issue:
+`u32 operation,u32 status,u64 generation,u64 request-id,
+u64 descriptor-length,sha256 descriptor,u64 expected-completion-length,
+u64 request-payload-length,sha256 request-payload`.  Code 6 is required for
+`BLOCK_WRITE`; code 1 remains the frozen payload-free request record.  The decoder
 rejects any unknown class/code, length, non-boolean validity, or count mismatch.
 Code 4 covers semantic rejection of an otherwise structurally recordable
 completion, including stale generation, duplicate identity, wrong outstanding

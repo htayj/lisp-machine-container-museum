@@ -3,7 +3,7 @@ type: Reimplementation Specification
 title: CADR-WEB-303 ABI 1.1 deterministic tracing and snapshot reimplementation specification
 description: A release-bounded contract for the CADR-WEB-303 ABI 1.1 CDRGTRC1 trace and CDRSNAP1 snapshot formats, their state boundary, host hand-off rules, failure semantics, and conformance tests.
 tags: [mit-cadr, lm-3, system-303, reimplementation, tracing, snapshot, webassembly]
-timestamp: 2026-07-28T19:25:34-04:00
+timestamp: 2026-07-29T01:12:00-04:00
 ---
 
 # CADR-WEB-303 ABI 1.1 deterministic tracing and snapshot reimplementation specification
@@ -163,6 +163,15 @@ u16 status, derived level and pending; fault carries before/after/code/valid; ha
 carries `CADR_STATUS_HALTED`; device records request issue, completion, or an ordered
 list of at most 64 in-slot transactions. Device traces bind payload SHA-256 and
 length, rather than retaining host-owned input buffers.
+
+ABI1.3 adds device code 6 without changing codes 1--5. It records a
+payload-bearing request issue as operation, status, generation, request ID,
+descriptor length and SHA-256, expected completion length, and request-payload
+length and SHA-256. A `BLOCK_WRITE` request MUST be copied and validated before
+publication, then recorded with code 6 in the same preflighted transaction.
+Consequently enabling tracing cannot turn an otherwise valid block write into a
+disk fault, and its issue witness cannot omit or alias the write payload. Code 1
+remains the byte-stable payload-free issue record.
 
 ### Compound slot ordering and backpressure
 

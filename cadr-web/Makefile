@@ -22,6 +22,10 @@ CORE_SOURCES := \
 	core/cadr_core.c \
 	core/cadr_state_v2.c \
 	core/cadr_state_v3.c \
+	core/cadr_state_v4.c \
+	core/cadr_m4_media.c \
+	core/cadr_disk_evidence.c \
+	core/cadr_m4_controller_transcript.c \
 	core/cadr_snapshot.c \
 	trace/cadr_trace_engine.c \
 	$(PORT_SOURCES)
@@ -44,6 +48,8 @@ TEST_BINARIES := \
 	build/test_cadr_m3_page_zero_probe \
 	build/test_cadr_m3_projection \
 	build/test_cadr_m3_native_observer \
+	build/test_cadr_state_v4_media \
+	build/test_cadr_m4_controller_transcript \
 	build/test_cadr_m4_block_service
 MUTANT_TARGETS := 0 1 2 3
 MUTANT_BASE_BINARIES := $(MUTANT_TARGETS:%=build/test_cadr_m2_mutant_base_%)
@@ -55,9 +61,11 @@ M3_SNAPSHOT_HOST_BINARY := build/cadr-m3-snapshot
 M3_SNAPSHOT_RESTORE_HOST_BINARY := build/cadr-m3-snapshot-restore
 M3_TRACE_HOST_BINARY := build/cadr-m3-trace-native
 M4_HOST_BINARY := build/cadr-m4-native
+M4_MEDIA_COMPARE_BINARY := build/cadr-m4-media-compare
 M3_WASM_O0 := build/cadr-web-m3-O0.wasm
+M4_WASM_O2 := build/cadr-web-m4-O2.wasm
 
-.PHONY: all test clean audit forbidden-symbols exported-symbols mutable-globals dependency-audit header-audit mutant-audit python-cross-parse m3-wasm m3-browser m3-differential m3-conformance m3-snapshot-cross-target m4-differential
+.PHONY: all test clean audit forbidden-symbols exported-symbols mutable-globals dependency-audit header-audit mutant-audit python-cross-parse m3-wasm m3-browser m3-differential m3-conformance m3-snapshot-cross-target m4-unit m4-browser m4-differential m4-media-compare
 
 all: $(LIBRARY) $(HOST_BINARY) $(M2_HOST_BINARY) $(M3_HOST_BINARY) $(M3_SNAPSHOT_HOST_BINARY)
 
@@ -85,8 +93,8 @@ build/test_cadr_trace_engine: tests/test_cadr_trace_engine.c core/cadr_state_v2.
 build/test_cadr_m3_page_zero_probe: tests/test_cadr_m3_page_zero_probe.c $(CORE_SOURCES) $(CORE_HEADERS) | build
 	$(CC) $(CPPFLAGS) $(CFLAGS) -DCADR_M3_TESTING -o $@ tests/test_cadr_m3_page_zero_probe.c $(CORE_SOURCES)
 
-build/test_cadr_m4_block_service: tests/test_cadr_m4_block_service.c host/cadr_m4_block_service.c host/cadr_m4_block_service.h $(LIBRARY) $(CORE_HEADERS) | build
-	$(CC) $(CPPFLAGS) $(CFLAGS) -o $@ tests/test_cadr_m4_block_service.c host/cadr_m4_block_service.c $(LIBRARY)
+build/test_cadr_m4_block_service: tests/test_cadr_m4_block_service.c host/cadr_m4_block_service.c host/cadr_m4_block_service.h host/cadr_m4_file_range_reader.c host/cadr_m4_file_range_reader.h $(LIBRARY) $(CORE_HEADERS) | build
+	$(CC) $(CPPFLAGS) $(CFLAGS) -o $@ tests/test_cadr_m4_block_service.c host/cadr_m4_block_service.c host/cadr_m4_file_range_reader.c $(LIBRARY)
 
 build/test_cadr_m3_projection: tests/test_cadr_m3_projection.c host/cadr_m3_projection.c host/cadr_m3_projection.h $(CORE_HEADERS) | build
 	$(CC) $(CPPFLAGS) $(CFLAGS) -o $@ tests/test_cadr_m3_projection.c host/cadr_m3_projection.c
@@ -119,13 +127,21 @@ $(M3_SNAPSHOT_RESTORE_HOST_BINARY): host/cadr_m3_snapshot_restore.c host/cadr_m3
 $(M3_TRACE_HOST_BINARY): host/cadr_m3_trace_native.c $(LIBRARY) $(CORE_HEADERS) | build
 	$(CC) $(CPPFLAGS) $(CFLAGS) -o $@ $< $(LIBRARY)
 
-$(M4_HOST_BINARY): host/cadr_m4_native.c host/cadr_m4_block_service.c host/cadr_m4_block_service.h host/cadr_m3_projection.c host/cadr_m3_projection.h host/cadr_m3_native_observer.c host/cadr_m3_native_observer_sink.h $(CORE_SOURCES) $(CORE_HEADERS) | build
-	$(CC) $(CPPFLAGS) $(CFLAGS) -DCADR_M3_NATIVE_OBSERVER -o $@ host/cadr_m4_native.c host/cadr_m4_block_service.c host/cadr_m3_projection.c host/cadr_m3_native_observer.c $(CORE_SOURCES)
+$(M4_HOST_BINARY): host/cadr_m4_native.c host/cadr_m4_block_service.c host/cadr_m4_block_service.h host/cadr_m4_file_range_reader.c host/cadr_m4_file_range_reader.h host/cadr_m3_projection.c host/cadr_m3_projection.h host/cadr_m3_native_observer.c host/cadr_m3_native_observer_sink.h $(CORE_SOURCES) $(CORE_HEADERS) | build
+	$(CC) $(CPPFLAGS) $(CFLAGS) -DCADR_M3_NATIVE_OBSERVER -o $@ host/cadr_m4_native.c host/cadr_m4_block_service.c host/cadr_m4_file_range_reader.c host/cadr_m3_projection.c host/cadr_m3_native_observer.c $(CORE_SOURCES)
+
+$(M4_MEDIA_COMPARE_BINARY): host/cadr_m4_media_compare.c $(LIBRARY) $(CORE_HEADERS) | build
+	$(CC) $(CPPFLAGS) $(CFLAGS) -o $@ $< $(LIBRARY)
+
+m4-media-compare: $(M4_MEDIA_COMPARE_BINARY)
 
 $(M3_WASM_O0): wasm/build-wasm.sh wasm/cadr_wasm_adapter.c wasm/cadr_wasm_runtime.c $(CORE_SOURCES) $(CORE_HEADERS) | build
 	sh wasm/build-wasm.sh --opt O0 $@
 
-test: $(TEST_BINARIES) $(HOST_BINARY) $(M2_HOST_BINARY) $(M3_HOST_BINARY) mutant-audit python-cross-parse m3-wasm m3-conformance m3-browser audit
+$(M4_WASM_O2): wasm/build-wasm.sh wasm/cadr_wasm_adapter.c wasm/cadr_wasm_runtime.c $(CORE_SOURCES) $(CORE_HEADERS) | build
+	sh wasm/build-wasm.sh --opt O2 $@
+
+test: $(TEST_BINARIES) $(HOST_BINARY) $(M2_HOST_BINARY) $(M3_HOST_BINARY) mutant-audit python-cross-parse m3-wasm m3-conformance m3-browser m4-unit m4-browser audit
 	./build/test_cadr_host_api
 	./build/test_cadr_machine_state
 	./build/test_cadr_processor_microengine
@@ -141,6 +157,7 @@ test: $(TEST_BINARIES) $(HOST_BINARY) $(M2_HOST_BINARY) $(M3_HOST_BINARY) mutant
 	./build/test_cadr_m3_page_zero_probe
 	./build/test_cadr_m3_projection
 	./build/test_cadr_m3_native_observer
+	./build/test_cadr_state_v4_media
 	./build/test_cadr_m4_block_service
 
 m3-wasm: $(M3_WASM_O0)
@@ -155,6 +172,9 @@ m3-conformance:
 m3-browser: $(M3_WASM_O0)
 	python3 ../tests/test_cadr_m3_browser.py
 
+m4-browser: $(M4_WASM_O2)
+	python3 ../tests/test_cadr_m4_browser.py
+
 # The exact one-million-boundary gate requires the local excluded System 303
 # disk and is deliberately explicit rather than silently skipped in `make test`.
 m3-differential: $(HOST_BINARY) $(M3_HOST_BINARY) $(M3_WASM_O0)
@@ -164,7 +184,14 @@ m3-snapshot-cross-target: $(M3_SNAPSHOT_HOST_BINARY) $(M3_SNAPSHOT_RESTORE_HOST_
 	../scripts/run-cadr-m3-snapshot-cross-target.sh
 
 # The M4 host-service gate needs the excluded System 303 disk and is explicit.
-m4-differential: $(M4_HOST_BINARY)
+m4-unit: build/test_cadr_state_v4_media build/test_cadr_m4_controller_transcript build/test_cadr_m4_block_service m4-media-compare
+	./build/test_cadr_state_v4_media
+	./build/test_cadr_m4_controller_transcript
+	./build/test_cadr_m4_block_service
+	guix shell node -- node ../tests/test_cadr_m4_block_service.mjs
+	guix shell node -- node ../tests/test_cadr_m4_media.mjs
+
+m4-differential: $(M4_HOST_BINARY) m4-unit
 	../scripts/run-cadr-m4-differential.sh
 
 mutant-audit: $(MUTANT_BASE_BINARIES) $(MUTANT_BINARIES)

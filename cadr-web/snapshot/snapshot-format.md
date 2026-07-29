@@ -1,9 +1,9 @@
 ---
 type: Reimplementation Format Specification
 title: CDRSNAP1 CADR core snapshot format
-description: A deterministic, integrity-checked internal snapshot format for the CADR-WEB-303 ABI 1.1 and ABI 1.2 cores at an instruction boundary.
+description: A deterministic, integrity-checked internal snapshot format for the CADR-WEB-303 ABI 1.1 through ABI 1.3 cores at an instruction boundary.
 tags: [mit-cadr, cadr-web, snapshot, serialization, reimplementation]
-timestamp: 2026-07-28T23:55:00-04:00
+timestamp: 2026-07-29T01:13:00-04:00
 ---
 
 # CDRSNAP1 CADR core snapshot format
@@ -267,6 +267,15 @@ request, a valid matching operation and descriptor size, a completion length equ
 to the request's expected length, and valid host status. A nonqueued request has
 no copied completion bytes. The parser allocates copied completion data only after
 the chunk has passed structural checks.
+
+CDRSNAP1 does not own the ABI1.3 M4 host service's staged write, committed volatile
+block-1 overlay, overlay generation, range-reader attachment, or pending service
+latency. The integrated native service and dedicated worker therefore MUST reject
+snapshot size, save, and restore while the service is busy or while any committed
+overlay exists. Checking only the core request-payload count is insufficient:
+after controller application that count is zero while the overlay is still
+semantically required by later reads. A future snapshot profile may add an
+identity-bound overlay chunk; CDRSNAP1 minor 1 does not silently do so.
 
 The caller must provide both hooks in `cadr_snapshot_restore_hooks`. The first
 rebuilds **all** derived continuation storage: both the legacy canonical Merkle

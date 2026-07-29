@@ -21,12 +21,15 @@ uint32_t cadr_wasm_meta_pointer(void);
 uint32_t cadr_wasm_boundary_digest(void);
 uint32_t cadr_wasm_state_v2_digest(void);
 uint32_t cadr_wasm_state_v3_digest(void);
+uint32_t cadr_wasm_state_v4_digest(void);
 uint32_t cadr_wasm_host_next_request(void);
 uint32_t cadr_wasm_host_complete(uint32_t operation, uint32_t host_status,
                                  uint32_t generation_low, uint32_t generation_high,
                                  uint32_t request_low, uint32_t request_high,
                                  uint32_t byte_count);
 uint32_t cadr_wasm_disk_observation(void);
+uint32_t cadr_wasm_boot_media_observation(void);
+uint32_t cadr_wasm_disk_evidence(void);
 uint32_t cadr_wasm_machine_info(void);
 uint32_t cadr_wasm_trace_start(uint32_t transport_mode, uint32_t capacity,
                                uint32_t selector_low, uint32_t selector_high,
