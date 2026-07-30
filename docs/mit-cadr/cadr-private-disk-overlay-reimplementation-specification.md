@@ -3,7 +3,7 @@ type: Reimplementation Specification
 title: CADR-WEB-303 C-M10 private disk overlay reimplementation specification
 description: Normative contract for the synthetic, immutable-base, content-addressed CADR-WEB private-disk overlay, durable controller, interchange, and recovery records.
 tags: [mit-cadr, cadr-web, preservation, disk, reimplementation]
-timestamp: 2026-07-30T00:48:06-04:00
+timestamp: 2026-07-30T02:07:44-04:00
 ---
 
 # CADR-WEB-303 C-M10 private disk overlay reimplementation specification
@@ -585,6 +585,26 @@ after the campaign. This closes browser process loss and restart at the named
 seams. It does not place the kill inside an unobservable internal IndexedDB
 request, remove machine or storage power, test device-cache loss, exhaust
 quota, or use CADR media.
+
+A later interrupted audit exposed a host-harness cleanup defect rather than a
+disk-format defect: Chromium had been launched as a detached process group, so
+an exception or abrupt supervisor loss during partial launch could leave that
+group alive after the evidence-producing command ended. The corrected
+supervisor owns a browser group from the instant it is spawned, cleans partial
+launches and every loop body in `finally`, bounds `SIGTERM` before escalating
+to `SIGKILL`, and uses a Linux `PR_SET_PDEATHSIG` wrapper tied to the exact
+Node parent. The wrapper remains the detached group leader while Chromium
+runs; parent death signals the wrapper, which kills the complete group rather
+than only Chromium's direct process. Process-tree tests cover parent death,
+an already-closed leader with a live descendant, a descendant that ignores
+`SIGTERM`, a live wrapper's bounded `SIGTERM` grace and escalation, and a
+process group that remains after final `SIGKILL`. The process-tree and static
+controls are verified, but the fresh eight-seam browser campaigns have not yet
+been rerun against this resident-watchdog revision. An abrupt signal or
+supervisor death can also leave the inert `cadr-m10-process-kill-*` host
+directory for explicit cleanup, although the browser group is killed. These
+host-harness controls do not strengthen the process-loss result into a
+physical-power claim.
 
 ### Writer fencing and activation recovery
 

@@ -64,8 +64,11 @@ assert.match(controller, /await targetBackend\.deleteDisk\(targetBinding\)/);
 assert.match(controller, /createCadrM10WorkerDiskBridge/);
 const processKill = await readFile(new URL(
   "../scripts/run-cadr-m10-process-kill-browser.mjs", import.meta.url), "utf8");
-assert.match(processKill, /process\.kill\(-instance\.browser\.pid, signal\)/);
 assert.match(processKill, /"SIGKILL"/);
+assert.match(processKill, /CadrProcessGroupSupervisor/);
+assert.match(processKill, /processGroups\.track\(spawn/);
+assert.match(processKill, /processGroups\.stopAll\("SIGKILL"\)/);
+assert.match(processKill, /cadr-pdeath-exec\.py/);
 assert.match(processKill, /process-kill-not-os-power-removal/);
 assert.match(processKill, /CADR_M10_INDEXEDDB_TRANSACTION_KILL_SEAMS/);
 assert.match(processKill, /createHash\("sha256"\)/);

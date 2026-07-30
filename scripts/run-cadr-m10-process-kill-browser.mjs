@@ -17,12 +17,24 @@ import {
   CADR_M10_INDEXEDDB_TRANSACTION_KILL_SEAMS,
 } from
   "../cadr-web/browser/cadr-m10-indexeddb.mjs";
+import { CadrProcessGroupSupervisor } from
+  "./cadr-process-group-supervisor.mjs";
 const KILL_SEAMS = Object.freeze([
   ...CADR_M10_INDEXEDDB_DURABLE_SEAMS,
   ...CADR_M10_INDEXEDDB_TRANSACTION_KILL_SEAMS,
 ]);
 
 const ROOT = resolve(fileURLToPath(new URL("../", import.meta.url)));
+const PYTHON = process.env.PYTHON ?? "/usr/bin/python3";
+const PDEATH_EXEC = resolve(ROOT, "scripts/cadr-pdeath-exec.py");
+const processGroups = new CadrProcessGroupSupervisor();
+for (const [signal, status] of [["SIGINT", 130], ["SIGTERM", 143],
+  ["SIGHUP", 129]]) {
+  process.once(signal, () => {
+    processGroups.killAll("SIGKILL");
+    process.exit(status);
+  });
+}
 const CHROMIUM = process.env.CHROMIUM ?? "/usr/bin/chromium";
 const BASE_PATH = resolve(process.env.CADR_M10_BASE_IMAGE ??
   resolve(ROOT, "l/usim/disk-sys-303-0.img"));
@@ -193,21 +205,27 @@ async function connect(endpoint) {
 }
 
 async function launch(userData) {
-  const browser = spawn(CHROMIUM, [
+  const browser = processGroups.track(spawn(PYTHON, [
+    PDEATH_EXEC, String(process.pid), CHROMIUM,
     "--headless=new", "--disable-gpu", "--no-first-run",
     "--no-default-browser-check", "--disable-background-networking",
     "--remote-allow-origins=*", "--remote-debugging-port=0",
     `--user-data-dir=${userData}`, "about:blank",
-  ], { stdio: ["ignore", "ignore", "pipe"], detached: true });
+  ], { stdio: ["ignore", "ignore", "pipe"], detached: true }));
   const stderr = { text: "" };
-  const endpoint = await debuggerEndpoint(browser, stderr);
-  const origin = new URL(endpoint);
-  const tab = await (await fetch(
-    `http://127.0.0.1:${origin.port}/json/new?about:blank`,
-    { method: "PUT" })).json();
-  const client = await connect(tab.webSocketDebuggerUrl);
-  await client.call("Page.enable"); await client.call("Runtime.enable");
-  return { browser, client, stderr };
+  try {
+    const endpoint = await debuggerEndpoint(browser, stderr);
+    const origin = new URL(endpoint);
+    const tab = await (await fetch(
+      `http://127.0.0.1:${origin.port}/json/new?about:blank`,
+      { method: "PUT" })).json();
+    const client = await connect(tab.webSocketDebuggerUrl);
+    await client.call("Page.enable"); await client.call("Runtime.enable");
+    return { browser, client, stderr };
+  } catch (error) {
+    await processGroups.stop(browser, "SIGKILL");
+    throw error;
+  }
 }
 
 const pause = milliseconds => new Promise(resolvePause =>
@@ -235,12 +253,8 @@ async function navigateAndWait(instance, url, wanted) {
 }
 
 async function stop(instance, signal = "SIGTERM") {
-  instance.client.close();
-  if (instance.browser.exitCode !== null) return;
-  try { process.kill(-instance.browser.pid, signal); }
-  catch (error) { if (error?.code !== "ESRCH") throw error; }
-  await new Promise(resolveClose =>
-    instance.browser.once("close", resolveClose));
+  instance.client?.close();
+  await processGroups.stop(instance.browser, signal);
 }
 
 const endpoint = await listen();
@@ -252,23 +266,27 @@ try {
     const seam = KILL_SEAMS[index];
     const userData = resolve(campaignRoot, `profile-${index}`);
     const prefix = `cadr-m10-process-kill-${index}`;
-    let instance = await launch(userData);
-    const prepare = new URL(
-      `http://${endpoint.host}/cadr-web/browser/cadr-m10-process-kill.html`);
-    prepare.searchParams.set("action", "prepare");
-    prepare.searchParams.set("seam", seam);
-    prepare.searchParams.set("prefix", prefix);
-    const roots = await navigateAndWait(instance, prepare.href, "kill-ready");
-    await stop(instance, "SIGKILL");
-
-    instance = await launch(userData);
+    let instance = null;
     try {
+      instance = await launch(userData);
+      const prepare = new URL(
+        `http://${endpoint.host}/cadr-web/browser/cadr-m10-process-kill.html`);
+      prepare.searchParams.set("action", "prepare");
+      prepare.searchParams.set("seam", seam);
+      prepare.searchParams.set("prefix", prefix);
+      const roots = await navigateAndWait(instance, prepare.href, "kill-ready");
+      await stop(instance, "SIGKILL");
+      instance = null;
+
+      instance = await launch(userData);
       const verify = new URL(prepare);
       verify.searchParams.set("action", "verify");
       verify.searchParams.set("old", roots.oldRoot);
       const result = await navigateAndWait(instance, verify.href, "ok");
       results.push(result);
-    } finally { await stop(instance); }
+    } finally {
+      if (instance !== null) await stop(instance);
+    }
   }
   if (results.length !== KILL_SEAMS.length ||
       results.some((result, index) =>
@@ -281,7 +299,11 @@ try {
     limitation: "process-kill-not-os-power-removal",
   })}\n`);
 } finally {
+  let processGroupError = null;
+  try { await processGroups.stopAll("SIGKILL"); }
+  catch (error) { processGroupError = error; }
   await new Promise(resolveClose => endpoint.server.close(resolveClose));
   await baseFile.close();
   await rm(campaignRoot, { recursive: true, force: true });
+  if (processGroupError !== null) throw processGroupError;
 }
