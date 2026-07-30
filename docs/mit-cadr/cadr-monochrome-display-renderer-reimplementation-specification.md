@@ -3,7 +3,7 @@ type: Reimplementation Specification
 title: CADR-WEB-303 ABI 1.5 monochrome display and browser renderer reimplementation specification
 description: A release-bounded contract for transferring, validating, rendering, and testing the System 303 monochrome framebuffer without claiming an unrecorded native Listener-pixel oracle.
 tags: [mit-cadr, lm-3, system-303, webassembly, display, framebuffer, renderer, reimplementation]
-timestamp: 2026-07-30T23:18:00-04:00
+timestamp: 2026-07-30T06:59:00-04:00
 ---
 
 # CADR-WEB-303 ABI 1.5 monochrome display and browser renderer reimplementation specification
@@ -38,6 +38,7 @@ The terms `MUST`, `MUST NOT`, `SHOULD`, and `MAY` state requirements for an inde
 | `M7-SRC` | [`cadr_display.c`](../../cadr-web/core/cadr_display.c), [`cadr-display-renderer.mjs`](../../cadr-web/wasm/cadr-display-renderer.mjs), worker, and adapter | current portable transfer and renderer behavior | a historical implementation |
 | `M7-UNIT` | M7 C and Node tests named below | exercised synthetic, malformed-input, and presentation behavior | an unexercised real guest screen |
 | `M7-XTARGET` | direct native `tv.c` fixture and Wasm worker comparison | raw logical pixels agree for two selected source words | a native System 303 Listener checkpoint |
+| `M7-DEVID-RAW` | retained, ignored receipt-bound 776a427 child envelope and outer-failure record | the bounded intervention child reached its recorded nonterminal 1,130,000-boundary state under the recorded systemd accounting | publication of an ordinary final receipt, a raw native frame, or browser presentation |
 | `INF-M7` | this specification | new wire format, dirty coalescing, generation, and browser ownership rules | a historical CADR device detail |
 | `TODO-RUNTIME-M7-01` | the explicit oracle procedure below | the missing real-screen claim once run | a result before the capture exists |
 | `TODO-RUNTIME-M7-02` | the explicit real-browser procedure below | integral fit/fullscreen presentation once run | raw native/Wasm identity |
@@ -204,6 +205,85 @@ accidentally cold-boot a private CADR session. Those remain the separately
 named `TODO-RUNTIME-M7-01` and `TODO-RUNTIME-M7-02` gates below.
 
 The test PBM/PPM outputs are transient synthetic test artifacts. They are not curated runtime screenshots and are not embedded in this knowledge base. No visible System 303 claim is made on this page, so no published screenshot is substituted for the open runtime oracle; this follows the repository's [screenshot-publication review](../screenshot-publication-rights-review.md).
+
+## Receipt-bound M7-DEVID intervention evidence and offline recovery
+
+The retained 776a427 M7-DEVID intervention child completed its bounded
+1,130,000-guest-boundary run, but the ordinary final receipt was not
+published. This is a validator defect in the outer publication path, not a
+failed guest run. It is recoverable only by a separately committed,
+no-replace offline recovery tool; no recovered receipt has been published at
+the time of this revision. The intervention remains narrower than `M7-P4` and
+does not close `C-M7`.
+
+`M7-DEVID-RAW` is local, ignored evidence. The child envelope is
+`.8cdaef46c7a239112b4352d01fb06c87.m7-canary-envelope.json`, 28,023 bytes,
+SHA-256 `efd29682e90adfa6413412aa051787802cbdd3fd571180cc73ca1d53ed1061ba`.
+It names base `ab6536353360d48bb6620e7da04275935f51f37a`, its sole-parent
+candidate `776a427b71a52911df531e1c2aaef29089300be4`, and the two-file textual
+patch (`cadr-web/Makefile` and `tests/test_cadr_m7_devid_o2_canary.mjs`) with
+SHA-256 `2b747c58932c2a51896555ff3b8522a05ea2c0cac22b260e364473d54c250b17`.
+The retained child record reports persistent status zero, no outstanding
+request, 535 accepted disk-evidence events, 23 tail events, and completed
+boundary `1130000`. These facts are bounded to that recorded child and do not
+establish native-frame or browser behavior.
+
+The accompanying outer failure is `final-receipt.json.failure.json`, 1,170
+bytes, SHA-256 `6646a8f81747d9c5c8e3097c3559a5a0c564f0d90c4dc67f21d78aaa6301bea7`.
+It records successful submission and child exit status, successful accounted
+systemd completion, retained child envelope, successful cleanup (no cleanup
+failure), and the two original reasons: outer
+`final-receipt-publication-failed` and validator
+`candidate-identity-failed`. The outer wrapper performs its cleanup before it
+attempts final-receipt validation/publication; this record therefore supports
+reconstructing the two cleanup booleans only after the raw pair and wrapper
+semantics are revalidated together.
+
+The defect was in `sourceClosureFromGit`: it selected candidate bytes for
+*every* path in the base tree. The staged tree, however, is the base archive
+overlaid only by the two-file payload patch; the candidate additionally changes
+the fixed manifest, whose bytes are not staged by that overlay. The faulty
+all-candidate recomputation produces SHA-256
+`26bbbee0a17688ff82a5b42f16ced571d490e3c5a4fb988affc76d620122418f`.
+The actual staged closure and the candidate's closed manifest agree on
+`81a13568e95fdf6cd951ac50bb07a4f9045d09684b5ca4ddd83cb8caeb5bb2f1`
+(1,154 files and 22,896,951 bytes). The corrected validator reads candidate
+bytes only for payload-patch paths and base bytes for every other path.
+
+[`recover-cadr-m7-devid-o2-canary.mjs`](../../scripts/recover-cadr-m7-devid-o2-canary.mjs)
+implements the only authorized recovery procedure. It requires an explicit
+`--execute`, and an exact committed two-module local ESM closure: the entry
+point and the crypto/record-only
+[`cadr-m7-devid-o2-recovery-core.mjs`](../../scripts/cadr-m7-devid-o2-recovery-core.mjs),
+in that order. It does not import the M6/M7 runner, stage executor, systemd
+wrapper, or any guest-capable module. Each verification opens both retained raw
+records as owned mode-0600 nonsymlink files, checks their fixed identities and
+canonical UTF-8 JSON encodings, derives `source_evidence` and the reconstructed
+final receipt only from those freshly read records, then exact-deep-compares the
+candidate receipt to that derivation. It independently repeats the raw-derived
+comparison immediately before publication and again after reopening the
+published canonical no-replace receipt. Thus a caller-supplied embedded
+`source_evidence` or `reconstructed_final_receipt` cannot substitute for the
+retained raw pair.
+
+The verifier also requires the sole base/candidate/manifest lineage, successful
+accounted unit/submission/child/cleanup invariants, and both the faulty and
+corrected closure digests. It writes only inside the existing private 0700
+evidence directory, rejects an ordinary `final-receipt.json`, an existing or
+symlinked output, and any output outside that directory. It never invokes a
+system manager, guest, native emulator, or browser; its focused tests include a
+successful PATH-spy derivation and coordinated mutations of repeated unit,
+accounting, guest, gate, launcher, toolchain, control-plane, frozen-release,
+and helper-module fields.
+
+`TODO-EVIDENCE-M7-03`: commit the recovery tool and its focused adversarial
+test, invoke that exact committed blob once to a new ignored recovery-receipt
+filename, record that new file's byte count and SHA-256 here, then make a
+separate evidence commit. The recovery receipt must retain its exact root keys
+`schema`, `outcome`, `source_evidence`, `recovery_tool`, `diagnosis`, and
+`reconstructed_final_receipt`; it must not overwrite, rename, or weaken the
+raw pair. That bookkeeping repair is not a retry and must not be used to claim
+`M7-P4`, `M7-P5`, or `C-M7` closure.
 
 ## `TODO-RUNTIME-M7-01`: close raw native/Wasm checkpoint identity
 

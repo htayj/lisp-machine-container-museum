@@ -563,14 +563,21 @@ export function validateM7DevidCanaryReceipt(value) {
   return value;
 }
 
-function sourceClosureFromGit(base, candidate, patchPaths_) {
+export function sourceClosureFromGit(base, candidate, patchPaths_) {
   const tracked = command("git", ["ls-tree", "-r", "--name-only", base],
     { cwd: ROOT }).trim().split("\n").filter(Boolean);
   const paths = [...new Set([...tracked, ...patchPaths_])].sort();
+  const patched = new Set(patchPaths_);
   const digest = createHash("sha256");
   let totalBytes = 0;
   for (const path of paths) {
-    const bytes = command("git", ["show", `${candidate}:${path}`],
+    /* The staged tree is precisely the base tree overlaid with the textual
+     * payload patch.  A candidate commit is allowed to add only the fixed
+     * closed manifest alongside that payload; its manifest bytes therefore
+     * MUST NOT enter the staged-source closure.  Read candidate bytes only
+     * for a patched path, and base bytes for every other tracked path. */
+    const revision = patched.has(path) ? candidate : base;
+    const bytes = command("git", ["show", `${revision}:${path}`],
       { cwd: ROOT, encoding: "buffer" });
     const pathBytes = Buffer.from(path, "utf8");
     const header = Buffer.alloc(16);
