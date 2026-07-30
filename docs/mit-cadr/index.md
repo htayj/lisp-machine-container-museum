@@ -142,6 +142,9 @@ the public LM-3 software and the `usim` emulator.
   defines exact artifact preflight, raw Cadet boot and form input, source-bound
   Listener A/B/C semantics, post-observer settling, CDRM6I1 samples, READY3,
   bounded failures, and the native/Wasm M6 gate.
+- [CADR-WEB-303 M6-DEVID1 disk-evidence continuation policy](cadr-m6-disk-evidence-continuation-policy.md)
+  records the separate retained-prefix/SHA-256-tail evidence profile, `CDRM6E1`,
+  READY4 binding boundary, and explicit non-ready runtime status.
 - [CADR-WEB-303 ABI1.1 deterministic tracing and snapshot specification](cadr-deterministic-tracing-and-snapshot-reimplementation-specification.md)
   defines the new portable-core CDRGTRC1/CDRSNAP1 observation and continuation
   contract without presenting it as a historical CADR file format.

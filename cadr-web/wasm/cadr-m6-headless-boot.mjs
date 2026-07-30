@@ -17,6 +17,13 @@ import {
 export const CADR_M6_SCHEMA = "CDRM6BOOT1";
 export const CADR_M6_READY_CONTRACT =
   "C-M6-DEBUG-IR-LISTENER-READY-ABC-v1";
+/* M6-DEVID1 is a separate evidence continuation profile.  It has no
+ * production READY claim until its own reviewed release envelope exists. */
+export const CADR_M6_DEVID_PROFILE =
+  "CADR-WEB-303/ABI1.4/protocol-v4/M6-DEVID1";
+export const CADR_M6_DEVID_POLICY_ID = "M6-PREFIX512-TAILSHA256-v1";
+export const CADR_M6_READY4_CONTRACT =
+  "C-M6-DISK-EVIDENCE-READY4-BINDING-v1";
 export const CADR_M6_PROTOCOL_VERSION = 4;
 export const CADR_M6_RELEASE_RECORD_SCHEMA =
   "cadr-m6-native-debug-ir-release-record-v1";
@@ -1322,6 +1329,36 @@ async function canonicalM6ReadyWitnessV3({
     bytes.set(digest, offset);
     offset += 32;
   }
+  return sha256(bytes);
+}
+
+/* READY4 is intentionally an additional binding: the existing READY3 digest
+ * remains frozen, while this new preimage commits the selected M6 evidence
+ * policy, its maximum, and the SHA-256 of one exact CDRM6E1 record. */
+export async function canonicalM6ReadyWitnessV4({
+  ready3Witness,
+  policyId = CADR_M6_DEVID_POLICY_ID,
+  selectedMaximum,
+  cdrm6e1Sha256,
+}) {
+  const ready3 = bytesOf(ready3Witness);
+  const summary = bytesOf(cdrm6e1Sha256);
+  if (ready3?.byteLength !== 32 || summary?.byteLength !== 32 ||
+      policyId !== CADR_M6_DEVID_POLICY_ID || !unsigned64(selectedMaximum) ||
+      selectedMaximum === 0n || selectedMaximum > 0x7fffffffffffffffn) {
+    throw new TypeError("invalid M6 READY4 disk-evidence binding");
+  }
+  const domain = new TextEncoder().encode("CDRM6READY4");
+  const policy = new TextEncoder().encode(`${policyId}\0`);
+  const bytes = new Uint8Array(domain.byteLength + ready3.byteLength +
+    policy.byteLength + 8 + summary.byteLength);
+  bytes.set(domain, 0);
+  bytes.set(ready3, domain.byteLength);
+  bytes.set(policy, domain.byteLength + ready3.byteLength);
+  new DataView(bytes.buffer).setBigUint64(
+    domain.byteLength + ready3.byteLength + policy.byteLength,
+    selectedMaximum, true);
+  bytes.set(summary, domain.byteLength + ready3.byteLength + policy.byteLength + 8);
   return sha256(bytes);
 }
 
