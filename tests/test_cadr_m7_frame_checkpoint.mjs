@@ -15,6 +15,7 @@ import {
   CADR_M7_NATIVE_FRAME_HEADER_BYTES,
   CadrM7CBoundaryClient,
   CadrM7FrameMismatch,
+  CadrM7UnderlyingM6Failure,
   compareM7FrameCheckpoint,
   parseCdrM7N1,
   runM7CheckpointedM6BootForTest,
@@ -270,15 +271,90 @@ async function testFullM7ControlFlowUsesFrozenReleaseBinding() {
   }, async config => {
     await config.client.request("machine-info");
     await config.client.request("run-digest-batch-m5");
-    return { outcome: "failed", report: {
-      reason: "ready-observation-mismatch", phase: "ready-observation",
-      status: 2, boundary: BOUNDARY + 64n,
-    } };
-  }), /ready-observation-mismatch; phase=ready-observation; status=2; boundary=982990278/);
+    return { outcome: "failed", preflight: null, runEvidence: null,
+      transcriptTail: [], report: {
+        schema: "CDRM6BOOT1", schemaVersion: 1, outcome: "failed",
+        reason: "artifact-preflight-mismatch", phase: "preflight",
+        status: 11, detail: "synthetic M7 failure transport",
+        mutationStarted: false,
+      } };
+  }), error => error?.name === "CadrM7UnderlyingM6Failure" &&
+    error.message.includes(
+      "artifact-preflight-mismatch; phase=preflight; status=11; boundary=preflight") &&
+    error.m6FailureDiagnostic instanceof Uint8Array &&
+    error.checkpoint?.boundary === BOUNDARY &&
+    error.checkpoint?.m6_release_record_sha256 instanceof Uint8Array &&
+    Buffer.from(error.checkpoint.m6_release_record_sha256).equals(
+      Buffer.from(CADR_M6_RELEASE_RECORD_SHA256)) &&
+    JSON.parse(new TextDecoder().decode(
+      error.m6FailureDiagnostic)).failure.report.mutationStarted === false);
+}
+
+function testObservedStatus12FailureTransport() {
+  const digest = value => new Uint8Array(32).fill(value);
+  const result = {
+    outcome: "failed",
+    preflight: {
+      profileId: "CADR-WEB-303",
+      artifactSetSha256: digest(1),
+      artifacts: [1, 2, 4, 5, 3].map((kind, index) => ({
+        kind, byteCount: BigInt(index + 1), sha256: digest(index + 2),
+      })),
+    },
+    runEvidence: {
+      sessionId: "observed-status12-session",
+      privateDiskInstanceId: "observed-status12-disk",
+      privateDiskBaseSha256: digest(9),
+    },
+    transcriptTail: [],
+    report: {
+      schema: "CDRM6BOOT1",
+      schemaVersion: 1,
+      outcome: "failed",
+      reason: "terminal-machine-status",
+      phase: "run",
+      status: 12,
+      boundary: 1125883n,
+      lifecycle: "FAILED",
+      cdrstate5Sha256: digest(10),
+      cdrm5q1Sha256: digest(11),
+      outstandingRequest: null,
+      machineInfo: null,
+      transcriptCount: 0,
+      lastHostTransactions: [],
+      hostTranscriptSha256: digest(12),
+      runFraming: {
+        operation: "run-digest-batch-m5",
+        requestedClockSlots: 4096,
+        returnedBoundaryCount: 0,
+        terminalStatus: 12,
+        preCallBoundary: 1125883n,
+        cachedLastCompleteBoundary: 1125883n,
+        postCallAttemptedBoundary: null,
+      },
+    },
+  };
+  const error = new CadrM7UnderlyingM6Failure(result, null);
+  assert.equal(error.checkpoint, null,
+    "the observed pre-Form-C terminal status has no frame checkpoint");
+  assert.match(error.message,
+    /terminal-machine-status; phase=run; status=12; boundary=1125883/);
+  const text = new TextDecoder().decode(error.m6FailureDiagnostic);
+  assert.deepEqual(new TextEncoder().encode(text),
+    error.m6FailureDiagnostic,
+    "the exact status-12 diagnostic remains canonical UTF-8 bytes");
+  const parsed = JSON.parse(text);
+  assert.equal(parsed.failure.report.status, 12);
+  assert.equal(parsed.failure.report.boundary, "1125883");
+  assert.equal(parsed.failure.preflight.profileId, "CADR-WEB-303");
+  assert.equal(parsed.failure.runEvidence.sessionId,
+    "observed-status12-session");
+  assert.deepEqual(parsed.failure.transcriptTail, []);
 }
 
 await testStrictRecordAndFirstDifference();
 await testCheckpointExactStopAndConsecutiveBatches();
 await testOvershootFailsClosedAndWrongCIsRejected();
 await testFullM7ControlFlowUsesFrozenReleaseBinding();
+testObservedStatus12FailureTransport();
 console.log("cadr M7 frame-checkpoint tests passed");

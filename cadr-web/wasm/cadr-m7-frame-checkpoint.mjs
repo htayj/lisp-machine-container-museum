@@ -8,6 +8,7 @@ import {
   CADR_M6_FORM_C,
   CADR_M6_RELEASE_RECORD_SHA256,
   runM6HeadlessBoot,
+  serializeM6FailureDiagnostic,
 } from "./cadr-m6-headless-boot.mjs";
 import {
   CADR_DISPLAY_ACTIVE_WORDS,
@@ -36,6 +37,36 @@ function bytesOf(value) {
 
 function required(condition, message) {
   if (!condition) throw new TypeError(`M7 frame checkpoint: ${message}`);
+}
+
+export class CadrM7UnderlyingM6Failure extends Error {
+  constructor(result, checkpoint) {
+    const diagnostic = serializeM6FailureDiagnostic({
+      schema: "cadr-m6-wasm-ready-conformance-v1",
+      outcome: "failed",
+      completed_runs: 0,
+      failed_run: 0,
+      failure: {
+        preflight: result?.preflight ?? null,
+        report: result?.report,
+        run_evidence: result?.runEvidence ?? null,
+        transcript_tail: result?.transcriptTail ?? [],
+      },
+    });
+    const report = result.report;
+    const boundary = report.boundary ?? "preflight";
+    super("M7 frame checkpoint: underlying frozen M6 boot did not reach READY " +
+      `(${report.reason}; phase=${report.phase}; status=${report.status}; ` +
+      `boundary=${String(boundary)})`);
+    this.name = "CadrM7UnderlyingM6Failure";
+    this.m6FailureDiagnostic = diagnostic.slice();
+    this.checkpoint = checkpoint === null ? null : Object.freeze({
+      boundary: checkpoint.boundary,
+      witness_sample: checkpoint.witness_sample.slice(),
+      display_record: checkpoint.display_record.slice(),
+      m6_release_record_sha256: CADR_M6_RELEASE_RECORD_SHA256.slice(),
+    });
+  }
 }
 
 function sameBytes(left, right) {
@@ -318,17 +349,7 @@ async function runM7CheckpointedM6BootInternal({ nativeCapture, ...config }, run
   const client = new CadrM7CBoundaryClient(config.client, nativeCapture);
   const result = await runBoot({ ...config, client });
   if (result?.outcome !== "ready") {
-    const reason = result?.report?.reason ?? "missing-failure-reason";
-    const phase = result?.report?.phase ?? "missing-failure-phase";
-    const status = Number.isSafeInteger(result?.report?.status) ?
-      result.report.status : "missing-failure-status";
-    const boundary = typeof result?.report?.boundary === "bigint" ?
-      result.report.boundary.toString() :
-      (typeof result?.report?.boundary === "number" ||
-       typeof result?.report?.boundary === "string" ?
-        String(result.report.boundary) : "missing-failure-boundary");
-    throw new TypeError(
-      `M7 frame checkpoint: underlying frozen M6 boot did not reach READY (${reason}; phase=${phase}; status=${status}; boundary=${boundary})`);
+    throw new CadrM7UnderlyingM6Failure(result, client.checkpoint);
   }
   required(client.checkpoint !== null, "M6 reached READY without an M7 C checkpoint");
   const releaseRecordSha256 = bytesOf(result.releaseRecordSha256);

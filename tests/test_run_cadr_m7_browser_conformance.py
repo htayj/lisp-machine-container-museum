@@ -2,7 +2,9 @@
 from __future__ import annotations
 
 import importlib.util
+import hashlib
 from http.server import ThreadingHTTPServer
+import json
 import os
 from pathlib import Path
 import sys
@@ -63,6 +65,13 @@ def native_record() -> bytes:
 
 def p4_manifest(module):
     file = lambda path, number: {"path": path, "bytes": number, "sha256": h(number)}
+    worker = file("cadr-web/wasm/cadr-worker.js", 26)
+    node = {"version": "v22.14.0", "executable_bytes": 123,
+            "executable_sha256": h(119)}
+    closure_files = [worker]
+    closure_tree = hashlib.sha256(json.dumps({
+        "builtins": ["node:worker_threads"], "files": closure_files, "node": node,
+    }, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
     return {
         "schema": "cadr-m7-frame-conformance-result-v1", "target": module.P5_TARGET,
         "outcome": "identical", "runtime_execution_performed": True,
@@ -85,7 +94,17 @@ def p4_manifest(module):
                    "frame_file": file("native/frame.cdrm7n1", 20), "transcript_file": file("native/capture.ndjson", 22), "idle_file": file("native/idle.bin", 23), "metadata_file": file("native/metadata.json", 24)},
         "portable": {"session_id": "portable",
                      "session_evidence": {"ready_session_id": "portable", "worker_log_session_id": "portable"},
-                     "module": file("cadr-web/build/cadr-web-m7-O0.wasm", 25), "worker": file("cadr-web/wasm/cadr-worker.js", 26), "adapter": [file("a.c", 27), file("a.h", 28)], "termination": {"pending_requests": 0, "terminated": True},
+                     "module": file("cadr-web/build/cadr-web-m7-O0.wasm", 25),
+                     "worker": worker,
+                     "worker_closure": {
+                         "schema": "cadr-m7-worker-source-closure-v1",
+                         "entry": worker, "files": closure_files,
+                         "builtins": ["node:worker_threads"], "node": node,
+                         "tree_sha256": closure_tree,
+                     },
+                     "contemporaneous_adapter_observation": [
+                         file("a.c", 27), file("a.h", 28)],
+                     "termination": {"pending_requests": 0, "terminated": True},
                      "framebuffer_checkpoint": {"boundary": "982990214", "cdrdisp1_sha256": h(29), "cdrm6i1_sha256": h(30)},
                      "cdrdisp_file": file("portable/frame.cdrdisp1", 29), "witness_file": file("portable/witness.cdrm6i1", 30), "ready_file": file("portable/ready.json", 31), "worker_log_file": file("portable/worker.ndjson", 32)},
         "comparison": {"file": file("comparison.json", 33), "m6_witness_sample_sha256": h(30), "native_capture_sha256": h(20), "native_raw_words_sha256": h(21), "portable_raw_words_sha256": h(34), "portable_record_sha256": h(29)},
@@ -279,6 +298,14 @@ def main() -> None:
             pass
         else:
             raise AssertionError("P5 accepted a changed P4 sidecar")
+    def duplicate_worker_file(value):
+        closure = value["portable"]["worker_closure"]
+        closure["files"].append(json_clone(closure["files"][0]))
+        closure["tree_sha256"] = hashlib.sha256(json.dumps({
+            "builtins": closure["builtins"], "files": closure["files"],
+            "node": closure["node"],
+        }, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
+
     for mutate in (
             lambda value: value["artifacts"].pop(),
             lambda value: value["native_inputs"].pop(),
@@ -289,6 +316,7 @@ def main() -> None:
             lambda value: value["native"]["capture"].__setitem__("byte_count", "1"),
             lambda value: value["portable"]["termination"].__setitem__("pending_requests", 1),
             lambda value: value["portable"]["framebuffer_checkpoint"].__setitem__("cdrdisp1_sha256", h(92)),
+            duplicate_worker_file,
             lambda value: value["portable"]["cdrdisp_file"].__setitem__("path", "synthetic"),
             lambda value: value["comparison"].__setitem__("portable_record_sha256", h(93)),
             lambda value: value["summary"].__setitem__("portable_frame_sha256", h(94))):

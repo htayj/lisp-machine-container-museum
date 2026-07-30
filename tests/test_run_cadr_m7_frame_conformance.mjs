@@ -1,19 +1,36 @@
 import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
 import { EventEmitter } from "node:events";
-import { readFile } from "node:fs/promises";
+import {
+  chmod,
+  mkdtemp,
+  mkdir,
+  readFile,
+  rm,
+  writeFile,
+} from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { resolve } from "node:path";
 import { PassThrough } from "node:stream";
 
 import {
+  CADR_M6_RELEASE_RECORD_SHA256,
+} from "../cadr-web/wasm/cadr-m6-headless-boot.mjs";
+import {
   P4_EXPECTED_CLOSURE_SCHEMA,
+  ProtocolV5Client,
   matchesCanonicalJsonBytes,
   p4Bindings,
   runNativeCapture,
+  stageM7WorkerClosure,
+  validateP4FailureReceipts,
   validateP4Manifest,
+  writeP4PortableFailureEvidence,
 } from "../scripts/run-cadr-m7-frame-conformance.mjs";
 
 const runnerSource = await readFile(new URL(
   "../scripts/run-cadr-m7-frame-conformance.mjs", import.meta.url), "utf8");
-assert.match(runnerSource, /cadr-m7-portable-failure-v1/);
+assert.match(runnerSource, /cadr-m7-portable-failure-v2/);
 assert.equal(runnerSource.includes(
   'resolve(portableDirectory, "worker.ndjson")'), true);
 assert.equal(runnerSource.includes(
@@ -32,6 +49,229 @@ assert.equal(matchesCanonicalJsonBytes(
 const H = index => index.toString(16).padStart(64, "0");
 const file = (path, index) => ({ path, bytes: index + 1, sha256: H(index) });
 const support = (path, installedAs, index) => ({ path, installed_as: installedAs, bytes: index + 1, sha256: H(index) });
+const canonical = value => {
+  if (Array.isArray(value)) return `[${value.map(canonical).join(",")}]`;
+  if (value !== null && typeof value === "object") {
+    return `{${Object.keys(value).sort().map(key =>
+      `${JSON.stringify(key)}:${canonical(value[key])}`).join(",")}}`;
+  }
+  return JSON.stringify(value);
+};
+const m7NativeRecord = () => {
+  const activeWords = 23112;
+  const bytes = new Uint8Array(64 + activeWords * 4);
+  const view = new DataView(bytes.buffer);
+  bytes.set(new TextEncoder().encode("CDRM7N1"));
+  view.setUint32(8, 1, true);
+  view.setUint32(12, 64, true);
+  view.setBigUint64(16, 982990214n, true);
+  view.setUint32(24, 768, true);
+  view.setUint32(28, 963, true);
+  view.setUint32(32, 4, true);
+  view.setUint32(36, 1, true);
+  view.setUint32(40, 32768, true);
+  view.setUint32(44, activeWords, true);
+  view.setUint32(48, activeWords * 4, true);
+  return bytes;
+};
+const m7PortableCheckpoint = releaseSha256 => {
+  const activeWords = 23112;
+  const display = new Uint8Array(96 + activeWords * 4);
+  const view = new DataView(display.buffer);
+  display.set(new TextEncoder().encode("CDRDISP1"));
+  view.setUint16(8, 1, true);
+  view.setUint16(10, 80, true);
+  view.setUint32(12, 1, true);
+  view.setBigUint64(16, 1n, true);
+  view.setBigUint64(24, 1n, true);
+  view.setUint32(32, 768, true);
+  view.setUint32(36, 963, true);
+  view.setUint32(40, 24, true);
+  view.setUint32(44, 32768, true);
+  view.setUint32(48, activeWords, true);
+  view.setUint32(52, 4, true);
+  view.setUint32(56, 1, true);
+  view.setUint32(60, activeWords, true);
+  view.setBigUint64(64, BigInt(activeWords * 4), true);
+  view.setBigUint64(72, BigInt(display.byteLength), true);
+  view.setUint32(88, 768, true);
+  view.setUint32(92, 963, true);
+  const witness = new Uint8Array(96);
+  witness.set(new TextEncoder().encode("CDRM6I1"));
+  const witnessView = new DataView(witness.buffer);
+  witnessView.setBigUint64(8, 0x4c4549444d36n, true);
+  witnessView.setUint32(68, 0x18000, true);
+  witnessView.setUint32(72, 3, true);
+  witnessView.setUint32(84, 1, true);
+  return {
+    boundary: 982990214n,
+    display_record: display,
+    witness_sample: witness,
+    m6_release_record_sha256: Buffer.from(releaseSha256, "hex"),
+  };
+};
+const workerClosure = (entry, files) => {
+  const builtins = ["node:worker_threads"];
+  const node = {
+    version: process.version,
+    executable_bytes: 123,
+    executable_sha256: H(119),
+  };
+  return {
+    schema: "cadr-m7-worker-source-closure-v1",
+    entry,
+    files,
+    builtins,
+    node,
+    tree_sha256: createHash("sha256").update(canonical({
+      builtins, files, node,
+    })).digest("hex"),
+  };
+};
+
+{
+  const root = await mkdtemp(resolve(tmpdir(), "cadr-m7-worker-stage-test-"));
+  const source = resolve(root, "source");
+  const stage = resolve(root, "stage");
+  await mkdir(source, { mode: 0o700 });
+  try {
+    await writeFile(resolve(source, "entry.mjs"),
+      'import { value } from "./dependency.mjs"; export { value };\n',
+      { mode: 0o600 });
+    await writeFile(resolve(source, "dependency.mjs"),
+      "export const value = 7;\n", { mode: 0o600 });
+    const staged = await stageM7WorkerClosure({
+      sourceRoot: source, entryName: "entry.mjs", stageDirectory: stage,
+    });
+    assert.equal(staged.closure.files.length, 2);
+    await writeFile(resolve(source, "dependency.mjs"),
+      "export const value = 8;\n");
+    assert.equal(await readFile(
+      resolve(stage, "dependency.mjs"), "utf8"),
+    "export const value = 7;\n",
+    "source mutation after staging cannot alter executed worker bytes");
+    assert.equal(staged.entryUrl.href.startsWith("file:"), true);
+  } finally {
+    await chmod(stage, 0o700).catch(() => {});
+    await rm(root, { recursive: true, force: true });
+  }
+}
+
+{
+  const root = await mkdtemp(resolve(tmpdir(), "cadr-m7-worker-reject-test-"));
+  const source = resolve(root, "source");
+  await mkdir(source, { mode: 0o700 });
+  try {
+    await writeFile(resolve(source, "entry.mjs"),
+      'await import("./dependency.mjs");\n', { mode: 0o600 });
+    await assert.rejects(stageM7WorkerClosure({
+      sourceRoot: source, entryName: "entry.mjs",
+      stageDirectory: resolve(root, "stage"),
+    }), /unsupported dynamic import/);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+}
+
+{
+  const cases = [
+    {
+      name: "commented dynamic builtin bypass",
+      source: 'await import/* policy bypass */("node:fs");\n',
+      pattern: /unsupported dynamic import/,
+    },
+    {
+      name: "line-commented dynamic builtin bypass",
+      source: 'await import// policy bypass\n("node:fs");\n',
+      pattern: /unsupported dynamic import/,
+    },
+    {
+      name: "commented static builtin bypass",
+      source: 'import fs from/* policy bypass */"node:fs";\n',
+      pattern: /nonlocal or unsupported module/,
+    },
+    {
+      name: "nonliteral dynamic import",
+      source: 'const name = "node:worker_threads"; await import(name);\n',
+      pattern: /nonliteral dynamic import/,
+    },
+  ];
+  for (const testCase of cases) {
+    const root = await mkdtemp(resolve(
+      tmpdir(), "cadr-m7-worker-token-reject-test-"));
+    const source = resolve(root, "source");
+    await mkdir(source, { mode: 0o700 });
+    try {
+      await writeFile(resolve(source, "entry.mjs"), testCase.source,
+        { mode: 0o600 });
+      await assert.rejects(stageM7WorkerClosure({
+        sourceRoot: source, entryName: "entry.mjs",
+        stageDirectory: resolve(root, "stage"),
+      }), testCase.pattern, testCase.name);
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  }
+}
+
+{
+  const root = await mkdtemp(resolve(
+    tmpdir(), "cadr-m7-worker-token-fake-test-"));
+  const source = resolve(root, "source");
+  const stage = resolve(root, "stage");
+  await mkdir(source, { mode: 0o700 });
+  try {
+    await writeFile(resolve(source, "entry.mjs"),
+      'const text = "import(\\\\"node:fs\\\\")"; ' +
+      '/* import("node:fs") */ export const value = text;\n',
+      { mode: 0o600 });
+    const staged = await stageM7WorkerClosure({
+      sourceRoot: source, entryName: "entry.mjs", stageDirectory: stage,
+    });
+    assert.deepEqual(staged.closure.builtins, []);
+    assert.equal(staged.closure.files.length, 1);
+  } finally {
+    await chmod(stage, 0o700).catch(() => {});
+    await rm(root, { recursive: true, force: true });
+  }
+}
+
+{
+  const root = await mkdtemp(resolve(tmpdir(), "cadr-m7-real-worker-test-"));
+  const stage = resolve(root, "stage");
+  try {
+    const staged = await stageM7WorkerClosure({ stageDirectory: stage });
+    assert.deepEqual(staged.closure.builtins, ["node:worker_threads"]);
+    assert.equal(staged.closure.files.some(
+      file => file.path.endsWith("/cadr-worker.js")), true);
+  } finally {
+    await chmod(stage, 0o700).catch(() => {});
+    await rm(root, { recursive: true, force: true });
+  }
+}
+
+{
+  class TerminationWorker extends EventEmitter {
+    constructor() { super(); this.calls = 0; }
+    postMessage() {}
+    async terminate() {
+      this.calls += 1;
+      if (this.calls === 1) throw new Error("injected terminate rejection");
+      return 9;
+    }
+  }
+  const worker = new TerminationWorker();
+  const client = new ProtocolV5Client(worker, "termination-test");
+  await assert.rejects(client.close(), /injected terminate rejection/);
+  const receipt = await client.terminateFailure();
+  assert.equal(worker.calls, 2,
+    "a rejected terminate is retried rather than reported as complete");
+  assert.deepEqual(receipt, {
+    pending_requests_at_failure: 0,
+    terminated: true,
+    worker_exit_code: 9,
+  });
+}
 
 function manifest() {
   return {
@@ -66,7 +306,11 @@ function manifest() {
     portable: { session_id: "portable-test",
       session_evidence: { ready_session_id: "portable-test", worker_log_session_id: "portable-test" },
       module: file("cadr-web/build/cadr-web-m7-O0.wasm", 25),
-      worker: file("cadr-web/wasm/cadr-worker.js", 26), adapter: [
+      worker: file("cadr-web/wasm/cadr-worker.js", 26),
+      worker_closure: workerClosure(
+        file("cadr-web/wasm/cadr-worker.js", 26), [
+          file("cadr-web/wasm/cadr-worker.js", 26),
+        ]), contemporaneous_adapter_observation: [
         file("cadr-web/wasm/cadr_wasm_adapter.c", 27), file("cadr-web/wasm/cadr_wasm_adapter.h", 28),
       ], termination: { pending_requests: 0, terminated: true },
       framebuffer_checkpoint: { boundary: "982990214", cdrdisp1_sha256: H(29), cdrm6i1_sha256: H(30) },
@@ -79,6 +323,183 @@ function manifest() {
 }
 
 const baseline = manifest();
+const portableFailure = {
+  schema: "cadr-m7-portable-failure-v2",
+  target: "CADR-WEB-303/ABI1.5/protocol-v5/M7",
+  session_id: "portable-failure-test",
+  error_name: "CadrM7UnderlyingM6Failure",
+  error_message: "bounded M6 failure",
+  module: file("cadr-web/build/cadr-web-m7-O2.wasm", 120),
+  worker: file("cadr-web/wasm/cadr-worker.js", 121),
+  worker_closure: workerClosure(
+    file("cadr-web/wasm/cadr-worker.js", 121), [
+      file("cadr-web/wasm/cadr-worker.js", 121),
+    ]),
+  contemporaneous_adapter_observation: [
+    file("cadr-web/wasm/cadr_wasm_adapter.c", 122),
+    file("cadr-web/wasm/cadr_wasm_adapter.h", 123),
+  ],
+  m6_release_record: structuredClone(baseline.m6_release_record),
+  m6_failure_file: file("m6-failure.json", 125),
+  checkpoint: null,
+  checkpoint_comparison_file: null,
+  worker_log_file: file("worker.ndjson", 126),
+  termination: {
+    pending_requests_at_failure: 0,
+    terminated: true,
+    worker_exit_code: 1,
+  },
+};
+const rootFailure = {
+  schema: "cadr-m7-frame-conformance-failure-v1",
+  target: "CADR-WEB-303/ABI1.5/protocol-v5/M7",
+  outcome: "failed",
+  runtime_execution_performed: true,
+  session: { id: "m7-p4-failure-test", mode: "0700" },
+  source: baseline.source,
+  m6_release_record: baseline.m6_release_record,
+  patches: baseline.patches,
+  prepared: baseline.prepared,
+  artifacts: baseline.artifacts,
+  native_inputs: baseline.native_inputs,
+  schedule: baseline.schedule,
+  native: baseline.native,
+  portable_failure_file: file("portable/failure.json", 127),
+  error_name: portableFailure.error_name,
+  error_message: portableFailure.error_message,
+};
+const expectedFailure = {
+  root: structuredClone(rootFailure),
+  portable: structuredClone(portableFailure),
+};
+
+for (const retainedCheckpoint of [false, true]) {
+  const root = await mkdtemp(resolve(
+    tmpdir(), `cadr-m7-failure-writer-${retainedCheckpoint ? "post" : "pre"}-`));
+  const portableDirectory = resolve(root, "portable");
+  await mkdir(portableDirectory, { mode: 0o700 });
+  const caught = new Error(retainedCheckpoint ?
+    "post-Form-C retained checkpoint failure" :
+    "terminal-machine-status; phase=run; status=12; boundary=1125883");
+  caught.name = "CadrM7UnderlyingM6Failure";
+  caught.m6FailureDiagnostic = new TextEncoder().encode(canonical({
+    schema: "cadr-m6-wasm-failure-diagnostic-v1",
+    outcome: "failed",
+    failure: {
+      report: {
+        reason: "terminal-machine-status", phase: "run", status: 12,
+        boundary: "1125883",
+      },
+      preflight: { profileId: "CADR-WEB-303" },
+      runEvidence: { sessionId: "observed-status12-session" },
+      transcriptTail: [],
+    },
+  }));
+  const writerRelease = {
+    ...portableFailure.m6_release_record,
+    sha256: Buffer.from(CADR_M6_RELEASE_RECORD_SHA256).toString("hex"),
+  };
+  caught.checkpoint = retainedCheckpoint ?
+    m7PortableCheckpoint(writerRelease.sha256) : null;
+  try {
+    const written = await writeP4PortableFailureEvidence({
+      portableDirectory,
+      caught,
+      nativeFrame: m7NativeRecord(),
+      sessionId: retainedCheckpoint ?
+        "post-form-c-failure-writer" : "status12-failure-writer",
+      module: portableFailure.module,
+      worker: portableFailure.worker,
+      workerClosure: portableFailure.worker_closure,
+      contemporaneousAdapterObservation:
+        portableFailure.contemporaneous_adapter_observation,
+      m6ReleaseRecord: writerRelease,
+      termination: portableFailure.termination,
+      workerLogBytes: new TextEncoder().encode(
+        '{"schema":"cadr-m7-portable-session-v1"}\n'),
+    });
+    const writtenBytes = await readFile(resolve(portableDirectory, "failure.json"));
+    assert.equal(new TextDecoder().decode(writtenBytes),
+      canonical(JSON.parse(new TextDecoder().decode(writtenBytes))),
+      "the actual failure writer emits canonical receipt bytes");
+    assert.equal(written.failure.checkpoint !== null, retainedCheckpoint);
+    assert.equal(written.failure.checkpoint_comparison_file !== null,
+      retainedCheckpoint);
+    if (retainedCheckpoint) {
+      assert.equal(written.failure.checkpoint.m6_release_record_sha256,
+        writerRelease.sha256);
+    }
+    const writtenRoot = {
+      ...structuredClone(rootFailure),
+      error_name: caught.name,
+      error_message: caught.message,
+      m6_release_record: writerRelease,
+      portable_failure_file: written.failureFile,
+    };
+    assert.equal(validateP4FailureReceipts(
+      writtenRoot, written.failure, {
+        root: structuredClone(writtenRoot),
+        portable: structuredClone(written.failure),
+      }), writtenRoot);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+}
+
+assert.equal(validateP4FailureReceipts(
+  rootFailure, portableFailure, expectedFailure), rootFailure);
+{
+  const corrupt = structuredClone(portableFailure);
+  corrupt.unreviewed = true;
+  assert.throws(() => validateP4FailureReceipts(
+    rootFailure, corrupt, expectedFailure), /missing or unknown fields/);
+}
+{
+  const corrupt = structuredClone(portableFailure);
+  corrupt.termination.terminated = false;
+  assert.throws(() => validateP4FailureReceipts(
+    rootFailure, corrupt, expectedFailure), /did not terminate/);
+}
+{
+  const retained = structuredClone(portableFailure);
+  retained.checkpoint = {
+    boundary: "982990214",
+    m6_release_record_sha256: retained.m6_release_record.sha256,
+    frame_file: file("failure-frame.cdrdisp1", 128),
+    witness_file: file("failure-witness.cdrm6i1", 129),
+  };
+  retained.checkpoint_comparison_file =
+    file("failure-comparison.json", 132);
+  const retainedExpected = {
+    root: structuredClone(rootFailure),
+    portable: structuredClone(retained),
+  };
+  assert.equal(validateP4FailureReceipts(
+    rootFailure, retained, retainedExpected), rootFailure);
+  const corrupt = structuredClone(retained);
+  corrupt.checkpoint.m6_release_record_sha256 = H(130);
+  assert.throws(() => validateP4FailureReceipts(
+    rootFailure, corrupt, {
+      root: structuredClone(rootFailure), portable: structuredClone(corrupt),
+    }), /wrong release identity/);
+}
+{
+  const corrupt = structuredClone(portableFailure);
+  corrupt.contemporaneous_adapter_observation.pop();
+  assert.throws(() => validateP4FailureReceipts(
+    rootFailure, corrupt, {
+      root: structuredClone(rootFailure), portable: structuredClone(corrupt),
+    }), /adapter observation is incomplete/);
+}
+{
+  const corruptRoot = structuredClone(rootFailure);
+  corruptRoot.native.frame_file.sha256 = H(131);
+  assert.throws(() => validateP4FailureReceipts(
+    corruptRoot, portableFailure, {
+      root: structuredClone(corruptRoot),
+      portable: structuredClone(portableFailure),
+    }), /frame identity differs/);
+}
 const independentlyRecorded = manifest();
 const expected = { schema: P4_EXPECTED_CLOSURE_SCHEMA, bindings: {
   source: independentlyRecorded.source,
@@ -122,7 +543,12 @@ const mutations = [
   ["portable ready session", value => { value.portable.session_evidence.ready_session_id = "portable-swapped"; }],
   ["portable module", value => { value.portable.module.sha256 = H(104); }],
   ["portable worker", value => { value.portable.worker.sha256 = H(105); }],
-  ["portable adapter", value => { value.portable.adapter[1].sha256 = H(106); }],
+  ["portable worker closure", value => {
+    value.portable.worker_closure.files[0].sha256 = H(106);
+  }],
+  ["portable adapter observation", value => {
+    value.portable.contemporaneous_adapter_observation[1].sha256 = H(106);
+  }],
   ["portable checkpoint", value => { value.portable.framebuffer_checkpoint.cdrdisp1_sha256 = H(107); }],
   ["redundant portable file hash", value => { value.portable.cdrdisp_file.sha256 = H(107); }],
   ["comparison", value => { value.comparison.portable_record_sha256 = H(108); }],
@@ -132,7 +558,7 @@ for (const [name, mutate] of mutations) {
   const candidate = structuredClone(baseline);
   mutate(candidate);
   assert.throws(() => validateP4Manifest(candidate, expected),
-    /P4 binding differs|P4 native private disk changed|P4 native termination failed|bind its session|redundant hashes/, name);
+    /P4 binding differs|P4 native private disk changed|P4 native termination failed|bind its session|redundant hashes|worker differs|worker tree/, name);
 }
 
 assert.throws(() => validateP4Manifest({ ...baseline, runtime_execution_performed: false }, expected), /wrong status/);

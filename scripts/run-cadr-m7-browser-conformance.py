@@ -313,9 +313,11 @@ def validate_p4_manifest(value: dict[str, Any], raw: bytes,
     }
     for name, (_path, identity) in native_files.items():
         file_identity(identity, f"P4 native {name}")
-    exact_keys(value["portable"], ["adapter", "cdrdisp_file", "framebuffer_checkpoint", "module",
-                                    "ready_file", "session_evidence", "session_id", "termination",
-                                    "witness_file", "worker", "worker_log_file"], "P4 portable")
+    exact_keys(value["portable"], ["cdrdisp_file", "contemporaneous_adapter_observation",
+                                    "framebuffer_checkpoint", "module", "ready_file",
+                                    "session_evidence", "session_id", "termination",
+                                    "witness_file", "worker", "worker_closure",
+                                    "worker_log_file"], "P4 portable")
     evidence = exact_keys(value["portable"]["session_evidence"],
                           ["ready_session_id", "worker_log_session_id"], "P4 portable session evidence")
     if (not isinstance(value["portable"]["session_id"], str) or not value["portable"]["session_id"] or
@@ -327,11 +329,47 @@ def validate_p4_manifest(value: dict[str, Any], raw: bytes,
     if termination != {"pending_requests": 0, "terminated": True}:
         raise BrowserConformanceError("P4 portable worker did not terminate cleanly")
     file_identity(value["portable"]["module"], "P4 portable module")
-    file_identity(value["portable"]["worker"], "P4 portable worker")
-    if not isinstance(value["portable"]["adapter"], list) or len(value["portable"]["adapter"]) != 2:
-        raise BrowserConformanceError("P4 portable adapter closure is incomplete")
-    for index, adapter in enumerate(value["portable"]["adapter"]):
-        file_identity(adapter, f"P4 portable adapter {index}")
+    worker = file_identity(value["portable"]["worker"], "P4 portable worker")
+    closure = exact_keys(value["portable"]["worker_closure"],
+                         ["builtins", "entry", "files", "node", "schema",
+                          "tree_sha256"], "P4 worker closure")
+    if closure["schema"] != "cadr-m7-worker-source-closure-v1" or \
+            closure["builtins"] != ["node:worker_threads"]:
+        raise BrowserConformanceError("P4 worker closure identity is wrong")
+    if file_identity(closure["entry"], "P4 worker closure entry") != worker:
+        raise BrowserConformanceError("P4 worker differs from its closure entry")
+    if not isinstance(closure["files"], list) or not closure["files"]:
+        raise BrowserConformanceError("P4 worker closure files are incomplete")
+    closure_files = [
+        file_identity(item, f"P4 worker closure file {index}")
+        for index, item in enumerate(closure["files"])
+    ]
+    closure_paths = [item["path"] for item in closure_files]
+    if any(left >= right for left, right in
+           zip(closure_paths, closure_paths[1:])) or worker not in closure_files:
+        raise BrowserConformanceError("P4 worker closure files are not canonical")
+    node = exact_keys(closure["node"],
+                      ["executable_bytes", "executable_sha256", "version"],
+                      "P4 worker Node identity")
+    if not isinstance(node["executable_bytes"], int) or \
+            isinstance(node["executable_bytes"], bool) or \
+            node["executable_bytes"] < 1 or \
+            not isinstance(node["version"], str) or \
+            not re.fullmatch(r"v[1-9][0-9]*\.[0-9]+\.[0-9]+", node["version"]):
+        raise BrowserConformanceError("P4 worker Node identity is malformed")
+    digest(node["executable_sha256"], "P4 worker Node executable")
+    tree = json.dumps({"builtins": closure["builtins"],
+                       "files": closure_files, "node": node},
+                      sort_keys=True, separators=(",", ":")).encode()
+    if closure["tree_sha256"] != hashlib.sha256(tree).hexdigest():
+        raise BrowserConformanceError("P4 worker closure tree hash is wrong")
+    observations = value["portable"]["contemporaneous_adapter_observation"]
+    if not isinstance(observations, list) or len(observations) != 2:
+        raise BrowserConformanceError(
+            "P4 contemporaneous adapter observation is incomplete")
+    for index, adapter in enumerate(observations):
+        file_identity(adapter,
+                      f"P4 contemporaneous adapter observation {index}")
     checkpoint = exact_keys(value["portable"]["framebuffer_checkpoint"],
                             ["boundary", "cdrdisp1_sha256", "cdrm6i1_sha256"],
                             "P4 portable checkpoint")

@@ -29,16 +29,16 @@ import {
 } from "../cadr-web/wasm/cadr-m6-headless-boot.mjs";
 import {
   CADR_M7_FORM_C_BOUNDARY,
+  compareM7FrameCheckpoint,
   runM7CheckpointedM6Boot,
 } from "../cadr-web/wasm/cadr-m7-frame-checkpoint.mjs";
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const PRIVATE_ROOT = resolve(ROOT, "build/cadr-oracle");
-const WORKER_URL = pathToFileURL(resolve(ROOT, "cadr-web/wasm/cadr-worker.js"));
 const PROFILE_PATH = resolve(ROOT, "cadr-web/profiles/cadr-web-303.json");
 const RELEASE_PATH = resolve(ROOT, "cadr-web/oracle/cadr-m6-release-record.json");
 const NATIVE_ORACLE = resolve(ROOT, "scripts/cadr-m7-native-frame-oracle.py");
-const WORKER_PATH = resolve(ROOT, "cadr-web/wasm/cadr-worker.js");
+const WASM_SOURCE_ROOT = resolve(ROOT, "cadr-web/wasm");
 const ADAPTER_PATHS = Object.freeze([
   resolve(ROOT, "cadr-web/wasm/cadr_wasm_adapter.c"),
   resolve(ROOT, "cadr-web/wasm/cadr_wasm_adapter.h"),
@@ -109,6 +109,42 @@ function byteIdentity(value, label) {
   return value;
 }
 
+function workerClosureIdentity(value, label) {
+  exactKeys(value, [
+    "builtins", "entry", "files", "node", "schema", "tree_sha256",
+  ], label);
+  if (value.schema !== "cadr-m7-worker-source-closure-v1" ||
+      !Array.isArray(value.files) || value.files.length === 0 ||
+      !Array.isArray(value.builtins) ||
+      !sameJson(value.builtins, ["node:worker_threads"])) {
+    fail(`${label} has an invalid identity`);
+  }
+  exactKeys(value.node, [
+    "executable_bytes", "executable_sha256", "version",
+  ], `${label}.node`);
+  positiveInteger(value.node.executable_bytes,
+    `${label}.node executable bytes`);
+  digest(value.node.executable_sha256,
+    `${label}.node executable hash`);
+  if (typeof value.node.version !== "string" ||
+      !/^v[1-9][0-9]*\.[0-9]+\.[0-9]+$/u.test(value.node.version)) {
+    fail(`${label}.node version is invalid`);
+  }
+  byteIdentity(value.entry, `${label}.entry`);
+  const files = value.files.map((file, index) =>
+    byteIdentity(file, `${label}.files[${index}]`));
+  const paths = files.map(file => file.path);
+  if (paths.some((path, index) =>
+    (index > 0 && paths[index - 1] >= path)) ||
+      !files.some(file => sameJson(file, value.entry)) ||
+      value.tree_sha256 !== sha256(new TextEncoder().encode(canonicalJson({
+        builtins: value.builtins, files, node: value.node,
+      })))) {
+    fail(`${label} is not a canonical closed worker tree`);
+  }
+  return value;
+}
+
 function privateFileIdentity(value, label, expectedPath = null) {
   exactKeys(value, ["bytes", "path", "sha256"], label);
   if (typeof value.path !== "string" || value.path.length === 0 || value.path.startsWith("/") || value.path.includes("..")) {
@@ -138,9 +174,11 @@ export function matchesCanonicalJsonBytes(bytes, value, terminalLf = false) {
     Buffer.from(`${canonicalJson(value)}${suffix}`));
 }
 
-async function readCanonicalJson(path, label, canonicalRequired = true,
+function parseCanonicalJsonBytes(bytes, label, canonicalRequired = true,
   terminalLf = false) {
-  const bytes = await readFile(path);
+  if (!(bytes instanceof Uint8Array)) {
+    fail(`${label} is not a byte sequence`);
+  }
   let value;
   try {
     value = JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(bytes));
@@ -154,11 +192,302 @@ async function readCanonicalJson(path, label, canonicalRequired = true,
   return Object.freeze({ bytes: new Uint8Array(bytes), value });
 }
 
+async function readCanonicalJson(path, label, canonicalRequired = true,
+  terminalLf = false) {
+  return parseCanonicalJsonBytes(
+    new Uint8Array(await readFile(path)), label, canonicalRequired, terminalLf);
+}
+
 async function fileIdentity(path, label) {
   const info = await lstat(path);
   if (!info.isFile() || info.isSymbolicLink()) fail(`${label} is not a regular non-symlink file`);
   const bytes = await readFile(path);
   return Object.freeze({ path: relative(ROOT, path), bytes: bytes.byteLength, sha256: sha256(bytes) });
+}
+
+async function readBoundRegularFile(path, label) {
+  const handle = await open(path, FS.O_RDONLY | FS.O_NOFOLLOW);
+  try {
+    const before = await handle.stat();
+    if (!before.isFile()) {
+      fail(`${label} is not a regular file`);
+    }
+    const bytes = new Uint8Array(await handle.readFile());
+    const after = await handle.stat();
+    if (before.dev !== after.dev || before.ino !== after.ino ||
+        before.size !== after.size || before.mtimeMs !== after.mtimeMs ||
+        before.ctimeMs !== after.ctimeMs ||
+        bytes.byteLength !== after.size) {
+      fail(`${label} changed while its bound bytes were read`);
+    }
+    return Object.freeze({
+      bytes,
+      identity: Object.freeze({
+        path: relative(ROOT, path),
+        bytes: bytes.byteLength,
+        sha256: sha256(bytes),
+      }),
+    });
+  } finally {
+    await handle.close();
+  }
+}
+
+function moduleTokens(source, label) {
+  const tokens = [];
+  const length = source.length;
+  let offset = 0;
+
+  const scanString = quote => {
+    const start = offset++;
+    let escaped = false;
+    while (offset < length) {
+      const character = source[offset++];
+      if (escaped) {
+        escaped = false;
+      } else if (character === "\\") {
+        escaped = true;
+      } else if (character === quote) {
+        tokens.push(Object.freeze({
+          kind: "string", raw: source.slice(start, offset),
+          escaped: source.slice(start + 1, offset - 1).includes("\\"),
+          value: source.slice(start + 1, offset - 1),
+        }));
+        return;
+      } else if (character === "\n" || character === "\r") {
+        fail(`${label} contains an unterminated string`);
+      }
+    }
+    fail(`${label} contains an unterminated string`);
+  };
+
+  const scanTemplate = () => {
+    offset += 1;
+    let escaped = false;
+    while (offset < length) {
+      const character = source[offset++];
+      if (escaped) {
+        escaped = false;
+      } else if (character === "\\") {
+        escaped = true;
+      } else if (character === "`") {
+        return;
+      } else if (character === "$" && source[offset] === "{") {
+        offset += 1;
+        scanCode(true);
+      }
+    }
+    fail(`${label} contains an unterminated template literal`);
+  };
+
+  const scanCode = stopAtTemplateBrace => {
+    let braceDepth = 0;
+    while (offset < length) {
+      const character = source[offset];
+      if (/\s/u.test(character)) {
+        offset += 1;
+        continue;
+      }
+      if (character === "/" && source[offset + 1] === "/") {
+        offset += 2;
+        while (offset < length && source[offset] !== "\n" &&
+               source[offset] !== "\r") offset += 1;
+        continue;
+      }
+      if (character === "/" && source[offset + 1] === "*") {
+        const end = source.indexOf("*/", offset + 2);
+        if (end < 0) fail(`${label} contains an unterminated comment`);
+        offset = end + 2;
+        continue;
+      }
+      if (character === "'" || character === '"') {
+        scanString(character);
+        continue;
+      }
+      if (character === "`") {
+        scanTemplate();
+        continue;
+      }
+      if (/[A-Za-z_$]/u.test(character)) {
+        const start = offset++;
+        while (offset < length && /[A-Za-z0-9_$]/u.test(source[offset])) {
+          offset += 1;
+        }
+        tokens.push(Object.freeze({
+          kind: "identifier", value: source.slice(start, offset),
+        }));
+        continue;
+      }
+      offset += 1;
+      if (stopAtTemplateBrace && character === "}") {
+        if (braceDepth === 0) return;
+        braceDepth -= 1;
+      } else if (stopAtTemplateBrace && character === "{") {
+        braceDepth += 1;
+      }
+      tokens.push(Object.freeze({ kind: "punctuator", value: character }));
+    }
+    if (stopAtTemplateBrace) {
+      fail(`${label} contains an unterminated template expression`);
+    }
+  };
+
+  scanCode(false);
+  return Object.freeze(tokens);
+}
+
+function staticModuleImports(bytes, label) {
+  let source;
+  try {
+    source = new TextDecoder("utf-8", { fatal: true }).decode(bytes);
+  } catch {
+    fail(`${label} is not UTF-8 module source`);
+  }
+  const tokens = moduleTokens(source, label);
+  const builtins = new Set();
+  const imports = new Set();
+  for (let index = 0; index < tokens.length; index += 1) {
+    const token = tokens[index];
+    if (token.kind !== "identifier" ||
+        (token.value !== "import" && token.value !== "export")) continue;
+    if (token.value === "import" &&
+        tokens[index + 1]?.kind === "punctuator" &&
+        tokens[index + 1].value === ".") {
+      continue;
+    }
+    if (token.value === "import" &&
+        tokens[index + 1]?.kind === "punctuator" &&
+        tokens[index + 1].value === "(") {
+      const specifierToken = tokens[index + 2];
+      if (specifierToken?.kind !== "string" || specifierToken.escaped ||
+          tokens[index + 3]?.kind !== "punctuator" ||
+          tokens[index + 3].value !== ")") {
+        fail(`${label} contains a nonliteral dynamic import`);
+      }
+      if (specifierToken.value !== "node:worker_threads") {
+        fail(`${label} contains an unsupported dynamic import`);
+      }
+      builtins.add(specifierToken.value);
+      index += 3;
+      continue;
+    }
+    let specifierToken = null;
+    if (token.value === "import" && tokens[index + 1]?.kind === "string") {
+      specifierToken = tokens[index + 1];
+      index += 1;
+    }
+    let sawFrom = false;
+    for (let cursor = index + 1;
+         specifierToken === null && cursor < tokens.length; cursor += 1) {
+      if (tokens[cursor].kind === "identifier" &&
+          tokens[cursor].value === "from") {
+        sawFrom = true;
+        continue;
+      }
+      if (sawFrom && tokens[cursor].kind === "string") {
+        specifierToken = tokens[cursor];
+        index = cursor;
+        break;
+      }
+      if (tokens[cursor].kind === "punctuator" &&
+          tokens[cursor].value === ";") break;
+      if (tokens[cursor].kind === "identifier" &&
+          (tokens[cursor].value === "import" ||
+           tokens[cursor].value === "export")) break;
+    }
+    if (specifierToken === null || specifierToken.escaped) {
+      if (token.value === "import") {
+        fail(`${label} contains an unsupported import declaration`);
+      }
+      continue;
+    }
+    const specifier = specifierToken.value;
+    if (!specifier.startsWith("./") ||
+        specifier.slice(2).includes("/") ||
+        !specifier.endsWith(".mjs")) {
+      fail(`${label} imports a nonlocal or unsupported module`);
+    }
+    imports.add(specifier.slice(2));
+  }
+  return Object.freeze({
+    builtins: Object.freeze([...builtins].sort()),
+    files: Object.freeze([...imports].sort()),
+  });
+}
+
+export async function stageM7WorkerClosure({
+  sourceRoot = WASM_SOURCE_ROOT,
+  entryName = "cadr-worker.js",
+  stageDirectory,
+} = {}) {
+  if (typeof stageDirectory !== "string" || stageDirectory.length === 0) {
+    fail("worker stage directory is absent");
+  }
+  const source = resolve(sourceRoot);
+  const entry = resolve(source, entryName);
+  if (dirname(entry) !== source ||
+      (entryName !== "cadr-worker.js" && !entryName.endsWith(".mjs"))) {
+    fail("worker entry is outside the selected source directory");
+  }
+  const pending = [entryName];
+  const loaded = new Map();
+  const builtins = new Set();
+  while (pending.length !== 0) {
+    const name = pending.shift();
+    if (loaded.has(name)) continue;
+    if ((name !== entryName && !name.endsWith(".mjs")) ||
+        name.includes("/") || name.includes("\\") ||
+        name === "." || name === "..") {
+      fail("worker closure contains an invalid module name");
+    }
+    const bound = await readBoundRegularFile(
+      resolve(source, name), `worker closure ${name}`);
+    loaded.set(name, bound);
+    const dependencies = staticModuleImports(
+      bound.bytes, `worker closure ${name}`);
+    dependencies.builtins.forEach(value => builtins.add(value));
+    for (const dependency of dependencies.files) {
+      if (!loaded.has(dependency)) pending.push(dependency);
+    }
+  }
+  await mkdir(stageDirectory, { mode: 0o700 });
+  await chmod(stageDirectory, 0o700);
+  await assertPrivateDirectory(stageDirectory, "M7 worker stage");
+  const files = [];
+  for (const name of [...loaded.keys()].sort()) {
+    const bound = loaded.get(name);
+    const receipt = await writePrivateNew(
+      resolve(stageDirectory, name), bound.bytes);
+    if (receipt.bytes !== bound.identity.bytes ||
+        receipt.sha256 !== bound.identity.sha256) {
+      fail("staged worker bytes differ from their bound source");
+    }
+    await chmod(resolve(stageDirectory, name), 0o400);
+    files.push(bound.identity);
+  }
+  await chmod(stageDirectory, 0o500);
+  const nodeBound = await readBoundRegularFile(
+    process.execPath, "Node worker runtime");
+  const node = Object.freeze({
+    version: process.version,
+    executable_bytes: nodeBound.identity.bytes,
+    executable_sha256: nodeBound.identity.sha256,
+  });
+  const builtinList = Object.freeze([...builtins].sort());
+  const closure = Object.freeze({
+    schema: "cadr-m7-worker-source-closure-v1",
+    entry: loaded.get(entryName).identity,
+    files: Object.freeze(files),
+    builtins: builtinList,
+    node,
+    tree_sha256: sha256(new TextEncoder().encode(canonicalJson({
+      builtins: builtinList, files, node,
+    }))),
+  });
+  return Object.freeze({
+    closure,
+    entryUrl: pathToFileURL(resolve(stageDirectory, entryName)),
+  });
 }
 
 async function assertPrivateDirectory(path, label) {
@@ -275,7 +604,7 @@ export async function runNativeCapture({ prepared, nativeConfig, output, session
   });
 }
 
-class ProtocolV5Client {
+export class ProtocolV5Client {
   constructor(worker, sessionId) {
     if (typeof sessionId !== "string" || sessionId.length === 0) fail("portable session ID is absent");
     this.worker = worker;
@@ -284,6 +613,7 @@ class ProtocolV5Client {
     this.pending = new Map();
     this.log = [Object.freeze({ schema: "cadr-m7-portable-session-v1", session_id: sessionId })];
     this.closed = false;
+    this.terminated = false;
     worker.on("message", message => this.#onMessage(message));
     worker.on("error", error => this.#failPending(error));
     worker.on("exit", code => { if (!this.closed && code !== 0) this.#failPending(new Error(`protocol-v5 worker exited ${code}`)); });
@@ -324,11 +654,33 @@ class ProtocolV5Client {
   }
 
   async close() {
-    if (this.closed) return Object.freeze({ pending_requests: 0, terminated: true });
+    if (this.terminated) {
+      return Object.freeze({ pending_requests: 0, terminated: true });
+    }
     if (this.pending.size !== 0) fail("portable worker has pending requests at termination");
     this.closed = true;
     await this.worker.terminate();
+    this.terminated = true;
     return Object.freeze({ pending_requests: 0, terminated: true });
+  }
+
+  async terminateFailure() {
+    if (this.terminated) {
+      return Object.freeze({
+        pending_requests_at_failure: 0, terminated: true,
+        worker_exit_code: null,
+      });
+    }
+    const pending = this.pending.size;
+    this.#failPending(new Error("protocol-v5 worker terminated after failure"));
+    this.closed = true;
+    const exitCode = await this.worker.terminate();
+    this.terminated = true;
+    return Object.freeze({
+      pending_requests_at_failure: pending,
+      terminated: true,
+      worker_exit_code: Number.isSafeInteger(exitCode) ? exitCode : null,
+    });
   }
 }
 
@@ -526,6 +878,65 @@ function nativeMetadata(value, expectedReleaseSha) {
   return value;
 }
 
+function validateP4NativeBinding(value, label) {
+  exactKeys(value, [
+    "capture", "frame_file", "idle_file", "metadata_file", "oracle_process",
+    "private_disk", "private_disk_instance_id", "process", "session_id",
+    "transcript_file",
+  ], label);
+  if (typeof value.session_id !== "string" || value.session_id.length === 0 ||
+      typeof value.private_disk_instance_id !== "string" ||
+      value.private_disk_instance_id.length === 0) {
+    fail(`${label} session/disk identity is absent`);
+  }
+  exactKeys(value.private_disk, [
+    "sha256_at_end", "sha256_at_start",
+  ], `${label} private disk`);
+  digest(value.private_disk.sha256_at_start, `${label} private disk start`);
+  digest(value.private_disk.sha256_at_end, `${label} private disk end`);
+  if (value.private_disk.sha256_at_start !==
+      value.private_disk.sha256_at_end) {
+    fail(`${label} private disk changed`);
+  }
+  exactKeys(value.process, [
+    "forced_stop", "pending_host_requests", "returncode",
+    "state_may_be_incomplete", "timed_out",
+  ], `${label} process`);
+  if (value.process.returncode !== 0 || value.process.timed_out !== false ||
+      value.process.forced_stop !== false ||
+      value.process.state_may_be_incomplete !== false ||
+      value.process.pending_host_requests !== 0) {
+    fail(`${label} process did not terminate cleanly`);
+  }
+  exactKeys(value.oracle_process, [
+    "returncode", "signal",
+  ], `${label} oracle process`);
+  if (value.oracle_process.returncode !== 0 ||
+      value.oracle_process.signal !== null) {
+    fail(`${label} oracle child did not terminate cleanly`);
+  }
+  exactKeys(value.capture, [
+    "active_words", "backing_words", "black_on_white", "boundary",
+    "byte_count", "height", "raw_words_sha256", "schema", "sha256",
+    "stride_words", "tv_mode", "width",
+  ], `${label} capture`);
+  if (value.capture.schema !== "CDRM7N1" ||
+      value.capture.boundary !== CADR_M7_FORM_C_BOUNDARY.toString()) {
+    fail(`${label} capture has wrong boundary`);
+  }
+  digest(value.capture.sha256, `${label} capture hash`);
+  digest(value.capture.raw_words_sha256, `${label} raw words hash`);
+  for (const name of [
+    "frame_file", "transcript_file", "idle_file", "metadata_file",
+  ]) {
+    privateFileIdentity(value[name], `${label} ${name}`);
+  }
+  if (value.capture.sha256 !== value.frame_file.sha256) {
+    fail(`${label} frame identity differs from its capture`);
+  }
+  return value;
+}
+
 /** Validate all P4 bindings before a result can be handed to P5. */
 export function validateP4Manifest(value, expected) {
   exactKeys(expected, ["bindings", "schema"], "P4 expected closure");
@@ -570,7 +981,7 @@ export function validateP4Manifest(value, expected) {
   if (value.native.capture.schema !== "CDRM7N1" || value.native.capture.boundary !== CADR_M7_FORM_C_BOUNDARY.toString()) fail("P4 native capture has wrong boundary");
   digest(value.native.capture.sha256, "P4 native capture hash"); digest(value.native.capture.raw_words_sha256, "P4 native words hash");
   for (const [name, expectedPath] of [["frame_file", null], ["transcript_file", null], ["idle_file", null], ["metadata_file", null]]) privateFileIdentity(value.native[name], `P4 native ${name}`, expectedPath);
-  exactKeys(value.portable, ["adapter", "cdrdisp_file", "framebuffer_checkpoint", "module", "ready_file", "session_evidence", "session_id", "termination", "witness_file", "worker", "worker_log_file"], "P4 portable");
+  exactKeys(value.portable, ["cdrdisp_file", "contemporaneous_adapter_observation", "framebuffer_checkpoint", "module", "ready_file", "session_evidence", "session_id", "termination", "witness_file", "worker", "worker_closure", "worker_log_file"], "P4 portable");
   exactKeys(value.portable.session_evidence, ["ready_session_id", "worker_log_session_id"], "P4 portable session evidence");
   exactKeys(value.portable.termination, ["pending_requests", "terminated"], "P4 portable termination");
   if (typeof value.portable.session_id !== "string" || value.portable.session_id.length === 0 ||
@@ -580,8 +991,20 @@ export function validateP4Manifest(value, expected) {
     fail("P4 portable worker did not terminate cleanly or bind its session");
   }
   byteIdentity(value.portable.module, "P4 Wasm module"); byteIdentity(value.portable.worker, "P4 worker");
-  if (!Array.isArray(value.portable.adapter) || value.portable.adapter.length !== 2) fail("P4 adapter identity is incomplete");
-  for (const [index, adapter] of value.portable.adapter.entries()) byteIdentity(adapter, `P4 adapter ${index}`);
+  workerClosureIdentity(value.portable.worker_closure,
+    "P4 worker closure");
+  if (!sameJson(value.portable.worker,
+    value.portable.worker_closure.entry)) {
+    fail("P4 worker differs from its staged closure entry");
+  }
+  if (!Array.isArray(value.portable.contemporaneous_adapter_observation) ||
+      value.portable.contemporaneous_adapter_observation.length !== 2) {
+    fail("P4 contemporaneous adapter observation is incomplete");
+  }
+  for (const [index, adapter] of
+    value.portable.contemporaneous_adapter_observation.entries()) {
+    byteIdentity(adapter, `P4 contemporaneous adapter observation ${index}`);
+  }
   exactKeys(value.portable.framebuffer_checkpoint, ["boundary", "cdrdisp1_sha256", "cdrm6i1_sha256"], "P4 portable checkpoint");
   if (value.portable.framebuffer_checkpoint.boundary !== CADR_M7_FORM_C_BOUNDARY.toString()) fail("P4 portable checkpoint has wrong boundary");
   digest(value.portable.framebuffer_checkpoint.cdrdisp1_sha256, "P4 portable checkpoint frame"); digest(value.portable.framebuffer_checkpoint.cdrm6i1_sha256, "P4 portable checkpoint witness");
@@ -616,20 +1039,232 @@ export function p4Bindings(value) {
     source: value.source, m6_release_record: value.m6_release_record, patches: value.patches,
     prepared: value.prepared, artifacts: value.artifacts, native_inputs: value.native_inputs,
     schedule: value.schedule, native: { session_id: value.native.session_id, private_disk_instance_id: value.native.private_disk_instance_id, private_disk: value.native.private_disk, process: value.native.process, oracle_process: value.native.oracle_process, capture: value.native.capture, frame_file: value.native.frame_file, transcript_file: value.native.transcript_file, idle_file: value.native.idle_file, metadata_file: value.native.metadata_file },
-    portable: { session_id: value.portable.session_id, session_evidence: value.portable.session_evidence, module: value.portable.module, worker: value.portable.worker, adapter: value.portable.adapter, termination: value.portable.termination, framebuffer_checkpoint: value.portable.framebuffer_checkpoint, cdrdisp_file: value.portable.cdrdisp_file, witness_file: value.portable.witness_file, ready_file: value.portable.ready_file, worker_log_file: value.portable.worker_log_file },
+    portable: { session_id: value.portable.session_id, session_evidence: value.portable.session_evidence, module: value.portable.module, worker: value.portable.worker, worker_closure: value.portable.worker_closure, contemporaneous_adapter_observation: value.portable.contemporaneous_adapter_observation, termination: value.portable.termination, framebuffer_checkpoint: value.portable.framebuffer_checkpoint, cdrdisp_file: value.portable.cdrdisp_file, witness_file: value.portable.witness_file, ready_file: value.portable.ready_file, worker_log_file: value.portable.worker_log_file },
     comparison: value.comparison, summary: value.summary,
   };
 }
 
+export function validateP4FailureReceipts(root, portable, expected) {
+  exactKeys(expected, ["portable", "root"], "P4 failure expected closure");
+  exactKeys(root, [
+    "artifacts", "error_message", "error_name", "m6_release_record",
+    "native", "native_inputs", "outcome", "patches", "portable_failure_file",
+    "prepared", "runtime_execution_performed", "schedule", "schema",
+    "session", "source", "target",
+  ], "P4 root failure");
+  exactKeys(portable, [
+    "checkpoint", "contemporaneous_adapter_observation", "error_message", "error_name",
+    "checkpoint_comparison_file", "m6_failure_file", "m6_release_record",
+    "module", "schema", "session_id", "target", "termination", "worker",
+    "worker_closure", "worker_log_file",
+  ], "P4 portable failure");
+  if (root.schema !== "cadr-m7-frame-conformance-failure-v1" ||
+      root.target !== P4_TARGET || root.outcome !== "failed" ||
+      root.runtime_execution_performed !== true ||
+      portable.schema !== "cadr-m7-portable-failure-v2" ||
+      portable.target !== P4_TARGET ||
+      typeof root.error_name !== "string" ||
+      typeof root.error_message !== "string" ||
+      typeof portable.error_name !== "string" ||
+      typeof portable.error_message !== "string" ||
+      root.error_name !== portable.error_name ||
+      root.error_message !== portable.error_message ||
+      !sameJson(root.m6_release_record, portable.m6_release_record)) {
+    fail("P4 failure receipts have the wrong status or error binding");
+  }
+  exactKeys(root.session, ["id", "mode"], "P4 failure session");
+  if (typeof root.session.id !== "string" || root.session.id.length === 0 ||
+      root.session.mode !== "0700" ||
+      typeof portable.session_id !== "string" ||
+      portable.session_id.length === 0) {
+    fail("P4 failure session identity is invalid");
+  }
+  privateFileIdentity(root.portable_failure_file,
+    "P4 portable failure file", "portable/failure.json");
+  validateP4NativeBinding(root.native, "P4 failure native");
+  byteIdentity(portable.module, "P4 failure module");
+  byteIdentity(portable.worker, "P4 failure worker");
+  workerClosureIdentity(portable.worker_closure,
+    "P4 failure worker closure");
+  if (!sameJson(portable.worker, portable.worker_closure.entry)) {
+    fail("P4 failure worker differs from its staged closure entry");
+  }
+  if (!Array.isArray(portable.contemporaneous_adapter_observation) ||
+      portable.contemporaneous_adapter_observation.length !== 2) {
+    fail("P4 failure contemporaneous adapter observation is incomplete");
+  }
+  portable.contemporaneous_adapter_observation.forEach((value, index) =>
+    byteIdentity(value,
+      `P4 failure contemporaneous adapter observation ${index}`));
+  byteIdentity(portable.m6_release_record, "P4 failure release record");
+  privateFileIdentity(portable.worker_log_file,
+    "P4 failure worker log", "worker.ndjson");
+  if (portable.m6_failure_file !== null) {
+    privateFileIdentity(portable.m6_failure_file,
+      "P4 bounded M6 failure", "m6-failure.json");
+  } else if (portable.error_name === "CadrM7UnderlyingM6Failure") {
+    fail("P4 underlying M6 failure has no bounded diagnostic");
+  }
+  exactKeys(portable.termination, [
+    "pending_requests_at_failure", "terminated", "worker_exit_code",
+  ], "P4 failure termination");
+  if (!Number.isSafeInteger(portable.termination.pending_requests_at_failure) ||
+      portable.termination.pending_requests_at_failure < 0 ||
+      portable.termination.terminated !== true ||
+      (portable.termination.worker_exit_code !== null &&
+       !Number.isSafeInteger(portable.termination.worker_exit_code))) {
+    fail("P4 failure worker did not terminate with bounded accounting");
+  }
+  if (portable.checkpoint !== null) {
+    exactKeys(portable.checkpoint, [
+      "boundary", "frame_file", "m6_release_record_sha256", "witness_file",
+    ], "P4 failure checkpoint");
+    canonicalU64(portable.checkpoint.boundary, "P4 failure checkpoint boundary");
+    digest(portable.checkpoint.m6_release_record_sha256,
+      "P4 failure checkpoint release record");
+    if (portable.checkpoint.m6_release_record_sha256 !==
+        portable.m6_release_record.sha256) {
+      fail("P4 failure checkpoint has the wrong release identity");
+    }
+    privateFileIdentity(portable.checkpoint.frame_file,
+      "P4 failure frame", "failure-frame.cdrdisp1");
+    privateFileIdentity(portable.checkpoint.witness_file,
+      "P4 failure witness", "failure-witness.cdrm6i1");
+  }
+  if (portable.checkpoint_comparison_file !== null) {
+    privateFileIdentity(portable.checkpoint_comparison_file,
+      "P4 failure checkpoint comparison", "failure-comparison.json");
+    if (portable.checkpoint === null) {
+      fail("P4 failure comparison has no retained checkpoint");
+    }
+  } else if (portable.checkpoint !== null) {
+    fail("P4 failure checkpoint has no retained comparison");
+  }
+  if (!sameJson(root, expected.root) ||
+      !sameJson(portable, expected.portable)) {
+    fail("P4 failure receipt differs from the independent expected closure");
+  }
+  return root;
+}
+
+export async function writeP4PortableFailureEvidence({
+  portableDirectory,
+  caught,
+  nativeFrame,
+  sessionId,
+  module,
+  worker,
+  workerClosure,
+  contemporaneousAdapterObservation,
+  m6ReleaseRecord,
+  termination,
+  workerLogBytes,
+}) {
+  if (!(workerLogBytes instanceof Uint8Array)) {
+    fail("P4 failure worker log is not a byte sequence");
+  }
+  const workerLogFile = await writePrivateNew(
+    resolve(portableDirectory, "worker.ndjson"), workerLogBytes);
+  let m6FailureFile = null;
+  if (caught?.m6FailureDiagnostic instanceof Uint8Array) {
+    m6FailureFile = await writePrivateNew(
+      resolve(portableDirectory, "m6-failure.json"),
+      caught.m6FailureDiagnostic);
+  }
+  let checkpoint = null;
+  let checkpointComparisonFile = null;
+  if (caught?.checkpoint !== null && caught?.checkpoint !== undefined) {
+    const frameFile = await writePrivateNew(
+      resolve(portableDirectory, "failure-frame.cdrdisp1"),
+      caught.checkpoint.display_record);
+    const witnessFile = await writePrivateNew(
+      resolve(portableDirectory, "failure-witness.cdrm6i1"),
+      caught.checkpoint.witness_sample);
+    checkpoint = Object.freeze({
+      boundary: caught.checkpoint.boundary.toString(),
+      m6_release_record_sha256:
+        Buffer.from(caught.checkpoint.m6_release_record_sha256).toString("hex"),
+      frame_file: Object.freeze({
+        path: "failure-frame.cdrdisp1", ...frameFile,
+      }),
+      witness_file: Object.freeze({
+        path: "failure-witness.cdrm6i1", ...witnessFile,
+      }),
+    });
+    let comparison;
+    try {
+      comparison = await compareM7FrameCheckpoint(
+        nativeFrame, caught.checkpoint);
+    } catch (error) {
+      if (error?.name !== "CadrM7FrameMismatch" ||
+          error?.report === null || typeof error?.report !== "object") {
+        throw error;
+      }
+      comparison = Object.freeze({
+        schema: "cadr-m7-failed-run-frame-comparison-v1",
+        outcome: "different",
+        first_difference: error.report,
+      });
+    }
+    checkpointComparisonFile = await writePrivateNew(
+      resolve(portableDirectory, "failure-comparison.json"), comparison);
+  }
+  const failure = Object.freeze({
+    schema: "cadr-m7-portable-failure-v2",
+    target: P4_TARGET,
+    session_id: sessionId,
+    error_name: typeof caught?.name === "string" ? caught.name : "Error",
+    error_message: String(caught?.message ?? caught),
+    module,
+    worker,
+    worker_closure: workerClosure,
+    contemporaneous_adapter_observation:
+      contemporaneousAdapterObservation,
+    m6_release_record: m6ReleaseRecord,
+    m6_failure_file: m6FailureFile === null ? null : Object.freeze({
+      path: "m6-failure.json", ...m6FailureFile,
+    }),
+    checkpoint,
+    checkpoint_comparison_file:
+      checkpointComparisonFile === null ? null : Object.freeze({
+        path: "failure-comparison.json", ...checkpointComparisonFile,
+      }),
+    worker_log_file: Object.freeze({
+      path: "worker.ndjson", ...workerLogFile,
+    }),
+    termination,
+  });
+  const failureFile = await writePrivateNew(
+    resolve(portableDirectory, "failure.json"), failure);
+  const failureInfo = await readCanonicalJson(
+    resolve(portableDirectory, "failure.json"), "P4 portable failure");
+  if (!sameJson(failureInfo.value, failure)) {
+    fail("P4 portable failure bytes differ from the retained receipt");
+  }
+  return Object.freeze({
+    failure: failureInfo.value,
+    failureFile: Object.freeze({
+      path: "portable/failure.json", ...failureFile,
+    }),
+  });
+}
+
 async function portableCheckpoint({ nativeFrame, pinned, wasmPath, artifactRoot, portableDirectory, sessionId }) {
-  const wasmIdentity = await fileIdentity(wasmPath, "M7 Wasm module");
-  const workerIdentity = await fileIdentity(WORKER_PATH, "M7 worker");
-  const adapter = await Promise.all(ADAPTER_PATHS.map(path => fileIdentity(path, "M7 Wasm adapter")));
-  const wasmBytes = await readFile(wasmPath);
-  const module = await WebAssembly.compile(wasmBytes);
+  const wasmBound = await readBoundRegularFile(wasmPath, "M7 Wasm module");
+  const wasmIdentity = wasmBound.identity;
+  const workerStage = await stageM7WorkerClosure({
+    stageDirectory: resolve(portableDirectory, "worker-stage"),
+  });
+  const workerIdentity = workerStage.closure.entry;
+  const contemporaneousAdapterObservation = await Promise.all(
+    ADAPTER_PATHS.map(path =>
+      fileIdentity(path, "M7 contemporaneous Wasm adapter observation")));
+  const module = await WebAssembly.compile(wasmBound.bytes);
   const artifacts = await openArtifacts(pinned.expected, artifactRoot);
-  const client = new ProtocolV5Client(new Worker(WORKER_URL, { type: "module" }), sessionId);
+  const client = new ProtocolV5Client(
+    new Worker(workerStage.entryUrl, { type: "module" }), sessionId);
   let termination = null;
+  let caught = null;
   try {
     const instantiate = await client.request("instantiate", { module });
     if (instantiate.status !== 0) fail(`protocol-v5 M7 instantiation failed with status ${instantiate.status}`);
@@ -659,26 +1294,40 @@ async function portableCheckpoint({ nativeFrame, pinned, wasmPath, artifactRoot,
     const workerLogFile = await writePrivateNew(resolve(portableDirectory, "worker.ndjson"),
       new TextEncoder().encode(`${client.log.map(entry => canonicalJson(entry)).join("\n")}\n`));
     return Object.freeze({ result, sessionId: ready.session_id, workerLogSessionId: client.sessionId,
-      module: wasmIdentity, worker: workerIdentity, adapter,
+      module: wasmIdentity, worker: workerIdentity,
+      contemporaneousAdapterObservation,
+      workerClosure: workerStage.closure,
       frameFile, witnessFile, readyFile, workerLogFile, termination, ready });
   } catch (error) {
-    const failure = Object.freeze({
-      schema: "cadr-m7-portable-failure-v1",
-      session_id: sessionId,
-      error_name: typeof error?.name === "string" ? error.name : "Error",
-      error_message: String(error?.message ?? error),
-    });
-    await writePrivateNew(resolve(portableDirectory, "failure.json"), failure);
-    await writePrivateNew(resolve(portableDirectory, "worker.ndjson"),
-      new TextEncoder().encode(
-        `${client.log.map(entry => canonicalJson(entry)).join("\n")}\n`));
-    throw error;
+    caught = error;
   } finally {
     if (termination === null) {
-      try { await client.close(); } catch { /* preserve original failure */ }
+      termination = caught === null ?
+        await client.close() : await client.terminateFailure();
     }
     await artifacts.close();
   }
+  const written = await writeP4PortableFailureEvidence({
+    portableDirectory,
+    caught,
+    nativeFrame,
+    sessionId,
+    module: wasmIdentity,
+    worker: workerIdentity,
+    workerClosure: workerStage.closure,
+    contemporaneousAdapterObservation,
+    m6ReleaseRecord: Object.freeze({
+      path: relative(ROOT, RELEASE_PATH),
+      bytes: pinned.release.bytes.byteLength,
+      sha256: sha256(pinned.release.bytes),
+    }),
+    termination,
+    workerLogBytes: new TextEncoder().encode(
+      `${client.log.map(entry => canonicalJson(entry)).join("\n")}\n`),
+  });
+  caught.portableFailure = written.failure;
+  caught.portableFailureFile = written.failureFile;
+  throw caught;
 }
 
 async function runCampaign(options) {
@@ -692,6 +1341,7 @@ async function runCampaign(options) {
   const nativeSessionId = `native-${randomUUID().replaceAll("-", "")}`;
   const diskId = `disk-${randomUUID().replaceAll("-", "")}`;
   const portableSessionId = `portable-${randomUUID().replaceAll("-", "")}`;
+  let failureContext = null;
   try {
     const parentNativeInputs = await loadParentNativeInputs(
       options.prepared, pinned, nativeSessionId, diskId);
@@ -700,36 +1350,48 @@ async function runCampaign(options) {
     for (const name of ["frame.cdrm7n1", "capture.ndjson", "idle.bin", "metadata.json"]) {
       await assertPrivateFile(resolve(nativeDirectory, name), `native ${name}`);
     }
-    const nativeInfo = await readCanonicalJson(resolve(nativeDirectory, "metadata.json"), "native M7 metadata");
+    const nativeNames = [
+      "frame.cdrm7n1", "capture.ndjson", "idle.bin", "metadata.json",
+    ];
+    const nativeBound = await Promise.all(nativeNames.map(name =>
+      readBoundRegularFile(
+        resolve(nativeDirectory, name), `native ${name}`)));
+    const nativeFiles = nativeBound.map(item => item.identity);
+    const nativeInfo = parseCanonicalJsonBytes(
+      nativeBound[3].bytes, "native M7 metadata");
     const native = nativeMetadata(nativeInfo.value, sha256(pinned.release.bytes));
-    const nativeFrame = new Uint8Array(await readFile(resolve(nativeDirectory, "frame.cdrm7n1")));
+    const nativeFrame = nativeBound[0].bytes.slice();
     const expectedNativeMetadata = { schema: "cadr-m7-native-frame-capture-v1",
       target: P4_TARGET, ...structuredClone(parentNativeInputs),
       capture: parseNativeFrame(nativeFrame),
-      transcript: { sha256: sha256(await readFile(resolve(nativeDirectory, "capture.ndjson"))),
-        idle_samples_sha256: sha256(await readFile(resolve(nativeDirectory, "idle.bin"))) } };
+      transcript: { sha256: sha256(nativeBound[1].bytes),
+        idle_samples_sha256: sha256(nativeBound[2].bytes) } };
     if (!sameJson(native, expectedNativeMetadata) ||
         !sameJson(nativeChild.response.metadata, expectedNativeMetadata)) {
       fail("native child metadata differs from parent-known inputs and fresh receipts");
     }
-    const portable = await portableCheckpoint({ nativeFrame, pinned, wasmPath: options.wasm,
-      artifactRoot: options.artifactRoot, portableDirectory, sessionId: portableSessionId });
-    const comparison = portable.result.comparison;
-    const comparisonFile = await writePrivateNew(resolve(session.path, "comparison.json"), comparison);
-    const comparisonInfo = await readCanonicalJson(resolve(session.path, "comparison.json"), "P4 comparison");
-    if (!sameJson(comparisonInfo.value, comparison)) fail("fresh P4 comparison bytes differ from the checkpoint result");
-    const nativeFiles = await Promise.all(["frame.cdrm7n1", "capture.ndjson", "idle.bin", "metadata.json"].map(async name =>
-      fileIdentity(resolve(nativeDirectory, name), `native ${name}`)));
     const nativeBinding = { session_id: native.session_id,
       private_disk_instance_id: native.private_disk_instance_id,
       private_disk: native.private_disk, process: native.process,
       oracle_process: nativeChild.oracle_process, capture: native.capture,
       frame_file: nativeFiles[0], transcript_file: nativeFiles[1],
       idle_file: nativeFiles[2], metadata_file: nativeFiles[3] };
+    failureContext = Object.freeze({
+      parentNativeInputs, native, nativeBinding,
+    });
+    const portable = await portableCheckpoint({ nativeFrame, pinned, wasmPath: options.wasm,
+      artifactRoot: options.artifactRoot, portableDirectory, sessionId: portableSessionId });
+    const comparison = portable.result.comparison;
+    const comparisonFile = await writePrivateNew(resolve(session.path, "comparison.json"), comparison);
+    const comparisonInfo = await readCanonicalJson(resolve(session.path, "comparison.json"), "P4 comparison");
+    if (!sameJson(comparisonInfo.value, comparison)) fail("fresh P4 comparison bytes differ from the checkpoint result");
     const portableBinding = { session_id: portable.sessionId,
       session_evidence: { ready_session_id: portable.ready.session_id,
         worker_log_session_id: portable.workerLogSessionId },
-      module: portable.module, worker: portable.worker, adapter: portable.adapter,
+      module: portable.module, worker: portable.worker,
+      worker_closure: portable.workerClosure,
+      contemporaneous_adapter_observation:
+        portable.contemporaneousAdapterObservation,
       framebuffer_checkpoint: { boundary: comparison.boundary,
         cdrdisp1_sha256: comparison.portable_record_sha256,
         cdrm6i1_sha256: comparison.m6_witness_sample_sha256 },
@@ -801,6 +1463,42 @@ async function runCampaign(options) {
     /* A failed campaign remains private for diagnosis, but never produces a
      * manifest that P5 could mistake for a successful checkpoint. */
     await unlink(resolve(session.path, "manifest.json")).catch(() => {});
+    if (failureContext !== null && error?.portableFailureFile !== undefined) {
+      const parent = failureContext.parentNativeInputs;
+      const rootFailure = Object.freeze({
+        schema: "cadr-m7-frame-conformance-failure-v1",
+        target: P4_TARGET,
+        outcome: "failed",
+        runtime_execution_performed: true,
+        session: Object.freeze({ id: session.id, mode: "0700" }),
+        source: failureContext.native.source,
+        m6_release_record: failureContext.native.m6_release_record,
+        patches: failureContext.native.patches,
+        prepared: failureContext.native.prepared,
+        artifacts: failureContext.native.artifacts,
+        native_inputs: failureContext.native.native_inputs,
+        schedule: parent.schedule,
+        native: failureContext.nativeBinding,
+        portable_failure_file: error.portableFailureFile,
+        error_name: typeof error?.name === "string" ? error.name : "Error",
+        error_message: String(error?.message ?? error),
+      });
+      await writePrivateNew(resolve(session.path, "failure.json"), rootFailure);
+      const [rootInfo, portableInfo] = await Promise.all([
+        readCanonicalJson(
+          resolve(session.path, "failure.json"), "P4 root failure"),
+        readCanonicalJson(
+          resolve(portableDirectory, "failure.json"),
+          "P4 portable failure"),
+      ]);
+      validateP4FailureReceipts(
+        rootInfo.value, portableInfo.value,
+        Object.freeze({ root: rootFailure, portable: error.portableFailure }));
+      const names = (await readdir(session.path)).sort();
+      if (!sameJson(names, ["failure.json", "native", "portable"])) {
+        fail("P4 failed session has an unexpected top-level sidecar");
+      }
+    }
     throw error;
   }
 }
