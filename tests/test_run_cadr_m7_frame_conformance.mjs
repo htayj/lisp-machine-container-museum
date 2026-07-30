@@ -4,10 +4,21 @@ import { PassThrough } from "node:stream";
 
 import {
   P4_EXPECTED_CLOSURE_SCHEMA,
+  matchesCanonicalJsonBytes,
   p4Bindings,
   runNativeCapture,
   validateP4Manifest,
 } from "../scripts/run-cadr-m7-frame-conformance.mjs";
+
+const canonicalFixture = new TextEncoder().encode('{"a":1}\n');
+assert.equal(matchesCanonicalJsonBytes(canonicalFixture, { a: 1 }, true), true);
+assert.equal(matchesCanonicalJsonBytes(canonicalFixture, { a: 1 }), false,
+  "the parent-marker LF is accepted only when explicitly selected");
+assert.equal(matchesCanonicalJsonBytes(
+  new TextEncoder().encode('{"a":1}\\n'), { a: 1 }, true), false);
+assert.equal(matchesCanonicalJsonBytes(
+  new TextEncoder().encode('{ "a": 1 }\n'), { a: 1 }, true), false,
+  "arbitrary JSON whitespace is not accepted as canonical");
 
 const H = index => index.toString(16).padStart(64, "0");
 const file = (path, index) => ({ path, bytes: index + 1, sha256: H(index) });

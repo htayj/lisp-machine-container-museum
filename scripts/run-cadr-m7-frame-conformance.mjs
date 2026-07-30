@@ -129,7 +129,17 @@ function sameJson(left, right) {
   return canonicalJson(left) === canonicalJson(right);
 }
 
-async function readCanonicalJson(path, label, canonicalRequired = true) {
+export function matchesCanonicalJsonBytes(bytes, value, terminalLf = false) {
+  if (!(bytes instanceof Uint8Array) || typeof terminalLf !== "boolean") {
+    throw new TypeError("canonical JSON byte matcher received invalid input");
+  }
+  const suffix = terminalLf ? "\n" : "";
+  return Buffer.from(bytes).equals(
+    Buffer.from(`${canonicalJson(value)}${suffix}`));
+}
+
+async function readCanonicalJson(path, label, canonicalRequired = true,
+  terminalLf = false) {
   const bytes = await readFile(path);
   let value;
   try {
@@ -137,7 +147,10 @@ async function readCanonicalJson(path, label, canonicalRequired = true) {
   } catch (error) {
     fail(`${label} is not UTF-8 JSON: ${error.message}`);
   }
-  if (canonicalRequired && !Buffer.from(bytes).equals(Buffer.from(canonicalJson(value)))) fail(`${label} is not canonical JSON bytes`);
+  if (canonicalRequired && !matchesCanonicalJsonBytes(
+    new Uint8Array(bytes), value, terminalLf)) {
+    fail(`${label} is not canonical JSON bytes`);
+  }
   return Object.freeze({ bytes: new Uint8Array(bytes), value });
 }
 
@@ -423,8 +436,10 @@ function parseNativeFrame(bytes) {
 async function loadParentNativeInputs(preparedValue, pinned, sessionId, diskId) {
   const preparedPath = resolve(ROOT, preparedValue);
   const [prepare, build, m6Patch, m7Patch, ...support] = await Promise.all([
-    readCanonicalJson(resolve(preparedPath, "m7-prepare.json"), "parent M7 prepare marker"),
-    readCanonicalJson(resolve(preparedPath, "m7-build.json"), "parent M7 build marker"),
+    readCanonicalJson(resolve(preparedPath, "m7-prepare.json"),
+      "parent M7 prepare marker", true, true),
+    readCanonicalJson(resolve(preparedPath, "m7-build.json"),
+      "parent M7 build marker", true, true),
     fileIdentity(M6_PATCH_PATH, "parent M6 patch"),
     fileIdentity(M7_PATCH_PATH, "parent M7 patch"),
     ...M7_SUPPORT_PATHS.map(path => fileIdentity(path, "parent M7 support")),
