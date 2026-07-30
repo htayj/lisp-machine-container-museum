@@ -26,10 +26,23 @@ export const CADR_M13_MAX_BODY_BYTES = 16 * 1024 * 1024;
 export const CADR_M13_MAX_STREAM_WINDOW_BYTES = 1024 * 1024;
 export const CADR_M13_MAX_STREAM_WINDOWS = 2;
 export const CADR_M13_MAX_SNAPSHOT_BYTES = 18131492;
+/* Public M13 progress is deliberately capped to the exact lower v7 slice.
+ * Larger requests would alter the selected worker's control-latency contract. */
+export const CADR_M13_SCHEDULER_SLICE_MAX_SLOTS = 4096;
 export const CADR_M13_BASE_BYTES = 269562880;
 export const CADR_M13_BASE_BLOCKS = 263245;
 export const CADR_M13_BASE_SHA256 =
   "bb16e46ad81decfe1efe691d36b6aa4ce3fd4ffb82474365de3520989d397cb5";
+
+/* These are the four small, selected System 303 inputs which the v7 core
+ * admits by copy.  The base image is deliberately absent: it is 269 MiB,
+ * stays outside Wasm memory, and is streamed only through CadrM13BaseMediaBinding. */
+const M13_SELECTED_BOOT_ARTIFACTS = Object.freeze([
+  Object.freeze({ kind: 1, byteCount: 854 }),
+  Object.freeze({ kind: 2, byteCount: 20480 }),
+  Object.freeze({ kind: 4, byteCount: 3130 }),
+  Object.freeze({ kind: 5, byteCount: 83270 }),
+]);
 
 export const CADR_M13_STATUS = Object.freeze({
   OK: 0,
@@ -137,9 +150,29 @@ function bytes(value, label, { min = 0, max = CADR_M13_MAX_BODY_BYTES, exact = n
 }
 
 async function sha256Hex(value) {
-  const source = value instanceof ArrayBuffer ? value : value.buffer.slice(value.byteOffset, value.byteOffset + value.byteLength);
-  const digest = new Uint8Array(await globalThis.crypto.subtle.digest("SHA-256", source));
+  const digest = await sha256Bytes(value);
   return [...digest].map(byte => byte.toString(16).padStart(2, "0")).join("");
+}
+
+async function sha256Bytes(value) {
+  invariant(globalThis.crypto?.subtle?.digest !== undefined,
+    "SHA-256 is unavailable for the selected base binding", { status: CADR_M13_STATUS.NOT_READY });
+  const source = value instanceof ArrayBuffer ? value : value.buffer.slice(value.byteOffset, value.byteOffset + value.byteLength);
+  return new Uint8Array(await globalThis.crypto.subtle.digest("SHA-256", source));
+}
+
+function equalBytes(left, right) {
+  return left instanceof Uint8Array && right instanceof Uint8Array &&
+    left.byteLength === right.byteLength && left.every((value, index) => value === right[index]);
+}
+
+function hexBytes(value, label) {
+  const source = hex(value, 64, label);
+  const output = new Uint8Array(32);
+  for (let index = 0; index < output.byteLength; index += 1) {
+    output[index] = Number.parseInt(source.slice(index * 2, index * 2 + 2), 16);
+  }
+  return output;
 }
 
 function operationSchema(fields = EMPTY, options = {}) {
@@ -251,7 +284,10 @@ function validateOperationFields(op, source) {
       output.wasmBytes = bytes(output.wasmBytes, "Wasm module", { min: 1, max: CADR_M13_MAX_BODY_BYTES });
       output.wasmSha256 = hex(output.wasmSha256, 64, "wasmSha256"); break;
     case "machine-visibility": output.hidden = boolean(output.hidden, "hidden"); break;
-    case "machine-run": output.clockSlots = u32(output.clockSlots, "clockSlots", { nonzero: true }); break;
+    case "machine-run":
+      output.clockSlots = u32(output.clockSlots, "clockSlots", { nonzero: true });
+      invariant(output.clockSlots <= CADR_M13_SCHEDULER_SLICE_MAX_SLOTS,
+        "machine-run exceeds the selected v7 scheduler slice"); break;
     case "keyboard-down":
       output.code = scalarString(output.code, "keyboard code", { min: 1, max: 64, asciiOnly: true });
       if (Object.hasOwn(output, "repeat")) output.repeat = boolean(output.repeat, "repeat"); break;
@@ -503,21 +539,68 @@ function shellReason(status) {
 
 const LOWER_OPERATION = Object.freeze({
   "machine-cold-power-on": "cold-power-on", "machine-boot": "boot", "machine-visibility": "scheduler-visibility",
-  "machine-start": "scheduler-start", "machine-run": "scheduler-run", "machine-pause": "scheduler-pause",
+  "machine-start": "scheduler-start", "machine-run": "scheduler-run-v7-slice", "machine-pause": "scheduler-pause",
   "machine-reset": "scheduler-reset", "machine-stop": "scheduler-stop",
 });
 const LOWER_REMAINDER = new Set(["lifecycle", "hidden", "completedSlots", "microinstructionsExecuted",
   "discardedUnsavedState", "updated", "frame", "result", "reason", "audio", "state", "byteCount",
   "coreSha256", "lastFailureEvidence", "terminal", "queuePackets", "queuedFrames"]);
+const M10_HOST_DESCRIPTOR_BYTES = 64;
+const M10_HOST_REQUEST_PAYLOAD_BYTES = 1024;
+const M10_HOST_COMPLETION_BYTES = 1024 * 1024;
+const M10_CONTROLLER_IN_DOUBT = "IN_DOUBT";
+
+function copiedInternalBytes(value, label, maximum) {
+  const source = value instanceof ArrayBuffer ? new Uint8Array(value) :
+    (ArrayBuffer.isView(value) ? new Uint8Array(value.buffer, value.byteOffset, value.byteLength) : null);
+  invariant(source !== null && source.byteLength <= maximum, `${label} has an invalid byte length`);
+  return source.slice().buffer;
+}
+
+function safeM10HostRequest(value) {
+  const fields = descriptorRecord(value, "M10 host request", {
+    allowed: ["operation", "generation", "requestId", "descriptorByteCount", "completionByteCount", "requestPayloadByteCount"],
+    required: ["operation", "generation", "requestId", "descriptorByteCount", "completionByteCount", "requestPayloadByteCount"],
+    maximumKeys: 6,
+  });
+  const result = Object.create(null);
+  result.operation = u32(fields.operation, "M10 host operation");
+  result.generation = u64(fields.generation, "M10 host generation");
+  result.requestId = u64(fields.requestId, "M10 host request ID");
+  result.descriptorByteCount = u64(fields.descriptorByteCount, "M10 descriptor byte count");
+  result.completionByteCount = u64(fields.completionByteCount, "M10 completion byte count");
+  result.requestPayloadByteCount = u64(fields.requestPayloadByteCount, "M10 request payload byte count");
+  invariant(result.descriptorByteCount <= BigInt(M10_HOST_DESCRIPTOR_BYTES) &&
+    result.requestPayloadByteCount <= BigInt(M10_HOST_REQUEST_PAYLOAD_BYTES) &&
+    result.completionByteCount <= BigInt(M10_HOST_COMPLETION_BYTES),
+  "M10 host request exceeds its lower protocol ceiling");
+  return Object.freeze(result);
+}
 
 function safeWorkerResponse(value, expectedId, expectedOp) {
-  const allowed = ["type", "version", "id", "op", "status", "ok", ...LOWER_REMAINDER];
+  const hostNext = expectedOp === "host-next-request";
+  const allowed = ["type", "version", "id", "op", "status", "ok", ...LOWER_REMAINDER,
+    ...(hostNext ? ["request", "descriptor", "requestPayload"] : [])];
   const fields = descriptorRecord(value, "worker response", { allowed, required: ["type", "version", "id", "op", "status", "ok"] });
   invariant(fields.type === "cadr-response" && fields.version === 7 && fields.id === expectedId && fields.op === expectedOp &&
     Number.isSafeInteger(fields.status) && fields.status >= 0 && fields.status <= MAX_U32 && fields.ok === (fields.status === 0),
     "worker response does not correlate to the private request");
   const result = Object.create(null);
   for (const key of LOWER_REMAINDER) if (Object.hasOwn(fields, key)) result[key] = fields[key];
+  if (hostNext && fields.status === CADR_M13_STATUS.OK) {
+    invariant(Object.hasOwn(fields, "request") && Object.hasOwn(fields, "descriptor") && Object.hasOwn(fields, "requestPayload"),
+      "successful M10 host request is incomplete");
+    const request = safeM10HostRequest(fields.request);
+    const descriptor = copiedInternalBytes(fields.descriptor, "M10 host descriptor", M10_HOST_DESCRIPTOR_BYTES);
+    const requestPayload = copiedInternalBytes(fields.requestPayload, "M10 host payload", M10_HOST_REQUEST_PAYLOAD_BYTES);
+    invariant(BigInt(descriptor.byteLength) === request.descriptorByteCount &&
+      BigInt(requestPayload.byteLength) === request.requestPayloadByteCount,
+    "M10 host request lengths do not match its byte bodies");
+    result.request = request; result.descriptor = descriptor; result.requestPayload = requestPayload;
+  } else if (hostNext) {
+    invariant(!Object.hasOwn(fields, "request") && !Object.hasOwn(fields, "descriptor") && !Object.hasOwn(fields, "requestPayload"),
+      "unsuccessful M10 host request leaks a body");
+  }
   return Object.freeze({ status: fields.status, remainder: result });
 }
 
@@ -551,16 +634,153 @@ export class CadrM13StorageBoundary {
   }
 }
 
+/*
+ * A single-purpose binding between an M13-owned base-media store and the two
+ * consumers which must see exactly the same immutable bytes: the v7 artifact
+ * verifier during mount and C-M10 after mount.  It exposes no pathname, URL,
+ * File, Blob, storage key, or bulk base buffer to the guest worker.
+ *
+ * `readBlock` is intentionally unavailable until the selected v7 verifier has
+ * accepted the complete stream.  A C-M10 controller should receive this bound
+ * method as its `readBasePage` callback; using an independent fetch callback
+ * would not establish a same-base composition claim.
+ */
+export class CadrM13BaseMediaBinding {
+  #storage; #phase = "IDLE"; #importId = null; #nextMountBlock = 0; #mountChunkHashes = [];
+
+  constructor({ storage } = {}) {
+    invariant(storage instanceof CadrM13StorageBoundary,
+      "M13 base media needs a storage boundary");
+    this.#storage = storage;
+  }
+
+  get state() { return this.#phase; }
+  get importId() { return this.#importId; }
+
+  beginMount(importId) {
+    invariant(this.#phase === "IDLE", "M13 base media is already mounted");
+    this.#importId = u32(importId, "M13 base import ID", { nonzero: true });
+    this.#nextMountBlock = 0; this.#mountChunkHashes = [];
+    this.#phase = "MOUNTING";
+  }
+
+  abortMount() {
+    if (this.#phase === "MOUNTING") {
+      this.#importId = null; this.#nextMountBlock = 0; this.#mountChunkHashes = [];
+      this.#phase = "IDLE";
+    }
+  }
+
+  finishMount() {
+    invariant(this.#phase === "MOUNTING" && this.#importId !== null,
+      "M13 base media mount is not active");
+    invariant(this.#nextMountBlock === CADR_M13_BASE_BLOCKS &&
+      this.#mountChunkHashes.length === Math.ceil(CADR_M13_BASE_BLOCKS / 1024),
+    "M13 base media mount did not retain every verified range");
+    this.#phase = "MOUNTED";
+  }
+
+  async readMountRange(firstBlock, blockCount) {
+    invariant(this.#phase === "MOUNTING" && this.#importId !== null,
+      "M13 base media mount is not active");
+    const first = u32(firstBlock, "M13 base mount first block");
+    const count = u32(blockCount, "M13 base mount block count", { nonzero: true });
+    const expectedCount = Math.min(1024, CADR_M13_BASE_BLOCKS - this.#nextMountBlock);
+    invariant(first === this.#nextMountBlock && count === expectedCount,
+      "M13 base media mount range is not the fixed canonical stream");
+    const body = await this.#readRange(this.#importId, first, count);
+    this.#mountChunkHashes.push(await sha256Bytes(body));
+    this.#nextMountBlock += count;
+    return body;
+  }
+
+  async readBlock(firstBlock) {
+    invariant(this.#phase === "MOUNTED" && this.#importId !== null,
+      "M13 base media has not passed v7 verification");
+    const first = u32(firstBlock, "M13 base block");
+    invariant(first < CADR_M13_BASE_BLOCKS, "M13 base block is outside the selected image");
+    /* Re-read and verify the entire canonical mount chunk.  A later M10 page
+     * therefore cannot silently come from a mutable File/Blob/storage view
+     * that changed after the v7 full-stream verifier accepted it. */
+    const chunkIndex = Math.floor(first / 1024);
+    const chunkFirstBlock = chunkIndex * 1024;
+    const chunkBlockCount = Math.min(1024, CADR_M13_BASE_BLOCKS - chunkFirstBlock);
+    const expected = this.#mountChunkHashes[chunkIndex];
+    invariant(expected instanceof Uint8Array && expected.byteLength === 32,
+      "M13 base media has no retained verification witness");
+    const chunk = await this.#readRange(this.#importId, chunkFirstBlock, chunkBlockCount);
+    const observed = await sha256Bytes(chunk);
+    invariant(equalBytes(observed, expected),
+      "M13 base media changed after v7 verification", { status: CADR_M13_STATUS.HOST_FAILURE });
+    const offset = (first - chunkFirstBlock) * 1024;
+    return chunk.slice(offset, offset + 1024);
+  }
+
+  verifiedBaseIdentity() {
+    invariant(this.#phase === "MOUNTED" && this.#importId !== null &&
+      this.#nextMountBlock === CADR_M13_BASE_BLOCKS &&
+      this.#mountChunkHashes.length === Math.ceil(CADR_M13_BASE_BLOCKS / 1024),
+    "M13 base media has not passed the selected verification stream");
+    /* This selected digest is exposed only after all retained chunk witnesses
+     * were fed to and accepted by the independent v7 full-stream verifier. */
+    return hexBytes(CADR_M13_BASE_SHA256, "selected base SHA-256");
+  }
+
+  async #readRange(importId, firstBlock, blockCount) {
+    const first = u32(firstBlock, "M13 base first block");
+    const count = u32(blockCount, "M13 base block count", { nonzero: true });
+    invariant(count <= 1024 && first + count <= CADR_M13_BASE_BLOCKS,
+      "M13 base range is outside the selected image");
+    const request = Object.freeze(Object.assign(Object.create(null), {
+      importId, firstBlock: first, blockCount: count,
+    }));
+    const response = await this.#storage.invoke("base-range-read", request);
+    const fields = descriptorRecord(response, "M13 base range response", {
+      allowed: ["bytes"], required: ["bytes"], maximumKeys: 1,
+    });
+    const body = copiedInternalBytes(fields.bytes, "M13 base range bytes",
+      CADR_M13_MAX_STREAM_WINDOW_BYTES);
+    invariant(body.byteLength === count * 1024,
+      "M13 base range response has the wrong length");
+    return new Uint8Array(body);
+  }
+}
+
+function selectedBootArtifacts(value) {
+  invariant(Array.isArray(value) && value.length === M13_SELECTED_BOOT_ARTIFACTS.length,
+    "M13 selected boot artifacts are incomplete");
+  const byKind = new Map();
+  for (const candidate of value) {
+    const fields = descriptorRecord(candidate, "M13 selected boot artifact", {
+      allowed: ["kind", "bytes"], required: ["kind", "bytes"], maximumKeys: 2,
+    });
+    const kind = u32(fields.kind, "M13 selected boot artifact kind", { nonzero: true });
+    invariant(!byKind.has(kind), "M13 selected boot artifact is duplicated");
+    byKind.set(kind, copiedInternalBytes(fields.bytes, "M13 selected boot artifact bytes",
+      CADR_M13_MAX_STREAM_WINDOW_BYTES));
+  }
+  const result = [];
+  for (const expected of M13_SELECTED_BOOT_ARTIFACTS) {
+    const body = byKind.get(expected.kind);
+    invariant(body !== undefined && body.byteLength === expected.byteCount,
+      "M13 selected boot artifact has the wrong length");
+    result.push(Object.freeze({ kind: expected.kind, bytes: body }));
+  }
+  return Object.freeze(result);
+}
+
 export class CadrM13Shell {
   #worker; #storage; #ledger = new CadrM13AdmissionLedger(); #sessionId; #expectedId = 1; #workerId = 1;
   #pending = new Map(); #terminal = false; #state = "NEW"; #releaseTarget; #releaseControl; #guestSurface; #statusSink;
   #workerDetach = []; #timeoutMs; #setTimeout; #clearTimeout; #wasmCompiler; #capturedPointerId = null; #ingressEnabled = true;
-  #lastStatus = null;
+  #lastStatus = null; #m10Controller = null; #m10Bridge = null;
+  #baseMediaBinding = null; #selectedBootArtifacts = null; #mediaMounted = false;
 
   constructor({ worker, storage = null, sessionRandom = undefined, releaseTarget = null, releaseControl = null,
     guestSurface = null, statusSink = null, timeoutMs = 10000,
     setTimeoutFn = globalThis.setTimeout.bind(globalThis),
-    clearTimeoutFn = globalThis.clearTimeout.bind(globalThis),
+    clearTimeoutFn = globalThis.clearTimeout.bind(globalThis), m10Controller = null, m10BridgeFactory = null,
+    baseMediaBinding = null, selectedBootArtifacts: configuredBootArtifacts = null,
     wasmCompiler = globalThis.WebAssembly?.compile.bind(globalThis.WebAssembly), initialId = 1 } = {}) {
     invariant(worker !== null && typeof worker === "object" && typeof worker.postMessage === "function", "M13 shell needs a dedicated worker");
     invariant(typeof timeoutMs === "number" && timeoutMs > 0, "worker timeout must be positive");
@@ -568,6 +788,24 @@ export class CadrM13Shell {
     invariant(Number.isSafeInteger(initialId) && initialId >= 1 && initialId <= MAX_U32, "initial v8 request ID is invalid"); this.#expectedId = initialId;
     this.#sessionId = randomSession(sessionRandom); this.#releaseTarget = releaseTarget; this.#releaseControl = releaseControl;
     this.#guestSurface = guestSurface; this.#statusSink = statusSink; this.#timeoutMs = timeoutMs; this.#setTimeout = setTimeoutFn; this.#clearTimeout = clearTimeoutFn; this.#wasmCompiler = wasmCompiler;
+    if (m10Controller !== null) {
+      invariant(typeof m10Controller === "object" && typeof m10Controller.commitWrites === "function" &&
+        typeof m10Controller.readBlock === "function" && typeof m10Controller.invalidateAfterAmbiguousGuest === "function",
+      "M13 M10 controller is incomplete");
+      invariant(typeof m10BridgeFactory === "function", "M13 M10 bridge factory is required");
+      this.#m10Controller = m10Controller;
+      this.#m10Bridge = m10BridgeFactory(Object.freeze({ controller: m10Controller,
+        channel: Object.freeze({ submit: request => this.#submitM10Internal(request) }) }));
+      invariant(this.#m10Bridge !== null && typeof this.#m10Bridge.serviceOnce === "function",
+        "M13 M10 bridge factory returned an incomplete bridge");
+    }
+    if (baseMediaBinding !== null || configuredBootArtifacts !== null) {
+      invariant(baseMediaBinding instanceof CadrM13BaseMediaBinding &&
+        configuredBootArtifacts !== null,
+      "M13 selected media needs both its base binding and boot artifacts");
+      this.#baseMediaBinding = baseMediaBinding;
+      this.#selectedBootArtifacts = selectedBootArtifacts(configuredBootArtifacts);
+    }
     this.#workerDetach.push(attach(worker, "message", event => this.#onWorkerMessage(event?.data ?? event)));
     this.#workerDetach.push(attach(worker, "error", () => this.#workerLost("worker-error")));
     this.#workerDetach.push(attach(worker, "messageerror", () => this.#workerLost("worker-messageerror")));
@@ -667,6 +905,10 @@ export class CadrM13Shell {
     try {
       const result = await this.#postLower(lower, { external: request });
       if (result.status === 21) return this.#terminalResponse(request, CADR_M13_STATUS.PROTOCOL_VIOLATION);
+      if (result.status === 8 && this.#m10Bridge !== null) {
+        const failure = await this.#serviceM10WaitingRequest(request);
+        if (failure !== null) return failure;
+      }
       const terminal = request.id === MAX_U32 || result.status === CADR_M13_STATUS.WORKER_LOST || result.status === CADR_M13_STATUS.PROTOCOL_VIOLATION;
       return response(request, result.status, result.remainder, { terminal });
     } catch (error) {
@@ -675,7 +917,129 @@ export class CadrM13Shell {
     }
   }
 
+  /* This is a deliberately private composition-witness setup seam.  It is not
+   * in CADR_M13_OPERATION_SCHEMAS and must never consume or manufacture a v8
+   * request ID.  A public M13 boot uses the documented base-import/M10 path;
+   * the selected-media probe uses this method only to drive preserved local
+   * bytes through the pre-existing v7 artifact verifier. */
+  async mountSelectedMediaWitness(importId) {
+    if (this.#terminal) throw new M13AdmissionError("M13 session is terminal");
+    const result = await this.#mountSelectedMedia(u32(importId, "M13 witness base import ID", { nonzero: true }));
+    if (result.status !== CADR_M13_STATUS.OK) {
+      throw new M13AdmissionError("M13 selected-media witness mount failed", { status: result.status });
+    }
+    return result.result;
+  }
+
+  async #mountSelectedMedia(importId) {
+    if (this.#mediaMounted || this.#baseMediaBinding === null ||
+        this.#selectedBootArtifacts === null) {
+      return Object.freeze({ status: CADR_M13_STATUS.NOT_READY, result: null });
+    }
+    /* Every one of these lower messages can mutate the v7 media state.  There
+     * is no verified atomic rollback in the preserved worker, so a failure
+     * after the first attempted lower mutation discards that worker rather than
+     * exposing a potentially partial import for retry. */
+    let lowerMutationIssued = false;
+    try {
+      this.#baseMediaBinding.beginMount(importId);
+      for (const artifact of this.#selectedBootArtifacts) {
+        const input = artifact.bytes.slice(0);
+        lowerMutationIssued = true;
+        let lower = await this.#postLower({ version: 7,
+          id: this.#nextInternalRequestId(), op: "input", bytes: input },
+        { external: null });
+        if (lower.status !== CADR_M13_STATUS.OK) throw new M13AdmissionError(
+          "selected boot-artifact input was rejected", { status: lower.status });
+        lowerMutationIssued = true;
+        lower = await this.#postLower({ version: 7,
+          id: this.#nextInternalRequestId(), op: "import", artifactKind: artifact.kind,
+          byteCount: artifact.bytes.byteLength }, { external: null });
+        if (lower.status !== CADR_M13_STATUS.OK) throw new M13AdmissionError(
+          "selected boot-artifact import was rejected", { status: lower.status });
+      }
+      lowerMutationIssued = true;
+      let lower = await this.#postLower({ version: 7,
+        id: this.#nextInternalRequestId(), op: "stream-begin", artifactKind: 3,
+        byteCount: BigInt(CADR_M13_BASE_BYTES) }, { external: null });
+      if (lower.status !== CADR_M13_STATUS.OK) throw new M13AdmissionError(
+        "selected base stream was rejected", { status: lower.status });
+      for (let firstBlock = 0; firstBlock < CADR_M13_BASE_BLOCKS;) {
+        const blockCount = Math.min(1024, CADR_M13_BASE_BLOCKS - firstBlock);
+        const body = await this.#baseMediaBinding.readMountRange(firstBlock, blockCount);
+        lowerMutationIssued = true;
+        lower = await this.#postLower({ version: 7,
+          id: this.#nextInternalRequestId(), op: "stream-chunk",
+          offset: BigInt(firstBlock) * 1024n, bytes: body.buffer }, { external: null });
+        if (lower.status !== CADR_M13_STATUS.OK) throw new M13AdmissionError(
+          "selected base stream chunk was rejected", { status: lower.status });
+        firstBlock += blockCount;
+      }
+      lowerMutationIssued = true;
+      lower = await this.#postLower({ version: 7,
+        id: this.#nextInternalRequestId(), op: "stream-finish" }, { external: null });
+      if (lower.status !== CADR_M13_STATUS.OK) throw new M13AdmissionError(
+        "selected base stream did not verify", { status: lower.status });
+      this.#baseMediaBinding.finishMount(); this.#mediaMounted = true;
+      return Object.freeze({ status: CADR_M13_STATUS.OK,
+        result: Object.freeze({ baseBytes: CADR_M13_BASE_BYTES,
+          baseSha256: CADR_M13_BASE_SHA256, bootArtifactCount: this.#selectedBootArtifacts.length }) });
+    } catch (error) {
+      this.#baseMediaBinding.abortMount();
+      if (lowerMutationIssued) {
+        this.#workerLost("selected-media-mount-failed");
+        return Object.freeze({ status: CADR_M13_STATUS.WORKER_LOST, result: null });
+      }
+      const status = error instanceof M13AdmissionError ? error.status : CADR_M13_STATUS.HOST_FAILURE;
+      return Object.freeze({ status, result: null });
+    }
+  }
+
   #nextInternalRequestId() { const value = this.#workerId; this.#workerId = value === 0x7fffffff ? 1 : value + 1; return value; }
+  async #submitM10Internal(candidate) {
+    const fields = descriptorRecord(candidate, "M10 bridge request", {
+      allowed: ["op", "operation", "hostStatus", "generation", "requestId", "bytes"], required: ["op"], maximumKeys: 6,
+    });
+    invariant(fields.op === "host-next-request" || fields.op === "host-complete", "M10 bridge operation is not closed");
+    const lower = Object.create(null); lower.version = 7; lower.id = this.#nextInternalRequestId(); lower.op = fields.op;
+    if (fields.op === "host-next-request") {
+      invariant(Object.keys(fields).length === 1, "M10 host-next request has extra fields");
+    } else {
+      invariant(Object.hasOwn(fields, "operation") && Object.hasOwn(fields, "hostStatus") &&
+        Object.hasOwn(fields, "generation") && Object.hasOwn(fields, "requestId") && Object.hasOwn(fields, "bytes"),
+      "M10 host completion is incomplete");
+      lower.operation = u32(fields.operation, "M10 completion operation");
+      lower.hostStatus = u32(fields.hostStatus, "M10 completion status");
+      lower.generation = u64(fields.generation, "M10 completion generation");
+      lower.requestId = u64(fields.requestId, "M10 completion request ID");
+      lower.bytes = copiedInternalBytes(fields.bytes, "M10 completion bytes", M10_HOST_COMPLETION_BYTES);
+    }
+    const result = await this.#postLower(lower, { external: null });
+    return Object.freeze({ status: result.status, ...result.remainder });
+  }
+  async #serviceM10WaitingRequest(request) {
+    try {
+      const outcome = await this.#m10Bridge.serviceOnce();
+      if (outcome?.serviced !== true) return this.#terminalResponse(request, CADR_M13_STATUS.PROTOCOL_VIOLATION);
+      return null;
+    } catch {
+      if (this.#m10Controller?.state === M10_CONTROLLER_IN_DOUBT) return this.#m10UncertainFailure(request);
+      return response(request, CADR_M13_STATUS.HOST_FAILURE, { reason: shellReason(CADR_M13_STATUS.HOST_FAILURE) });
+    }
+  }
+  #m10UncertainFailure(request) {
+    if (!this.#terminal) {
+      this.#terminal = true; this.#state = "FAILED"; this.releaseInput("m10-in-doubt");
+      for (const [id, pending] of this.#pending) {
+        this.#pending.delete(id); this.#clearTimeout(pending.timer);
+        pending.reject(new M13AdmissionError("M10 durable state is uncertain", { status: CADR_M13_STATUS.HOST_FAILURE }));
+      }
+      try { this.#worker.terminate?.(); } catch { /* process disposal is best effort */ }
+      this.announce("CADR durable state is uncertain; volatile state lost");
+    }
+    return response(request, CADR_M13_STATUS.HOST_FAILURE,
+      { reason: shellReason(CADR_M13_STATUS.HOST_FAILURE) }, { terminal: true });
+  }
   #postLower(request, { external, timeoutMs = this.#timeoutMs }) {
     return new Promise((resolve, reject) => {
       const timer = this.#setTimeout(() => { this.#pending.delete(request.id); reject(new Error("lower worker response timeout")); }, timeoutMs);

@@ -29,6 +29,23 @@ class Probe {
 }
 
 const module = await WebAssembly.compile(await readFile(WASM));
+
+/* The selected progress operation is an M12/v7-only extension.  It is not a
+ * backdoor into the v4--v6 scheduler trees, even though this composed module
+ * exports the lower profile facilities needed to instantiate those profiles. */
+for (const version of [4, 5, 6]) {
+  const olderWorker = new Worker(WORKER, { type: "module" });
+  const olderProbe = new Probe(olderWorker);
+  try {
+    let reply = await olderProbe.request({ version, id: 1, op: "instantiate", module });
+    assert.equal(reply.status, 0, `v${version} selected module instantiates for rejection test`);
+    reply = await olderProbe.request({ version, id: 2, op: "scheduler-run-v7-slice", clockSlots: 1 });
+    assert.equal(reply.status, 2, `v${version} cannot acquire the v7 scheduler slice`);
+  } finally {
+    await olderWorker.terminate();
+  }
+}
+
 const worker = new Worker(WORKER, { type: "module" });
 const probe = new Probe(worker);
 try {
@@ -94,6 +111,22 @@ try {
   reply = await probe.request({ version: 7, id: 20, op: "debug-inspect-read", arrayKind: 1, index: 0 });
   assert.equal(reply.status, 0);
   assert.deepEqual(reply.result, { generation: 1n, arrayKind: 1, index: 0, value: 0 });
+
+  /* `scheduler-run` retains its M5-family control-yield semantics.  The new
+   * v7 operation is a separate exact-field, 4,096-outer-slot contract: these
+   * malformed values reject before lifecycle admission, while the maximum
+   * shaped request reaches the normal RUNNING/visibility fence. */
+  for (const [id, fields] of [
+    [21, {}],
+    [22, { clockSlots: 1, unexpected: true }],
+    [23, { clockSlots: 0 }],
+    [24, { clockSlots: 4097 }],
+  ]) {
+    reply = await probe.request({ version: 7, id, op: "scheduler-run-v7-slice", ...fields });
+    assert.equal(reply.status, 2, "v7 slice rejects malformed fields or an over-cap budget");
+  }
+  reply = await probe.request({ version: 7, id: 25, op: "scheduler-run-v7-slice", clockSlots: 4096 });
+  assert.equal(reply.status, 9, "well-formed v7 slice reaches the normal lifecycle fence");
 } finally {
   await worker.terminate();
 }

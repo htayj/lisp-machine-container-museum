@@ -64,10 +64,35 @@ async function bootstrapAtMaximumId() {
   } finally { maximumShell.dispose(); }
 }
 
+/* `terminate()` is an actual browser-worker loss rather than a synthetic v7
+ * reply.  The independent shell has a short explicit response deadline; its
+ * status-24 result remains distinct from the selected worker's normal status
+ * 9 cold-power response checked by the primary shell. */
+async function terminateSelectedWorkerDuringRequest() {
+  if (!bootstrapped || selectedWasmBytes === null || selectedWasmSha256 === null) {
+    throw new Error("selected-Wasm probe must bootstrap normally first");
+  }
+  const lossWorker = new Worker(new URL("../wasm/cadr-worker.js", import.meta.url), {
+    type: "module", name: "cadr-m13-selected-wasm-worker-loss-probe",
+  });
+  const lossShell = new CadrM13Shell({ worker: lossWorker, timeoutMs: 250 });
+  try {
+    const bootstrapResult = await lossShell.submit(requestFor(lossShell, 1, "bootstrap", {
+      wasmBytes: selectedWasmBytes.slice(0), wasmSha256: selectedWasmSha256,
+    }));
+    if (bootstrapResult.status !== 0) return Object.freeze({ bootstrapResult, result: null, state: lossShell.state });
+    const pending = lossShell.submit(requestFor(lossShell, 2, "machine-cold-power-on"));
+    lossWorker.terminate();
+    const result = await pending;
+    return Object.freeze({ bootstrapResult, result, state: lossShell.state });
+  } finally { lossShell.dispose(); }
+}
+
 globalThis.cadrM13SelectedWasmHarness = Object.freeze({
   sessionId: shell.sessionId,
   bootstrap,
   bootstrapAtMaximumId,
+  terminateSelectedWorkerDuringRequest,
   submit(id, op, fields = {}) { return shell.submit(requestFor(shell, id, op, fields)); },
   state() { return shell.state; },
   dispose() { shell.dispose(); },

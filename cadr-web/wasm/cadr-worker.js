@@ -47,6 +47,9 @@ const CADR_STATUS_HALTED = 16;
 const CADR_STATUS_QUEUE_FULL = 17;
 const CADR_TRANSFER_LIMIT = 1048576;
 const CADR_DIGEST_BATCH_MAX = 4096;
+/* This is not an M5-family fast-run.  It is the maximum non-interruptible
+ * protocol-v7 scheduler slice admitted solely by the selected M13 shell. */
+const CADR_M12_SCHEDULER_SLICE_MAX_SLOTS = 4096;
 const CADR_M6_FAST_RUN_MAX_SLOTS = 1048576;
 const CADR_HOST_DESCRIPTOR_LIMIT = 64;
 const CADR_HOST_REQUEST_PAYLOAD_LIMIT = 1024;
@@ -92,6 +95,12 @@ const CADR_M8_M9_ONLY_OPERATIONS = new Set([
 const CADR_M11_ONLY_OPERATIONS = new Set([
   "audio-state", "audio-peek", "audio-render", "audio-ack",
   "audio-snapshot-size", "audio-snapshot-save", "audio-snapshot-restore",
+]);
+/* Deliberately separate from the frozen M5 scheduler operation set.  The
+ * selected M13 composition needs a bounded progress turn, but it must not
+ * weaken the per-slot control-yield semantics of `scheduler-run`. */
+const CADR_M12_ONLY_OPERATIONS = new Set([
+  "scheduler-run-v7-slice",
 ]);
 const CADR_SCHED_EVENT_SEQUENCE_BREAK = 1;
 const CADR_SCHED_EVENT_CLOCK = 2;
@@ -1190,6 +1199,10 @@ async function handle(request) {
     response(id, op, CADR_STATUS_INVALID_ARGUMENT);
     return;
   }
+  if (protocolVersion !== CADR_M12_PROTOCOL_VERSION && CADR_M12_ONLY_OPERATIONS.has(op)) {
+    response(id, op, CADR_STATUS_INVALID_ARGUMENT);
+    return;
+  }
 
   const e = exportsOrStatus(id, op);
   if (e === null) return;
@@ -1430,6 +1443,49 @@ async function handle(request) {
     }
     runActive = false;
     if (status === CADR_STATUS_WAITING_FOR_HOST) workerLifecycle = CADR_WORKER_WAITING;
+    schedulerResult(e, id, op, status, [completed, microinstructions]);
+    await applyDeferredControls();
+  } else if (op === "scheduler-run-v7-slice") {
+    /*
+     * Selected M13 progress contract: this is a v7-only, fixed-ceiling
+     * non-interruptible slice.  `clockSlots` bounds outer calls, not merely
+     * metadata deltas: a queued host completion may report zero completed
+     * guest slots but still consumes exactly one outer call.  No live control
+     * is observed until the one yield following this bounded loop.
+     */
+    const expectedFields = ["version", "id", "op", "clockSlots"];
+    if (Object.keys(request).length !== expectedFields.length ||
+        expectedFields.some(field => !Object.hasOwn(request, field)) ||
+        !unsigned32(request.clockSlots) || request.clockSlots === 0 ||
+        request.clockSlots > CADR_M12_SCHEDULER_SLICE_MAX_SLOTS) {
+      response(id, op, CADR_STATUS_INVALID_ARGUMENT);
+      return;
+    }
+    if (!m5SlotAdvanceAllowed({ visibilityInitialized, lifecycle: workerLifecycle, hidden,
+      pendingBoundaryDigest }, CADR_WORKER_RUNNING)) {
+      response(id, op, CADR_STATUS_NOT_READY, { lifecycle: workerLifecycle });
+      return;
+    }
+    let status = CADR_STATUS_OK;
+    let completed = 0n;
+    let microinstructions = 0n;
+    runActive = true;
+    for (let outerSlots = 0; outerSlots < request.clockSlots; outerSlots += 1) {
+      status = e.cadr_wasm_run(1) >>> 0;
+      const runMeta = metadata(e);
+      if (runMeta === null) {
+        status = CADR_STATUS_NOT_READY;
+        break;
+      }
+      completed += runMeta[0];
+      microinstructions += runMeta[1];
+      if (status !== CADR_STATUS_OK) break;
+    }
+    if (status === CADR_STATUS_WAITING_FOR_HOST) workerLifecycle = CADR_WORKER_WAITING;
+    /* The captured-control path stays active across this sole post-slice
+     * yield, so a pause/stop is ordered after, never inside, the slice. */
+    await new Promise((resolveYield) => setTimeout(resolveYield, 0));
+    runActive = false;
     schedulerResult(e, id, op, status, [completed, microinstructions]);
     await applyDeferredControls();
   } else if (op === "scheduler-single-step") {

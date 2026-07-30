@@ -112,6 +112,17 @@ class CadrM13SelectedWasmBrowserTest(unittest.TestCase):
             self.assertEqual(maximum["result"]["lifecycle"], "NEW")
             self.assertEqual(maximum["state"], "TERMINATED")
 
+            # A third, independently bootstrapped selected worker is actually
+            # terminated while its lower request is pending.  Its v8 shell must
+            # report the terminal worker-loss result, not mislabel it as the
+            # selected worker's ordinary NOT_READY response.
+            loss = page.evaluate(
+                "() => window.cadrM13SelectedWasmHarness.terminateSelectedWorkerDuringRequest()")
+            self.assertEqual(loss["bootstrapResult"]["status"], 0)
+            self.assertEqual(loss["result"]["status"], 24)
+            self.assertTrue(loss["result"]["terminal"])
+            self.assertEqual(loss["state"], "FAILED")
+
             # No M10 service is injected.  The v8 shell rejects no parser input
             # here; it returns its documented NOT_READY result and neither
             # fetches base media nor gives the worker a storage capability.

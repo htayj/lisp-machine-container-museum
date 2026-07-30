@@ -2,7 +2,7 @@
 type: concept
 title: CADR-WEB-303 browser hardening and accessibility reimplementation specification
 description: A release-bounded M13 contract for hostile host inputs, resource ceilings, offline execution, worker failure, and accessible controls around an unmodified CADR framebuffer.
-timestamp: 2026-07-30T03:44:00-04:00
+timestamp: 2026-07-30T06:04:49-04:00
 ---
 
 # CADR-WEB-303 browser hardening and accessibility reimplementation specification
@@ -41,7 +41,8 @@ v7 adapter envelope rather than a caller object or a storage capability. Its nam
 M10 boundary is an authority-minimising adapter, not a new durable-store claim.
 
 The current source and Chromium probes exercise bounded portions of `M13-F01`,
-`M13-F02`, `M13-F04`, `M13-F05a`, `M13-F08`--`M13-F13`, and `M13-F15`/`F15b`.
+`M13-F02`, `M13-F04`, `M13-F05a`, `M13-F06`/`F07`, `M13-F08`--`M13-F13`, and
+`M13-F15`/`F15b`.
 They include a real browser Worker boundary, the exact provisional CSP attack
 matrix, a keyboard route through every provisional host control, a narrow real
 AudioContext/AudioWorklet component probe, and deterministic named-parser and
@@ -66,18 +67,56 @@ also proves that an absent M10 boundary rejects the selected base-import request
 without requesting base media. This is a normal composition seam only: it neither
 boots a machine nor supplies a durable store, host completion bridge, audio device,
 or release artifact policy.
-The audio PCM and lower worker used by these probes are synthetic fixtures; the
-policy artifact does not boot a machine. None of these checks is a selected-Wasm/M10
-composition, a full screen-reader review, complete sanitizer coverage, or
+The separate F06/F07 disposable-browser probe loads the real M10 IndexedDB backend,
+controller, and M4 worker-host bridge while recording the selected M12 Wasm as an
+independent state witness. Its M10 bridge uses an exact synthetic M4 request; the
+runner does not load the M13 shell or its composite dispatch. Across four injected
+durable/host failure cases, verified receipts preserve the selected base identity
+and byte-identical M12 checkpoints, distinguish pre-guest `CLEAN` recovery from
+post-acceptance `IN_DOUBT` fencing plus one replacement, and include a foreign
+binding rejection. This is lower-layer evidence rather than M13 storage or recovery
+completion; its exact report and limits are recorded in the
+[M13 checklist](cadr-m13-conformance-checklist.md).
+The shared M13 shell now exposes the corresponding narrow dispatch seam when a
+caller supplies an actual M10 controller and bridge factory: a lower status-8 wait
+alone may issue the shell-owned `host-next-request` followed by exactly one copied
+`host-complete`. A Chromium probe drives one synthetic exact M4 write through that
+seam into real IndexedDB and observes durable readback. Its post-completion fault
+case puts the controller in `IN_DOUBT` and makes the v8 shell return terminal status
+7 while terminating its worker. This establishes dispatcher ordering and fencing,
+not selected-Wasm behavior, exact-base media, import/reopen/export/restore coverage,
+or a full M13 workflow.
+The selected-media/M10 browser program is a separate **internal witness seam**,
+not a v8 operation or an extension of this public contract. It copies the four
+small selected artifacts and the fixed 269,562,880-byte base through the existing
+v7 artifact verifier, retains a SHA-256 witness for each canonical 1 MiB base
+range, and permits an M10 base-page read only after re-reading and matching its
+complete containing range. The M10 controller receives the selected base identity
+only after that full v7 stream and every retained witness are complete. Any failed
+lower import, stream begin/chunk/finish, timeout, or malformed lower reply after
+the first lower mount message discards the worker and makes the witness shell
+terminal; it has no rollback or retry path. This supplies a narrow composition
+experiment, not a public import/boot API or complete selected-M10 workflow. The
+current selected run reaches one real block-1 guest write request. Its bytes equal
+the selected base block, so M10 reports `durable:true,changed:false` and creates no
+overlay page. A fresh controller reopens the same binding `CLEAN` and reads the same
+base-equivalent block; this proves reopen/read routing after the no-change request,
+not overlay persistence.
+The selected-media witness is therefore a bounded selected-Wasm/M10 composition:
+there is partial composed-campaign evidence, but no **complete** composed M13
+campaign. The separate audio fixtures and provisional policy artifact remain
+synthetic and do not boot a machine. None of the current checks completes the selected persistence
+failure algebra, full screen-reader review, complete sanitizer coverage, or
 private-System-303 observation. The `TODO-RUNTIME-M13-*` rows therefore remain open
 and **C-M13 is not closed**.
 
 The deterministic source-admission corpus uses seed `0x6d313346` and 4,096 bounded
 candidates across the v8 envelope, code-length/surrogate, ID/session/version,
 inspector, breakpoint, scheduler, unknown-operation, and extra-field cases. Every
-admitted candidate is independently post-clone checked and `M13META1`-encoded. It
-is useful partial `M13-F01` evidence, not the required selected-Wasm/M10 workflow
-or sanitizer campaign. The companion named-parser corpus uses the same fixed seed
+one of the current 1,636 admitted candidates is independently post-clone checked and
+`M13META1`-encoded; 2,460 candidates are rejected. It is useful partial `M13-F01`
+evidence, not the complete required selected-Wasm/M10 workflow or sanitizer
+campaign. The companion named-parser corpus uses the same fixed seed
 for 780 bounded hostile cases across currently exported M6--M13 parser/validator
 ingress and reaches M4 diagnostic parsing through its public serializer; it does
 not make private M10/M6 paths or partial-adoption semantics complete. A separate
@@ -369,6 +408,50 @@ only after the exact total and full digest match. `base-range-read` is valid onl
 for that adopted immutable byte identity, copies each result, and never returns a
 mutable view into the retained Blob/File.
 
+#### Internal selected-media witness seam (not a v8 operation)
+
+`mountSelectedMediaWitness(importId)` is test-program-only setup code. It is absent
+from the closed `CADR_M13_OPERATION_SCHEMAS`, cannot be submitted in a v8 envelope,
+does not allocate a public request ID, and MUST NOT be used to describe the M13
+boot API. It exists solely because the selected v7 worker's artifact-ingress path
+is the available preserved verification mechanism for the untracked local media.
+
+For a fresh real v7 worker, the witness order is exactly: v8 `bootstrap`; internal
+`input` and `import` for each of the four fixed small artifacts; internal
+`stream-begin`, canonical consecutive `stream-chunk` ranges of at most 1,024
+1,024-byte blocks, and `stream-finish` for the base; successful local
+`finishMount`; `m10Controller.open`; then public v8 `machine-cold-power-on`,
+`machine-boot`, `machine-visibility`, `machine-start`, and bounded
+`machine-run`. The witness does not call any generic lower `run*` operation.
+
+Each streamed canonical range is copied before lower dispatch and SHA-256 hashed.
+Only a successful v7 `stream-finish` may change the binding to `MOUNTED`. Later
+M10 reads fetch the complete canonical range containing the requested 1,024-byte
+page, recompute its hash, compare it to the retained witness, and only then return
+the copied page. A changed or unavailable backing Blob/File/store therefore fails
+the read rather than silently supplying a page from unverified mutable bytes. The
+selected full SHA-256 is exposed to M10 only when the complete retained range set
+is present after that successful v7 finish; the selected constant alone is never a
+pre-mount identity assertion.
+
+For this private witness only, the M10 `profileSha256` and `artifactSetSha256` are
+derived, length-framed SHA-256 identities rather than hashes of descriptive labels.
+The first binds the actual kind-1 profile bytes; the second binds the exact M12 O2
+module and all four selected boot artifacts by role, kind, byte count, and digest.
+Their versioned encoding and current local values are recorded in the
+[E26 input ledger](cadr-m13-conformance-checklist.md#e26-exact-commands-and-selected-input-identities).
+They are clean-room witness identifiers, not historical System 303 profile or media
+identifiers and not a replacement for a public M13 artifact manifest.
+
+There is deliberately no `stream-abort` recovery in this witness. After the first
+attempted lower `input`, `import`, `stream-begin`, `stream-chunk`, or
+`stream-finish`, every error path (including a nonzero lower status) releases the
+local witnesses, terminates the worker, and reports `WORKER_LOST` to the private
+caller. A new Worker, shell, binding, and M10 controller are required for another
+attempt. Errors before the first lower message leave the fresh worker untouched.
+The normal public base-import and M10 operations retain their own table and
+failure algebra above; this witness does not change them.
+
 `m10-reopen` calls the shell-owned `reopenDisk` procedure. `createIfMissing:true`
 may initialize only the exact selected base/profile/artifact tuple; it never
 reinitializes an existing foreign or corrupt namespace. `RECOVERY_REQUIRED` is a
@@ -463,6 +546,7 @@ a more convenient generic error.
 | Current head/activation/manifest/tree is corrupt or incomplete, but bounded recovery validates a fallback activation and complete closure | status `0` with the exact `m10-reopen` result, including fresh `sessionToken`, `state:"RECOVERY_REQUIRED"`, `readOnly:true`, and fallback generation/head/root/manifest identities | mounted only for read-only recovery inspection; no boot/write; no cached head is called saved | false |
 | Bounded M10 recovery has no valid activation/candidate, exceeds the activation scan bound, or otherwise cannot validate a complete fallback | `7`, `reason:"host-failure"`, no result | remain `FAILED` and unmounted; expose no recovery session/result; no cached head is called saved | false |
 | Base Blob/File read fails, temporary snapshot I/O fails, or IndexedDB transaction aborts before guest host completion | `7`, `reason:"host-failure"`, no result | old head and worker guest state unchanged; candidate deleted; retry requires a new operation ID | false |
+| Internal selected-media witness encounters any failure after its first attempted lower media mutation | private witness failure `24` (`WORKER_LOST`); no v8 response exists | release witness hashes and base binding; terminate/discard worker; require a new worker, shell, binding, and controller | true |
 | User `snapshot-restore-abort`, `snapshot-export-close`, or `m10-export-close` on its live handle | status `0` with that operation's exact release result | candidate/pin/cursor released; adopted state unchanged | false |
 | Declared stream/export total, object count, per-body cap, quota, or aggregate admission cell is exceeded before guest host completion | `22`, `reason:"resource-limit"`, no result | old head unchanged; no cursor advance or pin publication; candidate transaction aborted | false |
 | Deterministic named allocation fails before guest host completion | `23`, `reason:"no-memory"`, no result | old head and worker state unchanged; all reservations/candidates released | false |
@@ -491,7 +575,7 @@ selection, even if reopen proves that the proposed generation became durable.
 | `machine-boot` | none | `0,2,7,9,22,23,24,25` | exactly `lifecycle` |
 | `machine-visibility` | `hidden:boolean` | `0,2,7,9,22,23,24,25` | exactly `lifecycle,hidden` |
 | `machine-start`, `machine-pause`, `machine-reset` | none | `0,2,7,9,22,23,24,25` | exactly `lifecycle` |
-| `machine-run` | `clockSlots:u32`; nonzero | `0,2,7,8,9,12,13,16,22,23,24,25` | exactly `lifecycle,completedSlots,microinstructionsExecuted`, plus the lower failure-evidence fields when the selected scheduler requires them |
+| `machine-run` | `clockSlots:u32` in `1..4096` | `0,2,7,8,9,12,13,16,22,23,24,25` | exactly `lifecycle,completedSlots,microinstructionsExecuted`, plus the lower failure-evidence fields when the selected scheduler requires them |
 | `machine-stop` | none | `0,2,7,9,22,23,24,25` | exactly `lifecycle,discardedUnsavedState`; the latter is false |
 | `display-update`, `display-full` | none | `0,2,7,9,22,23,24,25` | exact M7 top-level remainder, including `updated` and `frame` only when M7 supplies it |
 | `keyboard-down` | `code`, optional `repeat:boolean` | `0,2,9,22,23,24,25` | exact M8 remainder |
@@ -526,7 +610,7 @@ Every remaining own field is copied unchanged. In particular:
 - `machine-cold-power-on`, `machine-boot`, `machine-visibility`,
   `machine-start`, `machine-run`, `machine-pause`, `machine-reset`, and
   `machine-stop` map one-for-one to lower `cold-power-on`, `boot`,
-  `scheduler-visibility`, `scheduler-start`, `scheduler-run`, `scheduler-pause`,
+  `scheduler-visibility`, `scheduler-start`, `scheduler-run-v7-slice`, `scheduler-pause`,
   `scheduler-reset`, and `scheduler-stop`. Their named lower remainder is copied
   at top level. `bootstrap` is the one intentional pre-lower transform: after
   source byte/hash validation the shell compiles the bytes, supplies the resulting
@@ -593,7 +677,7 @@ The only boot sequence admitted by this profile is:
    `readOnly:false`, then `m10-writer-open`;
 3. `bootstrap`, `machine-cold-power-on`, and `machine-boot`;
 4. `machine-visibility` with `hidden:false`, then `machine-start`; and
-5. issue bounded `machine-run` requests. Status `8` means the worker is waiting
+5. issue `machine-run` requests of at most 4,096 outer slots. Status `8` means the worker is waiting
    for one guest host request. The dispatcher alone performs
    `host-next-request`, the read or durable-write sequence above, and
    `host-complete`, after which the next bounded `machine-run` may proceed.
@@ -603,6 +687,20 @@ step 3 leaves no worker running. A worker/core error after step 3 uses the ordin
 crash and `IN_DOUBT` rules. This closes the path from verified base bytes through
 effective range reads and durable guest writes without moving storage ownership
 into the worker.
+
+`machine-run` has one selected-profile-only lower exception. It maps only to
+protocol-v7 `scheduler-run-v7-slice`; v1--v6 reject that lower name. The lower
+request has exactly `version,id,op,clockSlots`, repeats `cadr_wasm_run(1)` at
+most once for each requested outer slot, and performs no worker-task yield or
+control observation within that loop. A completion-only core call can report a
+zero completed-slot delta but still consumes one outer-slot budget. The first
+nonzero core status ends the slice immediately; status `8` changes the lifecycle
+to `WAITING_FOR_HOST`. The response reports the exact accumulated completed-slot
+and microinstruction metadata for the calls actually made, then performs one
+post-slice worker yield before accepting deferred pause/stop/visibility controls.
+The frozen `scheduler-run` retains its original yield-after-every-complete-slot
+control semantics and M13 must never issue it. This is a bounded progress
+operation, not a generic `run*` reopening or a promise of a full boot workflow.
 
 ## Import transaction
 
@@ -637,6 +735,7 @@ M13 profile/build identity.
 | streamed reader/validator window | two 1,048,576-byte chunks, at most 2 MiB total | a chunk is never retained after the next verified window replaces it |
 | stream total | base: exactly M10's 269,562,880 bytes; structured `m10-export-*` closure: at most 320 MiB; complete streamed snapshot: at most 18,131,492 bytes | snapshot total is raw Wasm plus 104-byte `CDRM5WK1`, 256-byte `CDRM10W1`, 64-byte audio directory entry, and 4,288-byte audio payload; the export ceiling does not select deferred `CDROVL1`, and no stream total implies whole-file host residency |
 | inherited legacy C/Wasm transfer | 1,048,576 bytes | preserves the current v1--v5 worker `CADR_TRANSFER_LIMIT`; v8 does not silently enlarge it |
+| selected v7 scheduler slice | 1..4,096 outer `cadr_wasm_run(1)` calls | one non-interruptible progress operation; the M13 public `machine-run` ceiling is identical |
 | M12 diagnostic export | one `CDRBUG1`, total bytes at most 1,048,576 including its 304-byte header | replaces the former ambiguous 16 MiB “bundle”; no disk, snapshot, pixels, or raw trace bytes |
 | worker input queue | M8/M9 lower-profile capacities; 64 M9 entries with its 60-entry ordinary reserve | never dynamically enlarged |
 | M11 audio | 64 semantic packets; at most 8 in-flight `CDRPCM1` records of at most 512 frames/1,088 bytes each | only after the selected M11 renderer gate; see the audio boundary below |
@@ -1034,7 +1133,7 @@ separate artifact with separate UI, policy, tests, and manifest.
 | `M13-F04` | browser | Detach approved buffers before/during/after handoff; attempt v1--v7, wrong `type`, bad 64-hex session, non-u32/duplicate IDs, delayed/duplicate/post-terminal replies, an injected lower M12 status `21`, and three delayed maximum-ID runs where normal result, worker loss, or correlated protocol violation arrives first | v8 starts at one, fences every prior session, preserves mapped lower response keysets, treats unmapped 21 as status-25 terminal, emits exactly one normal/status-24/status-25 response respectively for ID `0xffffffff` with `terminal:true`, cancels the losing pending result, emits no exhaustion response, and closes each pending request once |
 | `M13-F05a` | deterministic allocation | Exercise every ceiling and `M13META1` total one byte below/at/above it, the retained 17,078,204-byte raw Wasm snapshot as a 17,082,916-byte complete stream, the maximum 18,131,492-byte streamed snapshot, one byte above snapshot maximum, and every named injected allocation point under the aggregate ledger | exact success/`RESOURCE_LIMIT`/`NO_MEMORY`, at most two snapshot windows live, reserved cells release, and no retry wedge |
 | `M13-F05b` | destructive browser OOM | In a disposable browser process/origin, drive one admitted cap-stressing operation at a time past available heap or fixed Wasm capacity | process loss is reported separately from injected `NO_MEMORY`; base and durable fixture remain unchanged |
-| `M13-F06` | storage | Import the exact base in multiple chunkings; exercise boundary range reads, guest read completion, guest one-page writes, reopen, streamed snapshot export/restore, and pinned `m10-export-open/next/close`; inject every condition in the exhaustive failure-algebra table, especially abort/quota/allocation immediately before and after guest host completion | every condition produces its exact status/reason/state/terminal tuple; post-completion failure synchronously fences run/input/device and discards the advanced worker before reopen; old complete generation or reread new complete generation is selected; export stays pinned; worker never receives storage capability |
+| `M13-F06` | storage | Import the exact base in multiple chunkings; verify `machine-run` rejects `0`, `4097`, and extra fields, maps a `1..4096` request only to the non-interruptible v7 slice, reaches one real status-8 host wait without a generic lower `run*`, then exercise boundary range reads, guest read completion, guest one-page writes, reopen, streamed snapshot export/restore, and pinned `m10-export-open/next/close`; inject every condition in the exhaustive failure-algebra table, especially abort/quota/allocation immediately before and after guest host completion | each v7 slice reports exact totals and stops at the first host wait; every storage condition produces its exact status/reason/state/terminal tuple; post-completion failure synchronously fences run/input/device and discards the advanced worker before reopen; old complete generation or reread new complete generation is selected; export stays pinned; worker never receives storage capability |
 | `M13-F07` | storage | Attempt traversal, foreign UUID, malformed key, and collection outside the selected namespace | no unrelated origin record read, changed, or deleted |
 | `M13-F08` | browser-stack network | In a fresh, background-networking-disabled profile, compare browser network-service request starts with the provisional bootstrap inventory, seal it, then exercise the full workflow | only exact bootstrap entries occur before sealing and no request starts after; page API spies agree but are not the oracle |
 | `M13-F09` | CSP | Serve the M13 build-local artifact with the exact header; attempt inline, `eval`, `Function`, remote/self dynamic URL loads, object, frame, form, connection, and selected-Wasm compilation | every disallowed action is blocked, `WebAssembly.compile` works under `wasm-unsafe-eval`, and JS string evaluation remains blocked because `unsafe-eval` is absent |
@@ -1058,7 +1157,7 @@ and policy-harness facts. Neither report substitutes for the other.
 | --- | --- | --- |
 | `TODO-RUNTIME-M13-01` | Run `M13-F01` through `M13-F04` in the maintained native and Node test matrix | hostile parser/message boundary |
 | `TODO-RUNTIME-M13-02` | Run `M13-F05a/F05b` in each browser named by the M13 build-local report | resource-ceiling and destructive-OOM behavior |
-| `TODO-RUNTIME-M13-03` | Complete the durable browser backend and `M13-F06/F07` power-loss campaign | overlay confinement and recovery |
+| `TODO-RUNTIME-M13-03` | Specify and implement a public M13 base-media/M10 boot contract, then drive the selected Wasm worker and exact-base controller through it and complete the full `M13-F06/F07` power-loss campaign. The current private v7 artifact-stream witness is not that public contract. | overlay confinement and recovery |
 | `TODO-RUNTIME-M13-04` | Serve the exact M13 build-local artifact under CSP and browser-stack request recording | bounded-bootstrap/no-network and CSP claim |
 | `TODO-RUNTIME-M13-05` | Complete worker-crash injection at every named operation and M10 `IN_DOUBT` reopen/reread path | saved-versus-volatile recovery claim |
 | `TODO-RUNTIME-M13-06` | Complete automated and manual keyboard/screen-reader workflow in each supported browser | accessibility claim |
