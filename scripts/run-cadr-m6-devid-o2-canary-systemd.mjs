@@ -40,8 +40,7 @@ export function systemdCommand(argv, nonce = randomBytes(16).toString("hex")) {
       "--property=Restart=no",
       "--property=OOMPolicy=kill",
       "--property=PrivateNetwork=yes",
-      "--property=RestrictAddressFamilies=AF_UNIX",
-      "--property=CPUAccounting=yes",
+      "--property=RestrictAddressFamilies=AF_UNIX AF_INET",
       "--property=MemoryAccounting=yes",
       "--property=TasksAccounting=yes",
       "--property=IOAccounting=yes",
@@ -117,7 +116,7 @@ export function parseSystemdShow(text) {
     if (split <= 0) throw new Error("malformed systemd accounting property");
     result[line.slice(0, split)] = line.slice(split + 1);
   }
-  for (const key of ["MemoryPeak", "CPUUsageNSec", "TasksCurrent", "TasksPeak",
+  for (const key of ["MemoryPeak", "CPUUsageNSec", "TasksCurrent",
     "IOReadBytes", "IOWriteBytes", "IPIngressBytes", "IPEgressBytes",
     "Result", "ExecMainCode", "ExecMainStatus"]) {
     if (!(key in result)) throw new Error(`systemd omitted ${key}`);
@@ -126,12 +125,14 @@ export function parseSystemdShow(text) {
 }
 
 export function validateSystemdSuccess(waited, accounting) {
-  const counters = ["MemoryPeak", "CPUUsageNSec", "TasksCurrent", "TasksPeak",
+  const counters = ["MemoryPeak", "CPUUsageNSec",
     "IOReadBytes", "IOWriteBytes", "IPIngressBytes", "IPEgressBytes"];
   if (waited?.Result !== "success" || waited.ExecMainCode !== "1" ||
       waited.ExecMainStatus !== "0" || accounting?.Result !== "success" ||
       accounting.ExecMainCode !== "1" || accounting.ExecMainStatus !== "0" ||
-      counters.some(key => !/^[0-9]+$/.test(accounting?.[key] ?? ""))) {
+      counters.some(key => !/^[0-9]+$/.test(accounting?.[key] ?? "")) ||
+      !(/^[0-9]+$/.test(accounting?.TasksCurrent ?? "") ||
+        accounting?.TasksCurrent === "[not set]")) {
     throw new Error("systemd terminal result or accounting values are not successful and numeric");
   }
   return accounting;
@@ -143,10 +144,9 @@ export function validateEffectiveSystemdPolicy(value) {
     MemoryMax: "3221225472", MemorySwapMax: "0",
     CPUQuotaPerSecUSec: "2s", TasksMax: "64", UMask: "0077",
     NoNewPrivileges: "yes", PrivateNetwork: "yes",
-    RestrictAddressFamilies: "AF_UNIX", KillMode: "control-group",
+    RestrictAddressFamilies: "AF_INET AF_UNIX", KillMode: "control-group",
     ExitType: "cgroup", Restart: "no", OOMPolicy: "kill",
-    RemainAfterExit: "yes", CPUAccounting: "yes",
-    MemoryAccounting: "yes", TasksAccounting: "yes",
+    RemainAfterExit: "yes", MemoryAccounting: "yes", TasksAccounting: "yes",
     IOAccounting: "yes", IPAccounting: "yes",
   });
   for (const [key, expectedValue] of Object.entries(expected)) {
@@ -278,14 +278,14 @@ async function main() {
       throw new Error("systemd-run refused the transient canary unit");
     }
     const waited = await waitForUnitResult(command.unit);
+    result = validateResultEnvelope(JSON.parse(await readFile(envelope, "utf8")));
     const shown = await capture("systemctl", ["--user", "show", command.unit,
-      "--property=MemoryPeak,CPUUsageNSec,TasksCurrent,TasksPeak,IOReadBytes,IOWriteBytes,IPIngressBytes,IPEgressBytes,Result,ExecMainCode,ExecMainStatus,RuntimeMaxUSec,TimeoutStopUSec,MemoryMax,MemorySwapMax,CPUQuotaPerSecUSec,TasksMax,UMask,NoNewPrivileges,PrivateNetwork,RestrictAddressFamilies,KillMode,ExitType,Restart,OOMPolicy,RemainAfterExit,CPUAccounting,MemoryAccounting,TasksAccounting,IOAccounting,IPAccounting"]);
+      "--property=MemoryPeak,CPUUsageNSec,TasksCurrent,IOReadBytes,IOWriteBytes,IPIngressBytes,IPEgressBytes,Result,ExecMainCode,ExecMainStatus,RuntimeMaxUSec,TimeoutStopUSec,MemoryMax,MemorySwapMax,CPUQuotaPerSecUSec,TasksMax,UMask,NoNewPrivileges,PrivateNetwork,RestrictAddressFamilies,KillMode,ExitType,Restart,OOMPolicy,RemainAfterExit,MemoryAccounting,TasksAccounting,IOAccounting,IPAccounting"]);
     if (shown.code !== 0 || shown.signal !== null) {
       throw new Error(`could not query transient unit accounting: ${shown.stderr}`);
     }
     accounting = parseSystemdShow(shown.stdout.toString("utf8"));
     validateEffectiveSystemdPolicy(accounting);
-    result = validateResultEnvelope(JSON.parse(await readFile(envelope, "utf8")));
     validateSystemdSuccess(waited, accounting);
   } catch (error) {
     primary = error;

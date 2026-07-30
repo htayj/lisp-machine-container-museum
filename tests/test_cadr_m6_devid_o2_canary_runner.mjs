@@ -136,11 +136,16 @@ assert.equal(assertSystemdSupervision({
 }, `0::/user.slice/${systemdUnit}\n`).unit, systemdUnit);
 const transient = systemdCommand(["--help"], "12".repeat(16));
 assert.equal(transient.command, "systemd-run");
+const systemdWrapperSource = await readFile(resolve(root,
+  "scripts/run-cadr-m6-devid-o2-canary-systemd.mjs"), "utf8");
+assert.doesNotMatch(systemdWrapperSource, /\b(?:CPUAccounting|TasksPeak)\b/,
+  "removed systemd 261 properties cannot silently return to policy or queries");
 for (const property of [
   "--property=MemoryMax=3221225472", "--property=MemorySwapMax=0",
   "--property=CPUQuota=200%", "--property=TasksMax=64",
-  "--property=CPUAccounting=yes", "--property=MemoryAccounting=yes",
-  "--property=TasksAccounting=yes", "--property=PrivateNetwork=yes",
+  "--property=MemoryAccounting=yes", "--property=TasksAccounting=yes",
+  "--property=PrivateNetwork=yes",
+  "--property=RestrictAddressFamilies=AF_UNIX AF_INET",
   "--property=IOAccounting=yes", "--property=IPAccounting=yes",
   "--property=RuntimeMaxSec=14400", "--property=RemainAfterExit=yes",
   "--property=KillMode=control-group", "--property=ExitType=cgroup",
@@ -309,11 +314,11 @@ assert.throws(() => validateUnitAbsent({
   assert.doesNotMatch(JSON.stringify(receipt), /\/private|input|root/);
 }
 const accountingFixture = parseSystemdShow([
-  "MemoryPeak=10", "CPUUsageNSec=20", "TasksCurrent=0", "TasksPeak=3",
+  "MemoryPeak=10", "CPUUsageNSec=20", "TasksCurrent=[not set]",
   "IOReadBytes=4", "IOWriteBytes=5", "IPIngressBytes=6", "IPEgressBytes=7",
   "Result=success", "ExecMainCode=1", "ExecMainStatus=0",
 ].join("\n"));
-assert.equal(accountingFixture.TasksPeak, "3");
+assert.equal(accountingFixture.TasksCurrent, "[not set]");
 assert.equal(validateSystemdSuccess({ Result: "success", ExecMainCode: "1",
   ExecMainStatus: "0" }, accountingFixture), accountingFixture);
 assert.throws(() => validateSystemdSuccess({ Result: "oom-kill",
@@ -326,10 +331,9 @@ const effectivePolicy = {
   MemoryMax: "3221225472", MemorySwapMax: "0",
   CPUQuotaPerSecUSec: "2s", TasksMax: "64", UMask: "0077",
   NoNewPrivileges: "yes", PrivateNetwork: "yes",
-  RestrictAddressFamilies: "AF_UNIX", KillMode: "control-group",
+  RestrictAddressFamilies: "AF_INET AF_UNIX", KillMode: "control-group",
   ExitType: "cgroup", Restart: "no", OOMPolicy: "kill",
-  RemainAfterExit: "yes", CPUAccounting: "yes",
-  MemoryAccounting: "yes", TasksAccounting: "yes",
+  RemainAfterExit: "yes", MemoryAccounting: "yes", TasksAccounting: "yes",
   IOAccounting: "yes", IPAccounting: "yes",
 };
 assert.equal(validateEffectiveSystemdPolicy(effectivePolicy), effectivePolicy);
