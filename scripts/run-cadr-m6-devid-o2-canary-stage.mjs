@@ -497,6 +497,26 @@ function evidenceValue(value) {
   return value;
 }
 
+/*
+ * A worker response's id is a transport correlation ordinal, so it necessarily
+ * differs when two semantically equivalent drivers use different request
+ * batching.  Keep every scheduler-state payload field in the benchmark
+ * residue, but validate and remove only the fixed response envelope.
+ */
+export function m6BenchmarkSchedulerResidue(response) {
+  if (response?.type !== "cadr-response" || response.version !== 4 ||
+      !Number.isSafeInteger(response.id) || response.id < 1 ||
+      response.op !== "scheduler-state" || response.status !== 0 ||
+      response.ok !== true) {
+    throw new TypeError("scheduler-state response envelope is invalid");
+  }
+  const {
+    type: _type, version: _version, id: _id, op: _op, status: _status,
+    ok: _ok, ...state
+  } = response;
+  return Object.freeze(evidenceValue(state));
+}
+
 function responseSha256(response, field) {
   const bytes = asBytes(response?.[field], field);
   if (bytes.byteLength !== 32) throw new Error(`${field} is not SHA-256 bytes`);
@@ -582,7 +602,7 @@ export async function executeControlledBenchmarkCandidate({
     const emptyOverlay = new TextEncoder().encode("CADRM6EMPTYOVERLAY1\0");
     const residue = Object.freeze({
       machine: evidenceValue(loop.info),
-      scheduler: evidenceValue(scheduler),
+      scheduler: m6BenchmarkSchedulerResidue(scheduler),
       host_next_status: hostProbe.status,
       service: Object.freeze({
         overlay_generation: service.overlayGeneration().toString(),

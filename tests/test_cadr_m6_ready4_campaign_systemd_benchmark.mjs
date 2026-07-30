@@ -7,7 +7,7 @@ import { Worker } from "node:worker_threads";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { createM4BlockRangeService } from
   "../cadr-web/wasm/cadr-m4-block-service.mjs";
-import { runExactCanaryLoop } from
+import { m6BenchmarkSchedulerResidue, runExactCanaryLoop } from
   "../scripts/run-cadr-m6-devid-o2-canary-stage.mjs";
 import { attestBenchmarkCandidate, removeM6BenchmarkSourceStage } from
   "../scripts/collect-cadr-m6-ready4-benchmark.mjs";
@@ -37,6 +37,61 @@ assert.throws(() => checkedProjectedSeconds(43201), /86400/);
 assert.equal(ready4ObservationSeconds(3600), 7500,
   "observation deadline is runtime cap plus a bounded five-percent margin");
 assert.throws(() => parseBenchmarkArguments([]), /inert without --execute/);
+{
+  const semantic = {
+    lifecycle: "PAUSED", hidden: false, visibilityInitialized: true,
+    snapshotVisibilityInitialized: false, controlOrdinal: 3n,
+    controlBoundary: 4096n,
+    controlWitness: new Uint8Array([1, 2, 3]).buffer,
+    runActive: false, deferredControlCount: 0,
+    pendingBoundaryDigest: false, mediaBusy: false, mediaDirty: false,
+    mediaSnapshotBlocked: false, mediaOverlayGeneration: 1n,
+    lastCompleteBoundary: 4095n,
+    queueDigest: new Uint8Array([4, 5, 6]).buffer,
+    coreStateDigest: new Uint8Array([7, 8, 9]).buffer,
+  };
+  const schedulerResponse = (id, fields = {}) => ({
+    type: "cadr-response", version: 4, id, op: "scheduler-state",
+    status: 0, ok: true, ...semantic, ...fields,
+  });
+  const baseline = m6BenchmarkSchedulerResidue(schedulerResponse(17));
+  assert.deepEqual(
+    baseline,
+    m6BenchmarkSchedulerResidue(schedulerResponse(9001)),
+    "transport correlation ordinals do not make scheduler state unequal");
+  assert.deepEqual(Object.keys(baseline).sort(), Object.keys(semantic).sort(),
+    "normalization removes exactly the six fixed envelope fields");
+  const mutations = {
+    lifecycle: "FAILED", hidden: true, visibilityInitialized: false,
+    snapshotVisibilityInitialized: true, controlOrdinal: 4n,
+    controlBoundary: 4097n,
+    controlWitness: new Uint8Array([1, 2, 4]).buffer,
+    runActive: true, deferredControlCount: 1,
+    pendingBoundaryDigest: true, mediaBusy: true, mediaDirty: true,
+    mediaSnapshotBlocked: true, mediaOverlayGeneration: 2n,
+    lastCompleteBoundary: 4094n,
+    queueDigest: new Uint8Array([4, 5, 7]).buffer,
+    coreStateDigest: new Uint8Array([7, 8, 10]).buffer,
+  };
+  for (const [field, value] of Object.entries(mutations)) {
+    assert.notEqual(canonicalJson(baseline), canonicalJson(
+      m6BenchmarkSchedulerResidue(schedulerResponse(17, { [field]: value }))),
+    `${field} remains part of the semantic scheduler residue`);
+  }
+  assert.equal(m6BenchmarkSchedulerResidue(schedulerResponse(
+    17, { futurePayloadField: "retained" })).futurePayloadField, "retained",
+  "unknown future scheduler payload fields fail comparison conservatively");
+  const malformed = [
+    { type: undefined }, { type: "wrong" }, { version: 5 }, { id: undefined },
+    { id: 0 }, { id: 1.5 }, { id: Number.MAX_SAFE_INTEGER + 1 },
+    { op: "machine-info" }, { status: 1 }, { ok: false }, { ok: undefined },
+  ];
+  for (const fields of malformed) {
+    assert.throws(() => m6BenchmarkSchedulerResidue({
+      ...schedulerResponse(17), ...fields,
+    }), /envelope/, "only a validated scheduler-state envelope is normalized");
+  }
+}
 {
   const parent = await mkdtemp(resolve(tmpdir(), "m6-protected-stage-"));
   const source = resolve(parent, "source");
@@ -290,6 +345,13 @@ assert.throws(() => compareM6FastBenchmark([
     run: { ...benchmark("fast-o2").run, cdrm6e1_sha256: "cd".repeat(32) },
   },
 ]), /disagree|identity-equivalent/);
+assert.throws(() => compareM6FastBenchmark([
+  benchmark("legacy-m5"), benchmark("fast-o0"), {
+    ...benchmark("fast-o2"),
+    run: { ...benchmark("fast-o2").run, residue_sha256: "cd".repeat(32) },
+  },
+]), /disagree|identity-equivalent/,
+"the strict comparator rejects semantic residue differences");
 class SyntheticClient {
   constructor(worker) {
     this.worker = worker; this.id = 1; this.pending = new Map();
