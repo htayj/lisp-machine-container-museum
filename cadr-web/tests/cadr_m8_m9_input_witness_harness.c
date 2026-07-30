@@ -6,6 +6,7 @@
 #include <unistd.h>
 
 #include "cadr_m8_m9_input_witness.h"
+#include "cadr_m8_m9_input_driver.h"
 
 static uint32_t get32(const unsigned char *at)
 {
@@ -27,7 +28,8 @@ int main(int argc, char **argv)
     struct stat information;
     int descriptor;
     if (argc != 2) return 2;
-    if (setenv("CADR_M8_M9_INPUT_WITNESS", argv[1], 1) != 0 ||
+    if (cadr_m8_m9_input_driver_dispatch_active() != 1 ||
+        setenv("CADR_M8_M9_INPUT_WITNESS", argv[1], 1) != 0 ||
         cadr_m8_m9_input_witness_keyboard(UINT64_C(101), UINT32_C(04), 65, 1) != 0 ||
         cadr_m8_m9_input_witness_pointer(UINT64_C(102), UINT32_C(024), 123, 456, 3) != 0 ||
         stat(argv[1], &information) != 0 || (information.st_mode & 0777) != 0600 ||

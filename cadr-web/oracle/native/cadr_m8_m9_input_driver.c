@@ -21,6 +21,7 @@ static struct input_event next;
 static int initialized;
 static int have_next;
 static int failed;
+static int dispatch_active;
 static uint64_t previous_boundary;
 
 static int read_next(void)
@@ -75,15 +76,24 @@ int cadr_m8_m9_input_driver_boundary(uint64_t boundary)
     while (have_next && boundary == next.boundary) {
         if (next.kind == 1U) {
             if (next.first > 0177U || next.second > 1U || next.third != 0U) return -1;
+            dispatch_active = 1;
             kbd_event((int)next.first, (int)next.second);
+            dispatch_active = 0;
         } else {
             if (next.first >= 768U || next.second >= 963U || next.third > 3U) return -1;
+            dispatch_active = 1;
             mouse_event((int)next.first, (int)next.second, (int)next.third);
+            dispatch_active = 0;
         }
         have_next = 0;
         if (read_next() != 0) return -1;
     }
     return 0;
+}
+
+int cadr_m8_m9_input_driver_dispatch_active(void)
+{
+    return dispatch_active;
 }
 
 int cadr_m8_m9_input_driver_complete(void)

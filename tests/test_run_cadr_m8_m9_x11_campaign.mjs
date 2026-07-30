@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import { mkdirSync, readdirSync, rmSync } from "node:fs";
-import { chmod, mkdir, readFile, rm, symlink, writeFile } from "node:fs/promises";
+import { chmod, lstat, mkdir, readFile, rm, symlink, writeFile } from "node:fs/promises";
 import { relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
@@ -23,6 +23,38 @@ import { materializeSyntheticM6Producer } from "./fixtures/cadr-m8-m9-synthetic-
 
 const root = resolve(import.meta.dirname, "..");
 const script = resolve(root, "scripts/run-cadr-m8-m9-x11-campaign.mjs");
+/* This test has both self-contained helper assertions and a deliberately
+ * provisioned integration subtest.  The latter needs the public source trees,
+ * the CADR-WEB-303 selected artifacts, and the two generated M9 modules; a
+ * fresh clone is not implicitly equipped with those local preservation inputs. */
+const provisionedIntegrationRequirements = Object.freeze([
+  Object.freeze({ path: "l/usim", kind: "directory" }),
+  Object.freeze({ path: "l/chaos", kind: "directory" }),
+  Object.freeze({ path: "l/sys/ubin/promh.mcr", kind: "file" }),
+  Object.freeze({ path: "l/sys/ubin/promh.sym", kind: "file" }),
+  Object.freeze({ path: "l/sys/ubin/ucadr.sym", kind: "file" }),
+  Object.freeze({ path: "l/usim/disk-sys-303-0.img", kind: "file" }),
+  Object.freeze({ path: "cadr-web/build/cadr-web-m9-O0.wasm", kind: "file" }),
+  Object.freeze({ path: "cadr-web/build/cadr-web-m9-O2.wasm", kind: "file" }),
+]);
+
+async function provisionedM8M9Prerequisites(rootPath) {
+  const missing = [];
+  for (const requirement of provisionedIntegrationRequirements) {
+    try {
+      const entry = await lstat(resolve(rootPath, requirement.path));
+      const valid = requirement.kind === "directory" ? entry.isDirectory() : entry.isFile();
+      if (!valid) missing.push({ ...requirement, observed: "wrong-kind-or-symlink" });
+    } catch (error) {
+      if (error?.code !== "ENOENT" && error?.code !== "ENOTDIR") throw error;
+      missing.push({ ...requirement, observed: "absent" });
+    }
+  }
+  return missing.length === 0
+    ? { disposition: "ready", requirements: provisionedIntegrationRequirements }
+    : { disposition: "skipped-missing-provisioned-inputs", requirements: provisionedIntegrationRequirements, missing };
+}
+
 const result = spawnSync("node", [script], { cwd: root, encoding: "utf8" });
 assert.equal(result.status, 2, result.stderr);
 const plan = JSON.parse(result.stdout);
@@ -51,9 +83,13 @@ assert.doesNotMatch(source, /candidates\[0\] \?\? xkey/);
 assert.match(source, /settledWitnessCount/);
 assert.match(source, /m8-m9-x11-failure-v1/);
 
-const fixture = resolve(root, `build/cadr-oracle/m8-m9-x11-helper-test-${process.pid}`);
+const prepared = resolve(root, `build/cadr-oracle/m8-m9-x11-prepared-test-${process.pid}`);
+const preparedRelative = relative(root, prepared).split("\\").join("/");
+const nativeOracle = resolve(root, "scripts/cadr-m8-m9-native-input-oracle.py");
 try {
-  const usim = resolve(fixture, "source/usim");
+  const fixture = resolve(root, `build/cadr-oracle/m8-m9-x11-helper-test-${process.pid}`);
+  try {
+    const usim = resolve(fixture, "source/usim");
   await mkdir(usim, { recursive: true, mode: 0o700 });
   await writeFile(resolve(usim, "lmch.defs"), "X(return, 0215)\nX(cr, 0215)\n");
   await writeFile(resolve(usim, "kbd.c"), "kbd_map[XK_Return] = LMCH_cr;\n");
@@ -116,8 +152,21 @@ try {
     "the formerly accepted internally consistent 208-record fixture now fails before provenance use");
   await rm(paired, { recursive: true, force: true });
 
-  const join = await collectCadrM8M9ProvenanceJoin({
-    prepared: "build/cadr-oracle/m8-m9-x11-prepared-v4" });
+  const missingPrerequisites = await provisionedM8M9Prerequisites(resolve(fixture, "unprovisioned-root"));
+  assert.equal(missingPrerequisites.disposition, "skipped-missing-provisioned-inputs");
+  assert.deepEqual(missingPrerequisites.missing.map(item => item.path),
+    provisionedIntegrationRequirements.map(item => item.path),
+    "a missing local preservation input skips only the provisioned integration");
+
+  const runProvisionedM8M9ProvenanceIntegration = async () => {
+    for (const [operation, argument] of [["prepare", "--output"], ["build", "--prepared"]]) {
+      const preparedResult = spawnSync("python3", [nativeOracle, operation, argument, preparedRelative],
+        { cwd: root, encoding: "utf8", timeout: 120_000, killSignal: "SIGKILL" });
+      assert.equal(preparedResult.status, 0,
+        `${operation} must create the isolated M8/M9 native closure: ${preparedResult.stderr}${preparedResult.stdout}`);
+      assert.equal(JSON.parse(preparedResult.stdout).status, "ok");
+    }
+    const join = await collectCadrM8M9ProvenanceJoin({ prepared: preparedRelative });
   /* Acceptance uses a complete raw M6 producer shape, not a skeletal stream.
    * The materializer expands only the tracked public release record; it never
    * opens an ignored native capture. */
@@ -586,7 +635,19 @@ try {
   badStateManifest.portable.observed_state_file.sha256 = "0".repeat(64);
   await privateFile(validO0.manifestPath, badStateManifest);
   await assert.rejects(browserAll100Evidence(validO0.manifestPath, join, "O0"), /receipt differs/);
+  };
+
+  const provisioned = await provisionedM8M9Prerequisites(root);
+  if (provisioned.disposition === "ready") {
+    await runProvisionedM8M9ProvenanceIntegration();
+  } else {
+    console.log(`cadr M8/M9 provisioned integration skipped: ${provisioned.missing
+      .map(item => `${item.path} (${item.observed})`).join(", ")}`);
+  }
+  } finally {
+    await rm(fixture, { recursive: true, force: true });
+  }
 } finally {
-  await rm(fixture, { recursive: true, force: true });
+  rmSync(prepared, { recursive: true, force: true });
 }
 console.log("cadr M8/M9 X11 campaign refuses runtime without explicit consent");

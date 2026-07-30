@@ -11,15 +11,19 @@ static int keyboard_down;
 static int pointer_x;
 static int pointer_y;
 static int pointer_buttons;
+static int keyboard_dispatch_active;
+static int pointer_dispatch_active;
 
 void kbd_event(int code, int keydown)
 {
     keyboard_count += 1U; keyboard_code = code; keyboard_down = keydown;
+    keyboard_dispatch_active = cadr_m8_m9_input_driver_dispatch_active();
 }
 
 void mouse_event(int x, int y, int buttons)
 {
     pointer_count += 1U; pointer_x = x; pointer_y = y; pointer_buttons = buttons;
+    pointer_dispatch_active = cadr_m8_m9_input_driver_dispatch_active();
 }
 
 int main(int argc, char **argv)
@@ -33,10 +37,12 @@ int main(int argc, char **argv)
         cadr_m8_m9_input_driver_complete() != 0 ||
         cadr_m8_m9_input_driver_boundary(UINT64_C(9)) != 0 || keyboard_count != 0U ||
         cadr_m8_m9_input_driver_boundary(UINT64_C(10)) != 0 || keyboard_count != 1U ||
-        keyboard_code != 65 || keyboard_down != 1 ||
+        keyboard_code != 65 || keyboard_down != 1 || keyboard_dispatch_active != 1 ||
+        cadr_m8_m9_input_driver_dispatch_active() != 0 ||
         cadr_m8_m9_input_driver_boundary(UINT64_C(11)) != 0 || pointer_count != 0U ||
         cadr_m8_m9_input_driver_boundary(UINT64_C(12)) != 0 || pointer_count != 1U ||
-        pointer_x != 123 || pointer_y != 456 || pointer_buttons != 3 ||
+        pointer_x != 123 || pointer_y != 456 || pointer_buttons != 3 || pointer_dispatch_active != 1 ||
+        cadr_m8_m9_input_driver_dispatch_active() != 0 ||
         cadr_m8_m9_input_driver_boundary(UINT64_C(13)) != 0 ||
         cadr_m8_m9_input_driver_complete() != 1) return 1;
     return 0;

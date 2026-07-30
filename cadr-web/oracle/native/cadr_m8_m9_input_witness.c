@@ -1,4 +1,5 @@
 #include "cadr_m8_m9_input_witness.h"
+#include "cadr_m8_m9_input_driver.h"
 
 #include <errno.h>
 #include <fcntl.h>
@@ -14,6 +15,16 @@
 #define CADR_M8_M9_KIND_POINTER UINT32_C(2)
 
 static uint32_t record_ordinal;
+
+/* The direct oracle links the driver's strong definition, which brackets only
+ * its explicit 207-row campaign.  The X11 witness does not link that driver:
+ * retaining this weak true default preserves observation of genuine X11 input
+ * while excluding no source path there. */
+int __attribute__((weak))
+cadr_m8_m9_input_driver_dispatch_active(void)
+{
+    return 1;
+}
 
 static void put32le(unsigned char *at, uint32_t value)
 {

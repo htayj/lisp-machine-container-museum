@@ -49,22 +49,24 @@ diff --git a/Makefile.usim b/Makefile.usim
 diff --git a/kbd.c b/kbd.c
 --- a/kbd.c
 +++ b/kbd.c
-@@ -13,6 +13,9 @@
+@@ -13,6 +13,10 @@
  #ifdef WITH_CADR_ORACLE
  #include "cadr_oracle_native.h"
  #endif
 +#ifdef WITH_CADR_M8_M9_INPUT_WITNESS
 +#include "cadr_m8_m9_input_witness.h"
++#include "cadr_m8_m9_input_driver.h"
 +#endif
  
  int kbd_type = 1;		/* Default is "cadet". */
  uint32_t kbd_scancode;
-@@ -98,6 +101,10 @@ kbd_event(int code, int keydown)
+@@ -98,6 +102,11 @@ kbd_event(int code, int keydown)
  	int v;
  
  	DEBUG(TRACE_KBD, "kbd_event(code=%o, keydown=%o)\n", code, keydown);
 +#ifdef WITH_CADR_M8_M9_INPUT_WITNESS
-+	if (cadr_m8_m9_input_witness_keyboard(machine_cycles, iob_csr, code, keydown) != 0)
++	if (cadr_m8_m9_input_driver_dispatch_active() &&
++	    cadr_m8_m9_input_witness_keyboard(machine_cycles, iob_csr, code, keydown) != 0)
 +		errx(1, "C-M8/M9 pre-IOB keyboard witness failed");
 +#endif
  	v = ((!keydown) << 8) | code;
@@ -73,21 +75,23 @@ diff --git a/kbd.c b/kbd.c
 diff --git a/mouse.c b/mouse.c
 --- a/mouse.c
 +++ b/mouse.c
-@@ -9,6 +9,9 @@
+@@ -9,6 +9,10 @@
  #include "ucode.h"
  #include "usim.h"
  #include "utrace.h"
 +#ifdef WITH_CADR_M8_M9_INPUT_WITNESS
 +#include "cadr_m8_m9_input_witness.h"
++#include "cadr_m8_m9_input_driver.h"
 +#endif
  
  int mouse_y;			/* Current Y coordinate position of the mouse. */
  int mouse_rawx;			/* Raw X encoder inputs. */
-@@ -38,5 +41,9 @@ mouse_event(int x, int y, int buttons)
+@@ -38,5 +42,10 @@ mouse_event(int x, int y, int buttons)
  {
  	DEBUG(TRACE_MOUSE, "mouse_event(x = 0%o, y = 0%o, buttons = 0%o)\n", x, y, buttons);
 +#ifdef WITH_CADR_M8_M9_INPUT_WITNESS
-+	if (cadr_m8_m9_input_witness_pointer(machine_cycles, iob_csr, x, y, buttons) != 0)
++	if (cadr_m8_m9_input_driver_dispatch_active() &&
++	    cadr_m8_m9_input_witness_pointer(machine_cycles, iob_csr, x, y, buttons) != 0)
 +		errx(1, "C-M8/M9 pre-IOB pointer witness failed");
 +#endif
  	idle_mouse_activity();
@@ -96,7 +100,7 @@ diff --git a/mouse.c b/mouse.c
 diff --git a/cadet.c b/cadet.c
 --- a/cadet.c
 +++ b/cadet.c
-@@ -3,7 +3,11 @@
+@@ -3,7 +3,12 @@
  
 +#include <err.h>
  #include <stdint.h>
@@ -104,22 +108,24 @@ diff --git a/cadet.c b/cadet.c
  #include <stdbool.h>
 +#ifdef WITH_CADR_M8_M9_INPUT_WITNESS
 +#include "cadr_m8_m9_input_witness.h"
++#include "cadr_m8_m9_input_driver.h"
 +#endif
  
  #include "iob.h"
  #include "kbd.h"
-@@ -61,6 +65,10 @@ cadet_allup_event(int mods)
+@@ -61,6 +66,11 @@ cadet_allup_event(int mods)
  	int v;
  
  	v = (1 << 15) | (mods & 01777);
 +#ifdef WITH_CADR_M8_M9_INPUT_WITNESS
-+	if (cadr_m8_m9_input_witness_keyboard(machine_cycles, iob_csr, v, 2) != 0)
++	if (cadr_m8_m9_input_driver_dispatch_active() &&
++	    cadr_m8_m9_input_witness_keyboard(machine_cycles, iob_csr, v, 2) != 0)
 +		errx(1, "C-M8/M9 pre-IOB keyboard all-up witness failed");
 +#endif
 	if (iob_csr & (1 << 5))
 		kbd_queue_key_event(v);	/* Already something there, queue this. */
 	else {
-@@ -73,11 +81,33 @@ cadet_allup_event(int mods)
+@@ -73,11 +83,34 @@ cadet_allup_event(int mods)
  	}
  }
  
@@ -137,7 +143,8 @@ diff --git a/cadet.c b/cadet.c
 +		code = ev & 0377;
 +		keydown = (ev & (1 << 8)) ? 0 : 1;
 +	}
-+	if (cadr_m8_m9_input_witness_keyboard(machine_cycles, iob_csr, code, keydown) != 0)
++	if (cadr_m8_m9_input_driver_dispatch_active() &&
++	    cadr_m8_m9_input_witness_keyboard(machine_cycles, iob_csr, code, keydown) != 0)
 +		errx(1, "C-M8/M9 pre-IOB queued keyboard witness failed");
 +	kbd_queue_key_event(ev);
 +}
@@ -154,7 +161,7 @@ diff --git a/cadet.c b/cadet.c
  }
  
  void
-@@ -208,13 +238,13 @@ cadet_process_key(int keysym,	/* keysym, acts as index into kbd_map */
+@@ -208,13 +241,13 @@ cadet_process_key(int keysym,	/* keysym, acts as index into kbd_map */
  		else
  			shkey = CADET_LEFT_GREEK;
 -		kbd_queue_key_event(shkey);
@@ -171,7 +178,7 @@ diff --git a/cadet.c b/cadet.c
  	/*
  	 * Re-press the previous keys.
  	 */
-@@ -221,8 +251,8 @@ cadet_process_key(int keysym,	/* keysym, acts as index into kbd_map */
+@@ -221,8 +254,8 @@ cadet_process_key(int keysym,	/* keysym, acts as index into kbd_map */
  	if (oshift & (1 << CADET_IX_TOP))
 -		kbd_queue_key_event(CADET_LEFT_TOP);
 +		cadr_m8_m9_witnessed_queue_key_event(CADET_LEFT_TOP);
