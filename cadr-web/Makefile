@@ -277,7 +277,7 @@ $(M12_WASM_O0): wasm/build-wasm.sh wasm/cadr_wasm_adapter.c wasm/cadr_wasm_runti
 $(M12_WASM_O2): wasm/build-wasm.sh wasm/cadr_wasm_adapter.c wasm/cadr_wasm_runtime.c $(M12_CORE_SOURCES) $(CORE_HEADERS) | build
 	sh wasm/build-wasm.sh --m12 --opt O2 $@
 
-test: $(TEST_BINARIES) $(HOST_BINARY) $(M2_HOST_BINARY) $(M3_HOST_BINARY) mutant-audit python-cross-parse m3-wasm m3-conformance m3-browser m4-unit m4-browser m5-unit m6-devid-wasm m7-unit audit
+test: $(TEST_BINARIES) $(HOST_BINARY) $(M2_HOST_BINARY) $(M3_HOST_BINARY) mutant-audit python-cross-parse m3-wasm m3-conformance m3-browser m4-unit m4-browser m5-unit m6-devid-wasm m6-diagnostic-receipt-unit m7-unit audit
 	./build/test_cadr_host_api
 	./build/test_cadr_machine_state
 	./build/test_cadr_processor_microengine
@@ -350,7 +350,6 @@ m6-devid-wasm: build/test_cadr_m2_public build/test_cadr_m6_disk_evidence build/
 	guix shell node -- node ../tests/test_cadr_m6_disk_evidence_parser.mjs
 	guix shell node -- node ../tests/test_cadr_m6_worker.mjs
 	guix shell node -- node ../tests/test_cadr_m6_headless_boot.mjs
-	guix shell node -- node ../tests/test_cadr_m6_diagnostic_worker.mjs
 	guix shell node -- node ../tests/test_cadr_m6_wasm_runner_failure.mjs
 	guix shell node -- node ../tests/test_cadr_m6_ready4_binding.mjs
 	guix shell node -- node ../tests/test_cadr_m6_fast_headless.mjs
@@ -358,6 +357,12 @@ m6-devid-wasm: build/test_cadr_m2_public build/test_cadr_m6_disk_evidence build/
 	guix shell node -- node ../tests/test_cadr_m6_ready4_runner.mjs
 	guix shell node -- node ../tests/test_cadr_m6_ready4_campaign_systemd_benchmark.mjs
 	guix shell node -- node ../tests/test_cadr_m6_devid_o2_canary_runner.mjs
+
+# This integration test deliberately resolves and archives an older receipt
+# commit.  Keep it in the full checkout test suite, but outside the clean
+# git-archive M6-DEVID gate used by the receipt-bound M7 canary.
+m6-diagnostic-receipt-unit:
+	guix shell node -- node ../tests/test_cadr_m6_diagnostic_worker.mjs
 
 m7-unit: build/test_cadr_m7_display build/test_cadr_m7_profile_isolation build/test_cadr_m7_native_tv build/cadr-m7-frame-fixture $(M5_WASM_O0) $(M6_DEVID_WASM_O0) $(M7_WASM_O0) $(M7_WASM_O2) $(M7_DEVID_WASM_O0) $(M7_DEVID_WASM_O2)
 	./build/test_cadr_m7_display

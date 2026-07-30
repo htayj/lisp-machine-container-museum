@@ -296,4 +296,13 @@ const m6HeadlessTest = await readFile(resolve(root,
 assert.doesNotMatch(m6HeadlessTest,
   /from tests import test_cadr_m6_native_witness/,
   "the archived frozen gate must not depend on the ignored native source checkout");
+const m6GateRecipe = makefile.slice(
+  makefile.indexOf("m6-devid-wasm:"),
+  makefile.indexOf("m6-diagnostic-receipt-unit:"),
+);
+assert.doesNotMatch(m6GateRecipe, /test_cadr_m6_diagnostic_worker/,
+  "the clean archived M6 gate must not attempt a nested historical Git archive");
+assert.match(makefile,
+  /^test:.*m6-devid-wasm.*m6-diagnostic-receipt-unit.*m7-unit/m,
+  "the checkout-only diagnostic integration remains mandatory in the full suite");
 console.log("receipt-bound M7-DEVID O2 canary tests passed");
