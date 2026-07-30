@@ -3,7 +3,7 @@ type: Reimplementation Specification
 title: CADR-WEB-303 ABI 1.4 headless System 303 Listener boot oracle reimplementation specification
 description: Release-bounded contract for artifact preflight, raw Cadet boot input, source-defined Listener busy and idle witnesses, post-observer quiescence, bounded failures, and three-run native and WebAssembly conformance.
 tags: [mit-cadr, lm-3, system-303, listener, boot, oracle, webassembly, reimplementation]
-timestamp: 2026-07-29T18:10:00-04:00
+timestamp: 2026-07-29T21:07:00-04:00
 ---
 
 # CADR-WEB-303 ABI 1.4 headless System 303 Listener boot oracle reimplementation specification
@@ -544,7 +544,7 @@ selected maximum, and SHA-256 of one exact `CDRM6E1` record. Until then,
 `TODO-RUNTIME-M6-DEVID-READY4` remains open and no READY4 result may be
 reported.
 
-The pending O2 continuation canary has a deliberately separate, non-default
+The O2 continuation canary has a deliberately separate, non-default
 systemd entry point:
 `scripts/run-cadr-m6-devid-o2-canary-systemd.mjs`. The underlying launcher
 refuses an unsupervised live child. Before artifact access it stages only
@@ -560,8 +560,20 @@ disk is a new per-invocation, initially empty, generation-zero in-memory M4
 block-one overlay over a read-only artifact-root base, not a copied or
 artifact-root-backed writable disk. The supervised child emits an atomic
 result envelope; the outer wrapper queries the retained unit's actual
-resource and exit accounting before it alone publishes the receipt. No such
-canary has been run or may be reported as READY4 from this procedure alone.
+resource and exit accounting before it alone publishes the receipt.
+
+Runtime observation, 2026-07-29: the reviewed O2 procedure completed at
+exactly 1,130,000 clock slots with no outstanding host request, 535 accepted
+disk-evidence events, and 23 events in the SHA-256 tail. The private receipt
+was 18,609 bytes with SHA-256
+`47131339865ae4c07eb4b88603d6feceb0c5889b7a9bc27cf30a9c3f4a1ec2ac`;
+it binds base `8eb4c536a8ff9c29ee5e288d55deda8f77fb06da`, candidate
+`b55bfa76b7c39d33277fcb7457e9d5f84e2c3e4a`, and payload SHA-256
+`17425d22fe44dbb7869444827e1110218a31f6d56ab6b87ad2d2275efaaaf4de`.
+The immutable base disk remained unchanged, the fresh private overlay
+advanced from generation zero to one, and the transient unit plus both
+outer-owned roots were absent after cleanup. This is an M6-DEVID1
+continuation result, not READY4 and not `CW1-BOOT`.
 
 ## Failure and abort semantics
 

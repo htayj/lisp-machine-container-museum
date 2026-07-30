@@ -3,7 +3,7 @@ type: Implementation Roadmap
 title: MIT CADR System 303 browser and WebAssembly implementation roadmap
 description: A milestone-complete plan for porting the pinned System 303 CADR emulator to a deterministic, locally persistent, browser-hosted WebAssembly machine.
 tags: [mit-cadr, lm-3, system-303, webassembly, browser, emulator, roadmap]
-timestamp: 2026-07-29T06:34:00-04:00
+timestamp: 2026-07-29T21:07:00-04:00
 ---
 
 # MIT CADR System 303 browser and WebAssembly implementation roadmap
@@ -635,6 +635,16 @@ Exit gate `CW1-BOOT`:
 - the expected macro/microcode and disk identities are visible in the test record;
 - no host callback is pending or orphaned at idle; and
 - a wrong or truncated image stops before guest mutation with a useful diagnostic.
+
+M6-DEVID1 runtime status, 2026-07-29: the separate O2 evidence-continuation
+canary completed at exactly 1,130,000 nonterminal clock slots, with 535
+accepted disk events, 23 committed tail events, no outstanding host request,
+an unchanged base disk, and verified unit/root cleanup. The private receipt is
+18,609 bytes with SHA-256
+`47131339865ae4c07eb4b88603d6feceb0c5889b7a9bc27cf30a9c3f4a1ec2ac`.
+This closes the named continuation canary only. It does not supply READY4, a
+Listener-ready semantic marker, or the three clean boots required by
+`CW1-BOOT`; those M6 exit-gate obligations remain open.
 
 ### M7 — Render the CADR display
 

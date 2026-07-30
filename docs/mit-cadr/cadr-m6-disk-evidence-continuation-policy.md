@@ -2,7 +2,7 @@
 type: specification
 title: CADR-WEB-303 M6-DEVID1 disk-evidence continuation policy
 description: Separate M6 profile retaining the frozen 512-event evidence prefix and committing later final events in a SHA-256 tail witness.
-timestamp: 2026-07-29T18:10:00-04:00
+timestamp: 2026-07-29T21:07:00-04:00
 ---
 
 # CADR-WEB-303 M6-DEVID1 disk-evidence continuation policy
@@ -93,7 +93,7 @@ After the tail starts, the old `disk-evidence` operation returns `NOT_READY` rat
 
 At the selected maximum, M6-DEVID1 MUST retain the accepted prefix and tail unchanged, set the one-time limit witness, and return the guest-fault disposition. A caller may still read `CDRM6E1` after a terminal failure when the module remains live; the worker response includes the record SHA-256. There is no recovery or continuation through a snapshot: a fresh machine or independently retained evidence record is required.
 
-## O2 canary procedure (not yet run)
+## O2 canary procedure and result
 
 `scripts/run-cadr-m6-devid-o2-canary-systemd.mjs` is the only live entry point for the pending long-run canary. The underlying launcher refuses an unsupervised child. Commit 1 must contain the reviewed inert control plane; its live launcher, wrapper, staged driver, and fixture-test bytes must equal those commit-1 blobs. Commit 2 must have commit 1 as its sole parent and contain only the local M6 candidate plus the fixed-path action manifest. The separately supplied payload patch is the commit-1-to-commit-2 diff with the manifest path excluded, avoiding a self-referential manifest hash.
 
@@ -103,11 +103,60 @@ The fixed staged driver uses a dedicated canary loop rather than wrapping the RE
 
 All five artifact-root inputs are opened with `O_NOFOLLOW`, verified by `fstat`, byte-copied into a fresh service-private mode-0700 session, and rehashed source/copy before and after. The private kind-3 copy is immutable backing for a new null, generation-zero, in-memory block-one overlay; artifact-root media is never writable.
 
-The transient service has a 14,400-second limit and the fixed reviewed resource/isolation policy. The outer wrapper creates and owns the exact stage and private-media roots, passes them through internal child-only arguments, and removes and verifies both after the unit exits, including abnormal exits. The child publishes only a private atomic result envelope. The outer wrapper validates the effective service policy, successful terminal result, numeric accounting, unit collection, and root removal before publishing one canonical mode-0600 no-replace success receipt. Any run, evidence, or cleanup failure instead publishes a bounded-enum failure receipt without raw paths or exception prose. No reviewed receipt has yet been supplied, so this remains an unexecuted procedure, not a canary result.
+The transient service has a 14,400-second limit and the fixed reviewed
+resource/isolation policy. The outer wrapper creates and owns the exact stage
+and private-media roots, passes them through internal child-only arguments,
+and removes and verifies both after the unit exits, including abnormal exits.
+The child publishes only a private atomic result envelope. The outer wrapper
+validates the effective service policy, successful terminal result, available
+numeric accounting, exact systemd unavailable-value sentinels, unit
+collection, and root removal before publishing one canonical mode-0600
+no-replace success receipt. Any run, evidence, or cleanup failure instead
+publishes a bounded-enum failure receipt without raw paths or exception prose.
+
+The O2 continuation canary completed on 2026-07-29. The ignored private
+receipt is
+`build/cadr-m6-live/m6-devid-o2-canary-b55bfa7-run3.json`: 18,609 bytes,
+mode `0600`, SHA-256
+`47131339865ae4c07eb4b88603d6feceb0c5889b7a9bc27cf30a9c3f4a1ec2ac`.
+It binds signed base commit
+`8eb4c536a8ff9c29ee5e288d55deda8f77fb06da`, signed sole-child candidate
+`b55bfa76b7c39d33277fcb7457e9d5f84e2c3e4a`, the 29-path payload SHA-256
+`17425d22fe44dbb7869444827e1110218a31f6d56ab6b87ad2d2275efaaaf4de`,
+and staged source-closure SHA-256
+`d50b1e1819fc4e6ae2eb62a1b5511eb0f534b43034750e9a3c336761f16a8102`.
+The recorded toolchain was Node `v26.4.0` and Guix channel commit
+`230aa373f315f247852ee07dff34146e9b480aec`.
+
+The guest stopped nonterminal at exactly 1,130,000 completed clock slots with
+no outstanding request, persistent status zero, and all five frozen gates
+successful. A fresh in-memory overlay advanced from generation zero to one
+over immutable base SHA-256
+`bb16e46ad81decfe1efe691d36b6aa4ce3fd4ffb82474365de3520989d397cb5`;
+the base remained unchanged. The evidence summary accepted 535 complete
+events, including 23 tail events, and had SHA-256
+`3ad9350edb3f0a4b4f873aa3f87a68fe75fc4d91b7db7154f38b41eb622ac2ff`.
+The exact loop used 291 batches and 39 host transactions. The service result
+was successful, peak memory was 830,337,024 bytes, CPU usage was 434,323,130,000
+nanoseconds, and unit absence plus both outer-root removals were verified.
+Systemd 261 reported IO counters as `[not set]` and IP counters as `[no data]`;
+the receipt preserves those values rather than presenting them as zero.
+
+Two earlier attempts failed closed before guest execution while calibrating
+the frozen Chromium gate to the actual host: first because the private service
+allowed no loopback `AF_INET`, then because Chromium exceeded a 64-task
+ceiling. The final reviewed policy retains `PrivateNetwork=yes`, restricts
+address families to `AF_INET AF_UNIX`, and bounds the service at 128 tasks.
+Those failures are not canary successes.
 
 ## Open questions and nonclaims
 
-No checked-in release envelope yet establishes a native/Wasm READY4 equality or a runtime disk-evidence tail from licensed System 303 media. The fixed event layout follows the portable controller implementation; it does not establish that a historical controller emitted this representation. These questions remain deliberately unresolved rather than inferred from the successful unit harness.
+No checked-in release envelope yet establishes a native/Wasm READY4 equality.
+The completed continuation canary establishes the named runtime tail only; it
+does not turn that tail into READY4 or close `CW1-BOOT`. The fixed event layout
+follows the portable controller implementation; it does not establish that a
+historical controller emitted this representation. These questions remain
+deliberately unresolved rather than inferred from the canary.
 
 ## Conformance checks
 
