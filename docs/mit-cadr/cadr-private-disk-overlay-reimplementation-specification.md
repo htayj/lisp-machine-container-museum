@@ -3,7 +3,7 @@ type: Reimplementation Specification
 title: CADR-WEB-303 C-M10 private disk overlay reimplementation specification
 description: Normative contract for the synthetic, immutable-base, content-addressed CADR-WEB private-disk overlay, durable controller, interchange, and recovery records.
 tags: [mit-cadr, cadr-web, preservation, disk, reimplementation]
-timestamp: 2026-07-30T02:07:44-04:00
+timestamp: 2026-07-30T02:39:00-04:00
 ---
 
 # CADR-WEB-303 C-M10 private disk overlay reimplementation specification
@@ -599,12 +599,14 @@ than only Chromium's direct process. Process-tree tests cover parent death,
 an already-closed leader with a live descendant, a descendant that ignores
 `SIGTERM`, a live wrapper's bounded `SIGTERM` grace and escalation, and a
 process group that remains after final `SIGKILL`. The process-tree and static
-controls are verified, but the fresh eight-seam browser campaigns have not yet
-been rerun against this resident-watchdog revision. An abrupt signal or
-supervisor death can also leave the inert `cadr-m10-process-kill-*` host
-directory for explicit cleanup, although the browser group is killed. These
-host-harness controls do not strengthen the process-loss result into a
-physical-power claim.
+controls are verified. On 2026-07-30, two fresh invocations of
+`scripts/run-cadr-m10-process-kill-browser.mjs` against the resident-watchdog
+revision each produced `old, old, old, new, new, new, old, old`; after each
+ordinary completion, a process-table check found no matching Chromium or
+watchdog process and `/tmp` contained no `cadr-m10-process-kill-*` root. An
+abrupt signal or supervisor death can still leave that inert host directory
+for explicit cleanup, although the browser group is killed. These host-harness
+results do not strengthen the process-loss result into a physical-power claim.
 
 ### Writer fencing and activation recovery
 
