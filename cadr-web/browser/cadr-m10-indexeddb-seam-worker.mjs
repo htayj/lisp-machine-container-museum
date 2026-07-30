@@ -42,7 +42,15 @@ async function run(message) {
     profileSha256: bytes(message.binding.profileSha256),
     artifactSetSha256: bytes(message.binding.artifactSetSha256) };
   let plan = null;
-  const backend = createCadrM10IndexedDbBackend({ databasePrefix: message.databasePrefix, seamHook: async (event) => {
+  const notifyTransaction = event => {
+    if (message.seam === event.seam) {
+      self.postMessage({ type: "seam", seam: event.seam });
+    }
+  };
+  const backend = createCadrM10IndexedDbBackend({
+    databasePrefix: message.databasePrefix,
+    transactionHook: notifyTransaction,
+    seamHook: async (event) => {
     if (message.mutateCaller === true && event.seam === "before-stage" && plan !== null) plan.objects.pages[0][0] ^= 0xff;
     if (message.seam === null || event.seam !== message.seam) return;
     self.postMessage({ type: "seam", seam: event.seam });

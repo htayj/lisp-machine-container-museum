@@ -39,6 +39,9 @@ export const CADR_M10_INDEXEDDB_DURABLE_SEAMS = Object.freeze([
   "before-stage", "after-stage", "before-head-activation",
   "after-head-activation", "before-reread-head", "after-reread-head",
 ]);
+export const CADR_M10_INDEXEDDB_TRANSACTION_KILL_SEAMS = Object.freeze([
+  "stage-transaction-outstanding", "head-transaction-outstanding",
+]);
 
 const ZERO_HASH = new Uint8Array(32);
 const TEXT = new TextEncoder();
@@ -483,11 +486,17 @@ export function createCadrM10IndexedDbBackend({
   databasePrefix = CADR_M10_INDEXEDDB_PREFIX,
   indexedDB = globalThis.indexedDB,
   seamHook = null,
+  transactionHook = null,
+  compactMarkHook = null,
 } = {}) {
   const prefix = checkedPrefix(databasePrefix);
   required(indexedDB !== undefined && indexedDB !== null && typeof indexedDB.open === "function",
     "IndexedDB is unavailable", CadrM10IndexedDbError);
   required(seamHook === null || typeof seamHook === "function", "seamHook must be a function", CadrM10FormatError);
+  required(transactionHook === null || typeof transactionHook === "function",
+    "transactionHook must be a function", CadrM10FormatError);
+  required(compactMarkHook === null || typeof compactMarkHook === "function",
+    "compactMarkHook must be a function", CadrM10FormatError);
   const databases = new Map(); const closedByVersionChange = new Set(); const commits = new Set();
 
   const nameFor = (binding) => `${prefix}-${binding.key}`;
@@ -523,6 +532,12 @@ export function createCadrM10IndexedDbBackend({
           } catch (error) { fail(error); }
         };
       }, () => {}, fail);
+      if (transactionHook !== null) {
+        required(transactionHook(Object.freeze({
+          seam: "stage-transaction-outstanding",
+        })) === undefined, "transactionHook must be synchronous",
+        CadrM10FormatError);
+      }
       return undefined;
     });
     return Object.freeze({ staged: entries.length });
@@ -763,6 +778,15 @@ export function createCadrM10IndexedDbBackend({
       transaction.onerror = (event) => reject(errorFor(event, transaction.error));
       transaction.onabort = (event) => reject(errorFor(event, transaction.error));
       const metaRequest = transaction.objectStore(CADR_M10_INDEXEDDB_STORES.meta).get(META_KEY);
+      if (transactionHook !== null) {
+        try {
+          required(transactionHook(Object.freeze({
+            seam: "head-transaction-outstanding",
+            diskUuid: binding.diskUuid.slice(), writerEpoch,
+          })) === undefined, "transactionHook must be synchronous",
+          CadrM10FormatError);
+        } catch (error) { fail(error); return; }
+      }
       metaRequest.onerror = () => fail(metaRequest.error);
       metaRequest.onsuccess = () => {
         try {
@@ -784,7 +808,8 @@ export function createCadrM10IndexedDbBackend({
                   const oldActivation = activationRecord(activationRequest.result,
                     activationKey(binding.key, expected.head.headSeq), binding.key);
                   required(equalBytes(oldActivation.headBytes, expected.headBytes), "stored activation changed before activation", CadrM10ConflictError);
-                  const nextMeta = { ...meta, pendingGeneration: 0n, pendingSession: 0n };
+                  const nextMeta = { ...meta, activeWriterEpoch: 0n,
+                    pendingGeneration: 0n, pendingSession: 0n };
                   /* These three writes are queued in one IDB transaction; no await or callback separates head/activation. */
                   transaction.objectStore(CADR_M10_INDEXEDDB_STORES.heads).put(asStoredHead(nextHeadBytes));
                   transaction.objectStore(CADR_M10_INDEXEDDB_STORES.activations).put(asStoredActivation(binding.key, nextHead.headSeq, nextHeadBytes));
@@ -801,12 +826,160 @@ export function createCadrM10IndexedDbBackend({
 
   function makeHandle(binding, db, session, readOnly, recoveredSnapshot = null) {
     const handle = { binding, db, session, readOnly, recoveredSnapshot, closed: false };
+
+    async function collectTree(rootHash, pages, nodes, sessionCheck) {
+      const visit = async (hash, level) => {
+        const key = hexBytes(hash);
+        if (nodes.has(key)) return;
+        const nodeBytes = await getImmutable(db, "nodes", key);
+        const node = await parseCdrOvn1(nodeBytes);
+        await sessionCheck();
+        required(node.level === level, "overlay tree level changed during closure walk",
+          CadrM10RecoveryError);
+        nodes.set(key, nodeBytes.slice());
+        for (const child of node.children) {
+          if (isZeroHash(child)) continue;
+          if (level === 0) {
+            const pageKey = hexBytes(child);
+            if (!pages.has(pageKey)) {
+              const page = await getImmutable(db, "pages", pageKey);
+              await sessionCheck();
+              pages.set(pageKey, page.slice());
+            }
+          } else {
+            await visit(child, level - 1);
+          }
+        }
+      };
+      await visit(rootHash, 2);
+    }
+
+    async function activeClosure({ includeLineage = false } = {}) {
+      await assertSession(handle);
+      const active = recoveredSnapshot === null ?
+        await readActive(handle) : await readRecoveredActive(handle);
+      const pages = new Map(); const nodes = new Map();
+      const manifests = new Map();
+      let manifest = active.manifest;
+      for (;;) {
+        const key = hexBytes(manifest.hash);
+        if (manifests.has(key)) break;
+        manifests.set(key, manifest.bytes.slice());
+        await collectTree(manifest.rootSha256, pages, nodes,
+          () => assertSession(handle));
+        if (!includeLineage || manifest.generation === 0n) break;
+        manifest = await parseCdrOvm1(await getImmutable(
+          db, "manifests", hexBytes(manifest.parentManifestSha256)));
+        await assertSession(handle);
+      }
+      await assertSession(handle);
+      return Object.freeze({
+        active,
+        pages: Object.freeze([...pages.entries()].map(([key, bytes]) =>
+          Object.freeze({ key, bytes: bytes.slice() }))),
+        nodes: Object.freeze([...nodes.entries()].map(([key, bytes]) =>
+          Object.freeze({ key, bytes: bytes.slice() }))),
+        manifests: Object.freeze([...manifests.entries()].map(([key, bytes]) =>
+          Object.freeze({ key, bytes: bytes.slice() }))),
+      });
+    }
+
     return Object.freeze({
       get diskUuid() { return binding.diskUuid.slice(); },
       get sessionId() { return session; },
       get databaseName() { return nameFor(binding); },
       get readOnly() { return readOnly; },
       async active() { return recoveredSnapshot === null ? readActive(handle) : readRecoveredActive(handle); },
+      async exportActiveClosure() {
+        const closure = await activeClosure();
+        return Object.freeze({
+          generation: closure.active.manifest.generation,
+          headSeq: closure.active.head.headSeq,
+          manifestSha256: closure.active.manifest.hash.slice(),
+          entryCount: closure.active.manifest.entryCount,
+          rootSha256: closure.active.manifest.rootSha256.slice(),
+          pages: closure.pages,
+          nodes: closure.nodes,
+        });
+      },
+      async compact({ writerEpoch } = {}) {
+        required(!readOnly, "recovered disk is read-only",
+          CadrM10RecoveryError);
+        checkedU64(writerEpoch, "writer epoch", { nonzero: true });
+        const lease = await assertSession(handle);
+        required(lease.activeWriterEpoch === writerEpoch &&
+          lease.pendingGeneration === 0n,
+        "compaction does not own the writer lease", CadrM10ConflictError);
+        const closure = await activeClosure({ includeLineage: true });
+        if (compactMarkHook !== null) {
+          required(compactMarkHook(Object.freeze({
+            writerEpoch, headBytes: closure.active.headBytes.slice(),
+          })) === undefined,
+          "compactMarkHook must be synchronous", CadrM10FormatError);
+        }
+        const retained = {
+          pages: new Set(closure.pages.map(item => item.key)),
+          nodes: new Set(closure.nodes.map(item => item.key)),
+          manifests: new Set(closure.manifests.map(item => item.key)),
+        };
+        const removed = { pages: 0, nodes: 0, manifests: 0 };
+        await assertSession(handle);
+        await txPromise(db, [
+          CADR_M10_INDEXEDDB_STORES.meta,
+          CADR_M10_INDEXEDDB_STORES.heads,
+          CADR_M10_INDEXEDDB_STORES.pages,
+          CADR_M10_INDEXEDDB_STORES.nodes,
+          CADR_M10_INDEXEDDB_STORES.manifests,
+        ], "readwrite", (transaction, fail) => {
+          const metaRequest = transaction.objectStore(
+            CADR_M10_INDEXEDDB_STORES.meta).get(META_KEY);
+          metaRequest.onerror = () => fail(metaRequest.error);
+          metaRequest.onsuccess = () => {
+            try {
+              const meta = metaRecord(metaRequest.result, binding);
+              required(meta.activeSession === session &&
+                meta.activeWriterEpoch === writerEpoch &&
+                meta.pendingGeneration === 0n,
+              "compaction writer epoch changed after mark",
+              CadrM10ConflictError);
+              const headRequest = transaction.objectStore(
+                CADR_M10_INDEXEDDB_STORES.heads).get(HEAD_KEY);
+              headRequest.onerror = () => fail(headRequest.error);
+              headRequest.onsuccess = () => {
+                try {
+                  const headBytes = headRecord(headRequest.result, HEAD_KEY);
+                  required(equalBytes(headBytes, closure.active.headBytes),
+                    "active head/root changed after compaction mark",
+                  CadrM10ConflictError);
+                  const kinds = ["pages", "nodes", "manifests"];
+                  requestChain(kinds, (kind, next) => {
+                    const store = transaction.objectStore(
+                      CADR_M10_INDEXEDDB_STORES[kind]);
+                    const request = store.getAllKeys();
+                    request.onerror = () => fail(request.error);
+                    request.onsuccess = () => {
+                      try {
+                        for (const key of request.result) {
+                          if (!retained[kind].has(key)) {
+                            store.delete(key); removed[kind] += 1;
+                          }
+                        }
+                        next();
+                      } catch (error) { fail(error); }
+                    };
+                  }, () => {}, fail);
+                } catch (error) { fail(error); }
+              };
+            } catch (error) { fail(error); }
+          };
+        });
+        await assertSession(handle);
+        return Object.freeze({ removed: Object.freeze({ ...removed }),
+          retained: Object.freeze({
+            pages: retained.pages.size, nodes: retained.nodes.size,
+            manifests: retained.manifests.size,
+          }) });
+      },
       async beginWriter() {
         await assertSession(handle);
         required(!readOnly, "recovered disk is read-only", CadrM10RecoveryError);

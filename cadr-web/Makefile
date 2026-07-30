@@ -75,7 +75,7 @@ M6_DEVID_WASM_O2 := build/cadr-web-m6-devid-O2.wasm
 M7_WASM_O0 := build/cadr-web-m7-O0.wasm
 M7_WASM_O2 := build/cadr-web-m7-O2.wasm
 
-.PHONY: all test clean audit forbidden-symbols exported-symbols mutable-globals dependency-audit header-audit mutant-audit python-cross-parse m3-wasm m3-browser m3-differential m3-conformance m3-snapshot-cross-target m4-unit m4-browser m4-differential m4-media-compare m5-unit m6-devid-wasm m7-unit
+.PHONY: all test clean audit forbidden-symbols exported-symbols mutable-globals dependency-audit header-audit mutant-audit python-cross-parse m3-wasm m3-browser m3-differential m3-conformance m3-snapshot-cross-target m4-unit m4-browser m4-differential m4-media-compare m5-unit m6-devid-wasm m7-unit m10-unit
 
 all: $(LIBRARY) $(HOST_BINARY) $(M2_HOST_BINARY) $(M3_HOST_BINARY) $(M3_SNAPSHOT_HOST_BINARY)
 
@@ -307,6 +307,15 @@ m7-unit: build/test_cadr_m7_display build/test_cadr_m7_profile_isolation build/t
 	python3 ../tests/test_cadr_m7_native_frame_oracle.py
 	guix shell node -- node ../tests/test_run_cadr_m7_frame_conformance.mjs
 	python3 ../tests/test_run_cadr_m7_browser_conformance.py
+
+
+m10-unit:
+	guix shell node -- node ../tests/test_cadr_m10_persistence.mjs
+	guix shell node -- node ../tests/test_cadr_m10_wrapper.mjs
+	guix shell node -- node ../tests/test_cadr_m10_controller.mjs
+	guix shell node -- node ../tests/test_cadr_m10_indexeddb_static.mjs
+	guix shell node -- node ../scripts/run-cadr-m10-indexeddb-browser.mjs
+	guix shell node -- node ../scripts/run-cadr-m10-process-kill-browser.mjs
 
 mutant-audit: $(MUTANT_BASE_BINARIES) $(MUTANT_BINARIES)
 	@for target in $(MUTANT_TARGETS); do \

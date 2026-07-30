@@ -3,7 +3,7 @@ type: Implementation Roadmap
 title: MIT CADR System 303 browser and WebAssembly implementation roadmap
 description: A milestone-complete plan for porting the pinned System 303 CADR emulator to a deterministic, locally persistent, browser-hosted WebAssembly machine.
 tags: [mit-cadr, lm-3, system-303, webassembly, browser, emulator, roadmap]
-timestamp: 2026-07-29T23:58:00-04:00
+timestamp: 2026-07-30T16:00:00-04:00
 ---
 
 # MIT CADR System 303 browser and WebAssembly implementation roadmap
@@ -778,6 +778,43 @@ later flush is mandatory.
 
 Exit gate `CW3-PERSISTENT`: power-loss injection at every commit step yields either
 the old complete generation or the new complete generation, never a mixed disk.
+
+#### M10 implementation status
+
+M10 is closed for the selected
+`CADR-WEB-303/ABI1.5/protocol-v6/C-M10-PERSIST-v1` synthetic opaque-page
+profile and `CW3-PERSISTENT/process-loss`. The browser controller performs real
+radix-tree copy-on-write planning under a durable writer lease acquired before
+the active snapshot, stages and verifies immutable objects before
+guest completion, publishes the head and activation in one strict IndexedDB
+transaction, and terminates/replaces the worker into `IN_DOUBT` recovery if
+publication becomes uncertain after guest advance or the host-complete response
+is lost. The existing worker
+host-request protocol is the integration surface; no private-disk state is
+added to the worker.
+
+The maintenance surface supplies strict canonical overlay export/import,
+discard-to-base, clone-to-new-UUID with a mandatory destination replacement
+callback and cleanup on failure, epoch/head-conditional durable
+unreachable-object compaction, and
+bounded recover/reopen. A disposable Chromium campaign passes abort, worker
+termination, and reload at all six durable seams. A separate host supervisor
+also killed the complete Chromium process group with `SIGKILL` at each seam
+and restarted the same profile: the three pre-publication seams selected the
+complete old generation and the three post-publication seams selected the
+complete new generation. It additionally ran the production controller and IDB
+adapter in a dedicated Worker whose synchronous probe blocked in `Atomics.wait`
+while the stage and head transactions retained outstanding requests. Two repeated
+eight-kill runs selected complete old state at both barriers. The guest endpoint in
+this campaign is an explicitly synthetic protocol responder, not production
+`cadr-worker.js` or a running CADR Wasm machine. The host independently hashes the
+exact selected base and serves its actual requested pages; it does not attest that
+identity while serving unrelated fixture bytes.
+
+This process-loss result is not physical machine or storage-device power
+removal, device-cache-loss evidence, quota exhaustion, LMFS transaction
+compatibility, or a private System 303 media run. Those stronger claims remain
+separate from the closed browser process-restart gate.
 
 ### M11 — Audio and speech profiles
 

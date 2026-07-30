@@ -8,6 +8,7 @@ import {
   CADR_M10_MAX_ACTIVATION_RECORDS,
   cadrM10Sha256,
   hexBytes,
+  serializeCdrOvn1,
   serializeCdrOvh1,
 } from "../wasm/cadr-m10-persistence.mjs";
 
@@ -442,6 +443,74 @@ async function proveActivationBoundary(state) {
   reopened.close();
 }
 
+async function proveActiveClosureAndCompaction(state) {
+  const prefix = `cadr-m10-compact-${state.run.slice(0, 16)}`;
+  const backend = createCadrM10IndexedDbBackend({ databasePrefix: prefix });
+  const disk = await backend.initializeDisk(binding);
+  const closure = await disk.exportActiveClosure();
+  assert(closure.entryCount === 0n && closure.pages.length === 0 &&
+    closure.nodes.length === 1,
+  "empty active closure was not exported exactly");
+  const orphanPage = Uint8Array.from({ length: 1024 },
+    (_, index) => (index * 19 + 5) & 255);
+  const orphanNode = await serializeCdrOvn1({
+    level: 0, prefix: 0n,
+    children: Array.from({ length: 256 }, () => new Uint8Array(32)),
+  });
+  await disk.stage({ pages: [orphanPage], nodes: [orphanNode] });
+  const compactEpoch = await disk.beginWriter();
+  const compacted = await disk.compact({ writerEpoch: compactEpoch });
+  await disk.closeWriter(compactEpoch);
+  assert(compacted.removed.pages === 1 &&
+    compacted.removed.nodes === 1 &&
+    compacted.retained.nodes === 1,
+  "durable compaction did not remove only unreachable immutable objects");
+  assert((await disk.active()).manifest.generation === 0n,
+    "compaction changed the active generation");
+  disk.close();
+}
+
+async function proveCompactionHeadRace(state) {
+  const prefix = `cadr-m10-compact-race-${state.run.slice(0, 12)}`;
+  let intruder = null; let originalHead = null; let mutation = null;
+  const backend = createCadrM10IndexedDbBackend({
+    databasePrefix: prefix,
+    compactMarkHook: () => {
+      const changed = originalHead.headBytes.slice(0);
+      new Uint8Array(changed)[0] ^= 1;
+      const transaction = strictTransaction(
+        intruder, CADR_M10_INDEXEDDB_STORES.heads);
+      transaction.objectStore(CADR_M10_INDEXEDDB_STORES.heads).put({
+        key: "head", headBytes: changed,
+      });
+      mutation = transactionDone(transaction);
+    },
+  });
+  const disk = await backend.initializeDisk(binding);
+  intruder = await openExisting(disk.databaseName);
+  const read = strictTransaction(
+    intruder, CADR_M10_INDEXEDDB_STORES.heads, "readonly");
+  const request = read.objectStore(CADR_M10_INDEXEDDB_STORES.heads).get("head");
+  await transactionDone(read);
+  originalHead = request.result;
+  const epoch = await disk.beginWriter();
+  let rejection = null;
+  try { await disk.compact({ writerEpoch: epoch }); }
+  catch (error) { rejection = error; }
+  assert(rejection !== null &&
+    /active head\/root changed after compaction mark/.test(rejection.message),
+  "compaction did not reject a head changed after mark");
+  await mutation;
+  const restore = strictTransaction(
+    intruder, CADR_M10_INDEXEDDB_STORES.heads);
+  restore.objectStore(CADR_M10_INDEXEDDB_STORES.heads).put(originalHead);
+  await transactionDone(restore);
+  await disk.closeWriter(epoch);
+  assert((await disk.active()).manifest.generation === 0n,
+    "rejected stale compaction changed the selected generation");
+  intruder.close(); disk.close();
+}
+
 async function main() {
   let state = load();
   if (state === null || state.version !== 2) { state = initialState(); save(state); }
@@ -467,6 +536,8 @@ async function main() {
   await proveSchemaRejection(state);
   await proveRecoverySnapshotAndQuarantine(state);
   await proveActivationBoundary(state);
+  await proveActiveClosureAndCompaction(state);
+  await proveCompactionHeadRace(state);
   assert(durability.strict > 0 && durability.lax === 0,
     `readwrite durability instrumentation failed: ${JSON.stringify(durability)}`);
   document.body.dataset.status = "ok";
@@ -475,7 +546,8 @@ async function main() {
     results: state.results.length, followups: state.results.filter((result) => result.followup).length,
     foreignOrigin: state.foreign !== null, versionChange: state.versionChange === true,
     staleClose: true, schemaRejection: true, recoveryQuarantine: true,
-    activationBoundary: CADR_M10_MAX_ACTIVATION_RECORDS, durability,
+    activationBoundary: CADR_M10_MAX_ACTIVATION_RECORDS,
+    activeClosureCompaction: true, durability,
   });
   sessionStorage.removeItem(STORAGE_KEY);
 }
