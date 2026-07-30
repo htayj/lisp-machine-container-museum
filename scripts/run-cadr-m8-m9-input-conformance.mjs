@@ -24,8 +24,17 @@ import {
 import {
   CADR_M8_M9_CAMPAIGN_SCHEMA,
   buildCadrM8M9Campaign,
+  encodeCdrInp1,
   serializeCadrM8M9NativeScript,
 } from "../cadr-web/wasm/cadr-m8-m9-campaign.mjs";
+import { cadrM8KeyForCode } from "../cadr-web/wasm/cadr-m8-keyboard.mjs";
+import { encodeCadrM9Edge32 } from "../cadr-web/wasm/cadr-m9-pointer.mjs";
+import {
+  CADR_M8_M9_DIRECT_AUTHORITIES,
+  CADR_M8_M9_DIRECT_DIRTY_POLICY,
+  assertCadrM8M9ProvenanceJoin,
+  collectCadrM8M9ProvenanceJoin,
+} from "./cadr-m8-m9-provenance-join.mjs";
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const PRIVATE_ROOT = resolve(ROOT, "build/cadr-oracle");
@@ -41,7 +50,7 @@ const TRANSACTION_MODULE_PATH = resolve(ROOT, "cadr-web/wasm/cadr-m8-m9-transact
 const M6_MODULE_PATH = resolve(ROOT, "cadr-web/wasm/cadr-m6-headless-boot.mjs");
 const PROTOCOL_VERSION = 6;
 const REQUEST_TIMEOUT_MS = 120_000;
-const CAMPAIGN_SCHEMA = "cadr-m8-m9-input-conformance-result-v1";
+const CAMPAIGN_SCHEMA = "cadr-m8-m9-input-conformance-result-v2";
 const TARGET = "CADR-WEB-303/ABI1.8/protocol-v6/C-M8-M9-DIRECT-BOUNDARY-NON-CW2";
 const ARTIFACT_LAYOUT = Object.freeze([
   Object.freeze({ kind: 1, local_path: "cadr-web/profiles/cadr-web-303.ini.in" }),
@@ -94,6 +103,18 @@ function deliveryForJson(delivery) {
 }
 function positive(value, label) { if (!Number.isSafeInteger(value) || value < 1) fail(`${label} is not positive`); return value; }
 function digest(value, label) { if (typeof value !== "string" || !/^[0-9a-f]{64}$/.test(value)) fail(`${label} is not SHA-256`); return value; }
+function rebuildM9WasmPair() {
+  const argv = ["-B", "-C", "cadr-web", "build/cadr-web-m9-O0.wasm",
+    "build/cadr-web-m9-O2.wasm"];
+  const result = spawnSync("make", argv, { cwd: ROOT, encoding: "utf8",
+    timeout: 300_000, killSignal: "SIGKILL" });
+  if (result.error !== undefined || result.signal !== null || result.status !== 0) {
+    fail(`forced M9 O0/O2 Wasm build failed: ${(result.stderr ?? "").slice(-2000)}`);
+  }
+  return Object.freeze({ schema: "cadr-m8-m9-wasm-production-v1", profile: "m9",
+    forced: true, argv: ["make", ...argv], stdout_sha256: sha256(result.stdout),
+    stderr_sha256: sha256(result.stderr) });
+}
 
 async function assertPrivateDirectory(path, label) {
   const info = await lstat(path);
@@ -118,23 +139,43 @@ async function fileIdentity(path, label) {
   const info = await lstat(path);
   if (!info.isFile() || info.isSymbolicLink()) fail(`${label} is not a regular non-symlink file`);
   const bytes = await readFile(path);
-  return Object.freeze({ path: relative(ROOT, path), bytes: bytes.byteLength, sha256: sha256(bytes) });
+  return Object.freeze({ path: repositoryPath(path, label), bytes: bytes.byteLength, sha256: sha256(bytes) });
 }
-async function sourceProvenance(paths) {
-  const identities = await Promise.all(paths.map(path => fileIdentity(path, path)));
-  const rels = identities.map(item => item.path);
+async function toolIdentity(path, label) {
+  const info = await lstat(path);
+  if (!info.isFile() || info.isSymbolicLink()) fail(`${label} is not a regular non-symlink file`);
+  const bytes = await readFile(path);
+  /* A host tool is not a repository sidecar.  Retaining an absolute (or
+   * ../../-spelled) pathname would make a receipt both non-portable and an
+   * unsafe path authority for its verifier. */
+  return Object.freeze({ bytes: bytes.byteLength, sha256: sha256(bytes) });
+}
+function repositoryPath(path, label) {
+  const result = relative(ROOT, resolve(path)).split("\\").join("/");
+  if (result.length === 0 || result === ".." || result.startsWith("../")) {
+    fail(`${label} is outside the repository`);
+  }
+  return result;
+}
+async function sourceProvenance(join) {
+  const byPath = new Map(join.source_closure.files.map(file => [file.path, file]));
+  const identities = CADR_M8_M9_DIRECT_AUTHORITIES.map(path => {
+    const identity = byPath.get(path);
+    if (identity === undefined) fail(`provenance join omitted direct source authority ${path}`);
+    return identity;
+  });
   const revision = spawnSync("git", ["rev-parse", "HEAD"],
     { cwd: ROOT, encoding: "utf8", timeout: 30_000 });
-  const status = spawnSync("git", ["status", "--porcelain=v1", "--", ...rels],
+  const status = spawnSync("git", ["status", "--porcelain=v1", "--", ...CADR_M8_M9_DIRECT_AUTHORITIES],
     { cwd: ROOT, encoding: "utf8", timeout: 30_000 });
   if (revision.error || revision.status !== 0 || status.error || status.status !== 0) {
     fail("cannot bind direct campaign source control");
   }
   return Object.freeze({ revision: revision.stdout.trim(),
     closure_dirty: status.stdout.length !== 0,
-    dirty_policy: "exact file hashes and scoped status are retained; no clean-checkout claim",
+    dirty_policy: CADR_M8_M9_DIRECT_DIRTY_POLICY,
     status_sha256: sha256(Buffer.from(status.stdout)), status: status.stdout,
-    files: identities });
+    files: Object.freeze(identities.map(identity => Object.freeze({ ...identity }))) });
 }
 async function readJson(path, label) {
   const bytes = await readFile(path);
@@ -281,6 +322,93 @@ function expectedInputState(prior, record) {
   } else fail("campaign contains an unknown input kind");
   return Object.freeze(next);
 }
+
+/* These are producer commands, not a second table of wire literals.  Their
+ * CDRINP1 payloads are re-derived below from the frozen physical KeyQ mapping
+ * and the EDGE32 encoder on every direct run. */
+export const CADR_M8_M9_DEACTIVATION_COMMANDS = Object.freeze({
+  keyboard_down: Object.freeze({ code: "KeyQ", repeat: false }),
+  pointer_down: Object.freeze({ domButton: 0, x: 60, y: 70, tick: 8n }),
+  neutralize: Object.freeze({ cause: "capture-loss", tick: 9n }),
+});
+
+/**
+ * Derive the four exact post-campaign producer records.  `pointerGeneration`
+ * belongs to the M9 controller (which advances after the campaign's capture
+ * loss); CDRINP1 itself retains the current core generation.
+ */
+export function deriveCadrM8M9DeactivationProducer({ coreState, pointerGeneration }) {
+  if (coreState === null || typeof coreState !== "object" ||
+      typeof coreState.generation !== "bigint" || typeof coreState.ingressOrdinal !== "bigint" ||
+      !Number.isSafeInteger(coreState.inputSequence) ||
+      !Number.isSafeInteger(pointerGeneration) || pointerGeneration < 0 || pointerGeneration > 0xffffffff) {
+    fail("cannot derive deactivation producer from the running controller/core state");
+  }
+  const key = cadrM8KeyForCode(CADR_M8_M9_DEACTIVATION_COMMANDS.keyboard_down.code);
+  if (key === null || key.scancode !== 0x52) {
+    fail("the selected KeyQ physical mapping is not exact scancode 0x52");
+  }
+  const pointerDownPayload = encodeCadrM9Edge32({
+    x: CADR_M8_M9_DEACTIVATION_COMMANDS.pointer_down.x,
+    y: CADR_M8_M9_DEACTIVATION_COMMANDS.pointer_down.y,
+    buttonsAfter: 1, changedMask: 1, cause: "physical",
+  });
+  const pointerReleasePayload = encodeCadrM9Edge32({
+    x: CADR_M8_M9_DEACTIVATION_COMMANDS.pointer_down.x,
+    y: CADR_M8_M9_DEACTIVATION_COMMANDS.pointer_down.y,
+    buttonsAfter: 0, changedMask: 1, cause: CADR_M8_M9_DEACTIVATION_COMMANDS.neutralize.cause,
+  });
+  const records = [
+    Object.freeze({ stage: "keyboard_down", kind: 1, payload: key.scancode }),
+    Object.freeze({ stage: "pointer_down", kind: 2, payload: pointerDownPayload }),
+    Object.freeze({ stage: "neutralize", kind: 2, payload: pointerReleasePayload }),
+    Object.freeze({ stage: "neutralize", kind: 1, payload: 0x8000 }),
+  ].map((record, index) => {
+    const ordinal = coreState.ingressOrdinal + BigInt(index + 1);
+    return Object.freeze({ ...record, generation: coreState.generation, ordinal,
+      bytes: encodeCdrInp1({ kind: record.kind, generation: coreState.generation, ordinal,
+        payload: record.payload }) });
+  });
+  return Object.freeze({
+    commands: Object.freeze({
+      keyboard_down: CADR_M8_M9_DEACTIVATION_COMMANDS.keyboard_down,
+      pointer_down: Object.freeze({ ...CADR_M8_M9_DEACTIVATION_COMMANDS.pointer_down,
+        generation: pointerGeneration }),
+      neutralize: Object.freeze({ ...CADR_M8_M9_DEACTIVATION_COMMANDS.neutralize,
+        generation: pointerGeneration }),
+    }),
+    keyboard_down: Object.freeze([records[0]]),
+    pointer_down: Object.freeze([records[1]]),
+    neutralize: Object.freeze(records.slice(2)),
+  });
+}
+
+function verifyCoreDelivery(delivery, records, initial, label) {
+  if (delivery?.wireSchema !== "CDRINP1" || delivery.recordsDelivered !== records.length ||
+      delivery.firstIngressOrdinal !== records[0]?.ordinal ||
+      delivery.lastIngressOrdinal !== records.at(-1)?.ordinal ||
+      delivery.inputSequence !== initial.inputSequence + records.length ||
+      !Array.isArray(delivery.wireRecords) || delivery.wireRecords.length !== records.length ||
+      !Array.isArray(delivery.coreObservations) || delivery.coreObservations.length !== records.length) {
+    fail(`${label} delivery does not retain its complete CDRINP1/CDRIOB91 transition`);
+  }
+  let expected = initial;
+  for (const [index, record] of records.entries()) {
+    const wire = bytesOf(delivery.wireRecords[index]);
+    if (wire === null || !sameBytes(wire, record.bytes)) {
+      fail(`${label} CDRINP1 record ${index} is not derived from its producer command`);
+    }
+    expected = expectedInputState(expected, record);
+    const observation = parseInputStateBytes(bytesOf(delivery.coreObservations[index]));
+    for (const field of ["csr", "scancode", "mouseX", "mouseY", "inputSequence",
+      "keyboardFifoCount", "ingressOrdinal", "generation", "lifecycle"]) {
+      if (observation[field] !== expected[field]) {
+        fail(`${label} CDRIOB91 transition ${index} differs from its exact CDRINP1 effect at ${field}`);
+      }
+    }
+  }
+  return expected;
+}
 function stateForJson(state) {
   return Object.freeze({ csr: state.csr, scancode: state.scancode,
     mouse_x: state.mouseX, mouse_y: state.mouseY,
@@ -385,7 +513,7 @@ async function portableReplay({ wasmPath, artifactRoot, pinned, portableDirector
   const [wasmIdentity, workerIdentity, nodeIdentity, wasmBytes] = await Promise.all([
     fileIdentity(wasmPath, "M9 Wasm module"),
     fileIdentity(WORKER_PATH, "M9 worker"),
-    fileIdentity(resolve(process.execPath), "Node executable"),
+    toolIdentity(resolve(process.execPath), "Node executable"),
     readFile(wasmPath),
   ]);
   const module = await WebAssembly.compile(wasmBytes); const artifacts = await openArtifacts(pinned.expected, artifactRoot); const client = new ProtocolV6Client(new Worker(WORKER_URL, { type: "module" }), sessionId); let termination = null;
@@ -465,14 +593,18 @@ async function portableReplay({ wasmPath, artifactRoot, pinned, portableDirector
         before: stateForJson(before), after: stateForJson(observed),
         consumption_boundaries: consumptionBoundaries, states: observedStates });
     /* Exercise the shared worker path with both controllers live and the core
-     * running.  The neutralization receipt must contain pointer-up followed by
-     * exactly one all-up, and only that successful core delivery may clear M8. */
-    const heldKey = await client.request("keyboard-down",
-      { code: "KeyQ", repeat: false });
-    const heldPointer = await client.request("pointer-down",
-      { domButton: 0, x: 60, y: 70, tick: 8n, generation: 0 });
-    const neutralized = await client.request("pointer-neutralize",
-      { cause: "capture-loss", tick: 9n, generation: 0 });
+     * running.  The KeyQ and 60,70 EDGE32 payloads are derived from their
+     * producer mappings/commands, then every CDRIOB91 post-delivery state is
+     * compared rather than merely checking a tail shape. */
+    const pointerBefore = await client.request("pointer-state");
+    if (pointerBefore.status !== 0 || !Number.isSafeInteger(pointerBefore.result?.generation)) {
+      fail("running worker did not expose the selected M9 controller generation");
+    }
+    const deactivationPlan = deriveCadrM8M9DeactivationProducer({ coreState: observed,
+      pointerGeneration: pointerBefore.result.generation });
+    const heldKey = await client.request("keyboard-down", deactivationPlan.commands.keyboard_down);
+    const heldPointer = await client.request("pointer-down", deactivationPlan.commands.pointer_down);
+    const neutralized = await client.request("pointer-neutralize", deactivationPlan.commands.neutralize);
     if (heldKey.status !== 0 || heldKey.delivery?.recordsDelivered !== 1 ||
         heldPointer.status !== 0 || heldPointer.delivery?.recordsDelivered !== 1 ||
         neutralized.status !== 0 || neutralized.delivery?.recordsDelivered !== 2 ||
@@ -481,16 +613,12 @@ async function portableReplay({ wasmPath, artifactRoot, pinned, portableDirector
         neutralized.delivery.wireRecords.length !== 2) {
       fail("running worker/core shared held-key plus pointer deactivation failed");
     }
-    const neutralRecords = neutralized.delivery.wireRecords.map(bytesOf);
-    if (neutralRecords.some(bytes => bytes === null) ||
-        new DataView(neutralRecords[0].buffer, neutralRecords[0].byteOffset, 40)
-          .getUint16(10, true) !== 2 ||
-        new DataView(neutralRecords[1].buffer, neutralRecords[1].byteOffset, 40)
-          .getUint16(10, true) !== 1 ||
-        new DataView(neutralRecords[1].buffer, neutralRecords[1].byteOffset, 40)
-          .getUint32(32, true) !== 0x8000) {
-      fail("shared deactivation did not deliver pointer-up then one keyboard all-up");
-    }
+    const afterKey = verifyCoreDelivery(heldKey.delivery, deactivationPlan.keyboard_down, observed,
+      "shared keyboard-down");
+    const afterPointer = verifyCoreDelivery(heldPointer.delivery, deactivationPlan.pointer_down, afterKey,
+      "shared pointer-down");
+    const afterNeutralize = verifyCoreDelivery(neutralized.delivery, deactivationPlan.neutralize, afterPointer,
+      "shared neutralization");
     const [keyboardAfter, pointerAfter, coreAfter] = await Promise.all([
       client.request("keyboard-state"), client.request("pointer-state"),
       client.request("input-state")]);
@@ -498,6 +626,13 @@ async function portableReplay({ wasmPath, artifactRoot, pinned, portableDirector
         pointerAfter.status !== 0 || pointerAfter.result?.heldButtonNames?.length !== 0 ||
         coreAfter.status !== 0) {
       fail("shared deactivation left held worker/core input state");
+    }
+    const finalCore = parseInputState(coreAfter);
+    for (const field of ["csr", "scancode", "mouseX", "mouseY", "inputSequence",
+      "keyboardFifoCount", "ingressOrdinal", "generation", "lifecycle"]) {
+      if (finalCore[field] !== afterNeutralize[field]) {
+        fail(`shared deactivation final CDRIOB91 state differs after core delivery at ${field}`);
+      }
     }
     const sharedDeactivation = Object.freeze({
       outcome: "held-key-and-pointer-cleared-after-core-delivery",
@@ -512,10 +647,9 @@ async function portableReplay({ wasmPath, artifactRoot, pinned, portableDirector
     termination = await client.close(); const workerLog = await writePrivateNew(resolve(portableDirectory, "worker.ndjson"), new TextEncoder().encode(`${client.log.map(entry => canonicalJson(entry)).join("\n")}\n`));
     return Object.freeze({ campaign, boot, module: wasmIdentity, worker: workerIdentity,
       runtime: Object.freeze({ node: process.versions.node, v8: process.versions.v8,
-        executable: nodeIdentity, argv: process.argv.slice(),
+        executable: nodeIdentity,
         environment: Object.freeze({ LANG: process.env.LANG ?? null,
-          LC_ALL: process.env.LC_ALL ?? null, TZ: process.env.TZ ?? null,
-          PATH: process.env.PATH ?? null }) }),
+          LC_ALL: process.env.LC_ALL ?? null, TZ: process.env.TZ ?? null }) }),
       expectedCdrinp, observedCdrinp, expectedStateFile, observedStateFile,
       workerLog, termination, session_id: sessionId, sharedDeactivation,
       sharedDeactivationFile,
@@ -528,13 +662,21 @@ async function portableReplay({ wasmPath, artifactRoot, pinned, portableDirector
 
 async function runCampaign(options) {
   if (!options.execute) fail("refusing to start a private runtime without explicit --execute"); if (options.nativeConfig === null) fail("--native-config is required with --execute");
+  repositoryPath(options.wasm, "M9 Wasm module");
+  const wasmProduction = rebuildM9WasmPair();
   await Promise.all([fileIdentity(options.wasm, "M9 Wasm module"), fileIdentity(NATIVE_ORACLE, "M8/M9 native oracle")]);
-  const sourceBinding = await sourceProvenance([RUNNER_PATH, NATIVE_ORACLE,
-    CAMPAIGN_MODULE_PATH, DEACTIVATION_MODULE_PATH, TRANSACTION_MODULE_PATH,
-    M6_MODULE_PATH, WORKER_PATH,
-    resolve(ROOT, "cadr-web/wasm/cadr-m8-keyboard.mjs"),
-    resolve(ROOT, "cadr-web/wasm/cadr-m9-pointer.mjs"),
-    resolve(ROOT, "cadr-web/oracle/patches/0004-m8-m9-pre-iob-input-witness.patch")]);
+  /* Capture the common closure before either direct leg is launched.  The X11
+   * campaign will refuse an otherwise self-consistent browser receipt unless
+   * this full object, including both produced Wasm variants, matches again. */
+  const joinStart = await collectCadrM8M9ProvenanceJoin({ prepared: options.prepared });
+  const directRunnerSource = await sourceProvenance(joinStart);
+  /* A direct receipt repeats the whole staged source closure, not just a
+   * convenient list of entry points.  `direct_runner` records the runner's
+   * scoped working-tree status; the closure itself names every transitive
+   * repository module on which the receipt relies. */
+  const sourceBinding = Object.freeze({ schema: "cadr-m8-m9-direct-source-binding-v1",
+    repository: joinStart.repository, source_closure: joinStart.source_closure,
+    direct_runner: directRunnerSource });
   const pinned = await loadPinnedInputs(); const session = await makeFreshSession(options.sessionRoot); const nativeDirectory = resolve(session.path, "native"); const portableDirectory = resolve(session.path, "portable");
   try {
     const initialCampaign = buildCadrM8M9Campaign(); if (initialCampaign.schema !== CADR_M8_M9_CAMPAIGN_SCHEMA) fail("campaign materializer identity drifted"); const scriptBytes = new TextEncoder().encode(serializeCadrM8M9NativeScript(initialCampaign));
@@ -545,10 +687,31 @@ async function runCampaign(options) {
     const scriptRows = parseNativeScript(new Uint8Array(await readFile(inputScriptPath))); const witness = parseNativeWitness(new Uint8Array(await readFile(resolve(nativeDirectory, "input.cdrm8n1"))), scriptRows); const nativeMetadata = await readJson(resolve(nativeDirectory, "metadata.json"), "native M8/M9 metadata");
     if (nativeMetadata.value?.schema !== "cadr-m8-m9-native-input-capture-v1" || nativeMetadata.value?.session_id !== nativeSessionId || nativeMetadata.value?.private_disk_instance_id !== diskId || nativeMetadata.value?.campaign?.native_witness?.sha256 !== witness.sha256 || nativeMetadata.value?.campaign?.input_script_sha256 !== inputScript.sha256) fail("native capture metadata is not bound to this fresh script/witness/session");
     const portable = await portableReplay({ wasmPath: options.wasm, artifactRoot: options.artifactRoot, pinned, portableDirectory, sessionId: portableSessionId, initialCampaign });
+    const selectedWasm = joinStart.m9_wasm[options.variant];
+    const selectedWorker = joinStart.source_closure.files.find(file =>
+      file.path === "cadr-web/wasm/cadr-worker.js");
+    if (selectedWasm === undefined || selectedWorker === undefined ||
+        portable.module.path !== selectedWasm.path ||
+        portable.module.bytes !== selectedWasm.bytes ||
+        portable.module.sha256 !== selectedWasm.sha256 ||
+        portable.worker.path !== selectedWorker.path ||
+        portable.worker.bytes !== selectedWorker.bytes ||
+        portable.worker.sha256 !== selectedWorker.sha256) {
+      fail("direct M8/M9 browser leg drifted from its captured provenance join");
+    }
+    const completeWasmProduction = Object.freeze({ ...wasmProduction,
+      outputs: joinStart.m9_wasm });
     const comparison = { schema: "cadr-m8-m9-input-comparison-v1", outcome: "worker-core-payloads-identical-to-expected", native: { record_schema: witness.schema, record_bytes: witness.record_bytes, record_count: witness.record_count, sha256: witness.sha256 }, browser: { record_schema: "CDRINP1", record_bytes: 40, record_count: portable.campaign.records.length, expected_sha256: portable.expectedCdrinp.sha256, observed_sha256: portable.observedCdrinp.sha256, exact_worker_boundary_match: portable.expectedCdrinp.sha256 === portable.observedCdrinp.sha256, generation: portable.browser_state.generation, first_ingress_ordinal: portable.browser_state.first_ingress_ordinal, last_ingress_ordinal: portable.browser_state.last_ingress_ordinal }, common_campaign: { input_script_sha256: inputScript.sha256, key_count: initialCampaign.keyCount, native_row_count: initialCampaign.nativeRows.length, browser_record_count: portable.campaign.records.length }, representation_adapter: { native: "keyboard code/keydown and mouse_event changed-button selector", browser: "CDRINP1 keyboard word and EDGE32 post-state/changed-mask", equality_claim: "native and browser encodings intentionally differ; only browser expected versus observed worker/core payloads are byte-equal" } };
     const comparisonReceipt = await writePrivateNew(resolve(session.path, "comparison.json"), comparison);
     const nativeFiles = await Promise.all(["campaign.json", "capture.ndjson", "idle.bin", "input-script.txt", "input.cdrm8n1", "metadata.json"].map(name => fileIdentity(resolve(nativeDirectory, name), `native ${name}`)));
-    const manifest = { schema: CAMPAIGN_SCHEMA, target: TARGET, outcome: comparison.outcome, runtime_execution_performed: true, source_binding: sourceBinding, session: { id: session.id, mode: "0700" }, campaign: { script: { path: "input-script.txt", ...inputScript }, manifest: { path: "campaign.json", ...campaignReceipt } }, native: { session_id: nativeSessionId, private_disk_instance_id: diskId, oracle_process: nativeChild.oracle_process, witness, files: nativeFiles, metadata: nativeMetadata.value }, portable: { session_id: portable.session_id, runtime: portable.runtime, module: portable.module, worker: portable.worker, expected_cdrinp_file: { path: "portable/expected-input.cdrinp1", ...portable.expectedCdrinp }, observed_cdrinp_file: { path: "portable/observed-input.cdrinp1", ...portable.observedCdrinp }, expected_state_file: { path: "portable/expected-input-states.json", ...portable.expectedStateFile }, observed_state_file: { path: "portable/observed-input-states.json", ...portable.observedStateFile }, worker_log_file: { path: "portable/worker.ndjson", ...portable.workerLog }, consumption_boundaries: portable.consumptionBoundaries, shared_deactivation_file: { path: "portable/shared-deactivation.json", ...portable.sharedDeactivationFile }, shared_deactivation: portable.sharedDeactivation, termination: portable.termination, browser_state: portable.browser_state, m6_ready_boundary: portable.boot.boundary.toString() }, comparison: { path: "comparison.json", ...comparisonReceipt } };
+    /* Do not rebuild here.  A second collection after all native and worker
+     * activity makes source, prepared closure, and either Wasm output drift a
+     * hard failure instead of silently attaching the start identity to an end
+     * result. */
+    const joinEnd = await collectCadrM8M9ProvenanceJoin({ prepared: options.prepared });
+    assertCadrM8M9ProvenanceJoin(joinEnd, joinStart,
+      "direct M8/M9 campaign end provenance binding");
+    const manifest = { schema: CAMPAIGN_SCHEMA, target: TARGET, outcome: comparison.outcome, runtime_execution_performed: true, source_binding: sourceBinding, provenance_join_start: joinStart, provenance_join_end: joinEnd, wasm_production: completeWasmProduction, session: { id: session.id, mode: "0700" }, campaign: { script: { path: "input-script.txt", ...inputScript }, manifest: { path: "campaign.json", ...campaignReceipt } }, native: { session_id: nativeSessionId, private_disk_instance_id: diskId, oracle_process: nativeChild.oracle_process, witness, files: nativeFiles, metadata: nativeMetadata.value }, portable: { session_id: portable.session_id, runtime: portable.runtime, module: portable.module, worker: portable.worker, expected_cdrinp_file: { path: "portable/expected-input.cdrinp1", ...portable.expectedCdrinp }, observed_cdrinp_file: { path: "portable/observed-input.cdrinp1", ...portable.observedCdrinp }, expected_state_file: { path: "portable/expected-input-states.json", ...portable.expectedStateFile }, observed_state_file: { path: "portable/observed-input-states.json", ...portable.observedStateFile }, worker_log_file: { path: "portable/worker.ndjson", ...portable.workerLog }, consumption_boundaries: portable.consumptionBoundaries, shared_deactivation_file: { path: "portable/shared-deactivation.json", ...portable.sharedDeactivationFile }, shared_deactivation: portable.sharedDeactivation, termination: portable.termination, browser_state: portable.browser_state, m6_ready_boundary: portable.boot.boundary.toString() }, comparison: { path: "comparison.json", ...comparisonReceipt } };
     const manifestReceipt = await writePrivateNew(resolve(session.path, "manifest.json"), manifest); const names = (await readdir(session.path)).sort(); if (canonicalJson(names) !== canonicalJson(["campaign.json", "comparison.json", "input-script.txt", "manifest.json", "native", "portable"])) fail("paired session has an unexpected top-level sidecar");
     return Object.freeze({ session: relative(ROOT, session.path), manifest: { path: "manifest.json", ...manifestReceipt }, comparison: { path: "comparison.json", ...comparisonReceipt } });
   } catch (error) {
@@ -557,7 +720,7 @@ async function runCampaign(options) {
       schema: "cadr-m8-m9-input-conformance-failure-v1",
       outcome: "nonconforming", runtime_execution_performed: true,
       error: error instanceof Error ? error.message : String(error),
-      source_binding: sourceBinding,
+      source_binding: sourceBinding, provenance_join_start: joinStart,
       evidence_boundary: "failure record only; no C-M8, native-X11, or CW2 closure claim",
     }).catch(() => {});
     throw error;

@@ -3,7 +3,7 @@ import { spawnSync } from "node:child_process";
 import { readFile } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { quiesceKeyboardInput } from "../scripts/run-cadr-m8-m9-input-conformance.mjs";
+import { deriveCadrM8M9DeactivationProducer, quiesceKeyboardInput } from "../scripts/run-cadr-m8-m9-input-conformance.mjs";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const script = resolve(root, "scripts/run-cadr-m8-m9-input-conformance.mjs");
@@ -21,10 +21,23 @@ for (const needle of ["native-capture", "CDRM8N1", "CDRINP1", "CDRIOB91",
   "wireRecords", "coreObservations", "expected-input.cdrinp1",
   "observed-input.cdrinp1", "expected-input-states.json",
   "observed-input-states.json", "worker-core-payloads-identical-to-expected",
-  "process.versions.v8"]) {
+  "process.versions.v8", "DIRECT-BOUNDARY-NON-CW2"]) {
   assert.ok(source.includes(needle), `runner omits ${needle}`);
 }
 assert.ok(source.indexOf("expected-input.cdrinp1") !== source.indexOf("observed-input.cdrinp1"));
+
+const deactivation = deriveCadrM8M9DeactivationProducer({ coreState: {
+  csr: 0x14, scancode: 0x18000, mouseX: 44, mouseY: 54, inputSequence: 208,
+  keyboardFifoCount: 0, ingressOrdinal: 208n, generation: 1n, lifecycle: 2,
+}, pointerGeneration: 1 });
+assert.equal(deactivation.keyboard_down[0].payload, 0x52,
+  "KeyQ derives from the selected physical keyboard mapping, not a literal placeholder");
+assert.equal(deactivation.pointer_down[0].payload,
+  60 | (70 << 10) | (1 << 20) | (1 << 23),
+  "tail-down uses the exact 60,70 EDGE32 producer command");
+assert.equal(deactivation.neutralize[0].payload, 60 | (70 << 10) | (1 << 23) | (1 << 26),
+  "capture-loss release retains the one-hot changed-mask as well as its cause");
+assert.deepEqual(deactivation.neutralize.map(record => record.ordinal), [211n, 212n]);
 
 function observation(state) {
   const bytes = new Uint8Array(64); const view = new DataView(bytes.buffer);

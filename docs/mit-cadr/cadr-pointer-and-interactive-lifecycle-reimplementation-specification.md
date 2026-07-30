@@ -3,7 +3,7 @@ type: Reimplementation Specification
 title: CADR browser pointer and interactive lifecycle reimplementation specification
 description: A release-bounded browser-to-core contract for EDGE32 pointer ingress, focus and capture deactivation, accessible controls, and an ABI 1.8 IOB subset without a claim of CW2 interactive closure.
 tags: [mit-cadr, cadr-web, input, pointer, lifecycle, reimplementation]
-timestamp: 2026-07-30T22:10:00-04:00
+timestamp: 2026-07-31T00:35:00-04:00
 ---
 
 # CADR browser pointer and interactive lifecycle reimplementation specification
@@ -151,6 +151,17 @@ CSR, keyboard scancode, mouse X/Y words, input sequence, keyboard FIFO count,
 shared ordinal, generation, and lifecycle. It helps test browser/core behavior
 but cannot replace the separate native pre-IOB witness. ABI 1.8 M9 input state
 is not in the M5 snapshot wire layout; v6 snapshot operations return `NOT_READY`.
+
+For the direct all-100 campaign's final shared-deactivation probe, the producer
+is specifically `KeyboardEvent.code = KeyQ` (the frozen M8 descriptor derives
+scancode `0x52`) followed by tail down at EDGE32 `(60,70)`, then capture-loss
+neutralization at that retained point. Its down and release payloads are derived
+from the selected key descriptor and `encodeCadrM9Edge32`, including each one-hot
+changed mask and the capture-loss cause; they are not duplicated numeric fixtures.
+The receipt verifier derives the four resulting `CDRINP1` records and, after each
+one, compares every `CDRIOB91` field. The final `input-state` must exactly equal
+the state after the final all-up delivery. `P1-TEST` establishes this reconstructed
+worker/core transition only; it does not establish historical device timing.
 
 ## Complete Phase 1 input and control inventory
 
@@ -370,7 +381,7 @@ This is a semantic browser-host protocol, not a source compatibility layer.
 | `T-M9-A11Y` | direct and production-submit button toggles, rejected toggle, directions, Release All accept/reject, release/focus/live controls | state updates only after acceptance; Release All rejection remains terminal after queue drain |
 | `T-M9-WORKER-CHANNEL` | v6 display-capable worker, M8/M9 interleaving, and DOM binding seams | pointer state is owned by the worker, generic kind 4 remains rejected, and shared request IDs are monotonic |
 | `T-M9-IOB` | Direct ABI 1.8 machine receives pointer, keyboard, all-up, stale ordinal, malformed record, and out-of-range coordinate cases | Pointer words/readiness, keyboard FIFO, and ordinal/sequence commit are exact and failure is mutation-free |
-| `T-M8-M9-DEACTIVATE` | key→pointer→blur and pointer→key→capture-loss interleavings | M8 remains held before delivery commit; the tail contains pointer-up then exactly one all-up; commit clears both controllers |
+| `T-M8-M9-DEACTIVATE` | key→pointer→blur and pointer→key→capture-loss interleavings, exact `KeyQ`/`(60,70)` derived payloads, and a mutant of each post-delivery observation | M8 remains held before delivery commit; the tail contains pointer-up then exactly one all-up; every CDRIOB91 transition and the final state are CDRINP-derived; commit clears both controllers |
 
 The executable tests are [pointer queue and EDGE32 tests](../../tests/test_cadr_m9_pointer.mjs),
 [interactive lifecycle tests](../../tests/test_cadr_m9_interactive_lifecycle.mjs), and
@@ -425,11 +436,70 @@ The frozen adapter expands an EDGE32 one-hot changed mask to native
 input does not receive EDGE32's after-mask directly. Therefore the paired result
 records the representations and their shared action schedule, but does not claim
 their bytes are equal or native behavioral equivalence. After the source closure
-has been prepared and built and the M9 Wasm file has been built, the exact campaign
-command is:
+has been prepared and built, run this direct-boundary command once for each selected
+Wasm optimization variant. Each invocation forcibly rebuilds **both** M9 Wasm
+outputs before it creates the private runtime, then records the candidate/base source
+closure, all selected profile/release artifact identities, both output identities, and
+the exact worker/module identities in its result manifest. The two recorded output
+paths, not merely their byte counts and digests, must equal the staged joined O0/O2
+paths. It remains a direct,
+explicitly non-X11/non-CW2 path.
+
+The closure is not a hand-maintained list of the immediate M8/M9 files. The
+provenance builder recursively follows every literal repository-local ESM import
+from the direct runner, worker, M6 replay driver, and exposed M8/M9 browser seams,
+then hashes both the sorted file identities and the resolved import graph. In
+particular, the recorded closure contains the worker's M5 batch and display
+renderer, M11 audio and M12 debugger protocol subhandlers, and the M6 driver's M4
+block service. A literal non-local import is rejected rather than treated as an
+unrecorded implementation dependency; `node:` imports remain a separately recorded
+host-tool/runtime surface. Thus changing a transitive local module changes the join
+instead of leaving a stale direct receipt apparently applicable.
+
+Each direct result is an exact current-owner 0700 session with a fixed 0600 sidecar
+layout. Before a later consumer accepts it, it verifies the complete source binding
+(candidate/base commits and trees, every resolved local module, plus the exact ordered
+11-authority direct-runner list and its scoped Git status); the profile source pins;
+the frozen release record; the five selected artifacts and native-host input; the
+prepared source/build markers and recorded native toolchain; the rendered-private-
+config fingerprint; the immutable private-disk start/end identity; and the frozen M6
+schedule **and Cadet mapping**. The direct command records one complete join before
+the native/browser work and one after it, without rebuilding between them; both must
+be identical. Thus a source, prepared closure, or either selected O0/O2 Wasm output
+that changes during the run makes the result nonconforming.
+
+The raw M6 validation is the producer contract, not a superficial header check: the
+selected meta row, every frozen schedule event, rational guest-boundary clock row and
+same-boundary priority, exact nine A/B/C `DEBUG-IR` writes, 67 A/B/C/suffix boundaries,
+one retained-C settled row, quiescent state/counter conditions, and all 64 96-byte
+`CDRM6I1` idle samples are required. The browser half derives every expected
+`CDRIOB91` state from the accepted `CDRINP1` stream, checks all 100 bounded keyboard
+consumption transitions, requires the complete pointer-up plus one-all-up
+deactivation tail, compares every deactivation `CDRIOB91` transition and final state,
+and accepts only the exact post-READY M8/M9 worker-log sequence. The public static
+test materializes a complete **synthetic** raw transcript and idle stream from the
+tracked release record solely to adversarially exercise this grammar; it does not
+open an ignored runtime capture and does not constitute a native observation. The
+explicit `--execute` direct campaign still requires the native capture—there is no
+synthetic/native fallback in that command.
+Host tool identity is recorded by bytes and hash, not by a machine-specific absolute
+path.
+
+All receipt locators that the verifier opens are fixed relative, non-traversing paths
+confined below the direct session; every live path component, including the prepared
+native root and session ancestry, must be non-symlinked. The outer session identifier
+must name its directory. Path substitutions, including absolute, `..`, and symlinked-
+ancestor forms, are nonconforming. `child_argv` and path-valued child-environment entries in
+the native metadata are different: they are capture-time provenance strings (and may
+be absolute), are compared as metadata where relevant, and are never re-opened or
+treated as locator authority by the join verifier. These checks make an incomplete or
+path-substituted result nonconforming; they do not turn a same-user ignored output
+directory into a cryptographic evidence store.
 
 ```sh
-guix shell node -- node scripts/run-cadr-m8-m9-input-conformance.mjs --execute --native-config build/cadr-oracle/m6-run-smoke/usim.ini --prepared build/cadr-oracle/m8-m9-x11-prepared-v4 --wasm cadr-web/build/cadr-web-m9-O0.wasm
+guix shell node -- node scripts/run-cadr-m8-m9-input-conformance.mjs --execute --native-config build/cadr-oracle/m6-run-smoke/usim.ini --prepared build/cadr-oracle/m8-m9-x11-prepared-v4 --variant O0 --wasm cadr-web/build/cadr-web-m9-O0.wasm
+
+guix shell node -- node scripts/run-cadr-m8-m9-input-conformance.mjs --execute --native-config build/cadr-oracle/m6-run-smoke/usim.ini --prepared build/cadr-oracle/m8-m9-x11-prepared-v4 --variant O2 --wasm cadr-web/build/cadr-web-m9-O2.wasm
 ```
 
 This command was not launched while the M6 benchmark was active. `make -C cadr-web
@@ -481,10 +551,29 @@ Consequently the pre-mutation native witness field named `buttons` is a
 changed-button selector (`0` motion; `1` tail; `2` middle; `3` head), not the
 browser EDGE32 accumulated post-event mask. Press and release deliberately
 carry the same selector.
-Its exact run command is:
+Its exact run command requires the two manifest paths emitted by those successful
+direct commands. The legacy single `--browser-manifest` option is rejected: a
+self-consistent 208-record receipt cannot stand in for a reciprocal source-closure
+join. Before opening X11, the runner recomputes the staged/current closure and
+requires each direct receipt to match it byte-for-byte, including candidate/base
+commits and trees, complete M8/M9 source set, worker, selected profile/release media,
+the prepared direct and X11 witnesses, and both M9 Wasm outputs at their exact joined
+paths. O0 and O2 receipts must name distinct outer direct-session IDs, native-session
+IDs, portable-worker session IDs, private-disk instance IDs, and result roots. After both native X11
+sessions have stopped, the runner recomputes the complete closure and requires it to
+equal the pre-launch binding before it writes its campaign receipt; a source, Wasm,
+prepared-witness, or static-import drift during the live run is therefore a failure.
+All manifest-referenced paths must be relative, non-traversing, contained paths;
+absolute or `..` substitutions are rejected.
+
+This reciprocal join is an integrity check under the local account, not a signature
+scheme. A user able to rewrite both ignored direct result trees and the working tree
+can construct mutually consistent records. A future claim resistant to that actor
+requires a separately described trust root such as signed immutable receipts or an
+independent capture service; no such trust root is claimed here.
 
 ```sh
-guix shell node -- node scripts/run-cadr-m8-m9-x11-campaign.mjs --execute --prepared build/cadr-oracle/m8-m9-x11-prepared-v4 --browser-manifest build/cadr-oracle/REPLACE-WITH-DIRECT-CAMPAIGN/manifest.json
+guix shell node -- node scripts/run-cadr-m8-m9-x11-campaign.mjs --execute --prepared build/cadr-oracle/m8-m9-x11-prepared-v4 --browser-o0-manifest build/cadr-oracle/REPLACE-WITH-O0-DIRECT-CAMPAIGN/manifest.json --browser-o2-manifest build/cadr-oracle/REPLACE-WITH-O2-DIRECT-CAMPAIGN/manifest.json
 ```
 
 Even a successful native run does not close CW2 until a separate browser run
