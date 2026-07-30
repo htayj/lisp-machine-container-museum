@@ -19,7 +19,7 @@ import { executeReady4Campaign, parseReady4CampaignArguments } from
   "../scripts/run-cadr-m6-ready4-campaign.mjs";
 import { assertBenchmarkMatchesReady4Wasm, checkedProjectedSeconds,
   parseReady4SystemdArguments,
-  ready4ObservationSeconds, systemdReady4Command,
+  ready4ObservationSeconds, removeReady4Stage, systemdReady4Command,
   validateReady4SystemdAccounting, validateReady4SystemdPolicy } from
   "../scripts/run-cadr-m6-ready4-systemd.mjs";
 import { compareM6FastBenchmark, parseBenchmarkArguments,
@@ -37,6 +37,19 @@ assert.throws(() => checkedProjectedSeconds(43201), /86400/);
 assert.equal(ready4ObservationSeconds(3600), 7500,
   "observation deadline is runtime cap plus a bounded five-percent margin");
 assert.throws(() => parseBenchmarkArguments([]), /inert without --execute/);
+{
+  const stage = await mkdtemp(resolve(tmpdir(), "m6-ready4-protected-stage-"));
+  const artifacts = resolve(stage, "artifacts");
+  await mkdir(resolve(artifacts, "cadr-web/profiles"), {
+    recursive: true, mode: 0o700,
+  });
+  await writeFile(resolve(artifacts, "cadr-web/profiles/profile.json"), "{}",
+    { mode: 0o400 });
+  await chmod(artifacts, 0o500);
+  await removeReady4Stage(stage);
+  await assert.rejects(lstat(stage), error => error?.code === "ENOENT",
+    "READY4 cleanup removes a protected artifact tree");
+}
 {
   const semantic = {
     lifecycle: "PAUSED", hidden: false, visibilityInitialized: true,

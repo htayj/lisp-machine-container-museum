@@ -287,6 +287,23 @@ async function requireAbsent(path, label) {
   throw new Error(`${label} absence is unverified`);
 }
 
+/*
+ * The staged artifacts directory is deliberately owner-read/execute-only
+ * while a transient unit can see it.  Restore only that directory's
+ * owner-write bit before unlinking its children; the immutable files
+ * themselves do not need to become writable.
+ */
+export async function removeReady4Stage(stageRoot) {
+  const artifacts = resolve(stageRoot, "artifacts");
+  try {
+    await chmod(artifacts, 0o700);
+  } catch (error) {
+    if (error?.code !== "ENOENT") throw error;
+  }
+  await rm(stageRoot, { recursive: true });
+  await requireAbsent(stageRoot, "READY4 staged root");
+}
+
 export async function executeReady4Systemd(options) {
   /* Build before staging; the child is always --no-build and sees only the
    * copied read-only Wasm input. */
@@ -337,8 +354,7 @@ export async function executeReady4Systemd(options) {
       throw new Error("READY4 child changed the staged Wasm identity");
     }
     await stopAndRemove(unit); unitAbsent = true; unit = null;
-    await rm(stage.root, { recursive: true });
-    await requireAbsent(stage.root, "READY4 staged root");
+    await removeReady4Stage(stage.root);
     stage = null;
     const policy = {
       RuntimeMaxUSec: accounting.RuntimeMaxUSec,
@@ -379,8 +395,7 @@ export async function executeReady4Systemd(options) {
     }
     if (stage !== null && (unitAbsent || unit === null)) {
       try {
-        await rm(stage.root, { recursive: true });
-        await requireAbsent(stage.root, "READY4 staged root");
+        await removeReady4Stage(stage.root);
         stage = null;
       } catch (failure) { cleanupError ??= failure; }
     }
