@@ -145,6 +145,24 @@ the public LM-3 software and the `usim` emulator.
 - [CADR-WEB-303 M6-DEVID1 disk-evidence continuation policy](cadr-m6-disk-evidence-continuation-policy.md)
   records the separate retained-prefix/SHA-256-tail evidence profile, `CDRM6E1`,
   READY4 binding boundary, and explicit non-ready runtime status.
+- [CADR-WEB-303 keyboard input reimplementation specification](cadr-keyboard-input-reimplementation-specification.md)
+  defines physical-key normalization, the complete CADR key vocabulary, deterministic
+  press/release ordering, lost-keyup neutralization, and accessible browser controls.
+- [CADR-WEB-303 pointer and interactive lifecycle reimplementation specification](cadr-pointer-and-interactive-lifecycle-reimplementation-specification.md)
+  defines calibrated tablet coordinates, button transitions, focus-loss recovery,
+  pause and resume generations, reset, and closed worker protocol records.
+- [CADR-WEB-303 private disk-overlay reimplementation specification](cadr-private-disk-overlay-reimplementation-specification.md)
+  defines immutable-base overlays, crash-consistent commits, atomic import and
+  export, quota failure, reload recovery, and private-data boundaries.
+- [CADR-WEB-303 audio and Votrax reimplementation specification](cadr-audio-and-votrax-reimplementation-specification.md)
+  defines the selected beeper, speech-event, sample, worklet, and deterministic
+  native-oracle profiles while preserving their remaining runtime evidence gates.
+- [CADR-WEB-303 debugger reimplementation specification](cadr-debugger-reimplementation-specification.md)
+  defines exact-boundary stops, breakpoints, paused read-only inspection, provenance,
+  bug reports, resume behavior, and stale-owner safety.
+- [CADR-WEB-303 browser hardening and accessibility reimplementation specification](cadr-browser-hardening-and-accessibility-reimplementation-specification.md)
+  defines the M13 hostile-input, resource, no-network, worker-loss, persistence,
+  audio, and external accessible-control contract without claiming runtime closure.
 - [CADR-WEB-303 ABI1.1 deterministic tracing and snapshot specification](cadr-deterministic-tracing-and-snapshot-reimplementation-specification.md)
   defines the new portable-core CDRGTRC1/CDRSNAP1 observation and continuation
   contract without presenting it as a historical CADR file format.

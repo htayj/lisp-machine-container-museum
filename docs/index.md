@@ -69,6 +69,24 @@ machine-readable metadata layer while retaining ordinary Markdown as the source.
 - [CADR-WEB-303 M6-DEVID1 disk-evidence continuation policy](mit-cadr/cadr-m6-disk-evidence-continuation-policy.md)
   records the separately compiled retained-prefix/SHA-256-tail continuation
   witness and its explicit, still-unmet READY4 runtime gate.
+- [CADR-WEB-303 keyboard input reimplementation specification](mit-cadr/cadr-keyboard-input-reimplementation-specification.md)
+  specifies complete CADR key normalization and scan transitions, deterministic
+  chord ordering, lost-keyup recovery, and accessible browser alternatives.
+- [CADR-WEB-303 pointer and interactive lifecycle reimplementation specification](mit-cadr/cadr-pointer-and-interactive-lifecycle-reimplementation-specification.md)
+  specifies tablet calibration, ordered button transitions, reset, pause and resume,
+  focus-loss recovery, and generation-scoped worker protocol records.
+- [CADR-WEB-303 private disk-overlay reimplementation specification](mit-cadr/cadr-private-disk-overlay-reimplementation-specification.md)
+  specifies immutable bases, crash-consistent private overlay commits, atomic
+  import/export, quota behavior, and reload recovery.
+- [CADR-WEB-303 audio and Votrax reimplementation specification](mit-cadr/cadr-audio-and-votrax-reimplementation-specification.md)
+  specifies the selected beeper and speech profiles, deterministic samples and
+  events, worklet behavior, and their remaining runtime evidence gates.
+- [CADR-WEB-303 debugger reimplementation specification](mit-cadr/cadr-debugger-reimplementation-specification.md)
+  specifies exact-boundary stops, breakpoints, paused inspection, provenance,
+  portable bug records, resume, and stale-owner safety.
+- [CADR-WEB-303 browser hardening and accessibility reimplementation specification](mit-cadr/cadr-browser-hardening-and-accessibility-reimplementation-specification.md)
+  specifies the M13 hostile-input, resource, no-network, worker-loss, persistence,
+  audio, and external accessible-control contract without claiming runtime closure.
 - [CADR-WEB portable core and host ABI](mit-cadr/cadr-web-core-architecture-decision.md)
   records the portable machine boundary and the deterministic pull-style contract
   between the CADR core and native or browser hosts.
