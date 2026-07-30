@@ -67,8 +67,9 @@ M4_MEDIA_COMPARE_BINARY := build/cadr-m4-media-compare
 M3_WASM_O0 := build/cadr-web-m3-O0.wasm
 M4_WASM_O2 := build/cadr-web-m4-O2.wasm
 M5_WASM_O0 := build/cadr-web-m5-O0.wasm
+M6_DEVID_WASM_O0 := build/cadr-web-m6-devid-O0.wasm
 
-.PHONY: all test clean audit forbidden-symbols exported-symbols mutable-globals dependency-audit header-audit mutant-audit python-cross-parse m3-wasm m3-browser m3-differential m3-conformance m3-snapshot-cross-target m4-unit m4-browser m4-differential m4-media-compare m5-unit
+.PHONY: all test clean audit forbidden-symbols exported-symbols mutable-globals dependency-audit header-audit mutant-audit python-cross-parse m3-wasm m3-browser m3-differential m3-conformance m3-snapshot-cross-target m4-unit m4-browser m4-differential m4-media-compare m5-unit m6-devid-wasm
 
 all: $(LIBRARY) $(HOST_BINARY) $(M2_HOST_BINARY) $(M3_HOST_BINARY) $(M3_SNAPSHOT_HOST_BINARY)
 
@@ -147,7 +148,19 @@ $(M4_WASM_O2): wasm/build-wasm.sh wasm/cadr_wasm_adapter.c wasm/cadr_wasm_runtim
 $(M5_WASM_O0): wasm/build-wasm.sh wasm/cadr_wasm_adapter.c wasm/cadr_wasm_runtime.c $(CORE_SOURCES) $(CORE_HEADERS) | build
 	sh wasm/build-wasm.sh --m5 --opt O0 $@
 
-test: $(TEST_BINARIES) $(HOST_BINARY) $(M2_HOST_BINARY) $(M3_HOST_BINARY) mutant-audit python-cross-parse m3-wasm m3-conformance m3-browser m4-unit m4-browser m5-unit audit
+$(M6_DEVID_WASM_O0): wasm/build-wasm.sh wasm/cadr_wasm_adapter.c wasm/cadr_wasm_runtime.c core/cadr_m6_disk_evidence.c core/cadr_m6_disk_evidence.h $(CORE_SOURCES) $(CORE_HEADERS) | build
+	sh wasm/build-wasm.sh --m6-devid --opt O0 $@
+
+build/test_cadr_m6_disk_evidence: tests/test_cadr_m6_disk_evidence.c core/cadr_m6_disk_evidence.c core/cadr_m6_disk_evidence.h $(LIBRARY) $(CORE_HEADERS) | build
+	$(CC) $(CPPFLAGS) $(CFLAGS) -DCADR_M6_DEVID_WASM -DCADR_M6_DEVID_MAX_TOTAL_EVENTS=UINT64_C\(513\) -o $@ tests/test_cadr_m6_disk_evidence.c core/cadr_m6_disk_evidence.c $(LIBRARY)
+
+build/test_cadr_m6_disk_evidence_differential: tests/test_cadr_m6_disk_evidence_differential.c core/cadr_m6_disk_evidence.c core/cadr_m6_disk_evidence.h $(LIBRARY) $(CORE_HEADERS) | build
+	$(CC) $(CPPFLAGS) $(CFLAGS) -DCADR_M6_DEVID_WASM -o $@ tests/test_cadr_m6_disk_evidence_differential.c core/cadr_m6_disk_evidence.c $(LIBRARY)
+
+build/cadr_m6_tail_fixture: tests/cadr_m6_tail_fixture.c core/cadr_m6_disk_evidence.c core/cadr_m6_disk_evidence.h $(LIBRARY) $(CORE_HEADERS) | build
+	$(CC) $(CPPFLAGS) $(CFLAGS) -DCADR_M6_DEVID_WASM -o $@ tests/cadr_m6_tail_fixture.c core/cadr_m6_disk_evidence.c $(LIBRARY)
+
+test: $(TEST_BINARIES) $(HOST_BINARY) $(M2_HOST_BINARY) $(M3_HOST_BINARY) mutant-audit python-cross-parse m3-wasm m3-conformance m3-browser m4-unit m4-browser m5-unit m6-devid-wasm audit
 	./build/test_cadr_host_api
 	./build/test_cadr_machine_state
 	./build/test_cadr_processor_microengine
@@ -209,6 +222,17 @@ m5-unit: build/test_cadr_m5_scheduler $(M5_WASM_O0)
 	guix shell node -- node ../tests/test_cadr_m5_worker_protocol.mjs
 	guix shell node -- node ../tests/test_cadr_m5_visibility_adapter.mjs
 	guix shell node -- node ../tests/test_cadr_m5_wasm_exports.mjs
+
+m6-devid-wasm: build/test_cadr_m6_disk_evidence build/test_cadr_m6_disk_evidence_differential build/cadr_m6_tail_fixture $(M6_DEVID_WASM_O0)
+	./build/test_cadr_m6_disk_evidence
+	./build/test_cadr_m6_disk_evidence_differential
+	guix shell node -- node ../tests/test_cadr_m6_tail_chain.mjs
+	guix shell node -- node ../tests/test_cadr_m6_disk_evidence_wasm_exports.mjs
+	guix shell node -- node ../tests/test_cadr_m6_disk_evidence_worker.mjs
+	guix shell node -- node ../tests/test_cadr_m6_disk_evidence_parser.mjs
+	guix shell node -- node ../tests/test_cadr_m6_ready4_binding.mjs
+	guix shell node -- node ../scripts/run-cadr-m6-devid-wasm-conformance.mjs --no-build --negative-only
+	guix shell node -- node ../tests/test_cadr_m6_devid_o2_canary_runner.mjs
 
 mutant-audit: $(MUTANT_BASE_BINARIES) $(MUTANT_BINARIES)
 	@for target in $(MUTANT_TARGETS); do \
