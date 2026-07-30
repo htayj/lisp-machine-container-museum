@@ -10,14 +10,19 @@ import {
   assertTextualPayloadPatch,
   boundedCanaryFailure,
   assertSystemdSupervision,
+  minimalFailureEnvelope,
+  patchPaths,
   parseInvocation,
+  publishFailureEnvelopeIfAbsent,
   removeCanaryStage,
   runSupervisedChild,
   validateClosedManifest,
   validateDriverResult,
   writeCanonicalNoReplaceReceipt,
 } from "../scripts/run-cadr-m6-devid-o2-canary.mjs";
-import { parseSystemdShow, removeOwnedCanaryRoots, systemdCommand,
+import { cleanupTransientUnit, normalizeOuterInvocation, parseSystemdShow,
+  outerFailureReceipt, removeOwnedCanaryRoots, requireVacantReceiptPaths, systemdCommand,
+  validateResultEnvelope, validateUnitAbsent,
   validateEffectiveSystemdPolicy, validateSystemdSuccess } from
   "../scripts/run-cadr-m6-devid-o2-canary-systemd.mjs";
 import { copyRegularNoFollow, runExactCanaryLoop } from
@@ -69,6 +74,18 @@ assert.throws(() => assertTextualPayloadPatch(Buffer.from(
 assert.throws(() => assertSelectiveM6Patch([
   "scripts/run-cadr-m6-devid-o2-canary-stage.mjs"]),
   /immutable commit1 control plane/);
+const parsedPatch = Buffer.from([
+  "diff --git a/cadr-web/core/cadr_core.c b/cadr-web/core/cadr_core.c",
+  "index 257cc91..5716ca5 100644",
+  "--- a/cadr-web/core/cadr_core.c",
+  "+++ b/cadr-web/core/cadr_core.c",
+  "@@ -1 +1 @@",
+  "-old",
+  "+new",
+  "",
+].join("\n"));
+assert.deepEqual(patchPaths(parsedPatch), ["cadr-web/core/cadr_core.c"],
+  "the launcher pipes the supplied patch bytes to git apply");
 
 const manifestPaths = [
   "cadr-web/core/cadr_m6_disk_evidence.c",
@@ -134,6 +151,163 @@ assert.equal(transient.args.includes("--collect"), false,
   "the unit remains queryable until the outer wrapper records accounting");
 assert.equal(transient.args.includes("--wait"), false,
   "RemainAfterExit is polled by the outer wrapper rather than deadlocking systemd-run --wait");
+const normalizedInvocation = normalizeOuterInvocation([
+  "--execute",
+  "--m6-patch", "payload.patch",
+  "--artifact-root", ".",
+  "--output", "build/receipt.json",
+], "/museum");
+assert.deepEqual(normalizedInvocation, [
+  "--execute",
+  "--m6-patch", "/museum/payload.patch",
+  "--artifact-root", "/museum",
+  "--output", "/museum/build/receipt.json",
+], "outer paths are resolved before systemd changes the child working directory");
+assert.throws(() => parseInvocation(normalizeOuterInvocation([
+  "--execute", "--receipt-base", "1".repeat(40),
+  "--candidate-commit", "2".repeat(40),
+  "--m6-patch", "a", "--m6-patch", "b",
+  "--artifact-root", ".", "--output", "receipt.json",
+], "/museum")), /duplicate canary argument/);
+assert.throws(() => normalizeOuterInvocation([
+  "--execute", "--output",
+], "/museum"), /needs a value/);
+assert.throws(() => parseInvocation(normalizeOuterInvocation([
+  "--execute", "--unknown-option", "value",
+], "/museum")), /unsupported or duplicate/);
+assert.deepEqual(normalizeOuterInvocation([
+  "--execute", "--m6-patch", "--leading-dash.patch",
+], "/museum"), [
+  "--execute", "--m6-patch", "/museum/--leading-dash.patch",
+], "a path value beginning with a dash is not parsed as another option");
+assert.equal(validateUnitAbsent({
+  code: 0, signal: null, stdout: Buffer.from(""),
+}), true);
+assert.throws(() => validateUnitAbsent({
+  code: 1, signal: null, stdout: Buffer.from(""),
+}), /absence is unverified/,
+"a failed systemctl query is not evidence that the transient unit is absent");
+assert.throws(() => validateUnitAbsent({
+  code: 0, signal: null, stdout: Buffer.from(`${systemdUnit} loaded failed\n`),
+}), /remains loaded/,
+"an exact listed unit prevents a successful cleanup claim");
+{
+  const calls = [];
+  let removed = false;
+  await cleanupTransientUnit({
+    unit: systemdUnit, roots: ["/stage"],
+    captureFn: async (command, args) => {
+      calls.push([command, ...args]);
+      return { code: 0, signal: null, stdout: Buffer.alloc(0) };
+    },
+    removeRoots: async () => { removed = true; },
+  });
+  assert.deepEqual(calls.map(call => call.slice(1, 3)), [
+    ["--user", "stop"], ["--user", "reset-failed"],
+    ["--user", "list-units"],
+  ], "a successful stop does not issue a redundant kill");
+  assert.equal(removed, true);
+}
+{
+  const calls = [];
+  let removed = false;
+  const results = [
+    { code: 1, signal: null, stdout: Buffer.alloc(0) },
+    { code: 1, signal: null, stdout: Buffer.alloc(0) },
+    { code: 1, signal: null, stdout: Buffer.alloc(0) },
+    { code: 1, signal: null, stdout: Buffer.alloc(0) },
+    { code: 0, signal: null, stdout: Buffer.alloc(0) },
+  ];
+  await cleanupTransientUnit({
+    unit: systemdUnit, roots: ["/stage", "/private"],
+    captureFn: async (command, args) => {
+      calls.push([command, ...args]); return results.shift();
+    },
+    removeRoots: async paths => {
+      assert.deepEqual(paths, ["/stage", "/private"]); removed = true;
+    },
+  });
+  assert.deepEqual(calls.map(call => call.slice(1, 3)), [
+    ["--user", "stop"], ["--user", "kill"], ["--user", "stop"],
+    ["--user", "reset-failed"], ["--user", "list-units"],
+  ], "cleanup attempts stop, kill, stop, reset, then proves absence");
+  assert.equal(removed, true,
+    "a never-created unit may release roots only after exact absence proof");
+}
+{
+  let removed = false;
+  await assert.rejects(() => cleanupTransientUnit({
+    unit: systemdUnit, roots: ["/stage"],
+    captureFn: async (command, args) => {
+      if (args.includes("list-units")) {
+        return { code: 1, signal: null, stdout: Buffer.alloc(0) };
+      }
+      return { code: 0, signal: null, stdout: Buffer.alloc(0) };
+    },
+    removeRoots: async () => { removed = true; },
+  }), /absence is unverified/);
+  assert.equal(removed, false,
+    "unverified or live units retain their private roots for safe cleanup");
+}
+{
+  let removed = false;
+  await assert.rejects(() => cleanupTransientUnit({
+    unit: systemdUnit, roots: ["/stage"],
+    captureFn: async (command, args) => args.includes("list-units") ?
+      { code: 0, signal: "SIGTERM", stdout: Buffer.alloc(0) } :
+      { code: 0, signal: null, stdout: Buffer.alloc(0) },
+    removeRoots: async () => { removed = true; },
+  }), /absence is unverified/);
+  assert.equal(removed, false,
+    "a signaled absence query cannot authorize root removal");
+}
+{
+  const childFailure = {
+    reason: "frozen-gate-failed", diagnostic_sha256: "ab".repeat(32),
+  };
+  const failedEnvelope = validateResultEnvelope({
+    schema: "cadr-m6-devid-o2-canary-result-envelope-v1",
+    outcome: "canary-failed",
+    receipt: {
+      schema: "cadr-m6-devid-o2-canary-failure-v1",
+      failure: childFailure,
+    },
+  });
+  assert.equal(failedEnvelope.receipt.failure, childFailure);
+  assert.throws(() => validateResultEnvelope({
+    ...failedEnvelope,
+    receipt: { ...failedEnvelope.receipt,
+      failure: { reason: "unsafe", diagnostic_sha256: "/private/path" } },
+  }), /malformed/);
+  assert.throws(() => validateResultEnvelope({
+    ...failedEnvelope,
+    receipt: { ...failedEnvelope.receipt,
+      failure: { ...childFailure, private_path: "/private/path" } },
+  }), /malformed/,
+  "a child failure witness cannot smuggle extra durable evidence fields");
+  const receipt = outerFailureReceipt({
+    reason: "canary-and-unit-cleanup-failed", unit: systemdUnit,
+    run: { code: 7, signal: null },
+    primary: new Error("/private/input primary"),
+    cleanupFailure: new Error("/private/root cleanup"),
+    childFailure,
+  });
+  assert.equal(receipt.reason, "canary-and-unit-cleanup-failed");
+  assert.deepEqual(Object.keys(receipt.failures.primary).sort(),
+    ["diagnostic_sha256", "reason"]);
+  assert.deepEqual(Object.keys(receipt.failures.cleanup).sort(),
+    ["diagnostic_sha256", "reason"]);
+  assert.notEqual(receipt.failures.primary.diagnostic_sha256,
+    receipt.failures.cleanup.diagnostic_sha256);
+  assert.deepEqual(receipt.failures.child, childFailure,
+    "the outer failure retains the child's already bounded failure category");
+  assert.deepEqual(Object.keys(outerFailureReceipt({
+    reason: "canary-child-failed", unit: systemdUnit,
+    childFailure: { ...childFailure, private_path: "/private/path" },
+  }).failures.child).sort(), ["diagnostic_sha256", "reason"],
+  "outer serialization reconstructs the two-field witness defensively");
+  assert.doesNotMatch(JSON.stringify(receipt), /\/private|input|root/);
+}
 const accountingFixture = parseSystemdShow([
   "MemoryPeak=10", "CPUUsageNSec=20", "TasksCurrent=0", "TasksPeak=3",
   "IOReadBytes=4", "IOWriteBytes=5", "IPIngressBytes=6", "IPEgressBytes=7",
@@ -290,6 +464,32 @@ const directory = await mkdtemp(resolve(tmpdir(), "cadr-m6-devid-canary-test-"))
 try {
   await chmod(directory, 0o700);
   const receipt = resolve(directory, "receipt.json");
+  const earlyEnvelope = resolve(directory, "early-envelope.json");
+  assert.equal(await publishFailureEnvelopeIfAbsent(earlyEnvelope,
+    new Error("patch parser rejected malformed input")), true);
+  const earlyResult = validateResultEnvelope(JSON.parse(
+    await readFile(earlyEnvelope, "utf8")));
+  assert.equal(earlyResult.outcome, "canary-failed");
+  assert.equal(earlyResult.receipt.failure.reason, "candidate-identity-failed",
+    "a pre-stage patchPaths failure publishes a bounded child witness");
+  assert.equal(await publishFailureEnvelopeIfAbsent(earlyEnvelope,
+    new Error("replacement")), false,
+  "a full later failure boundary preserves an already published envelope");
+  const stagedEnvelope = minimalFailureEnvelope(
+    new Error("staged canary returned non-JSON"));
+  assert.equal(validateResultEnvelope(stagedEnvelope).receipt.failure.reason,
+    "stage-protocol-failed",
+  "a later staged-driver failure uses the same closed bounded envelope");
+  const vacantReceipt = resolve(directory, "vacant.json");
+  await requireVacantReceiptPaths(vacantReceipt);
+  await writeCanonicalNoReplaceReceipt(vacantReceipt, { schema: "fixture" });
+  await assert.rejects(() => requireVacantReceiptPaths(vacantReceipt),
+    /already exists/, "the outer wrapper refuses a pre-existing success receipt");
+  const vacantFailureBase = resolve(directory, "vacant-failure.json");
+  await writeCanonicalNoReplaceReceipt(`${vacantFailureBase}.failure.json`,
+    { schema: "fixture" });
+  await assert.rejects(() => requireVacantReceiptPaths(vacantFailureBase),
+    /already exists/, "the outer wrapper refuses a pre-existing failure receipt");
   const tinySource = resolve(directory, "tiny-source");
   const tinyCopy = resolve(directory, "tiny-copy");
   await writeFile(tinySource, "tiny");

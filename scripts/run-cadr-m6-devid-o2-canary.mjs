@@ -77,8 +77,10 @@ export function parseInvocation(argv) {
 }
 
 function command(name, args, options = {}) {
+  const stdio = options.stdio ??
+    [options.input === undefined ? "ignore" : "pipe", "pipe", "pipe"];
   return execFileSync(name, args, { cwd: options.cwd, input: options.input,
-    encoding: options.encoding ?? "utf8", stdio: options.stdio ?? ["ignore", "pipe", "pipe"] });
+    encoding: options.encoding ?? "utf8", stdio });
 }
 
 async function archiveRevision(revision, stage) {
@@ -93,7 +95,7 @@ async function archiveRevision(revision, stage) {
   });
 }
 
-function patchPaths(patchBytes) {
+export function patchPaths(patchBytes) {
   const output = command("git", ["apply", "--numstat", "--summary", "-"],
     { cwd: ROOT, input: patchBytes });
   const paths = [];
@@ -400,11 +402,30 @@ export async function removeCanaryStage(path) {
   await rm(path, { recursive: true, force: true });
 }
 
-async function main() {
-  const options = parseInvocation(process.argv.slice(2));
-  if (options.help === true) {
-    process.stdout.write(`${usage}\nStages only the receipt-bound base and selective M6 patch. It supervises a tracked staged driver at 1,130,000 completed guest boundaries, with a 1 GiB Node heap cap and a 4-hour wall limit. Without --execute it never runs.\n`); return;
+export function minimalFailureEnvelope(error) {
+  return Object.freeze({
+    schema: "cadr-m6-devid-o2-canary-result-envelope-v1",
+    outcome: "canary-failed",
+    receipt: Object.freeze({
+      schema: "cadr-m6-devid-o2-canary-failure-v1",
+      outer_cleanup_required: true,
+      failure: boundedCanaryFailure(error),
+    }),
+  });
+}
+
+export async function publishFailureEnvelopeIfAbsent(path, error) {
+  try {
+    await lstat(path);
+    return false;
+  } catch (inspection) {
+    if (inspection?.code !== "ENOENT") throw inspection;
   }
+  await writeCanonicalNoReplaceReceipt(path, minimalFailureEnvelope(error));
+  return true;
+}
+
+async function runCanary(options) {
   const supervision = assertSystemdSupervision(process.env,
     await readFile("/proc/self/cgroup", "utf8"));
   await requirePrivateReceiptDirectory(dirname(options.output));
@@ -512,6 +533,24 @@ async function main() {
       Object.freeze({ schema: "cadr-m6-devid-o2-canary-result-envelope-v1",
         outcome: "canary-failed", receipt: failure })); }
     catch (publication) { throw new AggregateError([error, publication], "canary failed and its private failure receipt was not published"); }
+    throw error;
+  }
+}
+
+async function main() {
+  const options = parseInvocation(process.argv.slice(2));
+  if (options.help === true) {
+    process.stdout.write(`${usage}\nStages only the receipt-bound base and selective M6 patch. It supervises a tracked staged driver at 1,130,000 completed guest boundaries, with a 1 GiB Node heap cap and a 4-hour wall limit. Without --execute it never runs.\n`); return;
+  }
+  try {
+    await runCanary(options);
+  } catch (error) {
+    try {
+      await publishFailureEnvelopeIfAbsent(options.resultEnvelope, error);
+    } catch (publication) {
+      throw new AggregateError([error, publication],
+        "canary failed and its private failure envelope was not published");
+    }
     throw error;
   }
 }

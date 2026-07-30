@@ -11,6 +11,7 @@ import { dirname, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { canonicalJson, writeCanonicalNoReplaceReceipt } from
   "./run-cadr-m6-devid-o2-canary.mjs";
+import { boundedCanaryFailure } from "./run-cadr-m6-devid-o2-canary.mjs";
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const LAUNCHER = resolve(ROOT, "scripts/run-cadr-m6-devid-o2-canary.mjs");
@@ -51,6 +52,21 @@ export function systemdCommand(argv, nonce = randomBytes(16).toString("hex")) {
       process.execPath, LAUNCHER, "--systemd-child", ...argv,
     ]),
   });
+}
+
+export function normalizeOuterInvocation(argv, cwd = process.cwd()) {
+  const normalized = [...argv];
+  for (let index = 0; index < normalized.length; index += 1) {
+    if (["--m6-patch", "--artifact-root", "--output"].includes(normalized[index])) {
+      if (typeof normalized[index + 1] !== "string" ||
+          normalized[index + 1].length === 0) {
+        throw new TypeError(`${normalized[index]} needs a value`);
+      }
+      normalized[index + 1] = resolve(cwd, normalized[index + 1]);
+      index += 1;
+    }
+  }
+  return Object.freeze(normalized);
 }
 
 function outputPath(argv) {
@@ -141,6 +157,25 @@ export function validateEffectiveSystemdPolicy(value) {
   return value;
 }
 
+export function validateUnitAbsent(result) {
+  if (result?.code !== 0 || result.signal !== null ||
+      result.stdout.toString("utf8").trim() !== "") {
+    throw new Error("transient canary unit remains loaded or absence is unverified");
+  }
+  return true;
+}
+
+export async function requireVacantReceiptPaths(output) {
+  for (const path of [output, `${output}.failure.json`]) {
+    try {
+      await lstat(path);
+      throw new Error("canary receipt path already exists");
+    } catch (error) {
+      if (error?.code !== "ENOENT") throw error;
+    }
+  }
+}
+
 export async function removeOwnedCanaryRoots(paths) {
   for (const path of paths) {
     await rm(path, { recursive: true, force: true });
@@ -153,9 +188,78 @@ export async function removeOwnedCanaryRoots(paths) {
   }
 }
 
+export async function cleanupTransientUnit({
+  unit, roots, captureFn = capture, removeRoots = removeOwnedCanaryRoots,
+}) {
+  const stopArgs = ["--user", "stop", unit];
+  let stopped = await captureFn("systemctl", stopArgs);
+  if (stopped.code !== 0 || stopped.signal !== null) {
+    await captureFn("systemctl", ["--user", "kill", "--kill-whom=all",
+      "--signal=SIGKILL", unit]).catch(() => undefined);
+    stopped = await captureFn("systemctl", stopArgs);
+  }
+  await captureFn("systemctl", ["--user", "reset-failed", unit])
+    .catch(() => undefined);
+  const verify = await captureFn("systemctl", ["--user", "list-units", "--all",
+    "--plain", "--no-legend", "--no-pager", unit]);
+  validateUnitAbsent(verify);
+  await removeRoots(roots);
+  return Object.freeze({ unit_absent: true, roots_removed: true });
+}
+
+export function outerFailureReceipt({
+  reason, unit, accounting = null, run = null, primary = null,
+  cleanupFailure = null, childFailure = null, childEnvelopeRetained = false,
+}) {
+  const boundedChildFailure = childFailure === null ? null : Object.freeze({
+    reason: childFailure.reason,
+    diagnostic_sha256: childFailure.diagnostic_sha256,
+  });
+  return Object.freeze({
+    schema: "cadr-m6-devid-o2-canary-outer-failure-v1", reason, unit,
+    systemd_accounting: accounting,
+    child: Object.freeze({ exit_code: run?.code ?? null,
+      signal: run?.signal ?? null }),
+    failures: Object.freeze({
+      primary: primary === null ? null : boundedCanaryFailure(primary),
+      cleanup: cleanupFailure === null ? null :
+        boundedCanaryFailure(cleanupFailure),
+      child: boundedChildFailure,
+    }),
+    ...(childEnvelopeRetained ? { child_envelope_retained: true } : {}),
+  });
+}
+
+export function validateResultEnvelope(value) {
+  if (value?.schema !== "cadr-m6-devid-o2-canary-result-envelope-v1" ||
+      !["canary-complete", "canary-failed"].includes(value?.outcome) ||
+      value?.receipt === null || typeof value?.receipt !== "object") {
+    throw new Error("supervised child did not publish the closed result envelope");
+  }
+  if (value.outcome === "canary-complete") {
+    if (value.receipt.schema !== "cadr-m6-devid-o2-canary-receipt-v1") {
+      throw new Error("supervised child success envelope is malformed");
+    }
+  } else {
+    const failure = value.receipt.failure;
+    if (value.receipt.schema !== "cadr-m6-devid-o2-canary-failure-v1" ||
+        failure === null || typeof failure !== "object" ||
+        Object.keys(failure).sort().join(",") !==
+          "diagnostic_sha256,reason" ||
+        !["reason", "diagnostic_sha256"].every(key =>
+          typeof failure[key] === "string") ||
+        !/^[a-z0-9-]{1,64}$/.test(failure.reason) ||
+        !/^[0-9a-f]{64}$/.test(failure.diagnostic_sha256)) {
+      throw new Error("supervised child failure envelope is malformed");
+    }
+  }
+  return value;
+}
+
 async function main() {
-  const original = process.argv.slice(2);
+  const original = normalizeOuterInvocation(process.argv.slice(2));
   const output = outputPath(original);
+  await requireVacantReceiptPaths(output);
   const stageRoot = await mkdtemp("/tmp/cadr-m6-devid-stage-");
   let privateRoot;
   try {
@@ -180,60 +284,66 @@ async function main() {
       throw new Error(`could not query transient unit accounting: ${shown.stderr}`);
     }
     accounting = parseSystemdShow(shown.stdout.toString("utf8"));
-    validateSystemdSuccess(waited, accounting);
     validateEffectiveSystemdPolicy(accounting);
-    result = JSON.parse(await readFile(envelope, "utf8"));
-    if (result?.schema !== "cadr-m6-devid-o2-canary-result-envelope-v1") {
-      throw new Error("supervised child did not publish the closed result envelope");
-    }
+    result = validateResultEnvelope(JSON.parse(await readFile(envelope, "utf8")));
+    validateSystemdSuccess(waited, accounting);
   } catch (error) {
     primary = error;
   }
   let cleanupFailure = null;
   try {
-    await unlink(envelope).catch(() => undefined);
-    const reset = await capture("systemctl", ["--user", "reset-failed", command.unit]);
-    let stopped = await capture("systemctl", ["--user", "stop", command.unit]);
-    if (stopped.code !== 0 || stopped.signal !== null) {
-      await capture("systemctl", ["--user", "kill", "--kill-whom=all",
-        "--signal=SIGKILL", command.unit]).catch(() => undefined);
-      stopped = await capture("systemctl", ["--user", "stop", command.unit]);
-    }
-    const verify = await capture("systemctl", ["--user", "show", command.unit,
-      "--property=LoadState"]).catch(() => null);
-    await removeOwnedCanaryRoots([stageRoot, privateRoot]);
-    if (stopped.code !== 0 || reset.code !== 0 ||
-        (verify !== null && verify.code === 0 &&
-        !verify.stdout.toString("utf8").includes("LoadState=not-found"))) {
-      cleanupFailure = new Error("transient canary unit was not collected after accounting");
-    }
+    await cleanupTransientUnit({ unit: command.unit,
+      roots: [stageRoot, privateRoot] });
   } catch (error) {
     cleanupFailure = error;
   }
   if (primary !== null || cleanupFailure !== null ||
       run?.code !== 0 || run?.signal !== null ||
       result?.outcome !== "canary-complete") {
-    const reason = cleanupFailure !== null ? "unit-cleanup-failed" :
+    const reason = primary !== null && cleanupFailure !== null ?
+      "canary-and-unit-cleanup-failed" :
+      cleanupFailure !== null ? "unit-cleanup-failed" :
       primary !== null ? "supervision-evidence-failed" : "canary-child-failed";
-    await writeCanonicalNoReplaceReceipt(`${output}.failure.json`, Object.freeze({
-      schema: "cadr-m6-devid-o2-canary-outer-failure-v1", reason,
-      unit: command.unit, systemd_accounting: accounting ?? null,
-      child: Object.freeze({ exit_code: run?.code ?? null,
-        signal: run?.signal ?? null }),
-    }));
-    throw cleanupFailure ?? primary ?? new Error(reason);
+    await writeCanonicalNoReplaceReceipt(`${output}.failure.json`,
+      outerFailureReceipt({ reason, unit: command.unit, accounting, run,
+        primary, cleanupFailure,
+        childFailure: result?.outcome === "canary-failed" ?
+          result.receipt.failure : null }));
+    await unlink(envelope).catch(() => undefined);
+    if (primary !== null && cleanupFailure !== null) {
+      throw new AggregateError([primary, cleanupFailure], reason);
+    }
+    throw primary ?? cleanupFailure ?? new Error(reason);
   }
   const final = Object.freeze({ ...result.receipt,
     systemd_accounting: accounting, unit_cleanup_verified: true,
     outer_roots_removed: true });
-  const written = await writeCanonicalNoReplaceReceipt(output, final);
-  process.stdout.write(`${canonicalJson(Object.freeze({
-    outcome: "canary-complete", receipt: written, receipt_path: output }))}\n`);
+  try {
+    const written = await writeCanonicalNoReplaceReceipt(output, final);
+    await unlink(envelope).catch(() => undefined);
+    process.stdout.write(`${canonicalJson(Object.freeze({
+      outcome: "canary-complete", receipt: written, receipt_path: output }))}\n`);
+  } catch (publication) {
+    try {
+      await writeCanonicalNoReplaceReceipt(`${output}.failure.json`,
+        outerFailureReceipt({
+          reason: "final-receipt-publication-failed", unit: command.unit,
+          accounting, run, primary: publication, childEnvelopeRetained: true,
+        }));
+    } catch (failurePublication) {
+      throw new AggregateError([publication, failurePublication],
+        "final and failure receipt publication failed");
+    }
+    throw publication;
+  }
 }
 
 if (import.meta.url === pathToFileURL(resolve(process.argv[1] ?? "")).href) {
   main().catch(error => {
-    process.stderr.write(`${error?.stack ?? String(error)}\n`);
+    process.stderr.write(`${canonicalJson(Object.freeze({
+      outcome: "canary-wrapper-failed",
+      failure: boundedCanaryFailure(error),
+    }))}\n`);
     process.exitCode = 1;
   });
 }
