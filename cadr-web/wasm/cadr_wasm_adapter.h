@@ -48,9 +48,6 @@ uint32_t cadr_wasm_host_complete(uint32_t operation, uint32_t host_status,
 uint32_t cadr_wasm_disk_observation(void);
 uint32_t cadr_wasm_boot_media_observation(void);
 uint32_t cadr_wasm_disk_evidence(void);
-#if defined(CADR_M6_DEVID_WASM)
-uint32_t cadr_wasm_m6_disk_evidence_summary(void);
-#endif
 uint32_t cadr_wasm_machine_info(void);
 uint32_t cadr_wasm_trace_start(uint32_t transport_mode, uint32_t capacity,
                                uint32_t selector_low, uint32_t selector_high,

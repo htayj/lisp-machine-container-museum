@@ -1,6 +1,7 @@
 #!/usr/bin/env node
-/* Build the one-run cause witness from an explicitly named commit, never from
- * the mutable index or worktree. */
+/* Build the one-run cause witness from the index, never from an in-progress
+ * worktree.  In particular, untracked or unstaged M7 display sources cannot
+ * enter this diagnostic module. */
 import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { mkdtemp, readFile, rm } from "node:fs/promises";
@@ -8,13 +9,13 @@ import { dirname, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
-const DIAGNOSTIC_DELTA_PATHS = Object.freeze([
-  "cadr-web/oracle/patches/0004-m6-postterminal-diagnostic.patch",
-  "cadr-web/oracle/patches/0005-m6-receipt-bound-diagnostic.patch",
-]);
-const FROZEN_M6_POSTTERMINAL_DIAGNOSTIC_SHA256 =
-  "35d690d33a4ee815f476b7893c31276f50f7f34c90709fb61aca65b418d5d2fd";
+const PATCH = resolve(ROOT,
+  "cadr-web/oracle/patches/0004-m6-postterminal-diagnostic.patch");
 const TMP_ROOT = "/tmp";
+const DELTA_OWNED_CONSTRUCTION_SOURCES = Object.freeze([
+  "cadr-web/tests/test_cadr_m6_postterminal_adapter.c",
+  "scripts/run-cadr-m6-one-run-diagnostic-stage.mjs",
+]);
 
 function canonicalJson(value) {
   if (Array.isArray(value)) return `[${value.map(canonicalJson).join(",")}]`;
@@ -39,66 +40,6 @@ function run(command, args, options = {}) {
   });
 }
 
-function receiptBoundFile(revision, path) {
-  try {
-    return execFileSync("git", ["show", `${revision}:${path}`], {
-      cwd: ROOT,
-      encoding: "buffer",
-      stdio: ["ignore", "pipe", "pipe"],
-    });
-  } catch (error) {
-    throw new Error(`M6 receipt base does not own ${path}`, { cause: error });
-  }
-}
-
-function resolveReceiptBoundBase(revision) {
-  let resolved;
-  try {
-    resolved = run("git", ["rev-parse", "--verify", `${revision}^{commit}`]).trim();
-  } catch (error) {
-    throw new Error("M6 diagnostic receipt base does not resolve to a commit", { cause: error });
-  }
-  if (resolved !== revision) {
-    throw new Error("M6 diagnostic receipt base did not resolve to the supplied full commit");
-  }
-  return resolved;
-}
-
-function receiptBoundDiagnosticDeltas(revision) {
-  const deltas = DIAGNOSTIC_DELTA_PATHS.map(path => {
-    const bytes = receiptBoundFile(revision, path);
-    return Object.freeze({ path, sha256: sha256(bytes), bytes });
-  });
-  if (deltas[0].sha256 !== FROZEN_M6_POSTTERMINAL_DIAGNOSTIC_SHA256) {
-    throw new Error("M6 receipt base changed the frozen 0004 diagnostic delta");
-  }
-  return Object.freeze(deltas);
-}
-
-function revalidateReceiptBoundDiagnosticDeltas(build) {
-  if (typeof build?.receipt_bound_base !== "string" ||
-      !/^[0-9a-f]{40}$/.test(build.receipt_bound_base) ||
-      !Array.isArray(build.diagnostic_deltas) ||
-      build.diagnostic_deltas.length !== DIAGNOSTIC_DELTA_PATHS.length) {
-    throw new TypeError("isolated M6 diagnostic build has no receipt-bound delta identities");
-  }
-  const resolvedBase = resolveReceiptBoundBase(build.receipt_bound_base);
-  if (run("git", ["rev-parse", `${resolvedBase}^{tree}`]).trim() !==
-        build.staged_tree_git_object) {
-    throw new Error("isolated M6 diagnostic receipt base no longer resolves to its staged tree");
-  }
-  const expected = receiptBoundDiagnosticDeltas(resolvedBase);
-  for (let index = 0; index < expected.length; index += 1) {
-    const actual = build.diagnostic_deltas[index];
-    if (actual === null || typeof actual !== "object" || Array.isArray(actual) ||
-        Object.keys(actual).sort().join(",") !== "path,sha256" ||
-        actual.path !== expected[index].path || actual.sha256 !== expected[index].sha256) {
-      throw new Error("isolated M6 diagnostic delta identities changed after build");
-    }
-  }
-  return expected;
-}
-
 /* Kept separately testable so a caller cannot accidentally reintroduce
  * --unsafe-paths while changing the isolated-build plumbing.  git apply's
  * ordinary path validation is intentional: the diagnostic delta may only
@@ -116,10 +57,9 @@ function artifact(path, bytes) {
 }
 
 export async function revalidateM6DiagnosticIsolated(build) {
-  if (build?.schema !== "cadr-m6-isolated-diagnostic-build-v3") {
+  if (build?.schema !== "cadr-m6-isolated-diagnostic-build-v2") {
     throw new TypeError("not an isolated M6 diagnostic build record");
   }
-  revalidateReceiptBoundDiagnosticDeltas(build);
   const paths = [
     ["wasm", build.wasm.path],
     ["worker", build.worker.path],
@@ -140,26 +80,29 @@ export async function revalidateM6DiagnosticIsolated(build) {
   return build;
 }
 
-export async function buildM6DiagnosticIsolated({ receiptBase } = {}) {
-  if (typeof receiptBase !== "string" || !/^[0-9a-f]{40}$/.test(receiptBase)) {
-    throw new TypeError("M6 diagnostic build requires --receipt-base as a full commit");
+export async function buildM6DiagnosticIsolated() {
+  const stagedConstructionSources = run("git", ["diff", "--cached", "--name-only", "--",
+    ...DELTA_OWNED_CONSTRUCTION_SOURCES]).trim();
+  if (stagedConstructionSources !== "") {
+    throw new Error("M6 diagnostic construction sources belong only to 0004; " +
+      "remove them from the index before building the isolated tree");
   }
-  const resolvedBase = resolveReceiptBoundBase(receiptBase);
-  const [builderBytes, launcherBytes] = await Promise.all([
-    readFile(fileURLToPath(import.meta.url)),
+  const [patchBytes, builderBytes, launcherBytes] = await Promise.all([
+    readFile(PATCH), readFile(fileURLToPath(import.meta.url)),
     readFile(resolve(ROOT, "scripts/run-cadr-m6-one-run-diagnostic.mjs")),
   ]);
-  const stagedTree = run("git", ["rev-parse", `${resolvedBase}^{tree}`]).trim();
-  const diagnosticDeltas = receiptBoundDiagnosticDeltas(resolvedBase);
+  const stagedTree = run("git", ["write-tree"]).trim();
   const stage = await mkdtemp(`${TMP_ROOT}/cadr-m6-diagnostic-`);
   try {
-    const archive = execFileSync("git", ["archive", "--format=tar", resolvedBase], {
+    /* write-tree names an immutable tree object.  Archive that exact object;
+     * do not consult the live index again after recording its identity. */
+    const archive = execFileSync("git", ["archive", "--format=tar", stagedTree], {
       cwd: ROOT,
       encoding: "buffer",
       maxBuffer: 512 * 1024 * 1024,
     });
     execFileSync("tar", ["-xf", "-", "-C", stage], { input: archive });
-    for (const delta of diagnosticDeltas) applyM6DiagnosticDelta(stage, delta.bytes);
+    applyM6DiagnosticDelta(stage, patchBytes);
     const wasmPath = resolve(stage, "cadr-web/build/cadr-web-m6-diagnostic-O0.wasm");
     execFileSync("sh", [resolve(stage, "cadr-web/wasm/build-wasm.sh"),
       "--m6-diagnostic", "--opt", "O0", wasmPath], {
@@ -181,11 +124,8 @@ export async function buildM6DiagnosticIsolated({ receiptBase } = {}) {
     }
     return Object.freeze({
       builder_sha256: sha256(builderBytes),
-      diagnostic_deltas: Object.freeze(diagnosticDeltas.map(delta => Object.freeze({
-        path: delta.path, sha256: delta.sha256,
-      }))),
-      schema: "cadr-m6-isolated-diagnostic-build-v3",
-      receipt_bound_base: resolvedBase,
+      diagnostic_delta_sha256: sha256(patchBytes),
+      schema: "cadr-m6-isolated-diagnostic-build-v2",
       staged_tree_git_object: stagedTree,
       stage_directory: stage,
       wasm: Object.freeze({
@@ -207,11 +147,7 @@ export async function buildM6DiagnosticIsolated({ receiptBase } = {}) {
 
 if (typeof process.argv[1] === "string" &&
     import.meta.url === pathToFileURL(resolve(process.argv[1])).href) {
-  const args = process.argv.slice(2);
-  if (args.length !== 2 || args[0] !== "--receipt-base") {
-    process.stderr.write("usage: node scripts/build-cadr-m6-diagnostic-isolated.mjs --receipt-base FULL-COMMIT\n");
-    process.exitCode = 1;
-  } else buildM6DiagnosticIsolated({ receiptBase: args[1] }).then(result => {
+  buildM6DiagnosticIsolated().then(result => {
     process.stdout.write(`${canonicalJson(result)}\n`);
   }).catch(error => {
     process.stderr.write(`${error?.stack ?? String(error)}\n`);

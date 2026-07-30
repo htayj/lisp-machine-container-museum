@@ -4,9 +4,6 @@
  */
 #include "cadr_boundary_state.h"
 #include "cadr_disk_evidence.h"
-#if defined(CADR_M6_DEVID_WASM)
-#include "cadr_m6_disk_evidence.h"
-#endif
 #include "cadr_host_api.h"
 #include "cadr_machine.h"
 #include "cadr_bus_device.h"
@@ -23,11 +20,7 @@
 #include <stdlib.h>
 #include <string.h>
 
-#if defined(CADR_WASM_NATIVE_TEST)
-#define CADR_WASM_EXPORT(name)
-#else
 #define CADR_WASM_EXPORT(name) __attribute__((export_name(name)))
-#endif
 
 static cadr_machine *cadr_wasm_machine;
 static uint8_t *cadr_wasm_input;
@@ -37,25 +30,16 @@ static uint8_t *cadr_wasm_meta;
 static uint8_t *cadr_wasm_snapshot;
 static uint64_t cadr_wasm_snapshot_capacity;
 static uint64_t cadr_wasm_snapshot_written;
-#if !defined(CADR_M6_DEVID_WASM)
 static uint8_t *cadr_wasm_snapshot_input;
 static uint64_t cadr_wasm_snapshot_input_capacity;
 static uint32_t cadr_wasm_restore_used;
-#endif
 
 #define CADR_WASM_TRANSFER_BYTES UINT32_C(1048576)
-#if defined(CADR_M6_DEVID_WASM)
-#define CADR_WASM_OUTPUT_BYTES UINT32_C(512)
-#else
 #define CADR_WASM_OUTPUT_BYTES UINT32_C(96)
-#endif
 #define CADR_WASM_META_BYTES UINT32_C(32)
 #define CADR_WASM_HOST_REQUEST_BYTES \
     (CADR_MAX_HOST_DESCRIPTOR_BYTES + CADR_MAX_HOST_REQUEST_PAYLOAD_BYTES)
-#if defined(CADR_M6_DEVID_WASM)
-#define CADR_WASM_SNAPSHOT_ABI_MINOR CADR_ABI_MINOR_M5
-#define CADR_WASM_ACTIVE_ABI_MINOR CADR_ABI_MINOR_M5
-#elif defined(CADR_M5_WASM)
+#if defined(CADR_M5_WASM)
 #define CADR_WASM_SNAPSHOT_ABI_MINOR CADR_ABI_MINOR_M5
 #define CADR_WASM_ACTIVE_ABI_MINOR CADR_ABI_MINOR_M5
 #elif defined(CADR_M4_WASM)
@@ -530,12 +514,6 @@ uint32_t cadr_wasm_disk_evidence(void)
     uint64_t written = 0U;
     cadr_status status;
     if (cadr_wasm_machine == NULL) return CADR_STATUS_NOT_READY;
-#if defined(CADR_M6_DEVID_WASM)
-    if (cadr_m6_disk_evidence_tail_started(
-            &cadr_wasm_machine->state.m6_disk_evidence)) {
-        return CADR_STATUS_NOT_READY;
-    }
-#endif
     status = cadr_disk_evidence_serialized_size(
         &cadr_wasm_machine->state.disk_evidence, &byte_count);
     if (status != CADR_STATUS_OK) return status;
@@ -554,29 +532,6 @@ uint32_t cadr_wasm_disk_evidence(void)
     cadr_wasm_meta_result(byte_count, 0U);
     return CADR_STATUS_OK;
 }
-
-#if defined(CADR_M6_DEVID_WASM)
-CADR_WASM_EXPORT("cadr_wasm_m6_disk_evidence_summary")
-uint32_t cadr_wasm_m6_disk_evidence_summary(void)
-{
-    uint64_t written = 0U;
-    cadr_status status;
-    if (cadr_wasm_machine == NULL) return CADR_STATUS_NOT_READY;
-    if (cadr_wasm_input_reserve((uint32_t)CADR_M6_DISK_EVIDENCE_SUMMARY_BYTES) == 0U) {
-        return CADR_STATUS_NO_MEMORY;
-    }
-    status = cadr_m6_disk_evidence_summary_serialize(
-        &cadr_wasm_machine->state.m6_disk_evidence,
-        &cadr_wasm_machine->state.disk_evidence, cadr_wasm_input,
-        CADR_M6_DISK_EVIDENCE_SUMMARY_BYTES, &written);
-    if (status != CADR_STATUS_OK ||
-        written != CADR_M6_DISK_EVIDENCE_SUMMARY_BYTES) {
-        return status == CADR_STATUS_OK ? CADR_STATUS_HOST_FAILURE : status;
-    }
-    cadr_wasm_meta_result(written, 0U);
-    return CADR_STATUS_OK;
-}
-#endif
 
 /*
  * Output record (all little endian): u32 lifecycle, u32 artifact bitmask,
@@ -700,9 +655,6 @@ uint32_t cadr_wasm_snapshot_size(void)
     uint64_t size = 0U;
     cadr_status status;
     if (cadr_wasm_machine == NULL) return CADR_STATUS_NOT_READY;
-#if defined(CADR_M6_DEVID_WASM)
-    return CADR_STATUS_NOT_READY;
-#endif
     status = cadr_machine_snapshot_size(cadr_wasm_machine, &request, &size);
     cadr_wasm_meta_result(size, 0U);
     return status;
@@ -718,9 +670,6 @@ uint32_t cadr_wasm_snapshot_save(void)
     uint64_t written = 0U;
     cadr_status status;
     if (cadr_wasm_machine == NULL) return CADR_STATUS_NOT_READY;
-#if defined(CADR_M6_DEVID_WASM)
-    return CADR_STATUS_NOT_READY;
-#endif
     status = cadr_machine_snapshot_size(cadr_wasm_machine, &request, &size);
     if (status != CADR_STATUS_OK) return status;
     if (size > CADR_WASM_SNAPSHOT_MAX_BYTES) return CADR_STATUS_NO_MEMORY;
@@ -740,11 +689,7 @@ uint32_t cadr_wasm_snapshot_save(void)
 CADR_WASM_EXPORT("cadr_wasm_snapshot_pointer")
 uint32_t cadr_wasm_snapshot_pointer(void)
 {
-#if defined(CADR_M6_DEVID_WASM)
-    return 0U;
-#else
     return (uint32_t)(uintptr_t)cadr_wasm_snapshot;
-#endif
 }
 
 /*
@@ -756,10 +701,6 @@ uint32_t cadr_wasm_snapshot_pointer(void)
 CADR_WASM_EXPORT("cadr_wasm_snapshot_input_reserve")
 uint32_t cadr_wasm_snapshot_input_reserve(uint32_t byte_count)
 {
- #if defined(CADR_M6_DEVID_WASM)
-    (void)byte_count;
-    return 0U;
- #else
     if (byte_count == 0U || byte_count > CADR_WASM_SNAPSHOT_MAX_BYTES) return 0U;
     if (cadr_wasm_snapshot_input == NULL) {
         cadr_wasm_snapshot_input = malloc(CADR_WASM_SNAPSHOT_MAX_BYTES);
@@ -767,10 +708,8 @@ uint32_t cadr_wasm_snapshot_input_reserve(uint32_t byte_count)
         cadr_wasm_snapshot_input_capacity = CADR_WASM_SNAPSHOT_MAX_BYTES;
     }
     return (uint32_t)(uintptr_t)cadr_wasm_snapshot_input;
- #endif
 }
 
-#if !defined(CADR_M6_DEVID_WASM)
 static uint32_t cadr_wasm_snapshot_replace(const uint8_t *bytes,
                                            uint64_t byte_count)
 {
@@ -795,32 +734,22 @@ static uint32_t cadr_wasm_snapshot_replace(const uint8_t *bytes,
     if (old != NULL) cadr_machine_destroy(old);
     return CADR_STATUS_OK;
 }
-#endif
 
 CADR_WASM_EXPORT("cadr_wasm_snapshot_restore_import")
 uint32_t cadr_wasm_snapshot_restore_import(uint32_t byte_count)
 {
-#if defined(CADR_M6_DEVID_WASM)
-    (void)byte_count;
-    return CADR_STATUS_NOT_READY;
-#else
     if (cadr_wasm_snapshot_input == NULL || byte_count == 0U ||
         (uint64_t)byte_count > cadr_wasm_snapshot_input_capacity) {
         return CADR_STATUS_INVALID_ARGUMENT;
     }
     return cadr_wasm_snapshot_replace(cadr_wasm_snapshot_input, byte_count);
-#endif
 }
 
 CADR_WASM_EXPORT("cadr_wasm_snapshot_restore")
 uint32_t cadr_wasm_snapshot_restore(void)
 {
-#if defined(CADR_M6_DEVID_WASM)
-    return CADR_STATUS_NOT_READY;
-#else
     return cadr_wasm_snapshot_replace(cadr_wasm_snapshot,
                                       cadr_wasm_snapshot_written);
-#endif
 }
 
 /*

@@ -14,15 +14,15 @@ import {
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 
 function parseInvocation(argv) {
-  const options = { artifactRoot: ROOT, output: null, receiptBase: null };
+  const options = { artifactRoot: ROOT, output: null };
   const seen = new Set();
   for (let index = 0; index < argv.length; index += 1) {
     const argument = argv[index];
     if (argument === "--help" || argument === "-h") {
-      process.stdout.write("usage: node scripts/run-cadr-m6-one-run-diagnostic.mjs --receipt-base FULL-COMMIT --output PATH [--artifact-root ROOT]\n");
+      process.stdout.write("usage: node scripts/run-cadr-m6-one-run-diagnostic.mjs --output PATH [--artifact-root ROOT]\n");
       process.exit(0);
     }
-    if (!["--artifact-root", "--output", "--receipt-base"].includes(argument)) {
+    if (!["--artifact-root", "--output"].includes(argument)) {
       throw new TypeError(`unsupported diagnostic argument ${JSON.stringify(argument)}`);
     }
     if (seen.has(argument)) throw new TypeError(`${argument} was supplied twice`);
@@ -32,12 +32,9 @@ function parseInvocation(argv) {
       throw new TypeError(`${argument} requires a path`);
     }
     if (argument === "--artifact-root") options.artifactRoot = resolve(process.cwd(), value);
-    else if (argument === "--receipt-base") options.receiptBase = value;
     else options.output = resolve(process.cwd(), value);
   }
-  if (options.output === null || options.receiptBase === null) {
-    throw new TypeError("--receipt-base and --output are required");
-  }
+  if (options.output === null) throw new TypeError("--output is required");
   return Object.freeze(options);
 }
 
@@ -54,7 +51,7 @@ function childExit(command, args) {
 
 async function main() {
   const options = parseInvocation(process.argv.slice(2));
-  const build = await buildM6DiagnosticIsolated({ receiptBase: options.receiptBase });
+  const build = await buildM6DiagnosticIsolated();
   let primary = null;
   try {
     await revalidateM6DiagnosticIsolated(build);
