@@ -176,9 +176,9 @@ a private runtime without a separate explicit `--execute`.
 | --- | --- |
 | `test_cadr_m7_display` | literal ABI values (M6 = 4, M7 = 5), layout and boundaries, dirty spans, BOW full refresh, stale generation, short output, ABI rejection, monotonic cold-power/reset and fresh standalone-restore initialization, recovery-full advancement, digest exclusion, empty delta, and transactional synchronization/lifecycle/recovery overflow |
 | `test_cadr_m7_profile_isolation` | exact pre-M7 native ABI/module shape, no display symbols or tracker storage in the ABI1.4 library, reviewed pre-M7 M5 Wasm SHA-256, and exact M5/M6-DEVID export inventories without pinning unstable native host bytes |
-| `test_cadr_m7_native_tv` | pinned native `tv.c` monitor selection, source raw-bit walk, source BOW palette transition, and native P1 screenshot bits |
+| `test_cadr_m7_native_tv` in checkout-only `m7-native-source-unit` | exact-pinned native `tv.c` closure, monitor selection, source raw-bit walk, source BOW palette transition, and native P1 screenshot bits |
 | `test_cadr_m7_renderer.mjs` | raw PBM/displayed PPM hashes, LSB-first extraction, BOW polarity, strictly monotonic full/delta application, stale/equal full, old-machine stale full, old-machine high delta, malformed-record atomic rejection, integral letterboxing, and canvas smoothing policy |
-| `test_cadr_m7_worker.mjs` | protocol-v4 rejection, protocol-v5 export admission, initial/full/empty response shape, same-renderer restore at exactly the next framebuffer generation, recovery-full advancement, and native-vs-Wasm raw logical pixel equality for O0 and O2 |
+| `test_cadr_m7_worker.mjs` | protocol-v4 rejection, protocol-v5 export admission, initial/full/empty response shape, same-renderer restore at exactly the next framebuffer generation, recovery-full advancement, and full 739,584-pixel O0/O2 equality against the independent zero-plus-three-bit logical fixture; checkout-only runs additionally compare both builds to a fresh native PBM |
 | `test_cadr_m7_frame_checkpoint.mjs` | synthetic Form-C boundary wrapper sequencing, portable witness validation, strict frame comparison, and first-difference reporting |
 | `test_cadr_m7_native_frame_witness.py` | source-local private capture writer framing, one-shot behavior, and failure rollback |
 | `test_cadr_m7_native_frame_oracle.py` | private-record parser, isolated M6-then-M7 source closure, build-marker integrity, and inert capture-plan validation |
@@ -187,7 +187,21 @@ a private runtime without a separate explicit `--execute`.
 
 The M7 cross-target fixture writes source-native words `0x80000001` at word zero and `0x00000002` at word 25, then writes the same values into a portable snapshot. The test compares all 739,584 raw logical pixels from native P1 output and from the Wasm `CDRDISP1` record, not an interpolated canvas. It proves source-bit-order agreement for those selected values, including positions 0, 31, and `(33, 1)`. It is intentionally synthetic and must never be relabeled as a System 303 boot or Listener screenshot.
 
-`m7-unit` is also a prerequisite of ordinary `make test`. Its oracle-support tests build and validate only disposable synthetic/source-local material; none invokes either long private runtime campaign. The two explicit runners refuse to start without `--execute`, so schema tests cannot accidentally cold-boot a private CADR session. Those remain the separately named `TODO-RUNTIME-M7-01` and `TODO-RUNTIME-M7-02` gates below.
+`m7-unit` is the self-contained clean-archive gate and is a prerequisite of
+ordinary `make test`. It has no dependency on the ignored native checkout and
+compares every O0/O2 logical pixel to an independently constructed expected
+array. Ordinary `make test` also requires `m7-native-source-unit`. That
+checkout-only differential target rejects a missing, symlinked, or
+hash-mismatched `tv.c`, `tv.h`, `bus-interface.h`, `ucode.h`, `utrace.h`,
+`usym.h`, `trace.h`, or BSD notice; it generates a fresh private native PBM
+and compares all of its pixels to both Wasm builds. A source release without
+Git history or the separately pinned public native checkout can run the clean
+milestone targets, but cannot claim the full checkout suite.
+
+Neither target invokes a long private runtime campaign. The two explicit
+runners refuse to start without `--execute`, so schema tests cannot
+accidentally cold-boot a private CADR session. Those remain the separately
+named `TODO-RUNTIME-M7-01` and `TODO-RUNTIME-M7-02` gates below.
 
 The test PBM/PPM outputs are transient synthetic test artifacts. They are not curated runtime screenshots and are not embedded in this knowledge base. No visible System 303 claim is made on this page, so no published screenshot is substituted for the open runtime oracle; this follows the repository's [screenshot-publication review](../screenshot-publication-rights-review.md).
 
@@ -232,6 +246,21 @@ The accepted portable record must be a full `CDRDISP1` frame with width `768`, h
 The M7-only comparator requires the wrapper-produced portable checkpoint object, not a bare `CDRDISP1` record. The native parser accepts only the frozen M6 completed-C boundary `982990214` (which is explicitly checked not to be a 60 Hz due boundary), not an arbitrary nonzero Form-C-looking state. It first requires the portable object's explicit boundary to equal that value, its M6 release-record SHA-256 to equal the compiled frozen M6 release digest, and its retained 96-byte sample to be a fully framed quiescent `CDRM6I1`: magic and zero slot, embedded Form C, 48-bit `p0`/`p1`, IOB CCLK clear, FIFO empty, all-up scancode `0x18000`, disk status `3`, inactive transfer and outstanding operation, retained disk IRQ `1`, and zero host-pending/completion fields are all parsed before it is retained. The comparison hashes that complete sample as evidence. A full display record alone cannot establish cross-target boundary or release equality. It then requires identical dimensions, active-word count, TV mode, and BOW state and compares all 23,112 raw `u32` words before deriving pixels. On failure it reports the first differing word index, its `(x-word, y)` location, all differing bit positions with their `(x, y)` coordinates, native and Wasm words, and both capture-record hashes. It fails on a raw mismatch even if palette-expanded RGB happens to agree. On success it records both raw-stream SHA-256 values, both record hashes, the frozen release digest, and witness-sample hash; the future campaign evidence must additionally bind the M7 patch/executable/module hashes, source pin, artifact and private-disk identities, schedule hash, session IDs, start/end disk hashes, and termination status.
 
 Raw captures, decoded PBM/PPM/PNG comparison products, logs, and sidecars remain in the ignored M7 oracle/session tree. The tracked result may contain only a schema-validated evidence summary and hashes; it must not include raw screen words, a disk, or a private snapshot.
+
+The P4 boot campaign uses the distinct `m7-devid` Wasm build. It combines the
+M7 display exports with the M6 prefix-and-tail evidence continuation policy so
+the frozen 512th evidence record does not turn the next successful disk event
+into terminal status 12. Ordinary `m7` remains a separate snapshot-compatible
+test profile. A receipt-bound O2 intervention canary must cross boundary
+`1130000` with persistent status zero, no
+outstanding request, 535 accepted events, and 23 tail events before the long
+P4 campaign is admissible. Its closed manifest binds the named base and
+single-parent candidate, selective patch, every postimage, staged source
+closure, builder, worker, headless runner, toolchain/environment identities,
+and produced Wasm bytes. That source-bound canary is still narrower than the
+M14 reproducible release, and a failed or preliminary earlier receipt cannot
+substitute for it. This profile split is a preservation/testing contract, not
+a historical CADR distinction.
 
 [`run-cadr-m7-frame-conformance.mjs`](../../scripts/run-cadr-m7-frame-conformance.mjs) is the P4 campaign entrypoint. It requires a fresh explicit `--execute` invocation, and the subordinate native-capture CLI independently requires the same explicit authority and treats `captured` as its sole successful runtime result. The campaign requires an M7 prepared/build closure, a native configuration, and a new 0700 ignored session below `build/cadr-oracle/`. Before starting the child it constructs the native expectation from the parent-generated session and disk IDs, pinned release source/schedule/artifact/native-input records, tracked patch and support bytes, prepared-tree/build markers, and a fresh executable hash. It materializes the native half as exactly `native/frame.cdrm7n1`, `native/capture.ndjson`, `native/idle.bin`, and newline-free canonical `native/metadata.json`, all 0600. The parent independently parses and hashes those outputs, waits for the child `close` event so both pipes have drained, records its exit code and signal, and requires the stdout and file metadata to equal the parent expectation exactly. It then creates a separate protocol-v5 worker and writes the portable half as exactly `portable/frame.cdrdisp1`, `portable/witness.cdrm6i1`, `portable/ready.json`, and `portable/worker.ndjson`, all 0600. The ready record and every worker-log response bind the actual portable session identity; the native result retains both its session and private-disk instance identities. Only `comparison.json` and canonical `manifest.json` appear at the session root. Validation requires the native capture, portable checkpoint, comparison, and summary redundant hashes all to name the same fresh receipts. Its hashes-only summary binds both Fossil pins, M6 release digest, M6/M7 patch and support hashes, prepared-tree and executable identities, five artifacts and native hosts input, canonical schedule/transcript, the session and disk identities, private-disk before/after identities, Wasm identity, the private staged worker closure, contemporaneous adapter-file observations, completed Form-C boundary, witness/raw-frame/`CDRDISP1` hashes, and clean native-process/worker termination with no pending work. The adapter observations name files present at execution time; they are not a claim that those files produced the already-built Wasm module. Producing-source closure remains a reproducible release-build obligation. It rejects an existing result name, changed disk, stale/partial boundary, missing worker termination, or a substitution of any binding. This is harness evidence only, not a P4 runtime result before an operator completes the campaign.
 
