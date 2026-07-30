@@ -7,15 +7,25 @@ import { Worker } from "node:worker_threads";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { createM4BlockRangeService } from
   "../cadr-web/wasm/cadr-m4-block-service.mjs";
+import { writeCanonicalNoReplace } from
+  "../scripts/aggregate-cadr-m6-ready4-campaign.mjs";
 import { m6BenchmarkSchedulerResidue, runExactCanaryLoop } from
   "../scripts/run-cadr-m6-devid-o2-canary-stage.mjs";
 import { attestBenchmarkCandidate, removeM6BenchmarkSourceStage } from
   "../scripts/collect-cadr-m6-ready4-benchmark.mjs";
-import { canonicalJson, sha256Hex } from "../scripts/cadr-m6-ready4-evidence.mjs";
+import { aggregateReady4Runs, canonicalJson, readRegularCanonical,
+  sha256Hex } from "../scripts/cadr-m6-ready4-evidence.mjs";
+import { M6_SELECTED_IMAGE_STATIC_LAUNCHER_IDENTITY,
+  pinSelectedImageNegativeReceipt,
+  selectedImageLauncherSourceBinding,
+  selectedImageSystemdClientsSourceBinding,
+  validatePinnedSelectedImageNegativeReceipt } from
+  "../scripts/cadr-m6-selected-image-negative-evidence.mjs";
 import { ready4SourceClosure, stageM6ExecutableClosure,
   validateStagedM6ExecutableClosure } from
   "../scripts/cadr-m6-wasm-identity.mjs";
-import { executeReady4Campaign, parseReady4CampaignArguments } from
+import { executeReady4Campaign, parseReady4CampaignArguments,
+  validateReady4SelectedImagePrerequisite } from
   "../scripts/run-cadr-m6-ready4-campaign.mjs";
 import { assertBenchmarkMatchesReady4Wasm, checkedProjectedSeconds,
   parseReady4SystemdArguments,
@@ -227,7 +237,9 @@ function run(index) {
     ready3_witness_sha256: digest, ready4_witness_sha256: digest,
     wasm_byte_count: "123456", wasm_optimization: "O2",
     wasm_profile: "M6-DEVID1-O2", wasm_sha256: digest,
-    source_closure_sha256: digest, source_commit: "ab".repeat(20) });
+    source_closure_sha256: digest, source_commit: "ab".repeat(20),
+    selected_image_negative_receipt_sha256: sha256Hex(Buffer.from(
+      canonicalJson(selectedImageNegativeReceipt()))) });
 }
 function supervised(index) {
   return Object.freeze({ schema: "cadr-m6-ready4-supervised-run-v1",
@@ -237,19 +249,116 @@ function supervised(index) {
     observation_deadline_seconds: 7500,
     transient_unit_absent: true, staged_root_removed: true });
 }
+function selectedImageNegativeReceipt() {
+  const selected = { kind: 3, byte_count: "2", sha256: digest };
+  const unit = `cadr-m6-selected-image-negative-${"12".repeat(16)}.service`;
+  const run = Object.freeze({ schema: "cadr-m6-selected-image-negative-run-v1",
+    outcome: "selected-image-negative", contract: "C-M6-SELECTED-IMAGE-NEGATIVE-v1",
+    target: "CADR-WEB-303/ABI1.4/protocol-v4/M6-DEVID1",
+    source_commit: "ab".repeat(20), source_closure_sha256: digest,
+    effective_environment: { LANG: "C", LC_ALL: "C",
+      M6_SELECTED_IMAGE_NEGATIVE_SYSTEMD_CHILD: "1",
+      M6_SELECTED_IMAGE_NEGATIVE_SYSTEMD_UNIT: unit, TZ: "UTC", UMASK: "0077" },
+    release_record: { byte_count: "1", sha256: digest }, selected_disk: selected,
+    base_before: { byte_count: "2", sha256: digest },
+    base_after: { byte_count: "2", sha256: digest },
+    negative_views: [
+      { kind: "same-length-xor-v1", disposition: "rejected-hash-mismatch",
+        byte_count: "2", sha256: "cd".repeat(32), xor_byte_offset: "1", xor_mask: "01" },
+      { kind: "truncated-by-one-v1", disposition: "rejected-byte-count-mismatch",
+        byte_count: "1", sha256: "ef".repeat(32) },
+    ], materialized_image_bytes: "0", worker_constructed: false,
+    wasm_build_attempted: false, guest_execution_attempted: false });
+  const systemdClients = {
+    environment: {
+      DBUS_SESSION_BUS_ADDRESS: "unix:path=/run/user/1000/bus",
+      LANG: "C", LC_ALL: "C", SYSTEMD_COLORS: "0", SYSTEMD_PAGER: "",
+      TZ: "UTC", XDG_RUNTIME_DIR: "/run/user/1000",
+    },
+    systemd_run: { ancestry: [
+      { dev: "1", gid: "0", ino: "1", path: "/", uid: "0", mode: "0755" },
+      { dev: "1", gid: "0", ino: "2", path: "/usr", uid: "0", mode: "0755" },
+      { dev: "1", gid: "0", ino: "3", path: "/usr/bin", uid: "0", mode: "0755" },
+    ], byte_count: "1", dev: "1", gid: "0", ino: "4", mode: "0755", path: "/usr/bin/systemd-run",
+    real_path: "/usr/bin/systemd-run", sha256: "12".repeat(32), uid: "0" },
+    systemctl: { ancestry: [
+      { dev: "1", gid: "0", ino: "1", path: "/", uid: "0", mode: "0755" },
+      { dev: "1", gid: "0", ino: "2", path: "/usr", uid: "0", mode: "0755" },
+      { dev: "1", gid: "0", ino: "3", path: "/usr/bin", uid: "0", mode: "0755" },
+    ], byte_count: "1", dev: "1", gid: "0", ino: "5", mode: "0755", path: "/usr/bin/systemctl",
+    real_path: "/usr/bin/systemctl", sha256: "13".repeat(32), uid: "0" },
+  };
+  const launcher = {
+    ...M6_SELECTED_IMAGE_STATIC_LAUNCHER_IDENTITY,
+    source_closure_sha256: run.source_closure_sha256,
+  };
+  return Object.freeze({ schema: "cadr-m6-selected-image-negative-supervised-v1",
+    outcome: "selected-image-negative-supervised", accounting_sha256: digest,
+    policy_sha256: digest, transient_unit_absent: true,
+    launcher,
+    launcher_source_binding_sha256:
+      selectedImageLauncherSourceBinding(run, launcher),
+    systemd_clients: systemdClients,
+    systemd_clients_source_binding_sha256:
+      selectedImageSystemdClientsSourceBinding(run, systemdClients),
+    source_stage_removed: true, private_root_removed: true,
+    run,
+  });
+}
 const root = await mkdtemp(resolve(tmpdir(), "cadr-m6-ready4-campaign-"));
+const trustedTestOnlyMint = receipt => {
+  const bytes = Buffer.from(canonicalJson(receipt));
+  return pinSelectedImageNegativeReceipt(Object.freeze({
+    bytes, sha256: sha256Hex(bytes), value: receipt,
+  }));
+};
+const retainedPrerequisite = await validateReady4SelectedImagePrerequisite(
+  { artifactRoot: root }, {
+  sourceClosure: async () => Object.freeze({ source_commit: "ab".repeat(20),
+    source_closure_sha256: digest }),
+  executeNegative: async () => selectedImageNegativeReceipt(),
+  pinExecuted: trustedTestOnlyMint,
+  validateExecuted: validatePinnedSelectedImageNegativeReceipt,
+  });
+await assert.rejects(() => validateReady4SelectedImagePrerequisite(
+  { artifactRoot: root }, { sourceClosure: async () => Object.freeze({
+    source_commit: "ab".repeat(20), source_closure_sha256: "cd".repeat(32),
+  }), executeNegative: async () => selectedImageNegativeReceipt(),
+  pinExecuted: trustedTestOnlyMint,
+  validateExecuted: validatePinnedSelectedImageNegativeReceipt }),
+  /current executable closure/,
+"a valid but stale selected-image receipt stops the campaign before its first worker");
 const campaignOptions = Object.freeze({ execute: true, artifactRoot: root, outputDir: root,
   releaseRecord: null, benchmark: resolve(root, "benchmark.json") });
 let child = 0;
-const result = await executeReady4Campaign(campaignOptions, { run: async (_command, args) => {
+const result = await executeReady4Campaign(campaignOptions, {
+  validatePrerequisite: async options => {
+  assert.equal(options, campaignOptions,
+    "the campaign invokes its owned selected-image prerequisite before child launch");
+  return retainedPrerequisite;
+}, aggregateRuns: async options => {
+  const records = await Promise.all(options.runs.map(path =>
+    readRegularCanonical(path, "test-only READY4 run")));
+  const value = aggregateReady4Runs(records.map(record => record.value),
+    retainedPrerequisite.prerequisiteIdentity);
+  await writeCanonicalNoReplace(options.output, value);
+  return value;
+}, run: async (_command, args) => {
   const output = args[args.indexOf("--output") + 1];
   assert.match(args[0], /run-cadr-m6-ready4-systemd\.mjs$/,
     "campaign may invoke only the systemd supervisor");
+  assert.equal(args[args.indexOf(
+    "--selected-image-negative-receipt-sha256") + 1],
+  retainedPrerequisite.prerequisiteIdentity.receipt_sha256,
+  "every child launch is bound to the process-retained prerequisite hash");
   await writeFile(output, canonicalJson(supervised(child++)), { mode: 0o600 });
   return { code: 0, signal: null, error: null };
 } });
 assert.equal(child, 3, "campaign creates exactly three sequential children");
 assert.equal(JSON.parse(await readFile(result.campaign, "utf8")).runs.length, 3);
+assert.equal(result.mode, "test-only");
+assert.equal(result.gate_success_established, false,
+  "dependency-injected campaign tests never report production gate success");
 
 function benchmark(candidate, elapsedNanoseconds = "45200000000") {
   const optimization = candidate === "fast-o2" ? "O2" : "O0";

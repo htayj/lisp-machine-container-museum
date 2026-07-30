@@ -39,6 +39,7 @@ await writeFile(resolve(truncatedRoot, "cadr-web/profiles/cadr-web-303.ini.in"),
 const base = Object.freeze({ execute: true, artifactRoot: truncatedRoot,
   output: resolve(root, "output.json"), releaseRecord: badRelease,
   wasm: resolve(root, "unused.wasm"), invocationNonceFile: nonce,
+  selectedImageNegativeReceiptSha256: "11".repeat(32),
   build: false });
 for (const [label, options] of [
   ["wrong release", base],

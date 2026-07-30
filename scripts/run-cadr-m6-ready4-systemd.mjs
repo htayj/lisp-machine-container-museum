@@ -28,7 +28,7 @@ const SOURCES = Object.freeze([
 const UNIT_PREFIX = "cadr-m6-ready4-";
 
 function usage() {
-  return "usage: node scripts/run-cadr-m6-ready4-systemd.mjs --execute --artifact-root ROOT --output RUN.json --benchmark BENCHMARK.json [--release-record PATH]";
+  return "usage: node scripts/run-cadr-m6-ready4-systemd.mjs --execute --artifact-root ROOT --output RUN.json --benchmark BENCHMARK.json --selected-image-negative-receipt-sha256 SHA256 [--release-record PATH]";
 }
 
 function capture(command, args) {
@@ -55,13 +55,22 @@ export function checkedProjectedSeconds(value) {
 
 export function parseReady4SystemdArguments(argv) {
   const result = { execute: false, artifactRoot: null, output: null,
-    benchmark: null,
+    benchmark: null, selectedImageNegativeReceiptSha256: null,
     releaseRecord: resolve(ROOT, "cadr-web/oracle/cadr-m6-release-record.json"),
     wasm: resolve(ROOT, "cadr-web/build/cadr-web-m6-devid-O2.wasm") };
   for (let index = 0; index < argv.length; index += 1) {
     const option = argv[index];
     if (option === "--execute") { if (result.execute) throw new TypeError("duplicate --execute"); result.execute = true; }
-    else if (["--artifact-root", "--output", "--release-record",
+    else if (option === "--selected-image-negative-receipt-sha256") {
+      if (result.selectedImageNegativeReceiptSha256 !== null) {
+        throw new TypeError(`duplicate ${option}`);
+      }
+      const value = argv[++index];
+      if (!/^[0-9a-f]{64}$/.test(value ?? "")) {
+        throw new TypeError(`${option} needs a lowercase SHA-256`);
+      }
+      result.selectedImageNegativeReceiptSha256 = value;
+    } else if (["--artifact-root", "--output", "--release-record",
       "--benchmark"].includes(option)) {
       const key = option.slice(2).replace(/-([a-z])/g, (_, character) => character.toUpperCase());
       if (result[key] !== null && !["releaseRecord", "wasm"].includes(key)) throw new TypeError(`duplicate ${option}`);
@@ -69,7 +78,8 @@ export function parseReady4SystemdArguments(argv) {
     } else throw new TypeError(`unsupported READY4 systemd argument ${JSON.stringify(option)}`);
   }
   if (!result.execute || result.artifactRoot === null || result.output === null ||
-      result.benchmark === null) {
+      result.benchmark === null ||
+      result.selectedImageNegativeReceiptSha256 === null) {
     throw new TypeError(`${usage()}\nThe systemd READY4 worker is inert without --execute.`);
   }
   return Object.freeze(result);
@@ -330,6 +340,8 @@ export async function executeReady4Systemd(options) {
       "--artifact-root", stage.artifactRoot, "--release-record", stage.release,
       "--wasm", stage.wasm, "--wasm-identity", stage.identity,
       "--invocation-nonce-file", stage.nonce,
+      "--selected-image-negative-receipt-sha256",
+      options.selectedImageNegativeReceiptSha256,
       "--output", stage.envelope], projectedSeconds,
     undefined, stage.root, stage.privateRoot);
     unit = command.unit;
@@ -350,6 +362,8 @@ export async function executeReady4Systemd(options) {
     if (run.wasm_sha256 !== wasmIdentity.wasm_sha256 ||
         run.wasm_byte_count !== wasmIdentity.wasm_byte_count ||
         run.source_closure_sha256 !== wasmIdentity.source_closure_sha256 ||
+        run.selected_image_negative_receipt_sha256 !==
+          options.selectedImageNegativeReceiptSha256 ||
         run.source_commit !== wasmIdentity.source_commit) {
       throw new Error("READY4 child changed the staged Wasm identity");
     }

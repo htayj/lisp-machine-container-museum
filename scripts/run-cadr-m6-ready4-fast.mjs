@@ -39,7 +39,7 @@ const SOURCE_LAYOUT = Object.freeze([
 const REQUEST_TIMEOUT_MS = 120_000;
 
 function usage() {
-  return "usage: node scripts/run-cadr-m6-ready4-fast.mjs --execute --artifact-root ROOT --output PRIVATE.json --wasm-identity IDENTITY.json --invocation-nonce-file PATH [--release-record PATH] [--wasm PATH] --no-build";
+  return "usage: node scripts/run-cadr-m6-ready4-fast.mjs --execute --artifact-root ROOT --output PRIVATE.json --wasm-identity IDENTITY.json --invocation-nonce-file PATH --selected-image-negative-receipt-sha256 SHA256 [--release-record PATH] [--wasm PATH] --no-build";
 }
 
 function bytesHex(bytes) { return Buffer.from(bytes).toString("hex"); }
@@ -54,7 +54,8 @@ function checkedPath(value, option) {
 export function parseReady4Arguments(argv) {
   const result = { execute: false, artifactRoot: null, output: null,
     releaseRecord: resolve(ROOT, RELEASE_RELATIVE), wasm: resolve(ROOT, WASM_RELATIVE),
-    wasmIdentity: null, invocationNonceFile: null, build: true };
+    wasmIdentity: null, invocationNonceFile: null,
+    selectedImageNegativeReceiptSha256: null, build: true };
   for (let index = 0; index < argv.length; index += 1) {
     const option = argv[index];
     if (option === "--execute") {
@@ -63,6 +64,15 @@ export function parseReady4Arguments(argv) {
     } else if (option === "--no-build") {
       if (!result.build) throw new TypeError("duplicate --no-build");
       result.build = false;
+    } else if (option === "--selected-image-negative-receipt-sha256") {
+      if (result.selectedImageNegativeReceiptSha256 !== null) {
+        throw new TypeError(`duplicate ${option}`);
+      }
+      const value = argv[++index];
+      if (!/^[0-9a-f]{64}$/.test(value ?? "")) {
+        throw new TypeError(`${option} needs a lowercase SHA-256`);
+      }
+      result.selectedImageNegativeReceiptSha256 = value;
     } else if (["--artifact-root", "--output", "--release-record", "--wasm",
       "--wasm-identity", "--invocation-nonce-file"].includes(option)) {
       const value = checkedPath(argv[++index], option);
@@ -78,6 +88,7 @@ export function parseReady4Arguments(argv) {
   if (!result.execute || result.artifactRoot === null || result.output === null ||
       result.wasmIdentity === null || result.build ||
       result.invocationNonceFile === null ||
+      result.selectedImageNegativeReceiptSha256 === null ||
       process.env.M6_READY4_SYSTEMD_CHILD !== "1") {
     throw new TypeError(`${usage()}\nThe direct READY4 runner is inert without --execute.`);
   }
@@ -231,7 +242,7 @@ async function buildModule(options) {
   return Object.freeze({ module: await WebAssembly.compile(bytes), identity });
 }
 
-function resultRecord(result, identity) {
+function resultRecord(result, identity, selectedImageNegativeReceiptSha256) {
   if (result?.outcome !== "ready4" || result.target !== CADR_M6_DEVID_PROFILE ||
       result.contract !== CADR_M6_READY4_CONTRACT) throw new TypeError("READY4 driver did not prove READY4");
   return Object.freeze({ schema: M6_READY4_RUN_SCHEMA, outcome: "ready4", target: M6_READY4_TARGET,
@@ -250,6 +261,8 @@ function resultRecord(result, identity) {
     wasm_optimization: identity.wasm_optimization,
     wasm_profile: identity.wasm_profile,
     wasm_sha256: identity.wasm_sha256,
+    selected_image_negative_receipt_sha256:
+      selectedImageNegativeReceiptSha256,
     source_closure_sha256: identity.source_closure_sha256,
     source_commit: identity.source_commit });
 }
@@ -276,7 +289,7 @@ export async function executeReady4(options, { preflight = preflightReady4Inputs
     return resultRecord(await runM6Ready4Fast({ client, artifacts: inputs.sources,
       profile: inputs.profile, maxBoundaries: inputs.maxBoundaries, maxHostTransactions: 1024,
       ready: Object.freeze({ contract: CADR_M6_READY_CONTRACT, releaseRecord: inputs.releaseBytes }) }),
-    built.identity);
+    built.identity, options.selectedImageNegativeReceiptSha256);
   } finally { await client.close(); }
 }
 

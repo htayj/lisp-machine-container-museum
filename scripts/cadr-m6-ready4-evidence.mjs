@@ -5,7 +5,7 @@ import { lstat, open } from "node:fs/promises";
 export const M6_READY4_RUN_SCHEMA = "cadr-m6-ready4-fast-run-v1";
 export const M6_READY4_SUPERVISED_RUN_SCHEMA =
   "cadr-m6-ready4-supervised-run-v1";
-export const M6_READY4_CAMPAIGN_SCHEMA = "cadr-m6-ready4-campaign-v1";
+export const M6_READY4_CAMPAIGN_SCHEMA = "cadr-m6-ready4-campaign-v2";
 export const M6_READY4_FAILURE_SCHEMA = "cadr-m6-ready4-campaign-failure-v1";
 export const M6_READY4_TARGET = "CADR-WEB-303/ABI1.4/protocol-v4/M6-DEVID1";
 export const M6_READY4_CONTRACT = "C-M6-DISK-EVIDENCE-READY4-BINDING-v1";
@@ -67,7 +67,8 @@ const RUN_KEYS = Object.freeze([
   "boundary", "cdrm5q1_sha256", "cdrm6e1_hex", "cdrm6e1_sha256", "cdrstate5_sha256",
   "checkpoint_chain_sha256", "checkpoint_count", "contract", "outcome",
   "private_disk_instance_id", "ready3_witness_sha256", "ready4_witness_sha256",
-  "schema", "selected_maximum", "session_id", "source_closure_sha256",
+  "schema", "selected_image_negative_receipt_sha256", "selected_maximum",
+  "session_id", "source_closure_sha256",
   "source_commit", "target", "wasm_byte_count", "wasm_optimization",
   "wasm_profile", "wasm_sha256",
 ]);
@@ -124,6 +125,8 @@ export function validateReady4Run(value) {
   }
   digest(value.wasm_sha256, "READY4 wasm_sha256");
   digest(value.source_closure_sha256, "READY4 source_closure_sha256");
+  digest(value.selected_image_negative_receipt_sha256,
+    "READY4 selected-image negative receipt SHA-256");
   const summary = validateClosedM6EvidenceHex(value.cdrm6e1_hex);
   if (sha256Hex(summary) !== value.cdrm6e1_sha256) {
     throw new TypeError("READY4 CDRM6E1 bytes and digest disagree");
@@ -182,10 +185,27 @@ export async function readRegularCanonical(path, label) {
   }
 }
 
-export function aggregateReady4Runs(values) {
+function validateSelectedImageNegativePrerequisite(value) {
+  exactKeys(value, ["launcher_source_binding_sha256", "receipt_sha256",
+    "source_closure_sha256", "source_commit"],
+    "READY4 selected-image negative prerequisite");
+  digest(value.launcher_source_binding_sha256,
+    "READY4 selected-image negative launcher source binding");
+  digest(value.receipt_sha256, "READY4 selected-image negative receipt_sha256");
+  digest(value.source_closure_sha256,
+    "READY4 selected-image negative source_closure_sha256");
+  if (!/^[0-9a-f]{40}$/.test(value.source_commit ?? "")) {
+    throw new TypeError("READY4 selected-image negative source_commit is invalid");
+  }
+  return Object.freeze({ ...value });
+}
+
+export function aggregateReady4Runs(values, selectedImageNegativePrerequisite) {
   if (!Array.isArray(values) || values.length !== 3) {
     throw new TypeError("READY4 aggregation requires exactly three runs");
   }
+  const prerequisite = validateSelectedImageNegativePrerequisite(
+    selectedImageNegativePrerequisite);
   const supervised = values.map(validateSupervisedReady4Run);
   const runs = supervised.map(value => value.run);
   const sessions = new Set(runs.map(run => run.session_id));
@@ -194,6 +214,12 @@ export function aggregateReady4Runs(values) {
     throw new TypeError("READY4 campaign did not use three fresh workers and overlays");
   }
   const first = runs[0];
+  if (prerequisite.source_commit !== first.source_commit ||
+      prerequisite.source_closure_sha256 !== first.source_closure_sha256 ||
+      prerequisite.receipt_sha256 !==
+        first.selected_image_negative_receipt_sha256) {
+    throw new TypeError("READY4 selected-image negative prerequisite differs from run closure");
+  }
   const firstSupervised = supervised[0];
   for (const record of supervised.slice(1)) {
     for (const field of ["benchmark_sha256", "projected_seconds",
@@ -207,7 +233,8 @@ export function aggregateReady4Runs(values) {
     "cdrstate5_sha256", "checkpoint_chain_sha256", "checkpoint_count",
     "ready3_witness_sha256", "ready4_witness_sha256", "selected_maximum"];
   comparable.push("wasm_byte_count", "wasm_optimization", "wasm_profile",
-    "wasm_sha256", "source_closure_sha256", "source_commit");
+    "wasm_sha256", "source_closure_sha256", "source_commit",
+    "selected_image_negative_receipt_sha256");
   if (!runs.slice(1).every(run => comparable.every(field => run[field] === first[field]))) {
     throw new TypeError("READY4 three-run witness mismatch");
   }
@@ -231,6 +258,7 @@ export function aggregateReady4Runs(values) {
     wasm_sha256: first.wasm_sha256,
     source_closure_sha256: first.source_closure_sha256,
     source_commit: first.source_commit,
+    selected_image_negative_receipt_sha256: prerequisite.receipt_sha256,
     benchmark_sha256: firstSupervised.benchmark_sha256,
     projected_seconds: firstSupervised.projected_seconds,
     runtime_max_seconds: firstSupervised.runtime_max_seconds,
