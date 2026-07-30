@@ -209,9 +209,14 @@ async function loadArtifacts(artifactRoot) {
   }
 }
 
-class Client {
-  constructor(worker) {
-    this.worker = worker; this.nextId = 1; this.closed = false; this.pending = new Map();
+export class Client {
+  constructor(worker, protocolVersion = 4) {
+    if (!Number.isSafeInteger(protocolVersion) ||
+        ![4, 5].includes(protocolVersion)) {
+      throw new TypeError("canary worker protocol must be v4 or v5");
+    }
+    this.worker = worker; this.protocolVersion = protocolVersion;
+    this.nextId = 1; this.closed = false; this.pending = new Map();
     worker.on("message", message => this.receive(message));
     worker.on("error", error => this.rejectAll(error));
     worker.on("exit", code => { if (!this.closed && code !== 0) this.rejectAll(new Error(`worker exited ${code}`)); });
@@ -220,7 +225,9 @@ class Client {
     const pending = this.pending.get(message?.id);
     if (pending === undefined) return this.rejectAll(new Error("unsolicited worker response"));
     this.pending.delete(message.id); clearTimeout(pending.timeout);
-    if (message.type !== "cadr-response" || message.version !== 4 || message.op !== pending.op ||
+    if (message.type !== "cadr-response" ||
+        message.version !== this.protocolVersion ||
+        message.op !== pending.op ||
         !Number.isSafeInteger(message.status)) pending.reject(new Error(`malformed ${pending.op} response`));
     else pending.resolve(message);
   }
@@ -230,7 +237,7 @@ class Client {
     return new Promise((resolveRequest, rejectRequest) => {
       const timeout = setTimeout(() => { this.pending.delete(id); rejectRequest(new Error(`${op} timed out`)); }, REQUEST_TIMEOUT_MS);
       this.pending.set(id, { op, timeout, resolve: resolveRequest, reject: rejectRequest });
-      this.worker.postMessage({ version: 4, id, op, ...fields }, transfer);
+      this.worker.postMessage({ version: this.protocolVersion, id, op, ...fields }, transfer);
     });
   }
   async close() { if (!this.closed) { this.closed = true; this.rejectAll(new Error("worker closed")); await this.worker.terminate(); } }
@@ -639,8 +646,23 @@ export async function executeControlledBenchmarkCandidate({
   }
 }
 
-async function main() {
-  const options = parseArgs(process.argv.slice(2));
+export async function executeCanaryStage(options, {
+  allowM7Display = false,
+  candidate = "legacy-m5",
+  emit = true,
+} = {}) {
+  if (typeof allowM7Display !== "boolean") {
+    throw new TypeError("canary display-profile selector must be boolean");
+  }
+  if (!["legacy-m5", "fast-o0", "fast-o2"].includes(candidate)) {
+    throw new TypeError("canary execution candidate is not fixed");
+  }
+  if (allowM7Display && candidate !== "legacy-m5") {
+    throw new TypeError("M7-DEVID canary must use the protocol-v5 P4 batch path");
+  }
+  if (typeof emit !== "boolean") {
+    throw new TypeError("canary receipt emission selector must be boolean");
+  }
   let client = null; let loaded = null; let service = null;
   const privateRoot = options.privateRoot;
   try {
@@ -663,23 +685,37 @@ async function main() {
     const exports = new Set(WebAssembly.Module.exports(module).map(entry => entry.name));
     if (WebAssembly.Module.imports(module).length !== 0 ||
         !exports.has("cadr_wasm_m6_disk_evidence_summary") ||
-        exports.has("cadr_wasm_display_full") ||
-        exports.has("cadr_wasm_display_update") ||
+        (exports.has("cadr_wasm_display_full") !== allowM7Display) ||
+        (exports.has("cadr_wasm_display_update") !== allowM7Display) ||
         exports.has("cadr_wasm_post_terminal_diagnostic")) {
-      throw new Error("O2 module is not the isolated M6-DEVID export profile");
+      throw new Error("O2 module is not the selected M6-DEVID display profile");
     }
-    client = new Client(new Worker(pathToFileURL(resolve(ROOT, "cadr-web/wasm/cadr-worker.js")), { type: "module" }));
+    client = new Client(new Worker(pathToFileURL(resolve(ROOT,
+      "cadr-web/wasm/cadr-worker.js")), { type: "module" }),
+    allowM7Display ? 5 : 4);
     const disk = verified.sources.find(artifact => artifact.kind === 3);
     service = createM4BlockRangeService({ imageByteCount: disk.byteCount,
       expectedImageByteCount: disk.byteCount, readRange: disk.readRange });
     await initializeMachine(client, module, verified.sources);
-    const result = await runExactCanaryLoop(client, service);
+    const result = await runExactCanaryLoop(
+      client, service, MAX_BOUNDARY, candidate);
     const info = result.info;
     if (info.clockSlotsCompleted !== MAX_BOUNDARY || info.outstandingRequestId !== 0n ||
         info.lifecycle !== 2 || info.persistentStatus !== 0) {
       throw new Error("canary did not finish at the exact nonterminal completed guest boundary");
     }
     const evidence = summary(await client.request("m6-disk-evidence-summary"));
+    const display = allowM7Display ? await ok(client, "display-full") : null;
+    if (display !== null && (display.full !== true || display.updated !== true ||
+        display.width !== 768 || display.height !== 963 ||
+        display.wireSchema !== "CDRDISP1" || !(display.frame instanceof ArrayBuffer) ||
+        display.frame.byteLength === 0)) {
+      throw new Error("M7-DEVID canary did not obtain a full display frame");
+    }
+    const snapshot = allowM7Display ? await client.request("snapshot-size") : null;
+    if (snapshot !== null && snapshot.status !== 9) {
+      throw new Error("M7-DEVID canary did not reject the unsupported DEVID snapshot");
+    }
     const sourceAfter = await artifactIdentities(loaded.expected, options.artifactRoot);
     const privateAfter = await artifactIdentities(loaded.expected, privateRoot);
     if (canonicalJson(sourceBefore) !== canonicalJson(sourceAfter) ||
@@ -691,7 +727,10 @@ async function main() {
         privateAfter.find(item => item.kind === 3)?.sha256) {
       throw new Error("base disk identity changed during canary");
     }
-    process.stdout.write(`${canonicalJson(Object.freeze({ schema: "cadr-m6-devid-o2-canary-stage-v1",
+    const receipt = Object.freeze({
+      schema: allowM7Display ?
+        "cadr-m7-devid-o2-canary-stage-v1" :
+        "cadr-m6-devid-o2-canary-stage-v1",
       completed_guest_boundary: MAX_BOUNDARY.toString(), nonterminal: true, machine: Object.freeze({
         lifecycle: info.lifecycle,
         clock_slots_completed: info.clockSlotsCompleted.toString(),
@@ -706,14 +745,26 @@ async function main() {
         overlay_final_generation: result.overlayGeneration.toString(),
         base_write_authority: false }),
       exact_loop: Object.freeze({ batches: result.batches,
-        host_transactions: result.hostTransactions }),
+        host_transactions: result.hostTransactions,
+        ...(allowM7Display ? { candidate } : {}) }),
       frozen_input_schedule: loaded.schedule,
       artifacts_before: sourceBefore, artifacts_after: sourceAfter,
       private_artifacts_before: privateBefore,
       private_artifacts_after: privateAfter, m6_disk_evidence: evidence,
       base_disk_unchanged: true,
       wasm: Object.freeze({ byte_count: moduleBytes.byteLength, sha256: hash(moduleBytes) }),
-    }))}\n`);
+      ...(allowM7Display ? {
+        transport: Object.freeze({ protocol_version: 5,
+          run_operation: "run-digest-batch-m5" }),
+        display: Object.freeze({ wire_schema: display.wireSchema,
+          byte_count: display.frame.byteLength, sha256: hash(new Uint8Array(display.frame)),
+          width: display.width, height: display.height }),
+        snapshot: Object.freeze({ operation: "snapshot-size",
+          status: snapshot.status }),
+      } : {}),
+    });
+    if (emit) process.stdout.write(`${canonicalJson(receipt)}\n`);
+    return receipt;
   } finally {
     const errors = []; if (client !== null) try { await client.close(); } catch (error) { errors.push(error); }
     if (service !== null) try { await service.discard(); } catch (error) { errors.push(error); }
@@ -723,5 +774,8 @@ async function main() {
 }
 
 if (import.meta.url === pathToFileURL(resolve(process.argv[1] ?? "")).href) {
-  main().catch(error => { process.stderr.write(`${error?.stack ?? String(error)}\n`); process.exitCode = 1; });
+  executeCanaryStage(parseArgs(process.argv.slice(2))).catch(error => {
+    process.stderr.write(`${error?.stack ?? String(error)}\n`);
+    process.exitCode = 1;
+  });
 }

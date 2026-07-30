@@ -162,7 +162,7 @@ function isM8M9ProtocolVersion(version) {
 }
 
 function isM6DevidProtocolVersion(version) {
-  return version === CADR_M6_PROTOCOL_VERSION;
+  return isM6ProtocolVersion(version);
 }
 
 const isNode = typeof process !== "undefined" &&
@@ -2254,7 +2254,7 @@ async function receive(event) {
         (request.m6DiskEvidencePolicy === true))) ||
       (request.op === "instantiate" &&
        request.m6DiskEvidencePolicy === true &&
-       (request.version !== CADR_M6_PROTOCOL_VERSION ||
+       (!isM6DevidProtocolVersion(request.version) ||
         !(request.module instanceof WebAssembly.Module) ||
         !WebAssembly.Module.exports(request.module).some(
          entry => entry.name === "cadr_wasm_m6_disk_evidence_summary") ||

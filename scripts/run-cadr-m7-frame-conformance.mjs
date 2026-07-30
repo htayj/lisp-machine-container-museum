@@ -577,7 +577,8 @@ function parseArgs(argv) {
     else options[argument.slice(2).replace(/-([a-z])/g, (_, letter) => letter.toUpperCase())] = value;
   }
   if (!["O0", "O2"].includes(options.variant)) fail("--variant must be O0 or O2");
-  if (options.wasm === null) options.wasm = resolve(ROOT, `cadr-web/build/cadr-web-m7-${options.variant}.wasm`);
+  if (options.wasm === null) options.wasm = resolve(
+    ROOT, `cadr-web/build/cadr-web-m7-devid-${options.variant}.wasm`);
   return Object.freeze(options);
 }
 
@@ -1266,7 +1267,9 @@ async function portableCheckpoint({ nativeFrame, pinned, wasmPath, artifactRoot,
   let termination = null;
   let caught = null;
   try {
-    const instantiate = await client.request("instantiate", { module });
+    const instantiate = await client.request("instantiate", {
+      module, m6DiskEvidencePolicy: true,
+    });
     if (instantiate.status !== 0) fail(`protocol-v5 M7 instantiation failed with status ${instantiate.status}`);
     const profile = profileForM6(pinned.profile, pinned.expected);
     const checked = await preflightM6Artifacts({ artifacts: artifacts.artifacts, profile, hashArtifact });

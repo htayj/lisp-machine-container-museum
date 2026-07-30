@@ -76,14 +76,14 @@ export function parseInvocation(argv) {
   return Object.freeze(result);
 }
 
-function command(name, args, options = {}) {
+export function command(name, args, options = {}) {
   const stdio = options.stdio ??
     [options.input === undefined ? "ignore" : "pipe", "pipe", "pipe"];
   return execFileSync(name, args, { cwd: options.cwd, input: options.input,
     encoding: options.encoding ?? "utf8", stdio });
 }
 
-async function archiveRevision(revision, stage) {
+export async function archiveRevision(revision, stage) {
   await new Promise((resolveArchive, rejectArchive) => {
     const archive = spawn("git", ["archive", "--format=tar", revision], { cwd: ROOT, stdio: ["ignore", "pipe", "inherit"] });
     const extract = spawn("tar", ["-xf", "-", "-C", stage], { stdio: ["pipe", "inherit", "inherit"] });
@@ -234,7 +234,7 @@ export async function verifyClosedManifest(stage, patchPaths_, manifestBytes,
     sha256: sha256(manifestBytes), files });
 }
 
-async function sourceClosureIdentity(stage, revision, patchPaths_) {
+export async function sourceClosureIdentity(stage, revision, patchPaths_) {
   const tracked = command("git", ["ls-tree", "-r", "--name-only", revision],
     { cwd: ROOT }).trim().split("\n").filter(Boolean);
   const paths = [...new Set([...tracked, ...patchPaths_])].sort();
@@ -298,7 +298,7 @@ function runFrozenGates(stage) {
   }));
 }
 
-async function identity(path) { const bytes = await readFile(path); return Object.freeze({ byte_count: bytes.byteLength, sha256: sha256(bytes) }); }
+export async function identity(path) { const bytes = await readFile(path); return Object.freeze({ byte_count: bytes.byteLength, sha256: sha256(bytes) }); }
 async function stagedIdentities(stage, wasmPath) {
   const paths = Object.freeze({ driver: resolve(stage, STAGED_DRIVER), worker: resolve(stage, "cadr-web/wasm/cadr-worker.js"),
     headless: resolve(stage, "cadr-web/wasm/cadr-m6-headless-boot.mjs"), builder: resolve(stage, "cadr-web/wasm/build-wasm.sh"), wasm: wasmPath });
@@ -379,7 +379,7 @@ export function boundedCanaryFailure(error) {
 }
 
 async function syncFile(path) { const handle = await open(path, "r"); try { await handle.sync(); } finally { await handle.close(); } }
-async function requirePrivateReceiptDirectory(path) {
+export async function requirePrivateReceiptDirectory(path) {
   const metadata = await lstat(path);
   if (!metadata.isDirectory() || metadata.isSymbolicLink() ||
       metadata.uid !== process.geteuid() || (metadata.mode & 0o777) !== 0o700) {

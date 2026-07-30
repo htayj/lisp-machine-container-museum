@@ -83,6 +83,8 @@ M6_DEVID_WASM_O0 := build/cadr-web-m6-devid-O0.wasm
 M6_DEVID_WASM_O2 := build/cadr-web-m6-devid-O2.wasm
 M7_WASM_O0 := build/cadr-web-m7-O0.wasm
 M7_WASM_O2 := build/cadr-web-m7-O2.wasm
+M7_DEVID_WASM_O0 := build/cadr-web-m7-devid-O0.wasm
+M7_DEVID_WASM_O2 := build/cadr-web-m7-devid-O2.wasm
 M9_WASM_O0 := build/cadr-web-m9-O0.wasm
 M9_WASM_O2 := build/cadr-web-m9-O2.wasm
 M12_WASM_O0 := build/cadr-web-m12-O0.wasm
@@ -257,6 +259,12 @@ $(M7_WASM_O0): wasm/build-wasm.sh wasm/cadr_wasm_adapter.c wasm/cadr_wasm_runtim
 $(M7_WASM_O2): wasm/build-wasm.sh wasm/cadr_wasm_adapter.c wasm/cadr_wasm_runtime.c $(M7_CORE_SOURCES) $(CORE_HEADERS) | build
 	sh wasm/build-wasm.sh --m7 --opt O2 $@
 
+$(M7_DEVID_WASM_O0): wasm/build-wasm.sh wasm/cadr_wasm_adapter.c wasm/cadr_wasm_runtime.c core/cadr_m6_disk_evidence.c core/cadr_m6_disk_evidence.h core/cadr_m6_fast_run.c core/cadr_m6_fast_run.h $(M7_CORE_SOURCES) $(CORE_HEADERS) | build
+	sh wasm/build-wasm.sh --m7-devid --opt O0 $@
+
+$(M7_DEVID_WASM_O2): wasm/build-wasm.sh wasm/cadr_wasm_adapter.c wasm/cadr_wasm_runtime.c core/cadr_m6_disk_evidence.c core/cadr_m6_disk_evidence.h core/cadr_m6_fast_run.c core/cadr_m6_fast_run.h $(M7_CORE_SOURCES) $(CORE_HEADERS) | build
+	sh wasm/build-wasm.sh --m7-devid --opt O2 $@
+
 $(M9_WASM_O0): wasm/build-wasm.sh wasm/cadr_wasm_adapter.c wasm/cadr_wasm_runtime.c $(M9_CORE_SOURCES) $(CORE_HEADERS) | build
 	sh wasm/build-wasm.sh --m9 --opt O0 $@
 
@@ -351,7 +359,7 @@ m6-devid-wasm: build/test_cadr_m6_disk_evidence build/test_cadr_m6_disk_evidence
 	guix shell node -- node ../tests/test_cadr_m6_ready4_campaign_systemd_benchmark.mjs
 	guix shell node -- node ../tests/test_cadr_m6_devid_o2_canary_runner.mjs
 
-m7-unit: build/test_cadr_m7_display build/test_cadr_m7_profile_isolation build/test_cadr_m7_native_tv build/cadr-m7-frame-fixture $(M5_WASM_O0) $(M6_DEVID_WASM_O0) $(M7_WASM_O0) $(M7_WASM_O2)
+m7-unit: build/test_cadr_m7_display build/test_cadr_m7_profile_isolation build/test_cadr_m7_native_tv build/cadr-m7-frame-fixture $(M5_WASM_O0) $(M6_DEVID_WASM_O0) $(M7_WASM_O0) $(M7_WASM_O2) $(M7_DEVID_WASM_O0) $(M7_DEVID_WASM_O2)
 	./build/test_cadr_m7_display
 	./build/test_cadr_m7_profile_isolation
 	@if $(NM) -g --defined-only $(LIBRARY) | grep -Eq 'cadr_(machine_)?display'; then \
@@ -368,6 +376,7 @@ m7-unit: build/test_cadr_m7_display build/test_cadr_m7_profile_isolation build/t
 	python3 ../tests/test_cadr_m7_native_frame_oracle.py
 	guix shell node -- node ../tests/test_run_cadr_m7_frame_conformance.mjs
 	python3 ../tests/test_run_cadr_m7_browser_conformance.py
+	guix shell node -- node ../tests/test_cadr_m7_devid_o2_canary.mjs
 
 m10-unit:
 	guix shell node -- node ../tests/test_cadr_m10_persistence.mjs
