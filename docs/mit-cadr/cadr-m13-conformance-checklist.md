@@ -3,7 +3,7 @@ type: Conformance Checklist
 title: CADR-WEB-303 M13 conformance campaign checklist
 description: A case-by-case evidence ledger for the M13 browser-hardening gate, including partial probes and the remaining runtime-only work.
 tags: [mit-cadr, cadr-web, browser, m13, conformance, security, accessibility]
-timestamp: 2026-07-30T06:04:49-04:00
+timestamp: 2026-07-30T07:36:02-04:00
 ---
 
 # CADR-WEB-303 M13 conformance campaign checklist
@@ -136,7 +136,7 @@ not closed by the synthetic/browser tests above:
 
 | Gate | Exact blocker | Why it is not interchangeable with the listed evidence |
 | --- | --- | --- |
-| `C-M11` | A fresh isolated native capture must observe the M11 sound witness and validate the canonical event and PCM hashes; the real browser AudioWorklet/autoplay/device-loss campaign remains unrun. | Source queue/bridge tests do not prove native sound events or browser playback lifecycle. |
+| `C-M11` | A source-bound System 303 `%BEEP` session now establishes native job/PCM ordering, and the independent fixed-table oracle closes narrow `C-M11-04-PCM`; a selected-Wasm browser AudioWorklet campaign must still validate playback, partial acknowledgements, pause/resume, and worker/device-loss semantics. | The native witness and clean-room PCM agreement do not prove the selected browser playback lifecycle. |
 | `C-M12` | A fresh isolated System 303 runtime observation must prove debugger breakpoint/pause/inspection/resume/macro-step behavior and hashes. The candidate pause/resume witness is instrumentation evidence, not historical macro-step semantics. | Generated Wasm scalar inspection proves the host panel only, not the preserved runtime. |
 | M13 composition | The shell has a bounded M10 dispatch seam: an injected real controller and bridge factory can service only lower status-8 guest waits through a sealed internal channel. `E24` tests the lower M10 controller/bridge beside an independent selected-M12 state witness without loading that shell or dispatch; `E25` proves shell dispatch with a synthetic M4 peer; `E26` adds a separate private selected-media witness. It reaches the selected first disk wait at tick 1,029,735 in 252 v7-only slices, preserves the legacy per-slot-control behavior of `scheduler-run`, and services one actual block-1 write request. That request is base-identical (`changed:false`): a fresh controller reopens `CLEAN` and reads the same base-equivalent bytes, but no overlay page exists. Its chunk witnesses bind later M10 reads to reverified range bytes, and a mount error after a lower mutation disposes the worker. | The witness is not a public v8 base-media/boot contract and covers only the first no-change write. Changed-overlay persistence, full selected-base failure algebra, M8–M12/M10 application, lifecycle, accessibility, and audio workflows remain unproven. |
 

@@ -3,7 +3,7 @@ type: Implementation Roadmap
 title: MIT CADR System 303 browser and WebAssembly implementation roadmap
 description: A milestone-complete plan for porting the pinned System 303 CADR emulator to a deterministic, locally persistent, browser-hosted WebAssembly machine.
 tags: [mit-cadr, lm-3, system-303, webassembly, browser, emulator, roadmap]
-timestamp: 2026-07-30T16:00:00-04:00
+timestamp: 2026-07-30T07:32:05-04:00
 ---
 
 # MIT CADR System 303 browser and WebAssembly implementation roadmap
@@ -656,6 +656,18 @@ record and the input schedule derived from it. This is a control-plane and
 provenance closure, not evidence that the private long benchmark or READY4
 campaign has run.
 
+Benchmark observation, 2026-07-30: the clean `a42cfd6` source closure completed
+the outer-attested legacy/O0/O2 comparison with identical residue and state
+receipts at 1,130,000 slots. Legacy took 2,572,494,326,894 ns, fast O0 took
+85,978,795,596 ns, and fast O2 took 11,465,958,791 ns. The measured O2 rate was
+98,552 slots/s and projected the selected READY4 bound at 9,985 seconds. The
+private `benchmark.json` is 1,506 bytes with SHA-256
+`d358fb32f2618b196b40c6409cf07d1510cd5a9188e18d69906c21b220448344`.
+This validates the benchmark and performance handoff for that exact commit; it
+does not close `CW1-BOOT`, and a final READY4 campaign must bind the later
+joined M8--M13 source closure used by the museum release rather than silently
+reusing this earlier benchmark.
+
 Deliverables:
 
 - automated WASM boot test;
@@ -714,6 +726,52 @@ integral presentation. `TODO-RUNTIME-M7-01` and `TODO-RUNTIME-M7-02` in that
 specification define these separate obligations; completing the raw identity
 oracle alone cannot close `C-M7`.
 
+Failure-evidence hardening, 2026-07-30: the private P4 runner now preserves a
+canonical, bounded status-12 M6 diagnostic when the portable machine terminates
+before Form C, and preserves the frame, witness, frozen-release binding, and
+identical-or-first-difference comparison when a later failure occurs after Form C.
+The worker is executed from a private immutable staged JavaScript closure whose
+only permitted Node built-in is `node:worker_threads`; token-aware import discovery
+rejects commented, nonliteral, and non-local import evasions. The receipt calls the
+two adapter-file hashes a `contemporaneous_adapter_observation`: they describe the
+repository files present at execution time and are deliberately **not** claimed to
+be the producing source of the already-built Wasm module. Executable provenance is
+the bound Wasm byte hash at this gate; a reproducible producing-source closure is a
+separate release-build obligation. These stronger failure receipts do not close
+either runtime prong of `C-M7`.
+
+Root-cause and intervention observation, 2026-07-30: an independent clean M5
+O0 run reproduced the M7 failure exactly at boundary `1125883`, with terminal
+status 12 and no post-call attempted boundary. Its private 22,140-byte failure
+receipt has SHA-256
+`a740226ac3da14ca265dc2fee94462667fe0f57972e80192d875c41d26fc7c10`.
+The matching post-terminal witness records the frozen evidence array at
+count/capacity 512 with overflow set, CPU guest-fault clear, canonical overflow
+clear, and no outstanding disk operation. Source inspection establishes the
+transition: the 513th evidence event returns `GUEST_FAULT`, and the disk
+controller makes that the persistent machine status. This is inherited M5
+diagnostic exhaustion, not a display fault.
+
+The P4 runtime now selects a distinct `m7-devid` profile rather than changing
+ordinary M7's snapshot contract or merely enlarging the fixed array. The
+receipt-validated O2 composition canary crossed the former fault at the exact
+boundary `1130000`: lifecycle remained runnable, persistent status and
+outstanding request were zero, all 535 evidence events were accepted, 23 were
+in the continuation tail, and source/private base identities were unchanged.
+The ordinary final receipt was not published because the outer verifier
+incorrectly recomputed the staged base-plus-selective-patch closure from all
+candidate bytes. A separately committed, read-only recovery tool validated the
+retained success envelope and outer accounting record and produced the explicitly
+labeled 30,836-byte private recovery receipt with SHA-256
+`5e5e389a3d7d536535066ab65209de6d6dedfad33cca0e3744bf6f08cf46ce4a`;
+its committed recovery-tool revision is
+`97a95ae62d779cfca5a8059b7679947ff21bb64a`, and its Wasm identity is
+`a3537ccaa6e8c953060f2354c8f8678734fdd583e2bf635afc52a247bf42f986`.
+This recovered-after-publication-failure evidence closes the specific
+M7-plus-continuation intervention check, but it is not an ordinary final receipt
+and does not close the long Form-C native/portable identity or
+browser-presentation prongs of `C-M7`.
+
 ### M8 — Implement complete keyboard input
 
 Deliverables:
@@ -737,6 +795,21 @@ Rules:
 Exit gate `C-M8`: enumerate and inject every scan-code/key transition accepted by the
 pinned maps and verify modifier chord press/release order against native `usim`.
 
+Implementation status, 2026-07-30: M8 now has its complete 100-key physical
+map, accessible onscreen surface, focus-loss all-up transaction, a shared
+browser request-ID channel, and an installed dedicated v6 worker branch. The
+ABI 1.8 M9 Wasm profile now transfers a strict 40-byte `CDRINP1` record only at
+a completed core boundary, calls the selected keyboard IOB subset, and exposes
+a post-delivery `CDRIOB91` observation. Generic scheduler kind `3` remains
+closed. A disposable, exact native pre-IOB witness/driver patch prepares and
+compiles against the pinned public source without launching a machine. `C-M8`
+remains open until the all-100 browser/core trace and the source-mapped native
+X11 subset are recorded and compared in their isolated runtime campaigns.
+Source-unmapped descriptors and live shifted-key modifier chords remain
+explicit native exceptions; the latter still require their own ordered chord
+campaign. The static native build and direct-core tests do not close the
+runtime gate.
+
 ### M9 — Implement pointer and interactive lifecycle
 
 Deliverables:
@@ -750,6 +823,41 @@ Deliverables:
 Exit gate `CW2-INTERACTIVE`: complete a synthetic Listener/editor/window workflow
 through both native and browser machines with equivalent logical input trace,
 framebuffer checkpoints, and Lisp results.
+
+Implementation status, 2026-07-30: M9 now has tested EDGE32/capture/lifecycle
+host contracts, accessible controls, a shared browser request-ID channel, and
+an installed dedicated v6 worker branch. Its ABI 1.8 core ingress validates
+generation and one shared ordinal per `CDRINP1`, maps EDGE32 after-state to the
+selected mouse IOB words/readiness/vector subset, and deliberately rejects v6
+snapshots because that input state is not in the M5 snapshot wire layout.
+Generic kinds `3` and `4` remain rejected. The native oracle patch records
+pre-IOB keyboard/pointer calls at a driver-selected post-M6-idle boundary. The
+tracked strict `native-capture` and paired
+`run-cadr-m8-m9-input-conformance.mjs` entry points make a bounded direct-driver
+native pre-IOB campaign and browser worker/core campaign executable with fresh
+private copies, provenance, and cleanup. The browser half retains distinct
+expected and actual worker `CDRINP1` bytes and one actual post-core `CDRIOB91`
+receipt for every record. The direct native driver does **not** traverse
+Xvfb/XTEST, X11, or Cadet and therefore cannot close `C-M8` or `CW2`; its
+records are never labeled X11-observed. No native session has been launched
+for this change. A separate unexecuted
+`run-cadr-m8-m9-x11-campaign.mjs` route selects a witness-enabled X11 `usim`
+inside the existing Xvfb computer-use harness, gives all 100 mappings an explicit
+source-bounded disposition, exercises pointer transitions, and retains
+Listener/Zmacs screenshots plus shutdown provenance. Its native evidence still
+requires a matched browser workflow. `CW2-INTERACTIVE` remains open until an isolated native
+and browser Listener/editor/window campaign retains the same logical input trace,
+framebuffer checkpoints, Lisp results, and required harness provenance. The public
+preflight is `make -C cadr-web m8-m9-unit`; it is not the native/runtime oracle.
+
+The committed campaign join now requires reciprocal O0/O2 provenance manifests
+rather than accepting two independently plausible reports. It binds the same exact
+11 source authorities, recursive import closure, selected media and O0/O2 executable
+identities, direct start/end observations, M6 transcript/idle/mapping evidence, all
+208 derived input states, all 100 key transitions, and the exact worker-message
+suffix. A rights-safe synthetic M6 producer exercises that join without private
+media. This closes the report-composition and provenance mechanism only; the live
+direct and X11 campaigns described above remain unexecuted.
 
 ### M10 — Add private persistent disk overlays
 
@@ -831,6 +939,22 @@ declared `NO-AUDIO` profile; it cannot be reported as complete hardware emulatio
 Exit gate `C-M11`: deterministic sample/event hashes match the selected native
 software model, and pause/resume neither duplicates nor loses queued guest events.
 
+Implementation status, 2026-07-30: M11 now has a machine-owned core mapping for
+IOB `0764110`, pointer-free `CDRAUDS1` queue-state save/restore, an isolated
+protocol-v7 M12-Wasm subhandler, deterministic fixed-table signed-16 PCM, and a
+bounded AudioWorklet queue/acknowledgement bridge. Strict C, Node, and O0/O2 Wasm
+tests pass. The v7 path composes M8/M9 `CDRINP1` ingress before M11 post-slot
+beeper events and keeps their sequence domains separate. The M12 direct-Wasm
+`CDRM12S1` envelope stages frozen `CDRSNAP1`, `CDRAUDS1`, and `CDRM12C1` in that
+order and rolls back before publication on any malformed component. Bare
+`CDRSNAP1` does not include audio state, and protocol-v7 generic restore remains
+blocked on M9 continuation. A source-bound System 303 session evaluated
+`(SI:%BEEP 500. 100000.)` and retained 199 ordered job/PCM pairs; the independent
+`CDRM11FIX2` clean-room oracle also closes narrow `C-M11-04-PCM` across native
+O0/O2 and freshly rebuilt selected-M12 Wasm O0/O2. These results do not exercise
+selected-Wasm browser playback, pause/device-loss semantics, Votrax serial output,
+or a guest-generated browser audio workflow, so full `C-M11` remains open.
+
 ### M12 — Debugger, trace, and preservation controls
 
 Deliverables:
@@ -848,6 +972,21 @@ historical `CC` console, whose full profile assumes a separate debuggee.
 Exit gate `C-M12`: each control stops at the documented boundary and resume produces
 the same continuation as a run with the equivalent preinstalled breakpoint.
 
+Implementation status, 2026-07-30: a narrow cumulative M12 ABI 1.10/protocol-v7 profile has a
+real one-slot core adapter, source-bounded QMLP/DMLP candidate-loop map, O0/O2 Wasm
+export checks, an installed closed v7 worker branch, and pointer-free `CDRM12C1`
+breakpoint-configuration save/restore through direct Wasm and the worker. Direct
+generic M12 Wasm snapshots now use `CDRM12S1`: restore stages `CDRSNAP1`, adopts
+`CDRAUDS1`, validates `CDRM12C1`, and only then publishes the replacement while
+staling old audio cursors and inspector leases. Malformed-envelope and successful
+publication tests pass in O0 and O2 without changing lower snapshot formats. A separate
+public-usim candidate-loop witness prepared and compiled without being run. Native
+and worker tests establish the selected source-level
+M8/M11 order, but not a runtime observation. Generic snapshot configuration
+composition is closed at the direct-Wasm boundary; M9 protocol-v7 continuation,
+a selected load-band macro trace, and historical console behavior remain open;
+`C-M12` remains open.
+
 ### M13 — Hardening and accessibility
 
 Deliverables:
@@ -863,6 +1002,17 @@ Deliverables:
 Exit gate `C-M13`: malformed host inputs cannot write outside their overlay, mutate
 the immutable base, issue network traffic, or wedge the page without a bounded stop.
 
+Implementation status, 2026-07-30: committed evidence E23 through E26 loads the
+selected M12 O2 Wasm in the real worker, exercises a bounded synthetic M10
+composition, dispatches a synthetic M4 write through the real M13 shell/M10
+controller seam, and boots selected base media to the first real host wait at tick
+1,029,735. The selected-media witness services one base-equivalent block-1 write;
+it reports `durable:true, changed:false`, creates no overlay page, and a fresh
+controller rereads the same base bytes. These are bounded worker, dispatch, and
+selected-base observations. They do not prove changed-overlay persistence, a
+complete composed M8--M12 workflow, final accessibility, or the full F06/F07 failure
+algebra, so `C-M13` remains open.
+
 ### M14 — Reproducible museum release
 
 Deliverables:
@@ -877,6 +1027,14 @@ Deliverables:
 Exit gate `CW4-MUSEUM`: a clean checkout can build the same logical WASM artifact,
 load only policy-permitted inputs, pass all conformance gates, and complete the
 guided smoke workflow without a network.
+
+Scaffolding status, 2026-07-30: the tracked
+[M14 release note](cadr-web-reproducible-museum-release-scaffolding.md) and
+`cadr-web/release/` policies define a deterministic logical manifest, complete
+source map, closed no-network package, three-engine evidence matrix, rights
+inventory, and deterministic guide/report generators. The scaffold omits the
+final Wasm/worklet and leaves CW0–CW4 and all browser rows `not-evaluated`. It
+is not a CW4 claim.
 
 ### M15 — Optional isolated Chaos networking
 
@@ -1014,4 +1172,4 @@ M15 and M16 never block the offline museum release.
 - [TV window-system specification](tv-window-system-reimplementation-specification.md)
 - Pinned `usim` modules under repository `l/usim/`
 
-Last verified: 2026-07-27.
+Last verified: 2026-07-30.

@@ -3,7 +3,7 @@ type: Reimplementation Specification
 title: CADR audio, beeper, and Votrax reimplementation specification
 description: A Phase 1, source-bounded contract for deterministic CADR beeper and Votrax event delivery, without a hardware, device, or historical-PCM-emulation claim.
 tags: [mit-cadr, audio, votrax, reimplementation, cadr-web, preservation]
-timestamp: 2026-07-30T23:10:00-04:00
+timestamp: 2026-07-30T07:42:00-04:00
 ---
 
 # CADR audio, beeper, and Votrax reimplementation specification
@@ -70,12 +70,14 @@ profile it exercises.
 | `CADR-IOB-BEEPER-REF-303-v1` | System 303 IOB beeper trigger | A read/write at IOB address `0764110` is represented by synthetic `%BEEP` arguments: half-wavelength and duration in microseconds | `USIM-SRC`; semantic input reference only |
 | `NO-AUDIO` | Headless/deterministic output policy | Record events and witnesses but produce no host sound or PCM | `INF-M11`; Phase 1 normative output policy |
 | `USIM-SDL3-SINE-330D8248-CANONICAL-v1` | `usim` check-in `330d8248ec2e12af071e287920e681600f75df9ffd854aada5f8a64c9adad64d` | Reserve a mono 8 kHz signed-16 sine render target | `USIM-SRC`; explicitly a current software model, not hardware |
-| `VOTRAX-SERIAL-303-300-8E2-v1` | System 303 Votrax source | 300 baud, eight data bits, even parity, two stops; the source's `-1` utterance terminator is not a transmitted byte | `303-SRC`; semantic serial-byte events only |
+| `VOTRAX-SERIAL-303-300-8E2-v1` | System 303 Votrax source | 300 baud, eight data bits, even parity, two stops; the source passes `-1` to `:TYO`, but its wire-level disposition is unobserved | `303-SRC`; semantic stream-call events only |
 | `VOTRAX-SERIAL-S46-300-7E1-v1` | System 46 Votrax comparison profile | 300 baud, seven data bits, even parity, one stop | `S46-SRC`; source-level defaults, with loaded-artifact behavior untested |
 
 The System 303 Votrax source constructs its serial stream with eight data bits, two
-stop bits, parity/framing checks, and baud 300; its speech loop sends serial values
-and uses `-1` to terminate its source-side utterance iteration.
+stop bits, parity/framing checks, and baud 300; its speech loop passes serial values
+and then `-1` to the stream's `:TYO` operation. The public source establishes that
+call sequence, but not whether the serial implementation suppresses, transforms, or
+transmits the negative value on a particular artifact.
 [The public System 303 source](https://tumbleweed.nu/r/sys/file?ci=4df393c68d7f083ce42d5c377039d26043cc18a9031ace28258dc97f4137eb91&name=demo%2Fvotrax.lisp&ln=24-89)
 supports that narrower claim. The System 46 Votrax source calls
 `MAKE-SERIAL-STREAM` without arguments, and the pinned implementation defines those
@@ -168,9 +170,11 @@ order, and padding are never transferred. `cadr_audio_event_encode` emits exactl
 The v1 numeric serial codes are `8E2 = 0x00020208` and `7E1 = 0x00010207`; the low
 byte is data bits, the next byte is parity (`2` = even), and the next byte is stop
 bits. A canonical UART primary is exactly `0..255`. The source-side `-1` utterance
-terminator is control flow, not a UART byte; `0xffffffff` and every other larger
-primary are invalid. There is no phoneme lookup, voice-ROM access, or synthesis
-implicit in a UART event.
+call has no canonical UART event in this bounded profile because its wire
+disposition is unknown; `0xffffffff` and every other larger primary are invalid.
+This is a profile nonclaim, not evidence that the preserved stream suppresses that
+call. There is no phoneme lookup, voice-ROM access, or synthesis implicit in a UART
+event.
 
 ### Invariants
 
@@ -703,7 +707,7 @@ behavior, browser AudioWorklet equivalence, or full `C-M11`.
 | Obligation | Safe setup and discriminating action | Claim closed |
 | --- | --- | --- |
 | `TODO-RUNTIME-M11-01` | **Closed 2026-07-30:** isolated System 303 Xvfb session evaluated `(SI:%BEEP 500. 100000.)`; retained 199 ordered job/PCM pairs, reviewed screenshot, exact source/load-band/run provenance, and clean shutdown | Selected beeper trigger and native ordering established; browser equivalence remains a separate gate |
-| `TODO-RUNTIME-M11-02` | Use an isolated serial observation fixture for System 303 Votrax and capture the emitted bytes plus the source-side utterance termination boundary | Stream configuration, byte ordering, and confirmation that the `-1` terminator is not transmitted for that exact artifact |
+| `TODO-RUNTIME-M11-02` | Use an isolated serial observation fixture for System 303 Votrax and capture the stream calls, emitted bytes, and utterance boundary | Stream configuration, byte ordering, and the exact wire-level disposition of the source's `:TYO -1` call |
 | `TODO-RUNTIME-M11-03` | Repeat the isolated probe for one pinned System 46 artifact | Whether that loaded artifact exhibits the source-default 300/7E1 profile |
 | `TODO-RUNTIME-M11-04` | **Closed 2026-07-30:** execute the standalone fixed-sine32 reference against native O0/O2 and freshly rebuilt selected-M12 Wasm O0/O2, including partial-ack snapshot adoption into fresh instances | `C-M11-04-PCM` for the narrow synthetic clean-room profile only |
 
