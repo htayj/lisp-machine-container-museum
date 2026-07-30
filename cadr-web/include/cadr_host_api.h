@@ -16,12 +16,19 @@ extern "C" {
 #endif
 
 #define CADR_ABI_MAJOR UINT32_C(1)
-#define CADR_ABI_MINOR UINT32_C(4)
 #define CADR_ABI_MINOR_M1 UINT32_C(0)
 #define CADR_ABI_MINOR_M2 UINT32_C(1)
 #define CADR_ABI_MINOR_M3 UINT32_C(2)
 #define CADR_ABI_MINOR_M4 UINT32_C(3)
 #define CADR_ABI_MINOR_M5 UINT32_C(4)
+/* M6 is an ABI1.4 protocol extension, not an ABI-minor increment. */
+#define CADR_ABI_MINOR_M6 UINT32_C(4)
+#define CADR_ABI_MINOR_M7 UINT32_C(5)
+#if defined(CADR_M7_CORE)
+#define CADR_ABI_MINOR CADR_ABI_MINOR_M7
+#else
+#define CADR_ABI_MINOR CADR_ABI_MINOR_M6
+#endif
 #define CADR_SHA256_BYTES UINT32_C(32)
 #define CADR_MAX_HOST_REQUEST_PAYLOAD_BYTES UINT32_C(1024)
 
@@ -235,6 +242,27 @@ typedef struct cadr_machine_info {
     uint32_t persistent_status;
 } cadr_machine_info;
 
+#if defined(CADR_M7_CORE)
+/* M7 derived display-tracker view.  The tracker is intentionally excluded
+ * from CDRSTATE and CDRSNAP1; machine_generation binds its raw framebuffer. */
+typedef struct cadr_display_info {
+    uint32_t abi_major;
+    uint32_t abi_minor;
+    uint32_t struct_size;
+    uint32_t reserved0;
+    uint64_t machine_generation;
+    uint64_t framebuffer_generation;
+    uint32_t width;
+    uint32_t height;
+    uint32_t stride_words;
+    uint32_t backing_words;
+    uint32_t active_words;
+    uint32_t tv_mode;
+    uint32_t full_refresh;
+    uint32_t failed;
+} cadr_display_info;
+#endif
+
 typedef struct cadr_block_read_descriptor {
     uint64_t first_block;
     uint32_t block_count;
@@ -318,6 +346,9 @@ CADR_ABI_STATIC_ASSERT(sizeof(cadr_run_request) == 24U, "cadr_run_request layout
 CADR_ABI_STATIC_ASSERT(sizeof(cadr_run_result) == 48U, "cadr_run_result layout");
 CADR_ABI_STATIC_ASSERT(sizeof(cadr_scheduler_event) == 48U, "scheduler event layout");
 CADR_ABI_STATIC_ASSERT(sizeof(cadr_machine_info) == 88U, "cadr_machine_info layout");
+#if defined(CADR_M7_CORE)
+CADR_ABI_STATIC_ASSERT(sizeof(cadr_display_info) == 64U, "cadr_display_info layout");
+#endif
 CADR_ABI_STATIC_ASSERT(sizeof(cadr_block_read_descriptor) == 16U, "block read descriptor layout");
 CADR_ABI_STATIC_ASSERT(sizeof(cadr_block_write_descriptor) == 24U, "block write descriptor layout");
 CADR_ABI_STATIC_ASSERT(sizeof(cadr_present_descriptor) == 24U, "present descriptor layout");
@@ -399,6 +430,25 @@ cadr_status cadr_machine_run(cadr_machine *machine,
                              cadr_run_result *out_result);
 cadr_status cadr_machine_query(cadr_machine *machine,
                                cadr_machine_info *out_info);
+
+#if defined(CADR_M7_CORE)
+/* M7 CDRDISP1 output is canonical little-endian raw display words: bit zero
+ * is the leftmost pixel.  tv_mode bit 2 selects only the displayed black/white
+ * polarity; it never changes the raw word bits. */
+cadr_status cadr_machine_display_info(cadr_machine *machine,
+                                      cadr_display_info *out_info);
+cadr_status cadr_machine_display_update_size(cadr_machine *machine,
+                                             uint64_t *out_byte_count);
+cadr_status cadr_machine_display_update_take(
+    cadr_machine *machine, uint64_t expected_machine_generation,
+    uint64_t expected_framebuffer_generation, uint8_t *bytes,
+    uint64_t capacity, uint64_t *out_written);
+cadr_status cadr_machine_display_full_size(cadr_machine *machine,
+                                           uint64_t *out_byte_count);
+cadr_status cadr_machine_display_full_copy(cadr_machine *machine,
+                                           uint8_t *bytes, uint64_t capacity,
+                                           uint64_t *out_written);
+#endif
 
 /* ABI 1.1 deterministic tracing; all output storage remains host-owned. */
 cadr_status cadr_machine_trace_start(cadr_machine *machine,

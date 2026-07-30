@@ -53,6 +53,12 @@ async function newProbe() {
     assert.deepEqual(Buffer.from(reply.summaryDigest), expectedDigest);
     reply = await probe.request({ version: 4, id: 4, op: "snapshot-size" });
     assert.equal(reply.status, 9, "M6-DEVID1 never publishes a snapshot");
+    reply = await probe.request({ version: 4, id: 5, op: "run-until-event-m6",
+      clockSlots: 0 });
+    assert.equal(reply.status, 2, "the fast runner rejects a zero slot request");
+    reply = await probe.request({ version: 4, id: 6, op: "run-until-event-m6",
+      clockSlots: 1048577 });
+    assert.equal(reply.status, 2, "the fast runner rejects an over-cap request");
   } finally {
     await worker.terminate();
   }

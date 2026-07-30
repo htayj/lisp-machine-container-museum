@@ -1,4 +1,5 @@
 import { m5SlotAdvanceAllowed, runM5DigestBatch } from "./cadr-m5-batch.mjs";
+import { parseCdrDisp1 } from "./cadr-display-renderer.mjs";
 
 /*
  * CADR-WEB versioned dedicated-worker protocols.
@@ -10,14 +11,15 @@ import { m5SlotAdvanceAllowed, runM5DigestBatch } from "./cadr-m5-batch.mjs";
  * operation still consumes its well-formed id, so retries cannot accidentally
  * replay a side-effecting request.  Protocol v1 freezes the M3 request tree;
  * protocol v2 adds the M4 media operations and request-payload framing.  The
- * protocol-v3 tree is the frozen M5 scheduler, while protocol v4 adds only
- * M6's queue digest and CDRM6I1 observation. The first well-formed, in-order
+ * protocol-v3 tree is the frozen M5 scheduler, protocol v4 adds M6's queue
+ * digest and CDRM6I1 observation, and protocol v5 adds M7's display transfer.
  * The first well-formed, in-order request selects one version for the session.
  */
 const CADR_M3_PROTOCOL_VERSION = 1;
 const CADR_M4_PROTOCOL_VERSION = 2;
 const CADR_M5_PROTOCOL_VERSION = 3;
 const CADR_M6_PROTOCOL_VERSION = 4;
+const CADR_M7_PROTOCOL_VERSION = 5;
 const CADR_STATUS_OK = 0;
 const CADR_STATUS_INVALID_ARGUMENT = 2;
 const CADR_STATUS_HOST_FAILURE = 7;
@@ -28,6 +30,7 @@ const CADR_STATUS_UNIMPLEMENTED_DEVICE = 13;
 const CADR_STATUS_HALTED = 16;
 const CADR_TRANSFER_LIMIT = 1048576;
 const CADR_DIGEST_BATCH_MAX = 4096;
+const CADR_M6_FAST_RUN_MAX_SLOTS = 1048576;
 const CADR_HOST_DESCRIPTOR_LIMIT = 64;
 const CADR_HOST_REQUEST_PAYLOAD_LIMIT = 1024;
 const CADR_M6_DEVID_TAIL_H0 = new Uint8Array([
@@ -53,9 +56,16 @@ const CADR_M5_ONLY_OPERATIONS = new Set([
 const CADR_M6_ONLY_OPERATIONS = new Set([
   "scheduler-queue-digest", "boot-witness",
 ]);
-/* This policy is deliberately opt-in within protocol v4. */
+const CADR_M6_DIAGNOSTIC_ONLY_OPERATIONS = new Set([
+  "post-terminal-diagnostic",
+]);
+/* This policy is deliberately opt-in within protocol v4.  Protocol v5/M7
+ * never receives it merely by being a later protocol version. */
 const CADR_M6_DEVID_ONLY_OPERATIONS = new Set([
-  "m6-disk-evidence-summary",
+  "m6-disk-evidence-summary", "run-until-event-m6",
+]);
+const CADR_M7_ONLY_OPERATIONS = new Set([
+  "display-update", "display-full",
 ]);
 const CADR_SCHED_EVENT_SEQUENCE_BREAK = 1;
 const CADR_SCHED_EVENT_CLOCK = 2;
@@ -92,15 +102,18 @@ let deferredControls = [];
 /* A marker, not pre-completion bytes: completion can mutate guest state. */
 let pendingBoundaryDigest = false;
 let lastFailureEvidence = null;
+let diagnosticModule = false;
 let m6DevidModule = false;
 
 function isM5ProtocolVersion(version) {
   return version === CADR_M5_PROTOCOL_VERSION ||
-    version === CADR_M6_PROTOCOL_VERSION;
+    version === CADR_M6_PROTOCOL_VERSION ||
+    version === CADR_M7_PROTOCOL_VERSION;
 }
 
 function isM6ProtocolVersion(version) {
-  return version === CADR_M6_PROTOCOL_VERSION;
+  return version === CADR_M6_PROTOCOL_VERSION ||
+    version === CADR_M7_PROTOCOL_VERSION;
 }
 
 function isM6DevidProtocolVersion(version) {
@@ -575,6 +588,51 @@ function parseCdrM6DiskEvidenceSummary(bytes) {
   });
 }
 
+/* CDRM6FAST1 is intentionally a closed C-owned stop record.  The worker
+ * rejects framing drift before publishing it, so the READY4 driver never
+ * treats host-side timer batching as equivalent evidence. */
+function parseCdrM6FastRun(bytes) {
+  if (!(bytes instanceof Uint8Array) || bytes.byteLength !== 128 ||
+      new TextDecoder().decode(bytes.subarray(0, 10)) !== "CDRM6FAST1" ||
+      !zeroWitness(bytes.subarray(10, 16))) return null;
+  const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+  const schema = view.getUint32(16, true);
+  const recordBytes = view.getUint32(20, true);
+  const reason = view.getUint32(24, true);
+  const terminalStatus = view.getUint32(28, true);
+  const requestedSlots = view.getUint32(32, true);
+  const completedSlots = view.getBigUint64(40, true);
+  const microinstructionDelta = view.getBigUint64(48, true);
+  const preBoundary = view.getBigUint64(56, true);
+  const postBoundary = view.getBigUint64(64, true);
+  const debugBefore = view.getBigUint64(72, true);
+  const debugAfter = view.getBigUint64(80, true);
+  const persistentStatus = view.getUint32(88, true);
+  const coreLifecycle = view.getUint32(92, true);
+  const outstandingRequestId = view.getBigUint64(96, true);
+  if (schema !== 1 || recordBytes !== 128 || reason < 1 || reason > 4 ||
+      requestedSlots === 0 || requestedSlots > CADR_M6_FAST_RUN_MAX_SLOTS ||
+      completedSlots > BigInt(requestedSlots) || postBoundary < preBoundary ||
+      postBoundary - preBoundary !== completedSlots ||
+      debugBefore > 0xffffffffffffn || debugAfter > 0xffffffffffffn ||
+      !zeroWitness(bytes.subarray(104)) || !unsigned32(terminalStatus) ||
+      !unsigned32(persistentStatus) || !unsigned32(coreLifecycle)) return null;
+  if (reason === 1 && (terminalStatus !== CADR_STATUS_OK ||
+      completedSlots !== BigInt(requestedSlots) || debugBefore !== debugAfter)) return null;
+  if (reason === 2 && (terminalStatus !== CADR_STATUS_OK ||
+      debugBefore === debugAfter || outstandingRequestId !== 0n ||
+      persistentStatus !== CADR_STATUS_OK)) return null;
+  if (reason === 3 && (terminalStatus !== CADR_STATUS_WAITING_FOR_HOST ||
+      persistentStatus !== CADR_STATUS_OK || outstandingRequestId === 0n)) return null;
+  if (reason === 4 && (terminalStatus === CADR_STATUS_OK ||
+      terminalStatus === CADR_STATUS_WAITING_FOR_HOST)) return null;
+  return Object.freeze({
+    completedSlots, coreLifecycle, debugAfter, debugBefore, microinstructionDelta,
+    outstandingRequestId, persistentStatus, postBoundary, preBoundary,
+    reason, requestedSlots, terminalStatus,
+  });
+}
+
 function m6DevidFailureSummary(e) {
   if (!m6DevidModule ||
       typeof e.cadr_wasm_m6_disk_evidence_summary !== "function") return null;
@@ -588,6 +646,110 @@ function m6DevidFailureSummary(e) {
     diskEvidenceSummary: summary.buffer,
     diskEvidenceSummaryDigest: digest.buffer,
   };
+}
+
+/* Closed parser for the diagnostic-only CDRM6D1 record.  It deliberately
+ * accepts no trace or evidence payload: the diagnostic module reports only
+ * fixed-width state already retained by the terminated worker. */
+function parsePostTerminalDiagnostic(bytes) {
+  if (!(bytes instanceof Uint8Array) || bytes.byteLength !== 320 ||
+      new TextDecoder().decode(bytes.subarray(0, 7)) !== "CDRM6D1" ||
+      bytes[7] !== 0) return null;
+  const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+  const version = view.getUint32(8, true);
+  const recordBytes = view.getUint32(12, true);
+  const flags = view.getUint32(16, true);
+  const reserved0 = view.getUint32(20, true);
+  const lifecycle = view.getUint32(24, true);
+  const persistentStatus = view.getUint32(28, true);
+  const diskEvidenceCount = view.getUint32(32, true);
+  const diskEvidenceCapacity = view.getUint32(36, true);
+  const currentDiskStatus = view.getUint32(40, true);
+  const outstandingOperation = view.getUint32(44, true);
+  const completionQueued = view.getUint32(48, true);
+  const unexpectedBusOperation = view.getUint32(52, true);
+  const currentTransferResetEnables = view.getUint32(56, true);
+  const currentBusIrq = view.getUint32(60, true);
+  const traceObservationReserved2 = view.getUint32(64, true);
+  const packedIntraSlot = view.getUint32(68, true);
+  const attemptedBoundary = view.getBigUint64(72, true);
+  const microinstructions = view.getBigUint64(80, true);
+  const nextSequence = view.getBigUint64(88, true);
+  const lastSlot = view.getBigUint64(96, true);
+  const lba = view.getBigUint64(104, true);
+  const generation = view.getBigUint64(112, true);
+  const requestId = view.getBigUint64(120, true);
+  const expectedCompletion = view.getBigUint64(128, true);
+  const command = view.getUint32(136, true);
+  const clp = view.getUint32(140, true);
+  const da = view.getUint32(144, true);
+  const lma = view.getUint32(148, true);
+  const ccwAddress = view.getUint32(152, true);
+  const ccwIndex = view.getUint32(156, true);
+  const observedDiskStatus = view.getUint32(160, true);
+  const transferResetEnables = view.getUint32(164, true);
+  const busIrq = view.getUint32(168, true);
+  const observedOperation = view.getUint32(172, true);
+  const observedCompletionQueued = view.getUint32(176, true);
+  const observedReserved = view.getUint32(180, true);
+  const stateDigest = bytes.slice(184, 216);
+  const reservedTail = bytes.subarray(216, 320);
+  const knownFlags = 0x1f;
+  if (version !== 1 || recordBytes !== 320 || (flags & ~knownFlags) !== 0 ||
+      (flags & 0x10) === 0 || reserved0 !== 0 ||
+      traceObservationReserved2 !== 0 || observedReserved !== 0 ||
+      !zeroWitness(reservedTail) ||
+      lifecycle > 3 || diskEvidenceCapacity !== 512 ||
+      diskEvidenceCount > diskEvidenceCapacity) return null;
+  return Object.freeze({
+    attemptedBoundary,
+    canonicalOverflowed: (flags & 0x02) !== 0,
+    completionQueued,
+    cpuGuestFault: (flags & 0x04) !== 0,
+    currentDiskStatus,
+    currentTransferResetEnables,
+    currentBusIrq,
+    diskEvidence: Object.freeze({
+      capacity: diskEvidenceCapacity,
+      count: diskEvidenceCount,
+      overflowed: (flags & 0x01) !== 0,
+    }),
+    lifecycle,
+    microinstructions,
+    outstandingOperation,
+    persistentStatus,
+    stateDigest,
+    trace: Object.freeze({
+      active: (flags & 0x08) !== 0,
+      failureLedgerUnavailable: true,
+      failureIndication: null,
+      quiescent: (flags & 0x08) === 0,
+    }),
+    unexpectedBusOperation,
+    evidence: Object.freeze({
+      haveLast: (packedIntraSlot & 0x80000000) !== 0,
+      intraSlot: packedIntraSlot & 0x7fffffff,
+      lastSlot,
+      nextSequence,
+      observedAfter: Object.freeze({
+        busIrq,
+        ccwAddress,
+        ccwIndex,
+        clp,
+        command,
+        completionQueued: observedCompletionQueued,
+        da,
+        expectedCompletion,
+        generation,
+        lba,
+        lma,
+        operation: observedOperation,
+        requestId,
+        status: observedDiskStatus,
+        transferResetEnables,
+      }),
+    }),
+  });
 }
 
 function schedulerResult(e, id, op, status, totals = null) {
@@ -609,8 +771,10 @@ async function handle(request) {
       return;
     }
     instance = await WebAssembly.instantiate(request.module, {});
+    diagnosticModule = typeof instance.exports.cadr_wasm_post_terminal_diagnostic === "function";
     m6DevidModule = request.m6DiskEvidencePolicy === true &&
-      typeof instance.exports.cadr_wasm_m6_disk_evidence_summary === "function";
+      typeof instance.exports.cadr_wasm_m6_disk_evidence_summary === "function" &&
+      typeof instance.exports.cadr_wasm_run_until_event_m6 === "function";
     mediaBusy = false;
     mediaDirty = false;
     mediaSnapshotBlocked = false;
@@ -636,8 +800,18 @@ async function handle(request) {
     response(id, op, CADR_STATUS_INVALID_ARGUMENT);
     return;
   }
+  if ((!isM6ProtocolVersion(protocolVersion) || !diagnosticModule) &&
+      CADR_M6_DIAGNOSTIC_ONLY_OPERATIONS.has(op)) {
+    response(id, op, CADR_STATUS_INVALID_ARGUMENT);
+    return;
+  }
   if ((!isM6DevidProtocolVersion(protocolVersion) || !m6DevidModule) &&
       CADR_M6_DEVID_ONLY_OPERATIONS.has(op)) {
+    response(id, op, CADR_STATUS_INVALID_ARGUMENT);
+    return;
+  }
+  if (protocolVersion !== CADR_M7_PROTOCOL_VERSION &&
+      CADR_M7_ONLY_OPERATIONS.has(op)) {
     response(id, op, CADR_STATUS_INVALID_ARGUMENT);
     return;
   }
@@ -650,13 +824,54 @@ async function handle(request) {
     return;
   }
   if ((workerLifecycle === CADR_WORKER_STOPPED || workerLifecycle === CADR_WORKER_FAILED) &&
-      op !== "scheduler-state" && op !== "m6-disk-evidence-summary") {
+      op !== "scheduler-state" && op !== "post-terminal-diagnostic" &&
+      op !== "m6-disk-evidence-summary") {
     response(id, op, CADR_STATUS_NOT_READY, { lifecycle: workerLifecycle });
     return;
   }
   if (isM5ProtocolVersion(protocolVersion) &&
       ["run", "run-digest-batch", "run-digest-batch-v3", "run-digest-batch-m4"].includes(op)) {
     response(id, op, CADR_STATUS_INVALID_ARGUMENT, { lifecycle: workerLifecycle });
+    return;
+  }
+  if (op === "post-terminal-diagnostic") {
+    if (workerLifecycle !== CADR_WORKER_FAILED || lastFailureEvidence === null) {
+      response(id, op, CADR_STATUS_NOT_READY, { lifecycle: workerLifecycle });
+      return;
+    }
+    const pointer = e.cadr_wasm_output_pointer() >>> 0;
+    const status = pointer === 0 ? CADR_STATUS_NOT_READY :
+      (e.cadr_wasm_post_terminal_diagnostic() >>> 0);
+    if (status !== CADR_STATUS_OK || pointer + 320 > e.memory.buffer.byteLength) {
+      response(id, op, status);
+      return;
+    }
+    const diagnostic = parsePostTerminalDiagnostic(
+      new Uint8Array(e.memory.buffer, pointer, 320).slice());
+    if (diagnostic === null) {
+      response(id, op, CADR_STATUS_INVALID_ARGUMENT);
+      return;
+    }
+    const queueStatus = e.cadr_wasm_scheduler_digest() >>> 0;
+    const queueDigest = queueStatus === CADR_STATUS_OK ?
+      new Uint8Array(e.memory.buffer, pointer, 32).slice() : null;
+    const stateStatus = e.cadr_wasm_state_v5_failure_digest() >>> 0;
+    const stateDigest = stateStatus === CADR_STATUS_OK ?
+      new Uint8Array(e.memory.buffer, pointer, 32).slice() : null;
+    const expectedQueue = new Uint8Array(lastFailureEvidence.queueDigest);
+    const expectedState = new Uint8Array(lastFailureEvidence.coreStateDigest);
+    if (!sameBytes(diagnostic.stateDigest, expectedState) ||
+        !sameBytes(queueDigest, expectedQueue) || !sameBytes(stateDigest, expectedState)) {
+      response(id, op, CADR_STATUS_INVALID_ARGUMENT);
+      return;
+    }
+    response(id, op, CADR_STATUS_OK, {
+      diagnostic: Object.freeze({ ...diagnostic, stateDigest: diagnostic.stateDigest.buffer }),
+      lastCompleteBoundary: lastFailureEvidence.lastCompleteBoundary,
+      terminalCoreDigestVerified: true,
+      terminalQueueDigestVerified: true,
+      wireSchema: "CDRM6D1",
+    }, [diagnostic.stateDigest.buffer]);
     return;
   }
   if (op === "media-overlay-state") {
@@ -1048,6 +1263,67 @@ async function handle(request) {
       failed.coreStateDigest, ...(failed.diskEvidenceSummary === undefined ? [] :
         [failed.diskEvidenceSummary, failed.diskEvidenceSummaryDigest])]);
     await applyDeferredControls();
+  } else if (op === "run-until-event-m6") {
+    if (!m6DevidModule || !unsigned32(request.clockSlots) ||
+        request.clockSlots === 0 || request.clockSlots > CADR_M6_FAST_RUN_MAX_SLOTS ||
+        visibilityInitialized === false || workerLifecycle !== CADR_WORKER_RUNNING || hidden ||
+        runActive || deferredControls.length !== 0) {
+      response(id, op, CADR_STATUS_INVALID_ARGUMENT, { lifecycle: workerLifecycle });
+      return;
+    }
+    const pointer = e.cadr_wasm_output_pointer() >>> 0;
+    if (pointer === 0) {
+      response(id, op, CADR_STATUS_NOT_READY, { lifecycle: workerLifecycle });
+      return;
+    }
+    runActive = true;
+    const status = e.cadr_wasm_run_until_event_m6(request.clockSlots) >>> 0;
+    runActive = false;
+    if (status !== CADR_STATUS_OK || pointer + 128 > e.memory.buffer.byteLength) {
+      response(id, op, status === CADR_STATUS_OK ? CADR_STATUS_NOT_READY : status,
+        { lifecycle: workerLifecycle });
+      return;
+    }
+    const fastRun = new Uint8Array(e.memory.buffer, pointer, 128).slice();
+    const parsed = parseCdrM6FastRun(fastRun);
+    if (parsed === null) {
+      response(id, op, CADR_STATUS_INVALID_ARGUMENT, { lifecycle: workerLifecycle });
+      return;
+    }
+    let failure = null;
+    if (parsed.reason === 4) {
+      workerLifecycle = CADR_WORKER_FAILED;
+      pendingBoundaryDigest = false;
+      failure = failureEvidence(e, parsed.terminalStatus);
+      lastFailureEvidence = failure;
+    } else if (parsed.reason === 3) {
+      workerLifecycle = CADR_WORKER_WAITING;
+      pendingBoundaryDigest = parsed.completedSlots !== 0n;
+    } else {
+      workerLifecycle = CADR_WORKER_RUNNING;
+      pendingBoundaryDigest = false;
+    }
+    response(id, op, CADR_STATUS_OK, {
+      wireSchema: "CDRM6FAST1",
+      fastRun: fastRun.buffer,
+      reason: parsed.reason,
+      terminalStatus: parsed.terminalStatus,
+      requestedSlots: parsed.requestedSlots,
+      completedSlots: parsed.completedSlots,
+      microinstructionDelta: parsed.microinstructionDelta,
+      preBoundary: parsed.preBoundary,
+      postBoundary: parsed.postBoundary,
+      debugBefore: parsed.debugBefore,
+      debugAfter: parsed.debugAfter,
+      persistentStatus: parsed.persistentStatus,
+      coreLifecycle: parsed.coreLifecycle,
+      outstandingRequestId: parsed.outstandingRequestId,
+      lifecycle: workerLifecycle,
+      ...(failure ?? {}),
+    }, failure === null ? [fastRun.buffer] : [fastRun.buffer, failure.queueDigest,
+      failure.coreStateDigest, ...(failure.diskEvidenceSummary === undefined ? [] :
+        [failure.diskEvidenceSummary, failure.diskEvidenceSummaryDigest])]);
+    await applyDeferredControls();
   } else if (op === "boundary-digests") {
     const result = outputDigests(e);
     if (result === null) response(id, op, CADR_STATUS_NOT_READY);
@@ -1189,6 +1465,45 @@ async function handle(request) {
       visibilityInitialized,
       hidden,
     }, [sample.buffer]);
+  } else if (op === "display-update" || op === "display-full") {
+    const status = (op === "display-full" ?
+      e.cadr_wasm_display_full() : e.cadr_wasm_display_update()) >>> 0;
+    const result = transferResult(e, status, "frame");
+    if (result.status !== CADR_STATUS_OK) {
+      response(id, op, result.status);
+      return;
+    }
+    let parsed;
+    try {
+      parsed = parseCdrDisp1(result.frame);
+    } catch {
+      response(id, op, CADR_STATUS_INVALID_ARGUMENT);
+      return;
+    }
+    if ((op === "display-full" && !parsed.full) ||
+        (parsed.rectangles.length === 0 && parsed.full)) {
+      response(id, op, CADR_STATUS_INVALID_ARGUMENT);
+      return;
+    }
+    const updated = parsed.rectangles.length !== 0;
+    const dirtyRectangles = parsed.rectangles.map(rectangle => ({ ...rectangle }));
+    const common = {
+      wireSchema: "CDRDISP1",
+      updated,
+      full: parsed.full,
+      machineGeneration: parsed.machineGeneration,
+      framebufferGeneration: parsed.framebufferGeneration,
+      blackOnWhite: parsed.bow,
+      width: 768,
+      height: 963,
+      dirtyRectangles,
+    };
+    if (!updated) {
+      response(id, op, CADR_STATUS_OK, common);
+      return;
+    }
+    response(id, op, CADR_STATUS_OK,
+      { ...common, frame: result.frame }, [result.frame]);
   } else if (op === "host-next-request") {
     const input = e.cadr_wasm_input_reserve(CADR_HOST_DESCRIPTOR_LIMIT + CADR_HOST_REQUEST_PAYLOAD_LIMIT) >>> 0;
     const output = e.cadr_wasm_output_pointer() >>> 0;
@@ -1499,7 +1814,8 @@ async function receive(event) {
   const request = event.data;
   if (!isRecord(request) ||
       ![CADR_M3_PROTOCOL_VERSION, CADR_M4_PROTOCOL_VERSION,
-        CADR_M5_PROTOCOL_VERSION, CADR_M6_PROTOCOL_VERSION]
+        CADR_M5_PROTOCOL_VERSION, CADR_M6_PROTOCOL_VERSION,
+        CADR_M7_PROTOCOL_VERSION]
         .includes(request.version) ||
       (isM5ProtocolVersion(request.version) && request.op === "instantiate" &&
        (!(request.module instanceof WebAssembly.Module) ||
@@ -1520,11 +1836,24 @@ async function receive(event) {
          entry => entry.name === "cadr_wasm_m6_disk_evidence_summary") !==
         (request.m6DiskEvidencePolicy === true))) ||
       (request.op === "instantiate" &&
+       request.module instanceof WebAssembly.Module &&
+       (WebAssembly.Module.exports(request.module).some(
+         entry => entry.name === "cadr_wasm_run_until_event_m6") !==
+        (request.m6DiskEvidencePolicy === true))) ||
+      (request.op === "instantiate" &&
        request.m6DiskEvidencePolicy === true &&
        (request.version !== CADR_M6_PROTOCOL_VERSION ||
         !(request.module instanceof WebAssembly.Module) ||
         !WebAssembly.Module.exports(request.module).some(
-          entry => entry.name === "cadr_wasm_m6_disk_evidence_summary"))) ||
+         entry => entry.name === "cadr_wasm_m6_disk_evidence_summary") ||
+        !WebAssembly.Module.exports(request.module).some(
+         entry => entry.name === "cadr_wasm_run_until_event_m6"))) ||
+      (request.version === CADR_M7_PROTOCOL_VERSION &&
+       request.op === "instantiate" &&
+       (!WebAssembly.Module.exports(request.module).some(
+         entry => entry.name === "cadr_wasm_display_update") ||
+        !WebAssembly.Module.exports(request.module).some(
+          entry => entry.name === "cadr_wasm_display_full"))) ||
       (protocolVersion !== null && request.version !== protocolVersion) ||
       !validId(request.id) || typeof request.op !== "string") {
     error(isRecord(request) && validId(request.id) ? request.id : null,

@@ -9,6 +9,8 @@ const module = new WebAssembly.Module(await readFile(
 ));
 const names = WebAssembly.Module.exports(module).map(entry => entry.name);
 assert.ok(names.includes("cadr_wasm_m6_disk_evidence_summary"));
+assert.ok(names.includes("cadr_wasm_run_until_event_m6"));
 assert.ok(names.includes("cadr_wasm_disk_evidence"));
+assert.ok(!names.includes("cadr_wasm_run_until_event_m5"));
 assert.ok(!names.includes("cadr_wasm_post_terminal_diagnostic"));
 console.log("cadr_m6_disk_evidence_wasm_exports: ok");

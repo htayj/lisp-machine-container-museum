@@ -1,0 +1,28 @@
+/* Geometry is deliberately free of padding, borders, transforms, and CSS
+ * scaling.  The canvas backing-store dimensions always equal its CSS size. */
+
+:root { background: #1c1c1c; color: #f5f5f5; font-family: system-ui, sans-serif; }
+html, body { width: 100%; height: 100%; margin: 0; overflow: hidden; }
+#cadr-m7-demo { width: 100vw; height: 100vh; }
+.cadr-m7-host {
+  width: 100%; height: 100%; min-width: 0; min-height: 0;
+  display: grid; grid-template-rows: auto minmax(0, 1fr); background: #1c1c1c;
+}
+.cadr-m7-controls {
+  display: flex; align-items: center; gap: 12px; height: 48px;
+  box-sizing: border-box; padding: 6px 8px; border-bottom: 1px solid #555;
+}
+.cadr-m7-fullscreen { box-sizing: border-box; height: 32px; padding: 4px 10px; }
+.cadr-m7-status { font-variant-numeric: tabular-nums; }
+.cadr-m7-stage {
+  position: relative; min-width: 0; min-height: 0; overflow: hidden;
+  background: #000; line-height: normal;
+}
+.cadr-m7-canvas {
+  display: block; image-rendering: -moz-crisp-edges; image-rendering: pixelated;
+}
+.cadr-m7-undersize {
+  position: absolute; inset: 0; display: grid; place-items: center; margin: 0;
+  padding: 1rem; color: #fff; background: #000; text-align: center;
+}
+.cadr-m7-undersize[hidden] { display: none; }

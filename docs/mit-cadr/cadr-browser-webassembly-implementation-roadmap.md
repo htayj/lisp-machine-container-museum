@@ -3,7 +3,7 @@ type: Implementation Roadmap
 title: MIT CADR System 303 browser and WebAssembly implementation roadmap
 description: A milestone-complete plan for porting the pinned System 303 CADR emulator to a deterministic, locally persistent, browser-hosted WebAssembly machine.
 tags: [mit-cadr, lm-3, system-303, webassembly, browser, emulator, roadmap]
-timestamp: 2026-07-29T21:07:00-04:00
+timestamp: 2026-07-29T23:58:00-04:00
 ---
 
 # MIT CADR System 303 browser and WebAssembly implementation roadmap
@@ -622,6 +622,40 @@ the frozen M4 512-event record and commits later final events through `CDRM6E1`.
 It deliberately disables snapshots and does not change this M6 Listener-ready
 exit gate. See [the M6-DEVID1 disk-evidence continuation policy](cadr-m6-disk-evidence-continuation-policy.md).
 
+Implementation foundation, not M6 closure: the M6-DEVID1-only C fast runner
+advances bounded slots internally and returns `CDRM6FAST1` at the first
+endpoint, debug delta, host wait, or terminal status. Its protocol-v4 wrapper
+chains each stop with `CDRSTATE5` and `CDRM5Q1`; READY4 additionally binds the
+selected target and `CDRM6E1` summary without changing READY3. Direct and
+three-run campaign tools preflight all bytes before a worker exists, and their
+receipt comparator requires legacy, O0 fast, and O2 fast identity equality at
+1,130,000 slots before a measured O2 rate can support a twelve-hour projection.
+Those tools have only synthetic/static validation at this revision, so this
+does not alter the M6 exit gate or claim a READY4 campaign.
+
+The production benchmark and READY4 supervisors now define the executable
+source boundary rather than trusting the caller's checkout after validation.
+The boundary covers the collector, campaign, evidence, validator, benchmark,
+identity, direct and systemd runners; the headless driver; the worker and its
+unconditional renderer and batch imports; the block service; the build files;
+the selected core, adapter, runtime, include, and trace sources; and the
+canonical release record. The outer process rejects any worktree byte that
+differs from the selected commit, extracts that commit into a private stage,
+builds there, rechecks the staged closure immediately before each launch, and
+executes only the staged entrypoint and imports. Tests prove both a dirty
+pre-stage executable and a changed staged executable fail closed.
+
+Benchmark child results remain private and are not comparator inputs. A
+separate outer receipt binds the actual transient-unit invocation and its
+private nonce, validated effective policy and accounting, unit absence, private
+root removal, and final shared-source-stage removal. Only that outer-attested
+schema is accepted for the three-way comparison; setting the child environment
+marker or presenting a plausible raw child record is insufficient. The
+comparison and READY4 handoff also bind both the byte-exact canonical release
+record and the input schedule derived from it. This is a control-plane and
+provenance closure, not evidence that the private long benchmark or READY4
+campaign has run.
+
 Deliverables:
 
 - automated WASM boot test;
@@ -661,9 +695,24 @@ The logical framebuffer is the conformance surface. Browser chrome, CSS scaling,
 monitor density are host presentation choices. A “fit” mode may choose the largest
 integer scale that fits; it MUST NOT blur one-bit fonts.
 
-Exit gate `C-M7`: known native framebuffer checkpoints have identical logical pixel
-hashes in WASM, and rendered screenshots preserve each source pixel as an integral
-rectangle.
+Exit gate `C-M7` has two independent required prongs: a known real-System-303
+native framebuffer checkpoint has identical raw logical words and pixels at the
+same portable Wasm guest boundary (`TODO-RUNTIME-M7-01`), and a real supported
+browser proves ordinary-fit and user-gesture fullscreen presentation with every
+source pixel preserved as an integral rectangle (`TODO-RUNTIME-M7-02`). Neither
+prong alone closes the gate.
+
+Implementation status, 2026-07-29: M6 remains ABI1.4/protocol-v4; M7 is
+ABI1.5/protocol-v5. The M7 transfer and renderer implementation closes the synthetic
+layout, dirty-transfer, lifecycle replacement, bit-order, polarity,
+integer-presentation, O0/O2 Wasm, and direct-native-fixture checks. Its contract is recorded in
+[the monochrome display and browser renderer specification](cadr-monochrome-display-renderer-reimplementation-specification.md).
+`C-M7` remains open: the fixture is intentionally synthetic, no source-bound native
+System 303 framebuffer checkpoint has yet been paired with portable Wasm at the
+same guest boundary, and no real-browser ordinary/fullscreen capture has verified
+integral presentation. `TODO-RUNTIME-M7-01` and `TODO-RUNTIME-M7-02` in that
+specification define these separate obligations; completing the raw identity
+oracle alone cannot close `C-M7`.
 
 ### M8 — Implement complete keyboard input
 

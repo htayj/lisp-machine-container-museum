@@ -13,6 +13,7 @@ import { execFileSync } from "node:child_process";
 import { createHash, randomUUID } from "node:crypto";
 import {
   mkdir,
+  link,
   open,
   readFile,
   rename,
@@ -27,6 +28,7 @@ import {
   CADR_M6_PROTOCOL_VERSION,
   CADR_M6_READY_CONTRACT,
   CADR_M6_RELEASE_RECORD_SHA256,
+  canonicalM6FailureDiagnostic,
   preflightM6Artifacts,
   runM6HeadlessBootConformance,
 } from "../cadr-web/wasm/cadr-m6-headless-boot.mjs";
@@ -442,15 +444,6 @@ async function runProductionConformance(loaded, module, artifactRoot) {
       console.log(`C-M6 Wasm conformance: completed run ${completedRuns}/3`);
     },
   });
-  if (conformance.outcome !== "ready" || conformance.runs?.length !== 3) {
-    const report = conformance.failure?.report;
-    fail("production three-run conformance failed" +
-      ` (completed=${conformance.completed_runs ?? "unknown"},` +
-      ` failed_run=${conformance.failed_run ?? "unknown"},` +
-      ` reason=${report?.reason ?? conformance.reason ?? "unknown"},` +
-      ` phase=${report?.phase ?? "unknown"},` +
-      ` status=${report?.status ?? "unknown"})`);
-  }
   return conformance;
 }
 
@@ -470,13 +463,16 @@ async function ensureWasm(build) {
   });
 }
 
-async function writeCanonicalAtomically(outputPath, value) {
+export async function writeCanonicalAtomically(outputPath, value, mode = 0o644) {
+  if (!Number.isSafeInteger(mode) || mode < 0 || mode > 0o777) {
+    throw new TypeError("canonical output mode must be a Unix permission mask");
+  }
   const directory = dirname(outputPath);
   await mkdir(directory, { recursive: true });
   const temporary = resolve(directory, `.${randomUUID()}.cadr-m6-conformance.tmp`);
   const bytes = new TextEncoder().encode(canonicalJson(value));
   try {
-    await writeFile(temporary, bytes, { mode: 0o644 });
+    await writeFile(temporary, bytes, { mode });
     await rename(temporary, outputPath);
   } finally {
     await unlink(temporary).catch(error => {
@@ -484,6 +480,90 @@ async function writeCanonicalAtomically(outputPath, value) {
     });
   }
   return { byteCount: bytes.byteLength, sha256: sha256Hex(bytes) };
+}
+
+const PRIVATE_PUBLISH_IO = Object.freeze({ mkdir, link, open, unlink, writeFile });
+
+async function syncFile(path, io) {
+  const handle = await io.open(path, "r");
+  try {
+    await handle.sync();
+  } finally {
+    await handle.close();
+  }
+}
+
+async function syncDirectory(path, io) {
+  const handle = await io.open(path, "r");
+  try {
+    await handle.sync();
+  } finally {
+    await handle.close();
+  }
+}
+
+/* Failure diagnostics must never replace an earlier receipt: an existing path
+ * is evidence that needs an explicit reviewer decision. link(2) publishes the
+ * fully synced same-directory temporary inode without a replace window. */
+export async function writeCanonicalNoReplaceAtomically(
+  outputPath, value, mode = 0o600, io = PRIVATE_PUBLISH_IO) {
+  if (!Number.isSafeInteger(mode) || mode < 0 || mode > 0o777) {
+    throw new TypeError("canonical output mode must be a Unix permission mask");
+  }
+  const directory = dirname(outputPath);
+  const temporary = resolve(directory,
+    `.${randomUUID()}.cadr-m6-failure-diagnostic.tmp`);
+  const bytes = new TextEncoder().encode(canonicalJson(value));
+  await io.mkdir(directory, { recursive: true });
+  let linked = false;
+  try {
+    /* The random name is a collision avoidance measure, not authority to
+     * replace a file.  Exclusive creation makes a collision fail closed. */
+    await io.writeFile(temporary, bytes, { flag: "wx", mode });
+    await syncFile(temporary, io);
+    await io.link(temporary, outputPath);
+    linked = true;
+    /* The temporary hard link is no longer needed once the final name exists.
+     * Its removal is part of publication, not after-the-fact housekeeping:
+     * a failure must enter the same rollback path as directory fsync. */
+    await io.unlink(temporary);
+    await syncDirectory(directory, io);
+    return { byteCount: bytes.byteLength, sha256: sha256Hex(bytes) };
+  } catch (error) {
+    /* A successful link makes the final name visible before the parent
+     * directory has acknowledged its metadata.  This function owns that link
+     * only when `linked` is true; an EEXIST from link(2) leaves an earlier
+     * reviewer-owned receipt untouched. */
+    if (!linked) throw error;
+    const cleanupErrors = [];
+    try {
+      await io.unlink(outputPath);
+    } catch (cleanupError) {
+      if (cleanupError?.code !== "ENOENT") cleanupErrors.push(cleanupError);
+    }
+    try {
+      await syncDirectory(directory, io);
+    } catch (cleanupError) {
+      cleanupErrors.push(cleanupError);
+    }
+    if (cleanupErrors.length === 0) throw error;
+    throw new AggregateError([error, ...cleanupErrors],
+      "C-M6 failure diagnostic publication failed and rollback was incomplete");
+  } finally {
+    /* A prior error has already rolled back the final name when necessary.
+     * Do not mask that error with best-effort temporary cleanup. */
+    await io.unlink(temporary).catch(error => {
+      if (error?.code !== "ENOENT") return undefined;
+      return undefined;
+    });
+  }
+}
+
+export function failureOutputPath(outputPath) {
+  if (typeof outputPath !== "string" || outputPath.length === 0) {
+    throw new TypeError("failure output requires a pathname");
+  }
+  return `${outputPath}.failure.json`;
 }
 
 function evidence({ loaded, wasm, negativePreflight, conformance }) {
@@ -522,6 +602,57 @@ function evidence({ loaded, wasm, negativePreflight, conformance }) {
   });
 }
 
+export function failureEvidence({
+  loaded, wasm, negativePreflight, conformance, repetitions = 3,
+}) {
+  if (!Number.isSafeInteger(repetitions) || ![1, 3].includes(repetitions)) {
+    throw new TypeError("failure evidence has an invalid repetition count");
+  }
+  return Object.freeze({
+    artifact_profile: Object.freeze({
+      artifacts: loaded.expected.map(item => Object.freeze({
+        byte_count: item.byteCount.toString(),
+        id: item.id,
+        kind: item.kind,
+        local_path: item.localPath,
+        sha256: item.sha256,
+      })),
+      profile_id: loaded.profile.profile.id,
+      profile_path: PROFILE_RELATIVE_PATH,
+    }),
+    driver: Object.freeze({
+      protocol_version: CADR_M6_PROTOCOL_VERSION,
+      repetitions,
+      script: "scripts/run-cadr-m6-wasm-conformance.mjs",
+      synthetic_entrypoint_used: false,
+    }),
+    failure_diagnostic: canonicalM6FailureDiagnostic(conformance),
+    negative_preflight: negativePreflight,
+    release_record: Object.freeze({
+      contract: CADR_M6_READY_CONTRACT,
+      native_inputs: loaded.nativeInputs,
+      path: RELEASE_RELATIVE_PATH,
+      sha256: loaded.releaseSha256,
+    }),
+    schema: "cadr-m6-real-wasm-failure-evidence-v1",
+    wasm: Object.freeze({
+      byte_count: wasm.byteCount,
+      path: WASM_RELATIVE_PATH,
+      sha256: wasm.sha256,
+    }),
+  });
+}
+
+function productionFailureMessage(conformance) {
+  const report = conformance.failure?.report;
+  return "production three-run conformance failed" +
+    ` (completed=${conformance.completed_runs ?? "unknown"},` +
+    ` failed_run=${conformance.failed_run ?? "unknown"},` +
+    ` reason=${report?.reason ?? conformance.reason ?? "unknown"},` +
+    ` phase=${report?.phase ?? "unknown"},` +
+    ` status=${report?.status ?? "unknown"})`;
+}
+
 async function main() {
   const options = parseArguments(process.argv.slice(2));
   const loaded = await loadReleaseAndProfile();
@@ -534,15 +665,27 @@ async function main() {
     return;
   }
   const wasm = await ensureWasm(options.build);
+  const outputPath = options.output ?? resolve(ROOT, DEFAULT_OUTPUT_RELATIVE_PATH);
   const conformance = await runProductionConformance(
     loaded, wasm.module, options.artifactRoot);
-  const outputPath = options.output ?? resolve(ROOT, DEFAULT_OUTPUT_RELATIVE_PATH);
+  if (conformance.outcome !== "ready" || conformance.runs?.length !== 3) {
+    const diagnosticPath = failureOutputPath(outputPath);
+    const receipt = await writeCanonicalNoReplaceAtomically(diagnosticPath,
+      failureEvidence({ loaded, wasm, negativePreflight, conformance }), 0o600);
+    console.error(`wrote private failure diagnostic ${relative(ROOT, diagnosticPath)}` +
+      ` (${receipt.byteCount} bytes, ${receipt.sha256})`);
+    fail(productionFailureMessage(conformance));
+  }
   const receipt = await writeCanonicalAtomically(outputPath,
     evidence({ loaded, wasm, negativePreflight, conformance }));
   console.log(`wrote ${relative(ROOT, outputPath)} (${receipt.byteCount} bytes, ${receipt.sha256})`);
 }
 
-main().catch(error => {
-  console.error(error?.stack ?? String(error));
-  process.exitCode = 1;
-});
+const invokedAsMain = typeof process.argv[1] === "string" &&
+  import.meta.url === pathToFileURL(resolve(process.argv[1])).href;
+if (invokedAsMain) {
+  main().catch(error => {
+    console.error(error?.stack ?? String(error));
+    process.exitCode = 1;
+  });
+}

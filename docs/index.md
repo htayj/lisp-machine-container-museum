@@ -69,6 +69,10 @@ machine-readable metadata layer while retaining ordinary Markdown as the source.
 - [CADR-WEB-303 M6-DEVID1 disk-evidence continuation policy](mit-cadr/cadr-m6-disk-evidence-continuation-policy.md)
   records the separately compiled retained-prefix/SHA-256-tail continuation
   witness and its explicit, still-unmet READY4 runtime gate.
+- [CADR-WEB-303 ABI1.5 monochrome display and browser renderer specification](mit-cadr/cadr-monochrome-display-renderer-reimplementation-specification.md)
+  specifies raw framebuffer and dirty-transfer semantics, integral rendering, the
+  synthetic native/Wasm pixel gate, and the remaining real-System-303 checkpoint
+  obligation.
 - [CADR-WEB-303 keyboard input reimplementation specification](mit-cadr/cadr-keyboard-input-reimplementation-specification.md)
   specifies complete CADR key normalization and scan transitions, deterministic
   chord ordering, lost-keyup recovery, and accessible browser alternatives.

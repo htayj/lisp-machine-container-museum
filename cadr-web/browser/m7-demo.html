@@ -1,0 +1,23 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>CADR M7 synthetic monochrome presentation</title>
+  <link rel="stylesheet" href="m7-host.css">
+</head>
+<body>
+  <main id="cadr-m7-demo"></main>
+  <script type="module">
+    import { createM7BrowserHost } from "./m7-host.mjs";
+    import { createSyntheticCdrDisp1 } from "./m7-synthetic-record.mjs";
+
+    /* Test and demo input is generated solely from the record schema. */
+    window.cadrM7Demo = createM7BrowserHost({
+      root: document.querySelector("#cadr-m7-demo"),
+      record: createSyntheticCdrDisp1(),
+    });
+    document.documentElement.dataset.cadrM7Ready = "true";
+  </script>
+</body>
+</html>

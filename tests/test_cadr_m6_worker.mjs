@@ -110,10 +110,27 @@ async function runVersion(version) {
   }
 }
 
+async function assertNormalM6KeepsDiagnosticOperationUnbound() {
+  const worker = new Worker(WORKER, { type: "module" });
+  const probe = new Probe(worker);
+  try {
+    probe.send({ version: 4, id: 1, op: "instantiate", module });
+    let reply = await probe.next();
+    assert.equal(reply.status, 0);
+    probe.send({ version: 4, id: 2, op: "post-terminal-diagnostic" });
+    reply = await probe.next();
+    assert.equal(reply.status, 2,
+      "the normal frozen M6 module keeps the diagnostic-only operation unbound");
+  } finally {
+    await worker.terminate();
+  }
+}
+
 try {
   await runVersion(2);
   await runVersion(3);
   await runVersion(4);
+  await assertNormalM6KeepsDiagnosticOperationUnbound();
   console.log("cadr_m6_worker: ok");
 } finally {
   await rm(directory, { recursive: true, force: true });

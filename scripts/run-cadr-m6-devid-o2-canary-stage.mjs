@@ -293,7 +293,8 @@ async function initializeMachine(client, module, artifacts) {
   await ok(client, "scheduler-start");
 }
 
-async function serviceWaiting(client, service, clockSlotsCompleted) {
+async function serviceWaiting(client, service, clockSlotsCompleted,
+  eventSink = null) {
   const before = service.overlayGeneration();
   await ok(client, "media-overlay-state", { busy: true, dirty: before !== 0n,
     snapshotBlocked: service.snapshotBlocked(), overlayGeneration: before });
@@ -322,11 +323,17 @@ async function serviceWaiting(client, service, clockSlotsCompleted) {
       !Array.isArray(result.events) || result.events.length === 0) {
     throw new Error("exact-boundary host service did not complete one request");
   }
+  if (eventSink !== null) {
+    for (const event of result.events) await eventSink(event);
+  }
   return result.events.filter(event => event.requestSeen === true).length;
 }
 
 export async function runExactCanaryLoop(client, service,
-  exactBoundary = MAX_BOUNDARY) {
+  exactBoundary = MAX_BOUNDARY, candidate = "legacy-m5", eventSink = null) {
+  if (!["legacy-m5", "fast-o0", "fast-o2"].includes(candidate)) {
+    throw new TypeError("unknown exact-boundary benchmark candidate");
+  }
   let info = machineInfo(await ok(client, "machine-info"));
   if (info.clockSlotsCompleted !== 0n || info.lifecycle !== 2 ||
       info.persistentStatus !== 0) throw new Error("canary did not begin at runnable slot zero");
@@ -336,7 +343,52 @@ export async function runExactCanaryLoop(client, service,
     const remaining = exactBoundary - before;
     const requested = Number(remaining < BigInt(BATCH_SLOTS) ?
       remaining : BigInt(BATCH_SLOTS));
-    const batch = await ok(client, "run-digest-batch-m5", { clockSlots: requested });
+    const operation = candidate === "legacy-m5" ?
+      "run-digest-batch-m5" : "run-until-event-m6";
+    const batch = await ok(client, operation, { clockSlots: requested });
+    if (candidate !== "legacy-m5") {
+      if (batch.wireSchema !== "CDRM6FAST1" ||
+          !Number.isSafeInteger(batch.reason) || batch.reason < 1 ||
+          batch.reason > 4 ||
+          typeof batch.completedSlots !== "bigint" ||
+          batch.completedSlots > BigInt(requested) ||
+          batch.preBoundary !== before ||
+          batch.postBoundary !== before + batch.completedSlots ||
+          batch.requestedSlots !== requested) {
+        throw new Error("malformed exact-boundary fast response");
+      }
+      if (batch.reason === 4) {
+        throw new Error("terminal exact-boundary fast response");
+      }
+      info = machineInfo(await ok(client, "machine-info"));
+      if (info.clockSlotsCompleted !== batch.postBoundary ||
+          info.persistentStatus !== 0) {
+        throw new Error("fast response and machine-info boundary disagree");
+      }
+      if (batch.reason === 3) {
+        if (info.outstandingRequestId === 0n) {
+          throw new Error("fast WAIT has no machine-info outstanding request");
+        }
+        hostTransactions += await serviceWaiting(
+          client, service, info.clockSlotsCompleted, eventSink);
+        if (hostTransactions > MAX_HOST_TRANSACTIONS) {
+          throw new Error("host transaction safety limit exceeded");
+        }
+      } else if (batch.reason === 1 &&
+          info.clockSlotsCompleted !== before + BigInt(requested)) {
+        throw new Error("fast endpoint did not complete its exact request");
+      } else if (batch.reason === 2) {
+        /* Debug changes are valid early stops; the controlled benchmark
+         * continues without treating the marker as an endpoint. */
+      } else if (batch.reason !== 1) {
+        throw new Error("fast stop disposition is inconsistent");
+      }
+      if (info.clockSlotsCompleted === before) {
+        throw new Error("exact-boundary fast loop made no progress");
+      }
+      batches += 1;
+      continue;
+    }
     if (!Number.isSafeInteger(batch.boundaryCount) || batch.boundaryCount < 0 ||
         batch.boundaryCount > requested ||
         typeof batch.boundaryPendingHost !== "boolean" ||
@@ -356,7 +408,7 @@ export async function runExactCanaryLoop(client, service,
       }
       const waitingState = await ok(client, "scheduler-state");
       hostTransactions += await serviceWaiting(client, service,
-        info.clockSlotsCompleted);
+        info.clockSlotsCompleted, eventSink);
       if (hostTransactions > MAX_HOST_TRANSACTIONS) {
         throw new Error("host transaction safety limit exceeded");
       }
@@ -425,6 +477,146 @@ async function artifactIdentities(expected, root) {
   for (const source of expected) result.push(Object.freeze({ kind: source.kind, path: source.relativePath,
     ...(await sourceIdentity(resolve(root, source.relativePath), source.byteCount)) }));
   return Object.freeze(result);
+}
+
+function evidenceValue(value) {
+  if (typeof value === "bigint") return value.toString();
+  if (value instanceof ArrayBuffer) {
+    const bytes = new Uint8Array(value);
+    return Object.freeze({ byte_count: bytes.byteLength, sha256: hash(bytes) });
+  }
+  if (value instanceof Uint8Array) {
+    return Object.freeze({ byte_count: value.byteLength, sha256: hash(value) });
+  }
+  if (Array.isArray(value)) return value.map(evidenceValue);
+  if (value !== null && typeof value === "object") {
+    return Object.fromEntries(Object.entries(value)
+      .filter(([, item]) => typeof item !== "function")
+      .map(([key, item]) => [key, evidenceValue(item)]));
+  }
+  return value;
+}
+
+function responseSha256(response, field) {
+  const bytes = asBytes(response?.[field], field);
+  if (bytes.byteLength !== 32) throw new Error(`${field} is not SHA-256 bytes`);
+  return Buffer.from(bytes).toString("hex");
+}
+
+export async function executeControlledBenchmarkCandidate({
+  candidate, artifactRoot, wasm, privateRoot,
+}) {
+  if (!["legacy-m5", "fast-o0", "fast-o2"].includes(candidate)) {
+    throw new TypeError("controlled benchmark candidate is not fixed");
+  }
+  let client = null; let loaded = null; let service = null;
+  try {
+    const metadata = await lstat(privateRoot);
+    if (!metadata.isDirectory() || metadata.isSymbolicLink() ||
+        metadata.uid !== process.geteuid() ||
+        (metadata.mode & 0o777) !== 0o700 ||
+        (await readdir(privateRoot)).length !== 0) {
+      throw new Error("benchmark private root is invalid");
+    }
+    await snapshotArtifacts(artifactRoot, privateRoot);
+    loaded = await loadArtifacts(privateRoot);
+    const sourceBefore = await artifactIdentities(loaded.expected, artifactRoot);
+    const privateBefore = await artifactIdentities(loaded.expected, privateRoot);
+    const verified = await preflightM6Artifacts({
+      artifacts: loaded.artifacts.artifacts,
+      profile: loaded.profile,
+      hashArtifact: async artifact => Buffer.from((await sourceIdentity(
+        resolve(privateRoot, loaded.expected.find(
+          item => item.kind === artifact.kind).relativePath),
+        artifact.byteCount)).sha256, "hex"),
+    });
+    const moduleBytes = await readFile(wasm);
+    const module = await WebAssembly.compile(moduleBytes);
+    const exports = new Set(WebAssembly.Module.exports(module).map(
+      entry => entry.name));
+    if (WebAssembly.Module.imports(module).length !== 0 ||
+        !exports.has("cadr_wasm_m6_disk_evidence_summary") ||
+        !exports.has("cadr_wasm_run_until_event_m6") ||
+        exports.has("cadr_wasm_display_full") ||
+        exports.has("cadr_wasm_post_terminal_diagnostic")) {
+      throw new Error("benchmark module is not the isolated M6-DEVID profile");
+    }
+    client = new Client(new Worker(pathToFileURL(resolve(
+      ROOT, "cadr-web/wasm/cadr-worker.js")), { type: "module" }));
+    const disk = verified.sources.find(artifact => artifact.kind === 3);
+    service = createM4BlockRangeService({
+      imageByteCount: disk.byteCount,
+      expectedImageByteCount: disk.byteCount,
+      readRange: disk.readRange,
+    });
+    await initializeMachine(client, module, verified.sources);
+    const transcript = [];
+    let overlay = null;
+    const start = process.hrtime.bigint();
+    const loop = await runExactCanaryLoop(
+      client, service, MAX_BOUNDARY, candidate, event => {
+        const normalized = evidenceValue(event);
+        transcript.push(normalized);
+        if (event.overlayCommitted === true) {
+          overlay = asBytes(event.pageBytes, "committed overlay").slice();
+        }
+      });
+    const elapsed = process.hrtime.bigint() - start;
+    if (elapsed <= 0n) throw new Error("benchmark elapsed interval is invalid");
+    const stateReply = await ok(client, "boundary-digest-v5");
+    const queueReply = await ok(client, "scheduler-queue-digest");
+    const evidenceReply = await ok(client, "m6-disk-evidence-summary");
+    const evidence = summary(evidenceReply);
+    const scheduler = await ok(client, "scheduler-state");
+    const hostProbe = await client.request("host-next-request");
+    if (hostProbe.status !== 9) {
+      throw new Error("benchmark residue probe found a host request");
+    }
+    const sourceAfter = await artifactIdentities(loaded.expected, artifactRoot);
+    const privateAfter = await artifactIdentities(loaded.expected, privateRoot);
+    if (canonicalJson(sourceBefore) !== canonicalJson(sourceAfter) ||
+        canonicalJson(privateBefore) !== canonicalJson(privateAfter)) {
+      throw new Error("benchmark source or private base artifacts changed");
+    }
+    const base = privateBefore.find(item => item.kind === 3);
+    const emptyOverlay = new TextEncoder().encode("CADRM6EMPTYOVERLAY1\0");
+    const residue = Object.freeze({
+      machine: evidenceValue(loop.info),
+      scheduler: evidenceValue(scheduler),
+      host_next_status: hostProbe.status,
+      service: Object.freeze({
+        overlay_generation: service.overlayGeneration().toString(),
+        pending: service.hasPendingRequest(),
+        snapshot_blocked: service.snapshotBlocked(),
+      }),
+    });
+    return Object.freeze({
+      completed_boundary: loop.info.clockSlotsCompleted.toString(),
+      elapsed_nanoseconds: elapsed.toString(),
+      cdrstate5_sha256: responseSha256(stateReply, "digest"),
+      cdrm5q1_sha256: responseSha256(queueReply, "digest"),
+      host_transcript_sha256: hash(Buffer.from(canonicalJson(transcript))),
+      cdrm6e1_sha256: evidence.sha256,
+      overlay_sha256: hash(overlay ?? emptyOverlay),
+      base_disk_sha256: base.sha256,
+      residue_sha256: hash(Buffer.from(canonicalJson(residue))),
+      input_schedule_sha256: hash(Buffer.from(canonicalJson(Object.freeze({
+        ...loaded.schedule, completed_boundary: MAX_BOUNDARY.toString(),
+      })))),
+      wasm_byte_count: String(moduleBytes.byteLength),
+      wasm_sha256: hash(moduleBytes),
+      batches: loop.batches,
+      host_transactions: loop.hostTransactions,
+    });
+  } finally {
+    const errors = [];
+    if (client !== null) try { await client.close(); } catch (error) { errors.push(error); }
+    if (service !== null) try { await service.discard(); } catch (error) { errors.push(error); }
+    if (loaded !== null) try { await loaded.artifacts.close(); } catch (error) { errors.push(error); }
+    if (errors.length === 1) throw errors[0];
+    if (errors.length > 1) throw new AggregateError(
+      errors, "benchmark candidate cleanup failed");
+  }
 }
 
 async function main() {

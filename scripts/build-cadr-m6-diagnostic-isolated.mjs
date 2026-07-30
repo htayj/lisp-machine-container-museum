@@ -14,6 +14,8 @@ const DIAGNOSTIC_DELTA_PATHS = Object.freeze([
 ]);
 const FROZEN_M6_POSTTERMINAL_DIAGNOSTIC_SHA256 =
   "35d690d33a4ee815f476b7893c31276f50f7f34c90709fb61aca65b418d5d2fd";
+export const CADR_M6_DIAGNOSTIC_RECEIPT_BASE =
+  "de0aab1ec913a0587cf7a6e24b93353d1f16dc12";
 const TMP_ROOT = "/tmp";
 
 function canonicalJson(value) {

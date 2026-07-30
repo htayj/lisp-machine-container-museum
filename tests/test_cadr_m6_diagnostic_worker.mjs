@@ -4,7 +4,8 @@ import { readFile, rm } from "node:fs/promises";
 import { resolve } from "node:path";
 import { Worker } from "node:worker_threads";
 import { pathToFileURL } from "node:url";
-import { buildM6DiagnosticIsolated } from "../scripts/build-cadr-m6-diagnostic-isolated.mjs";
+import { buildM6DiagnosticIsolated, CADR_M6_DIAGNOSTIC_RECEIPT_BASE } from
+  "../scripts/build-cadr-m6-diagnostic-isolated.mjs";
 
 class Probe {
   constructor(worker) {
@@ -29,7 +30,9 @@ function bytes(value) {
   return new Uint8Array(value);
 }
 
-const build = await buildM6DiagnosticIsolated();
+const build = await buildM6DiagnosticIsolated({
+  receiptBase: CADR_M6_DIAGNOSTIC_RECEIPT_BASE,
+});
 let worker = null;
 try {
   const moduleBytes = await readFile(build.wasm.path);

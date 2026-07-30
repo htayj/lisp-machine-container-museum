@@ -1,16 +1,18 @@
 import assert from "node:assert/strict";
-import { execFileSync } from "node:child_process";
 import { readFile, rm, stat, writeFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import {
   applyM6DiagnosticDelta,
   buildM6DiagnosticIsolated,
+  CADR_M6_DIAGNOSTIC_RECEIPT_BASE,
   revalidateM6DiagnosticIsolated,
 } from "../scripts/build-cadr-m6-diagnostic-isolated.mjs";
 
 const receiptBase = process.env.CADR_M6_DIAGNOSTIC_RECEIPT_BASE ??
-  execFileSync("git", ["rev-parse", "HEAD"], { encoding: "utf8" }).trim();
+  /* This commit owns both ordered deltas while retaining their preimages.
+   * Current HEAD already integrates 0004 and is therefore not an apply base. */
+  CADR_M6_DIAGNOSTIC_RECEIPT_BASE;
 await assert.rejects(() => buildM6DiagnosticIsolated(), /requires --receipt-base/,
   "the diagnostic builder cannot archive the mutable index");
 const build = await buildM6DiagnosticIsolated({ receiptBase });

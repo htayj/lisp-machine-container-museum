@@ -2,10 +2,16 @@
 #define CADR_MACHINE_H
 
 #include "cadr_state.h"
+#if defined(CADR_M7_CORE)
+#include "cadr_display.h"
+#endif
 
 /* This definition is deliberately internal; public clients see an opaque type. */
 struct cadr_machine {
     cadr_machine_state state;
+#if defined(CADR_M7_CORE)
+    cadr_display_tracker display;
+#endif
 };
 
 #if defined(CADR_M3_TESTING)

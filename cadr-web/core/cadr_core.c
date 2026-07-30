@@ -685,6 +685,9 @@ cadr_status cadr_machine_create(const cadr_machine_config *config,
     cadr_m6_disk_evidence_cold_power_on(&machine->state.m6_disk_evidence);
 #endif
     cadr_processor_memory_set_main_memory_pages(&machine->state, 8192U);
+#if defined(CADR_M7_CORE)
+    cadr_display_tracker_initialize(&machine->display, &machine->state);
+#endif
     /*
      * CDRSTATE2 is an M2-derived cache.  Keep a newly created M1 machine
      * cheap and construct the full-RAM Merkle cache only at an M2 boundary
@@ -820,6 +823,9 @@ cadr_status cadr_machine_import_artifact_stream_finish(cadr_machine *machine)
 
 cadr_status cadr_machine_cold_power_on(cadr_machine *machine)
 {
+#if defined(CADR_M7_CORE)
+    uint64_t display_generation;
+#endif
     if (machine == NULL) return CADR_STATUS_INVALID_ARGUMENT;
     if (machine->state.lifecycle != CADR_MACHINE_COLD ||
         machine->state.artifacts.stream_active != 0U ||
@@ -829,6 +835,12 @@ cadr_status cadr_machine_cold_power_on(cadr_machine *machine)
         return CADR_STATUS_NOT_READY;
     }
     if (cadr_trace_engine_active(&machine->state)) return CADR_STATUS_NOT_READY;
+#if defined(CADR_M7_CORE)
+    if (cadr_display_tracker_prepare_reinitialize(
+            &machine->display, &display_generation) != CADR_STATUS_OK) {
+        return CADR_STATUS_NOT_READY;
+    }
+#endif
     cadr_state_v2_invalidate(&machine->state);
     cadr_invalidate_requests(machine);
     machine->state.events.persistent_status = CADR_STATUS_OK;
@@ -840,6 +852,10 @@ cadr_status cadr_machine_cold_power_on(cadr_machine *machine)
     machine->state.scheduler.hidden_policy = CADR_SCHEDULER_HIDDEN_PAUSE;
     cadr_processor_memory_reset(&machine->state);
     cadr_bus_device_cold_power_on(&machine->state);
+#if defined(CADR_M7_CORE)
+    cadr_display_tracker_commit_reinitialize(
+        &machine->display, &machine->state, display_generation);
+#endif
     machine->state.lifecycle = CADR_MACHINE_POWERED;
     cadr_update_diagnostic_latches(machine);
     return CADR_STATUS_OK;
@@ -862,6 +878,9 @@ cadr_status cadr_machine_reset(cadr_machine *machine,
                                const cadr_reset_request *request)
 {
     cadr_status status;
+#if defined(CADR_M7_CORE)
+    uint64_t display_generation;
+#endif
     if (machine == NULL || request == NULL) return CADR_STATUS_INVALID_ARGUMENT;
     status = cadr_validate_record(request->abi_major, request->abi_minor,
                                   request->struct_size, sizeof(*request));
@@ -871,6 +890,11 @@ cadr_status cadr_machine_reset(cadr_machine *machine,
         return CADR_STATUS_INVALID_ARGUMENT;
     }
     if (cadr_trace_engine_active(&machine->state)) return CADR_STATUS_NOT_READY;
+#if defined(CADR_M7_CORE)
+    status = cadr_display_tracker_prepare_reinitialize(
+        &machine->display, &display_generation);
+    if (status != CADR_STATUS_OK) return status;
+#endif
     cadr_state_v2_invalidate(&machine->state);
     cadr_invalidate_requests(machine);
     machine->state.events.generation += UINT64_C(1);
@@ -883,6 +907,10 @@ cadr_status cadr_machine_reset(cadr_machine *machine,
                  sizeof(machine->state.scheduler));
     machine->state.scheduler.phase = CADR_SCHEDULER_PHASE_BOUNDARY_READY;
     machine->state.scheduler.hidden_policy = CADR_SCHEDULER_HIDDEN_PAUSE;
+#if defined(CADR_M7_CORE)
+    cadr_display_tracker_commit_reinitialize(
+        &machine->display, &machine->state, display_generation);
+#endif
     machine->state.lifecycle = CADR_MACHINE_POWERED;
     cadr_update_diagnostic_latches(machine);
     return CADR_STATUS_OK;
@@ -2565,6 +2593,9 @@ cadr_status cadr_machine_snapshot_restore(
     }
     machine->state = *state;
     free(state);
+#if defined(CADR_M7_CORE)
+    cadr_display_tracker_initialize(&machine->display, &machine->state);
+#endif
     *out_machine = machine;
     return CADR_STATUS_OK;
 }

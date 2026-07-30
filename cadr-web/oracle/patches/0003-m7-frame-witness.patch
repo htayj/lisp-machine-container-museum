@@ -1,0 +1,157 @@
+diff --git a/Makefile.usim b/Makefile.usim
+index d4eaefe..e2f65f4 100644
+--- a/Makefile.usim
++++ b/Makefile.usim
+@@ -66,6 +66,17 @@ USIM_IDLE		= cadr_oracle_idle_stubs.c
+ USIM_LASHUP		= cadr_m6_lashup_stubs.c
+ USIM_ORACLE		= cadr_m6_debug_ir_witness.c
+ 
++else ifeq ($(USIM_BACKEND), m7-frame-oracle)
++
++USIM_CFLAGS		= -DWITH_CADR_M6_ORACLE=1 -DWITH_CADR_M7_FRAME_ORACLE=1
++USIM_KEYBOARD	= kbd.c cadet.c knight.c lmch.c
++USIM_MOUSE		= mouse.c
++USIM_TV			=
++USIM_CHAOS		= uch11.c
++USIM_IDLE		= cadr_oracle_idle_stubs.c
++USIM_LASHUP		= cadr_m6_lashup_stubs.c
++USIM_ORACLE		= cadr_m6_debug_ir_witness.c cadr_m7_frame_witness.c
++
+ endif
+ 
+ USIM_CHAOS ?= uch11.c uch11-chaosd.c uch11-local.c uch11-udp.c
+@@ -118,7 +129,7 @@ $(OBJDIR)/chaos.challoc.o: $(CHAOSDIR)/chunix/challoc.c | $(OBJDIR)
+ $(OBJDIR)/chaos.chutil.o: $(CHAOSDIR)/chncp/chutil.c | $(OBJDIR)
+ 	$(CC) $(CFLAGS) $(CHAOS_CFLAGS) -w -I$(CHAOSDIR)/chunix -I. -DSELECT -c -o $@ $<
+ 
+-ifneq ($(filter oracle m6-oracle,$(USIM_BACKEND)),)
++ifneq ($(filter oracle m6-oracle m7-frame-oracle,$(USIM_BACKEND)),)
+ CHAOS_OBJS :=
+ else
+ CHAOS_OBJS := $(OBJDIR)/chaos.glob.o $(OBJDIR)/chaos.FILE.o $(OBJDIR)/chaos.MINI.o \
+@@ -148,7 +159,7 @@ DEPS := $(SRCS:%.c=$(DEPDIR)/%.d)
+ usim:
+ 	$(info USIM_BACKEND    = $(USIM_BACKEND))
+ 	$(info USIM_BUILD_TYPE = $(USIM_BUILD_TYPE))
+-	$(error "USIM_BACKEND=x11/sdl2/sdl3/oracle/m6-oracle and USIM_BUILD_TYPE=debug/release must be set.")
++	$(error "USIM_BACKEND=x11/sdl2/sdl3/oracle/m6-oracle/m7-frame-oracle and USIM_BUILD_TYPE=debug/release must be set.")
+ 
+ ifdef USIM_BACKEND
+ ifdef USIM_BUILD_TYPE
+diff --git a/ucode.c b/ucode.c
+index 9f98b31..22e5e53 100644
+--- a/ucode.c
++++ b/ucode.c
+@@ -114,6 +114,10 @@ ucode_run(void)
+         if (cadr_m6_witness_boundary(machine_cycles, debug_ir, iob_csr, kbd_scancode,
+                                      the_60_cycle_clock, cadr_m6_disk_busy(), 0))
+             machine_state.halted = true;
++#ifdef WITH_CADR_M7_FRAME_ORACLE
++        if (cadr_m6_witness_failed() != 0U)
++            machine_state.halted = true;
++#endif
+ #endif
+ #ifdef WITH_CADR_ORACLE
+ #ifndef WITH_CADR_M6_ORACLE
+diff --git a/tv.h b/tv.h
+index 9f15d6d..0000000 100644
+--- a/tv.h
++++ b/tv.h
+@@ -5,7 +5,8 @@
+ 
+ extern int tv_monitor;
+ 
+-extern uint32_t tv_screen_buffer[];
++#define TV_SCREEN_BUFFER_WORDS UINT32_C(32768)
++extern uint32_t tv_screen_buffer[TV_SCREEN_BUFFER_WORDS];
+ extern uint32_t tv_width;
+ extern uint32_t tv_height;
+ 
+diff --git a/tv.c b/tv.c
+index 75280a1..0000000 100644
+--- a/tv.c
++++ b/tv.c
+@@ -69,6 +69,7 @@ uint32_t tv_height;
+ 
+ // window/shwarm.lisp:MAIN-SCREEN-BUFFER-LENGTH 100000
+ uint32_t tv_screen_buffer[0100000 /* 32K */]; 
++_Static_assert(sizeof(tv_screen_buffer) / sizeof(tv_screen_buffer[0]) == TV_SCREEN_BUFFER_WORDS, "M7 requires exactly 32768 TV backing words");
+ 
+ #define BLACK 0xff000000
+ #define WHITE 0xffffffff
+diff --git a/cadr_m6_debug_ir_witness.c b/cadr_m6_debug_ir_witness.c
+index 755d9ed..88b3f9e 100644
+--- a/cadr_m6_debug_ir_witness.c
++++ b/cadr_m6_debug_ir_witness.c
+@@ -1,4 +1,7 @@
+ #include "cadr_m6_debug_ir_witness.h"
++#ifdef WITH_CADR_M7_FRAME_ORACLE
++#include "cadr_m7_frame_witness.h"
++#endif
+ 
+ #include <inttypes.h>
+ #include <stdbool.h>
+@@ -25,6 +28,9 @@ static FILE *samples_file;
+ static struct schedule_event next_event;
+ static unsigned expected_events, consumed_events, write_count, suffix_count;
+ static int have_event, initialized, failed, seen_a, seen_b, seen_c, capture_a, capture_b, capture_c, cleanup_settled, capture_settled;
++#ifdef WITH_CADR_M7_FRAME_ORACLE
++static int m7_c_boundary_taken;
++#endif
+ static uint64_t c_listener_idle_deadline, c_cleanup_start;
+ static char session_id[129];
+ static void fail(const char *message);
+@@ -229,12 +235,38 @@ void cadr_m6_witness_debug_write(uint64_t boundary, uint32_t address, uint16_t v
+     }
+ }
+ 
++uint32_t cadr_m6_witness_take_m7_c_boundary(void)
++{
++#ifdef WITH_CADR_M7_FRAME_ORACLE
++    if (!initialized || failed || !capture_c || m7_c_boundary_taken) return 0U;
++    m7_c_boundary_taken = 1;
++    return 1U;
++#else
++    return 0U;
++#endif
++}
++
++uint32_t cadr_m6_witness_failed(void)
++{
++    return failed != 0 ? 1U : 0U;
++}
++
+ int cadr_m6_witness_boundary(uint64_t boundary, uint64_t debug_ir, uint32_t observed_iob_csr,
+                               uint32_t observed_kbd_scancode, uint16_t sixty_cycle_clock,
+                               uint32_t disk_busy, uint32_t host_request_pending)
+ {
+     int selected = capture_a || capture_b || capture_c;
+     if (!initialized || failed) return 0;
++#ifdef WITH_CADR_M7_FRAME_ORACLE
++    /* This is reached after ucode_run has advanced machine_cycles for the
++     * slot that wrote C, and before the M6 clock/cleanup policy mutates a
++     * later boundary.  It is the cross-target M7 checkpoint boundary. */
++    if (cadr_m6_witness_take_m7_c_boundary() != 0U &&
++        cadr_m7_frame_witness_capture(boundary) != 0) {
++        fail("m7-frame-capture-failed");
++        return 0;
++    }
++#endif
+     /* M5 policy: dispatch the guest 60 Hz edge before a coincident key. */
+     while (((clock_events + 1U) * UINT64_C(1000000) + 59U) / 60U == boundary) {
+         if (tv_assert_interrupt == NULL || colortv_assert_interrupt == NULL || &colortv_enabled == NULL || &the_60_cycle_clock == NULL) { fail("missing-60hz-device"); return 0; }
+diff --git a/cadr_m6_debug_ir_witness.h b/cadr_m6_debug_ir_witness.h
+index 39a8ca2..8a926f4 100644
+--- a/cadr_m6_debug_ir_witness.h
++++ b/cadr_m6_debug_ir_witness.h
+@@ -34,6 +34,10 @@ uint32_t cadr_m6_debug_ir_match(uint16_t low, uint16_t middle, uint16_t high);
+ void cadr_m6_witness_init(void);
+ void cadr_m6_witness_debug_write(uint64_t boundary, uint32_t address,
+                                  uint16_t value, uint64_t debug_ir);
++/* M7 observes only the completed C-bearing slot, after its counter advances.
++ * The native C capture never uses the pre-increment diagnostic-write value. */
++uint32_t cadr_m6_witness_take_m7_c_boundary(void);
++uint32_t cadr_m6_witness_failed(void);
+ int cadr_m6_witness_boundary(uint64_t boundary, uint64_t debug_ir,
+                              uint32_t observed_iob_csr, uint32_t observed_kbd_scancode,
+                              uint16_t sixty_cycle_clock, uint32_t disk_busy,

@@ -6,6 +6,7 @@
 #include "cadr_disk_evidence.h"
 #if defined(CADR_M6_DEVID_WASM)
 #include "cadr_m6_disk_evidence.h"
+#include "cadr_m6_fast_run.h"
 #endif
 #include "cadr_host_api.h"
 #include "cadr_machine.h"
@@ -46,6 +47,8 @@ static uint32_t cadr_wasm_restore_used;
 #define CADR_WASM_TRANSFER_BYTES UINT32_C(1048576)
 #if defined(CADR_M6_DEVID_WASM)
 #define CADR_WASM_OUTPUT_BYTES UINT32_C(512)
+#elif defined(CADR_M6_DIAGNOSTIC_WASM)
+#define CADR_WASM_OUTPUT_BYTES UINT32_C(320)
 #else
 #define CADR_WASM_OUTPUT_BYTES UINT32_C(96)
 #endif
@@ -55,6 +58,9 @@ static uint32_t cadr_wasm_restore_used;
 #if defined(CADR_M6_DEVID_WASM)
 #define CADR_WASM_SNAPSHOT_ABI_MINOR CADR_ABI_MINOR_M5
 #define CADR_WASM_ACTIVE_ABI_MINOR CADR_ABI_MINOR_M5
+#elif defined(CADR_M7_WASM)
+#define CADR_WASM_SNAPSHOT_ABI_MINOR CADR_ABI_MINOR_M5
+#define CADR_WASM_ACTIVE_ABI_MINOR CADR_ABI_MINOR_M7
 #elif defined(CADR_M5_WASM)
 #define CADR_WASM_SNAPSHOT_ABI_MINOR CADR_ABI_MINOR_M5
 #define CADR_WASM_ACTIVE_ABI_MINOR CADR_ABI_MINOR_M5
@@ -259,6 +265,26 @@ uint32_t cadr_wasm_run(uint32_t clock_slots)
                           result.microinstructions_executed);
     return status;
 }
+
+#if defined(CADR_M6_DEVID_WASM)
+/* M6-DEVID1's C-owned fast path.  It returns one closed CDRM6FAST1 stop
+ * record; it intentionally does not publish per-slot digest rows. */
+CADR_WASM_EXPORT("cadr_wasm_run_until_event_m6")
+uint32_t cadr_wasm_run_until_event_m6(uint32_t clock_slots)
+{
+    cadr_m6_fast_run_result result;
+    cadr_status status;
+    if (cadr_wasm_machine == NULL || cadr_wasm_output == NULL) {
+        return CADR_STATUS_NOT_READY;
+    }
+    status = cadr_m6_fast_run(cadr_wasm_machine, clock_slots, &result);
+    if (status != CADR_STATUS_OK) return status;
+    status = cadr_m6_fast_run_serialize(&result, cadr_wasm_output);
+    if (status != CADR_STATUS_OK) return status;
+    cadr_wasm_meta_result(result.completed_slots, result.microinstruction_delta);
+    return CADR_STATUS_OK;
+}
+#endif
 
 #if defined(CADR_M5_WASM)
 CADR_WASM_EXPORT("cadr_wasm_schedule_event")
@@ -618,6 +644,172 @@ uint32_t cadr_wasm_machine_info(void)
     return CADR_STATUS_OK;
 }
 
+#if defined(CADR_M6_DIAGNOSTIC_WASM)
+/*
+ * CDRM6D1 post-terminal diagnostic record (320 bytes, little endian):
+ *
+ *   0  [8]  magic "CDRM6D1\\0"
+ *   8  u32   schema version (1)
+ *  12  u32   record bytes (320)
+ *  16  u32   flags: disk evidence overflowed, canonical overflowed, CPU
+ *            guest fault, trace engine active, trace failure ledger absent
+ *  20  u32   reserved zero
+ *  24  u32   lifecycle                 28 u32 persistent status
+ *  32  u32   disk evidence count       36 u32 fixed evidence capacity
+ *  40  u32   current disk status       44 u32 core outstanding operation
+ *  48  u32   core completion queued    52 u32 unexpected bus operation
+ *  56  u32   current transfer/reset/enables
+ *  60  u32   current bus IRQ           64 u32 reserved zero
+ *  68  u32   disk intra-slot / have-last
+ *  72  u64   attempted boundary        80 u64 microinstructions
+ *  88  u64   evidence next sequence    96 u64 evidence last slot
+ * 104  u64   observed LBA             112 u64 observed generation
+ * 120  u64   observed request id       128 u64 expected completion
+ * 136  u32   command                  140 u32 CLP
+ * 144  u32   DA                       148 u32 LMA
+ * 152  u32   CCW address              156 u32 CCW index
+ * 160  u32   observed disk status     164 u32 transfer/reset/enables
+ * 168  u32   observed bus IRQ         172 u32 observed operation
+ * 176  u32   observed completion queued 180 u32 observed tuple reserved zero
+ * 184 [32]   failure-compatible CDRSTATE5 digest
+ * 216 [104]  reserved zero
+ *
+ * This diagnostic profile is deliberately observation-only: it does not
+ * serialize evidence events (which could contain media-derived material),
+ * drain a trace, alter capacity, or mutate guest/core state.  The current
+ * trace engine has no persistent failure ledger, so bit 4 says that fact
+ * explicitly instead of attributing a general terminal fault to tracing.
+ */
+#define CADR_WASM_M6_DIAGNOSTIC_BYTES UINT32_C(320)
+#define CADR_WASM_M6_DIAGNOSTIC_DISK_OVERFLOW UINT32_C(1)
+#define CADR_WASM_M6_DIAGNOSTIC_CANONICAL_OVERFLOW UINT32_C(2)
+#define CADR_WASM_M6_DIAGNOSTIC_CPU_GUEST_FAULT UINT32_C(4)
+#define CADR_WASM_M6_DIAGNOSTIC_TRACE_ACTIVE UINT32_C(8)
+#define CADR_WASM_M6_DIAGNOSTIC_TRACE_LEDGER_UNAVAILABLE UINT32_C(16)
+
+CADR_WASM_EXPORT("cadr_wasm_post_terminal_diagnostic")
+uint32_t cadr_wasm_post_terminal_diagnostic(void)
+{
+    const cadr_machine_state *state;
+    const cadr_disk_evidence_tuple *observed;
+    cadr_status status;
+    uint32_t flags = CADR_WASM_M6_DIAGNOSTIC_TRACE_LEDGER_UNAVAILABLE;
+    if (cadr_wasm_machine == NULL || cadr_wasm_output == NULL) {
+        return CADR_STATUS_NOT_READY;
+    }
+    state = &cadr_wasm_machine->state;
+    observed = &state->disk_evidence.observed_after;
+    if (state->disk_evidence.overflowed != 0U) {
+        flags |= CADR_WASM_M6_DIAGNOSTIC_DISK_OVERFLOW;
+    }
+    if (state->canonical.overflowed != 0U) {
+        flags |= CADR_WASM_M6_DIAGNOSTIC_CANONICAL_OVERFLOW;
+    }
+    if (state->cpu.guest_fault != 0U) {
+        flags |= CADR_WASM_M6_DIAGNOSTIC_CPU_GUEST_FAULT;
+    }
+    if (cadr_trace_engine_active(state) != 0) {
+        flags |= CADR_WASM_M6_DIAGNOSTIC_TRACE_ACTIVE;
+    }
+    (void)memset(cadr_wasm_output, 0, CADR_WASM_OUTPUT_BYTES);
+    (void)memcpy(cadr_wasm_output, "CDRM6D1", 7U);
+    cadr_wasm_put32(cadr_wasm_output + 8U, 1U);
+    cadr_wasm_put32(cadr_wasm_output + 12U, CADR_WASM_M6_DIAGNOSTIC_BYTES);
+    cadr_wasm_put32(cadr_wasm_output + 16U, flags);
+    cadr_wasm_put32(cadr_wasm_output + 24U, state->lifecycle);
+    cadr_wasm_put32(cadr_wasm_output + 28U,
+                    state->events.persistent_status);
+    cadr_wasm_put32(cadr_wasm_output + 32U, state->disk_evidence.count);
+    cadr_wasm_put32(cadr_wasm_output + 36U, CADR_DISK_EVIDENCE_CAPACITY);
+    cadr_wasm_put32(cadr_wasm_output + 40U, state->devices.disk.status);
+    cadr_wasm_put32(cadr_wasm_output + 44U, state->events.outstanding_operation);
+    cadr_wasm_put32(cadr_wasm_output + 48U, state->events.completion_queued);
+    cadr_wasm_put32(cadr_wasm_output + 52U, state->events.unexpected_bus_operation);
+    cadr_wasm_put32(cadr_wasm_output + 56U,
+                    state->devices.disk.transfer_active |
+                    (state->devices.disk.reset_condition << 1U) |
+                    (state->devices.disk.done_interrupt_enable << 2U) |
+                    (state->devices.disk.attention_interrupt_enable << 3U));
+    cadr_wasm_put32(cadr_wasm_output + 60U, state->bus.interrupt_status);
+    cadr_wasm_put32(cadr_wasm_output + 68U,
+                    state->disk_evidence.intra_slot | (state->disk_evidence.have_last << 31U));
+    cadr_wasm_put64(cadr_wasm_output + 72U,
+                    state->clock_slots_completed);
+    cadr_wasm_put64(cadr_wasm_output + 80U,
+                    state->cpu.microinstructions_executed);
+    cadr_wasm_put64(cadr_wasm_output + 88U, state->disk_evidence.next_sequence);
+    cadr_wasm_put64(cadr_wasm_output + 96U, state->disk_evidence.last_slot);
+    cadr_wasm_put64(cadr_wasm_output + 104U, observed->lba);
+    cadr_wasm_put64(cadr_wasm_output + 112U, observed->generation);
+    cadr_wasm_put64(cadr_wasm_output + 120U, observed->request_id);
+    cadr_wasm_put64(cadr_wasm_output + 128U, observed->expected_completion);
+    cadr_wasm_put32(cadr_wasm_output + 136U, observed->command);
+    cadr_wasm_put32(cadr_wasm_output + 140U, observed->clp);
+    cadr_wasm_put32(cadr_wasm_output + 144U, observed->da);
+    cadr_wasm_put32(cadr_wasm_output + 148U, observed->lma);
+    cadr_wasm_put32(cadr_wasm_output + 152U, observed->ccw_address);
+    cadr_wasm_put32(cadr_wasm_output + 156U, observed->ccw_index);
+    cadr_wasm_put32(cadr_wasm_output + 160U, observed->status);
+    cadr_wasm_put32(cadr_wasm_output + 164U, observed->transfer_reset_enables);
+    cadr_wasm_put32(cadr_wasm_output + 168U, observed->bus_irq);
+    cadr_wasm_put32(cadr_wasm_output + 172U, observed->operation);
+    cadr_wasm_put32(cadr_wasm_output + 176U, observed->completion_queued);
+    status = cadr_machine_state_v5_failure_digest(cadr_wasm_machine,
+                                                   cadr_wasm_output + 184U);
+    return status;
+}
+#endif
+
+#if defined(CADR_M7_WASM)
+static uint32_t cadr_wasm_display_transfer(uint32_t full)
+{
+    cadr_display_info info = {
+        CADR_ABI_MAJOR, CADR_ABI_MINOR_M7,
+        (uint32_t)sizeof(cadr_display_info), 0U,
+        0U, 0U, 0U, 0U, 0U, 0U, 0U, 0U, 0U, 0U
+    };
+    uint64_t byte_count = 0U;
+    uint64_t written = 0U;
+    cadr_status status;
+    if (cadr_wasm_machine == NULL) return CADR_STATUS_NOT_READY;
+    status = cadr_machine_display_info(cadr_wasm_machine, &info);
+    if (status != CADR_STATUS_OK) return status;
+    status = full != 0U ?
+        cadr_machine_display_full_size(cadr_wasm_machine, &byte_count) :
+        cadr_machine_display_update_size(cadr_wasm_machine, &byte_count);
+    if (status != CADR_STATUS_OK) return status;
+    if (byte_count == 0U || byte_count > CADR_WASM_TRANSFER_BYTES) {
+        return CADR_STATUS_WRONG_LENGTH;
+    }
+    if (cadr_wasm_input_reserve((uint32_t)byte_count) == 0U) {
+        return CADR_STATUS_NO_MEMORY;
+    }
+    status = full != 0U ?
+        cadr_machine_display_full_copy(cadr_wasm_machine, cadr_wasm_input,
+                                       byte_count, &written) :
+        cadr_machine_display_update_take(
+            cadr_wasm_machine, info.machine_generation,
+            info.framebuffer_generation, cadr_wasm_input,
+            byte_count, &written);
+    if (status != CADR_STATUS_OK) return status;
+    if (written != byte_count) return CADR_STATUS_HOST_FAILURE;
+    cadr_wasm_meta_result(written, 0U);
+    return CADR_STATUS_OK;
+}
+
+CADR_WASM_EXPORT("cadr_wasm_display_update")
+uint32_t cadr_wasm_display_update(void)
+{
+    return cadr_wasm_display_transfer(0U);
+}
+
+CADR_WASM_EXPORT("cadr_wasm_display_full")
+uint32_t cadr_wasm_display_full(void)
+{
+    return cadr_wasm_display_transfer(1U);
+}
+#endif
+
 CADR_WASM_EXPORT("cadr_wasm_trace_start")
 uint32_t cadr_wasm_trace_start(uint32_t transport_mode, uint32_t capacity,
                                uint32_t selector_low, uint32_t selector_high,
@@ -781,8 +973,17 @@ static uint32_t cadr_wasm_snapshot_replace(const uint8_t *bytes,
     cadr_machine *old;
     cadr_status status;
     uintptr_t allocation_mark;
+#if defined(CADR_M7_WASM)
+    uint64_t display_generation;
+#endif
     if (bytes == NULL || byte_count == 0U) return CADR_STATUS_NOT_READY;
     if (cadr_wasm_restore_used != 0U) return CADR_STATUS_NOT_READY;
+#if defined(CADR_M7_WASM)
+    if (cadr_wasm_machine == NULL) return CADR_STATUS_NOT_READY;
+    status = cadr_display_tracker_prepare_reinitialize(
+        &cadr_wasm_machine->display, &display_generation);
+    if (status != CADR_STATUS_OK) return status;
+#endif
     allocation_mark = cadr_wasm_allocator_mark();
     status = cadr_machine_snapshot_restore(&request, bytes, byte_count, &restored);
     if (status != CADR_STATUS_OK) {
@@ -790,6 +991,10 @@ static uint32_t cadr_wasm_snapshot_replace(const uint8_t *bytes,
         return status;
     }
     old = cadr_wasm_machine;
+#if defined(CADR_M7_WASM)
+    cadr_display_tracker_commit_reinitialize(
+        &restored->display, &restored->state, display_generation);
+#endif
     cadr_wasm_machine = restored;
     cadr_wasm_restore_used = 1U;
     if (old != NULL) cadr_machine_destroy(old);

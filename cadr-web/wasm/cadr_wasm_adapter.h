@@ -50,8 +50,16 @@ uint32_t cadr_wasm_boot_media_observation(void);
 uint32_t cadr_wasm_disk_evidence(void);
 #if defined(CADR_M6_DEVID_WASM)
 uint32_t cadr_wasm_m6_disk_evidence_summary(void);
+uint32_t cadr_wasm_run_until_event_m6(uint32_t clock_slots);
 #endif
 uint32_t cadr_wasm_machine_info(void);
+#if defined(CADR_M6_DIAGNOSTIC_WASM)
+uint32_t cadr_wasm_post_terminal_diagnostic(void);
+#endif
+#if defined(CADR_M7_WASM)
+uint32_t cadr_wasm_display_update(void);
+uint32_t cadr_wasm_display_full(void);
+#endif
 uint32_t cadr_wasm_trace_start(uint32_t transport_mode, uint32_t capacity,
                                uint32_t selector_low, uint32_t selector_high,
                                uint32_t event_low, uint32_t event_high);

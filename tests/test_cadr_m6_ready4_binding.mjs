@@ -27,4 +27,8 @@ assert.equal(CADR_M6_READY4_CONTRACT,
 await assert.rejects(canonicalM6ReadyWitnessV4({
   ready3Witness: ready3, selectedMaximum: 0n, cdrm6e1Sha256: summary,
 }), TypeError);
+await assert.rejects(canonicalM6ReadyWitnessV4({
+  ready3Witness: ready3, target: "CADR-WEB-303/ABI1.4/protocol-v4/M6",
+  selectedMaximum: 0x7fffffffffffffffn, cdrm6e1Sha256: summary,
+}), TypeError, "READY4 is explicitly bound to the M6-DEVID1 target");
 console.log("cadr_m6_ready4_binding: ok");

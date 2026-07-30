@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
 import { readFile } from "node:fs/promises";
+import { fileURLToPath } from "node:url";
 import {
   CADR_HOST_RESULT_OK,
   CADR_STATUS_NOT_READY,
@@ -18,13 +19,16 @@ import {
   CADR_M6_RELEASE_RECORD_SCHEMA,
   CADR_M6_CADET_MAPPING_SHA256,
   CADR_M6_FORM_A_START_BOUNDARY,
+  canonicalM6FailureDiagnostic,
   canonicalM6ReadyWitness,
   canonicalSyntheticM6ReadyWitnessForTest,
   preflightM6Artifacts,
   runM6HeadlessBoot,
   runM6HeadlessBootConformance,
+  runSyntheticM6Ready4FastForTest,
   runSyntheticM6HeadlessBootForTest,
   runSyntheticM6HeadlessBootConformanceForTest,
+  serializeM6FailureDiagnostic,
   serializeM6HostTranscript,
   serializeM6ReadyConformance,
   serializeSyntheticM6ReadyConformanceForTest,
@@ -32,6 +36,7 @@ import {
 } from "../cadr-web/wasm/cadr-m6-headless-boot.mjs";
 
 const ZERO = new Uint8Array(32);
+const REPOSITORY = fileURLToPath(new URL("../", import.meta.url));
 const SYNTH_A_BOUNDARY = CADR_M6_FORM_A_START_BOUNDARY + 50002n;
 const SYNTH_B_START = CADR_M6_FORM_A_START_BOUNDARY + 50001n + 20000000n;
 const SYNTH_B_BOUNDARY = SYNTH_B_START + 50002n;
@@ -351,6 +356,106 @@ class FakeClient {
       return { status: 0, digest: new Uint8Array(32).fill(0x52).buffer };
     }
     throw new Error(`unexpected fake operation ${op}`);
+  }
+}
+
+class FastReady4Client extends FakeClient {
+  constructor(mode = "ready") {
+    super(mode);
+    this.debugInstruction = 0n;
+    this.fastStops = [
+      [SYNTH_A_BOUNDARY - 2n, 0x000000004d36n],
+      [SYNTH_A_BOUNDARY - 1n, 0x000041314d36n],
+      [SYNTH_A_BOUNDARY, CADR_M6_FORM_A],
+      [SYNTH_B_BOUNDARY - 1n, 0xa55a42324d36n],
+      [SYNTH_B_BOUNDARY, CADR_M6_FORM_B],
+      [SYNTH_C_BOUNDARY - 1n, 0x5aa549444d36n],
+      [SYNTH_C_BOUNDARY, CADR_M6_FORM_C],
+    ];
+    if (mode === "wrong-partial") {
+      this.fastStops[1] = [SYNTH_A_BOUNDARY - 1n, 0x000041324d36n];
+    } else if (mode === "reordered-partial") {
+      this.fastStops.shift();
+    } else if (mode === "late-partial") {
+      this.fastStops.push([SYNTH_C_BOUNDARY + 1n, CADR_M6_FORM_C ^ 1n]);
+    }
+    this.observedDebugStops = [];
+  }
+
+  async request(op, fields = {}) {
+    if (op === "run-until-event-m6") {
+      this.calls.push({ op, fields });
+      const before = this.boundary;
+      const requested = fields.clockSlots;
+      const limit = before + BigInt(requested);
+      const next = this.fastStops.find(([boundary]) =>
+        boundary > before && boundary <= limit);
+      const after = next?.[0] ?? limit;
+      const debugBefore = this.debugInstruction;
+      if (next !== undefined) this.debugInstruction = next[1];
+      const reason = next === undefined ? 1 : 2;
+      const bytes = new Uint8Array(128);
+      bytes.set(new TextEncoder().encode("CDRM6FAST1"));
+      const view = new DataView(bytes.buffer);
+      view.setUint32(16, 1, true);
+      view.setUint32(20, 128, true);
+      view.setUint32(24, reason, true);
+      view.setUint32(28, 0, true);
+      view.setUint32(32, requested, true);
+      view.setBigUint64(40, after - before, true);
+      view.setBigUint64(48, after - before, true);
+      view.setBigUint64(56, before, true);
+      view.setBigUint64(64, after, true);
+      view.setBigUint64(72, debugBefore, true);
+      view.setBigUint64(80, this.debugInstruction, true);
+      view.setUint32(88, 0, true);
+      view.setUint32(92, 2, true);
+      view.setBigUint64(96, 0n, true);
+      this.boundary = after;
+      if (reason === 2) {
+        this.observedDebugStops.push([debugBefore, this.debugInstruction, after]);
+      }
+      return {
+        status: 0, wireSchema: "CDRM6FAST1", fastRun: bytes.buffer,
+        reason, terminalStatus: 0, requestedSlots: requested,
+        completedSlots: after - before, microinstructionDelta: after - before,
+        preBoundary: before, postBoundary: after, debugBefore,
+        debugAfter: this.debugInstruction, persistentStatus: 0,
+        coreLifecycle: 2, outstandingRequestId: 0n,
+      };
+    }
+    if (op === "boot-witness") {
+      const response = await super.request(op, fields);
+      response.debugInstruction = this.debugInstruction;
+      const sample = new Uint8Array(response.sample);
+      new DataView(sample.buffer).setBigUint64(8, this.debugInstruction, true);
+      response.sample = sample.buffer;
+      return response;
+    }
+    if (op === "m6-disk-evidence-summary") {
+      this.calls.push({ op, fields });
+      const summary = new Uint8Array(512);
+      summary.set(new TextEncoder().encode("CDRM6E1"));
+      const view = new DataView(summary.buffer);
+      view.setUint32(8, 1, true);
+      view.setUint32(12, 512, true);
+      view.setUint32(16, 1, true);
+      view.setUint32(20, 1, true);
+      view.setUint32(24, 512, true);
+      view.setUint32(28, 512, true);
+      view.setBigUint64(32, 0x7fffffffffffffffn, true);
+      view.setBigUint64(40, 513n, true);
+      view.setBigUint64(48, 1n, true);
+      view.setBigUint64(56, 512n, true);
+      view.setBigUint64(88, 513n, true);
+      summary[272] = 1;
+      return {
+        status: 0, wireSchema: "CDRM6E1",
+        policyId: "M6-PREFIX512-TAILSHA256-v1",
+        summary: summary.buffer, summaryDigest: (await digest(summary)).buffer,
+      };
+    }
+    return super.request(op, fields);
   }
 }
 
@@ -778,7 +883,7 @@ with tempfile.TemporaryDirectory() as temporary:
 `;
   const releaseRecord = JSON.parse(execFileSync(
     "python3", ["-c", python],
-    { cwd: process.cwd(), encoding: "utf8", maxBuffer: 10 * 1024 * 1024 }));
+    { cwd: REPOSITORY, encoding: "utf8", maxBuffer: 10 * 1024 * 1024 }));
   const validated = await validateSyntheticM6ReleaseRecord(releaseRecord);
   const firstFormA = validated.releaseRecord.schedule.pre_a_batches
     .flat().find(event => event.phase === "form-a");
@@ -862,6 +967,43 @@ with tempfile.TemporaryDirectory() as temporary:
   "the driver cannot overshoot first Form B input");
 }
 
+{
+  const releaseRecord = await syntheticReleaseRecord();
+  const client = new FastReady4Client();
+  const result = await runSyntheticM6Ready4FastForTest({
+    ...fixtures,
+    client,
+    maxBoundaries: 225000000n,
+    maxHostTransactions: 2,
+    fastSlots: 1048576,
+  }, releaseRecord);
+  assert.equal(result.outcome, "ready4",
+    `${result.report?.reason}: ${result.report?.detail ?? ""}`);
+  assert.deepEqual(client.observedDebugStops, [
+    [0n, 0x000000004d36n, SYNTH_A_BOUNDARY - 2n],
+    [0x000000004d36n, 0x000041314d36n, SYNTH_A_BOUNDARY - 1n],
+    [0x000041314d36n, CADR_M6_FORM_A, SYNTH_A_BOUNDARY],
+    [CADR_M6_FORM_A, 0xa55a42324d36n, SYNTH_B_BOUNDARY - 1n],
+    [0xa55a42324d36n, CADR_M6_FORM_B, SYNTH_B_BOUNDARY],
+    [CADR_M6_FORM_B, 0x5aa549444d36n, SYNTH_C_BOUNDARY - 1n],
+    [0x5aa549444d36n, CADR_M6_FORM_C, SYNTH_C_BOUNDARY],
+  ], "the actual READY4 entrypoint crosses every observable partial/full ABC marker");
+}
+
+for (const mode of ["wrong-partial", "reordered-partial", "late-partial"]) {
+  const client = new FastReady4Client(mode);
+  const result = await runSyntheticM6Ready4FastForTest({
+    ...fixtures,
+    client,
+    maxBoundaries: 225000000n,
+    maxHostTransactions: 2,
+    fastSlots: 1048576,
+  }, await syntheticReleaseRecord());
+  assert.equal(result.outcome, "failed", mode);
+  assert.equal(result.report.reason, "boot-driver-failure",
+    `${mode} is rejected by the ordered partial-marker validator`);
+}
+
 for (const mode of [
   "shifted-wasm", "suffix-plus-one", "suffix-minus-one", "persistent-residue",
   "completion-residue", "unsafe-lifecycle", "machine-info-failure",
@@ -874,6 +1016,60 @@ for (const mode of [
     maxHostTransactions: 2,
   }, await syntheticReleaseRecord());
   assert.equal(result.outcome, "failed", mode);
+}
+
+{
+  const releaseRecord = await syntheticReleaseRecord();
+  const conformance = await runSyntheticM6HeadlessBootConformanceForTest({
+    createRun() {
+      return {
+        ...fixtures,
+        client: new FakeClient("terminal"),
+        maxBoundaries: 225000000n,
+        maxHostTransactions: 2,
+      };
+    },
+  }, releaseRecord);
+  assert.equal(conformance.outcome, "failed");
+  assert.equal(conformance.completed_runs, 0);
+  assert.equal(conformance.failed_run, 0);
+  const diagnostic = canonicalM6FailureDiagnostic(conformance);
+  assert.deepEqual(Object.keys(diagnostic).sort(), [
+    "completedRuns", "conformanceSchema", "failedRun", "failure", "outcome", "schema",
+  ]);
+  assert.equal(diagnostic.schema, "cadr-m6-wasm-failure-diagnostic-v1");
+  assert.equal(diagnostic.failure.report.reason, "terminal-machine-status");
+  assert.equal(diagnostic.failure.report.phase, "run");
+  assert.equal(diagnostic.failure.report.status, 16);
+  assert.equal(diagnostic.failure.report.boundary, "1");
+  assert.equal(diagnostic.failure.report.lifecycle, "FAILED");
+  assert.equal(diagnostic.failure.report.cdrstate5Sha256, "32".repeat(32));
+  assert.equal(diagnostic.failure.report.cdrm5q1Sha256, "31".repeat(32));
+  assert.deepEqual(diagnostic.failure.report.runFraming, {
+    operation: "run-digest-batch-m5",
+    requestedClockSlots: 4096,
+    returnedBoundaryCount: 0,
+    terminalStatus: 16,
+    preCallBoundary: "0",
+    cachedLastCompleteBoundary: "1",
+    postCallAttemptedBoundary: null,
+  }, "the failure receipt preserves the exact terminal M5 call framing");
+  assert.equal(diagnostic.failure.runEvidence.privateDiskBaseSha256,
+    hex(fixtures.profile.artifacts.find(item => item.kind === 3).sha256));
+  assert.deepEqual(diagnostic.failure.transcriptTail, []);
+  const serialized = serializeM6FailureDiagnostic(conformance);
+  assert.equal(new TextDecoder().decode(serialized), canonicalJson(diagnostic),
+    "failure diagnostics are canonical JSON before a disposed worker is lost");
+  const forged = structuredClone(conformance);
+  forged.failure.report.unreviewed = true;
+  await assert.throws(() => canonicalM6FailureDiagnostic(forged),
+    /missing or unknown fields/,
+    "an unreviewed failure field cannot silently enter a diagnostic receipt");
+  const unbounded = structuredClone(conformance);
+  unbounded.failure.transcript_tail = Array.from({ length: 33 }, () => ({}));
+  await assert.throws(() => canonicalM6FailureDiagnostic(unbounded),
+    /bounded M6 transcript/,
+    "failure receipts cap the retained host tail");
 }
 
 {

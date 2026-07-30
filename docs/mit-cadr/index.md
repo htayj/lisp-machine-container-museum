@@ -145,6 +145,10 @@ the public LM-3 software and the `usim` emulator.
 - [CADR-WEB-303 M6-DEVID1 disk-evidence continuation policy](cadr-m6-disk-evidence-continuation-policy.md)
   records the separate retained-prefix/SHA-256-tail evidence profile, `CDRM6E1`,
   READY4 binding boundary, and explicit non-ready runtime status.
+- [CADR-WEB-303 ABI1.5 monochrome display and browser renderer specification](cadr-monochrome-display-renderer-reimplementation-specification.md)
+  defines the 768 by 963 raw framebuffer, `CDRDISP1` dirty transfers, BOW polarity,
+  integral browser presentation, synthetic native/Wasm pixel proof, and the explicit
+  outstanding real-System-303 checkpoint oracle.
 - [CADR-WEB-303 keyboard input reimplementation specification](cadr-keyboard-input-reimplementation-specification.md)
   defines physical-key normalization, the complete CADR key vocabulary, deterministic
   press/release ordering, lost-keyup neutralization, and accessible browser controls.

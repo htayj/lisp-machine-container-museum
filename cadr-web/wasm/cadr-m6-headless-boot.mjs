@@ -58,6 +58,7 @@ const CADR_M6_PINNED_ARTIFACT_SET_SHA256 =
 const CADR_M6_PINNED_PRIVATE_DISK_BASE_SHA256 =
   "bb16e46ad81decfe1efe691d36b6aa4ce3fd4ffb82474365de3520989d397cb5";
 export const CADR_M6_DEFAULT_BATCH_SLOTS = 4096;
+export const CADR_M6_FAST_RUN_MAX_SLOTS = 1048576;
 export const CADR_M6_DEFAULT_LAST_TRANSACTIONS = 16;
 export const CADR_M6_HARD_MAX_HOST_TRANSACTIONS = 1024;
 export const CADR_M6_HARD_MAX_REPORT_TRANSACTIONS = 32;
@@ -536,6 +537,7 @@ async function collectEvidence(client, context) {
     cdrm5q1Sha256: queueDigest,
     outstandingRequest: context.outstandingRequest,
     machineInfo: machine,
+    runFraming: context.lastRunFraming,
     transcriptCount: context.transcript.length,
     lastHostTransactions:
       context.transcript.slice(-context.lastTransactionLimit),
@@ -1337,6 +1339,7 @@ async function canonicalM6ReadyWitnessV3({
  * policy, its maximum, and the SHA-256 of one exact CDRM6E1 record. */
 export async function canonicalM6ReadyWitnessV4({
   ready3Witness,
+  target = CADR_M6_DEVID_PROFILE,
   policyId = CADR_M6_DEVID_POLICY_ID,
   selectedMaximum,
   cdrm6e1Sha256,
@@ -1344,21 +1347,25 @@ export async function canonicalM6ReadyWitnessV4({
   const ready3 = bytesOf(ready3Witness);
   const summary = bytesOf(cdrm6e1Sha256);
   if (ready3?.byteLength !== 32 || summary?.byteLength !== 32 ||
-      policyId !== CADR_M6_DEVID_POLICY_ID || !unsigned64(selectedMaximum) ||
+      target !== CADR_M6_DEVID_PROFILE || policyId !== CADR_M6_DEVID_POLICY_ID ||
+      !unsigned64(selectedMaximum) ||
       selectedMaximum === 0n || selectedMaximum > 0x7fffffffffffffffn) {
     throw new TypeError("invalid M6 READY4 disk-evidence binding");
   }
   const domain = new TextEncoder().encode("CDRM6READY4");
+  const targetBytes = new TextEncoder().encode(`${target}\0`);
   const policy = new TextEncoder().encode(`${policyId}\0`);
   const bytes = new Uint8Array(domain.byteLength + ready3.byteLength +
-    policy.byteLength + 8 + summary.byteLength);
+    targetBytes.byteLength + policy.byteLength + 8 + summary.byteLength);
   bytes.set(domain, 0);
   bytes.set(ready3, domain.byteLength);
-  bytes.set(policy, domain.byteLength + ready3.byteLength);
+  bytes.set(targetBytes, domain.byteLength + ready3.byteLength);
+  bytes.set(policy, domain.byteLength + ready3.byteLength + targetBytes.byteLength);
   new DataView(bytes.buffer).setBigUint64(
-    domain.byteLength + ready3.byteLength + policy.byteLength,
+    domain.byteLength + ready3.byteLength + targetBytes.byteLength + policy.byteLength,
     selectedMaximum, true);
-  bytes.set(summary, domain.byteLength + ready3.byteLength + policy.byteLength + 8);
+  bytes.set(summary, domain.byteLength + ready3.byteLength + targetBytes.byteLength +
+    policy.byteLength + 8);
   return sha256(bytes);
 }
 
@@ -1696,6 +1703,45 @@ function nextNativeObservationBoundary(ready, state) {
   return null;
 }
 
+const CADR_M6_FORM_A_LOW = 0x000000004d36n;
+const CADR_M6_FORM_A_MID = 0x000041314d36n;
+const CADR_M6_FORM_B_MID = 0xa55a42324d36n;
+const CADR_M6_FORM_C_MID = 0x5aa549444d36n;
+
+function validateM6FastDebugStop(ready, state, fast) {
+  if (fast.reason !== 2) return false;
+  let sequence;
+  let finalBoundary;
+  if (state.phase === "await-a") {
+    sequence = [0n, CADR_M6_FORM_A_LOW, CADR_M6_FORM_A_MID, CADR_M6_FORM_A];
+    finalBoundary = ready.nativeABoundary;
+  } else if (state.phase === "await-b") {
+    /* The low word of B is also 4d36, so the first B write is not an
+     * observable debug-latch delta. */
+    sequence = [CADR_M6_FORM_A, CADR_M6_FORM_B_MID, CADR_M6_FORM_B];
+    finalBoundary = ready.nativeBBoundary;
+  } else if (state.phase === "await-c") {
+    /* C likewise retains the low 4d36 word. */
+    sequence = [CADR_M6_FORM_B, CADR_M6_FORM_C_MID, CADR_M6_FORM_C];
+    finalBoundary = ready.nativeListenerIdleCBoundary;
+  } else {
+    throw new Error("late CDRM6FAST1 debug delta after the complete ABC marker sequence");
+  }
+  const index = state.fastDebugIndex ?? 0;
+  if (index + 1 >= sequence.length ||
+      fast.debugBefore !== sequence[index] ||
+      fast.debugAfter !== sequence[index + 1]) {
+    throw new Error("wrong or reordered CDRM6FAST1 partial marker");
+  }
+  const complete = index + 1 === sequence.length - 1;
+  if (complete ? fast.postBoundary !== finalBoundary :
+      fast.postBoundary >= finalBoundary) {
+    throw new Error("early or late CDRM6FAST1 partial marker boundary");
+  }
+  state.fastDebugIndex = index + 1;
+  return complete;
+}
+
 async function runM6HeadlessBootInternal(config, testReady = null) {
   let limits;
   const context = {
@@ -1705,6 +1751,7 @@ async function runM6HeadlessBootInternal(config, testReady = null) {
     lastMachineInfo: null,
     terminalStateDigest: null,
     terminalQueueDigest: null,
+    lastRunFraming: null,
     transcript: [],
     preflight: null,
     runEvidence: {
@@ -1866,6 +1913,16 @@ async function runM6HeadlessBootInternal(config, testReady = null) {
         }
         context.terminalQueueDigest = responseDigest(batch, "queueDigest");
         context.terminalStateDigest = responseDigest(batch, "coreStateDigest");
+        context.lastRunFraming = Object.freeze({
+          operation: "run-digest-batch-m5",
+          requestedClockSlots: requested,
+          returnedBoundaryCount: batch.boundaryCount,
+          terminalStatus: batch.terminalStatus,
+          preCallBoundary: boundaryBeforeTurn,
+          cachedLastCompleteBoundary: unsigned64(batch.lastCompleteBoundary) ?
+            batch.lastCompleteBoundary : null,
+          postCallAttemptedBoundary: null,
+        });
         return failResult(config.client, context, "terminal-machine-status",
           "run", batch.terminalStatus);
       }
@@ -2038,6 +2095,380 @@ export async function runM6HeadlessBoot(config) {
   return runM6HeadlessBootInternal({ ...config });
 }
 
+export function parseM6FastRunResponse(response) {
+  const bytes = bytesOf(response?.fastRun);
+  if (response?.wireSchema !== "CDRM6FAST1" || bytes?.byteLength !== 128 ||
+      new TextDecoder().decode(bytes.subarray(0, 10)) !== "CDRM6FAST1" ||
+      bytes.subarray(10, 16).some(value => value !== 0) ||
+      bytes.subarray(104).some(value => value !== 0)) {
+    throw new TypeError("malformed CDRM6FAST1 response");
+  }
+  const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+  const record = Object.freeze({
+    reason: view.getUint32(24, true), terminalStatus: view.getUint32(28, true),
+    requestedSlots: view.getUint32(32, true),
+    completedSlots: view.getBigUint64(40, true),
+    microinstructionDelta: view.getBigUint64(48, true),
+    preBoundary: view.getBigUint64(56, true), postBoundary: view.getBigUint64(64, true),
+    debugBefore: view.getBigUint64(72, true), debugAfter: view.getBigUint64(80, true),
+    persistentStatus: view.getUint32(88, true), coreLifecycle: view.getUint32(92, true),
+    outstandingRequestId: view.getBigUint64(96, true),
+  });
+  if (view.getUint32(16, true) !== 1 || view.getUint32(20, true) !== 128 ||
+      record.reason < 1 || record.reason > 4 || record.requestedSlots === 0 ||
+      record.requestedSlots > CADR_M6_FAST_RUN_MAX_SLOTS ||
+      record.completedSlots > BigInt(record.requestedSlots) ||
+      record.postBoundary < record.preBoundary ||
+      record.postBoundary - record.preBoundary !== record.completedSlots ||
+      record.debugBefore > 0xffffffffffffn || record.debugAfter > 0xffffffffffffn ||
+      !unsigned32(record.terminalStatus) || !unsigned32(record.persistentStatus) ||
+      !unsigned32(record.coreLifecycle) ||
+      record.reason === 1 && (record.terminalStatus !== CADR_STATUS_OK ||
+        record.completedSlots !== BigInt(record.requestedSlots) ||
+        record.debugBefore !== record.debugAfter) ||
+      record.reason === 2 && (record.terminalStatus !== CADR_STATUS_OK ||
+        record.debugBefore === record.debugAfter || record.outstandingRequestId !== 0n ||
+        record.persistentStatus !== CADR_STATUS_OK) ||
+      record.reason === 3 && (record.terminalStatus !== STATUS_WAITING_FOR_HOST ||
+        record.outstandingRequestId === 0n || record.persistentStatus !== CADR_STATUS_OK) ||
+      record.reason === 4 && (record.terminalStatus === CADR_STATUS_OK ||
+        record.terminalStatus === STATUS_WAITING_FOR_HOST)) {
+    throw new TypeError("invalid CDRM6FAST1 stop semantics");
+  }
+  for (const [field, value] of Object.entries(record)) {
+    if (response[field] !== value) throw new TypeError(`CDRM6FAST1 ${field} projection drift`);
+  }
+  return Object.freeze({ ...record, bytes: bytes.slice() });
+}
+
+export async function appendM6FastCheckpoint(previous, ordinal, fastRecord,
+  cdrstate5Sha256, cdrm5q1Sha256) {
+  const state = bytesOf(cdrstate5Sha256);
+  const queue = bytesOf(cdrm5q1Sha256);
+  if (previous?.byteLength !== 32 || state?.byteLength !== 32 ||
+      queue?.byteLength !== 32 || !Number.isSafeInteger(ordinal) || ordinal < 0) {
+    throw new TypeError("invalid M6 fast checkpoint inputs");
+  }
+  const record = bytesOf(fastRecord);
+  if (record?.byteLength !== 128) throw new TypeError("invalid M6 fast record checkpoint");
+  const domain = new TextEncoder().encode("CDRM6FASTCHAIN1\0");
+  const recordDigest = await sha256(record);
+  const bytes = new Uint8Array(domain.byteLength + 8 + 32 * 4);
+  bytes.set(domain, 0);
+  new DataView(bytes.buffer).setBigUint64(domain.byteLength, BigInt(ordinal), true);
+  let offset = domain.byteLength + 8;
+  for (const part of [previous, state, queue, recordDigest]) {
+    bytes.set(part, offset); offset += 32;
+  }
+  return sha256(bytes);
+}
+
+function validM6DevidSummary(response) {
+  const summary = bytesOf(response?.summary);
+  const digest = bytesOf(response?.summaryDigest);
+  if (response?.wireSchema !== "CDRM6E1" ||
+      response?.policyId !== CADR_M6_DEVID_POLICY_ID || summary?.byteLength !== 512 ||
+      digest?.byteLength !== 32 || new TextDecoder().decode(summary.subarray(0, 7)) !== "CDRM6E1" ||
+      summary[7] !== 0 || summary.subarray(352).some(value => value !== 0)) {
+    return null;
+  }
+  const view = new DataView(summary.buffer, summary.byteOffset, summary.byteLength);
+  const flags = view.getUint32(20, true);
+  const totalAccepted = view.getBigUint64(40, true);
+  const tailEventCount = view.getBigUint64(48, true);
+  let kindTotal = 0n;
+  for (let index = 0; index < 9; index += 1) {
+    kindTotal += view.getBigUint64(88 + index * 8, true);
+  }
+  if (view.getUint32(8, true) !== 1 || view.getUint32(12, true) !== 512 ||
+      view.getUint32(16, true) !== 1 || flags !== 1 ||
+      view.getUint32(24, true) !== 512 || view.getUint32(28, true) !== 512 ||
+      view.getBigUint64(32, true) !== 0x7fffffffffffffffn ||
+      totalAccepted <= 512n || tailEventCount !== totalAccepted - 512n ||
+      view.getBigUint64(56, true) !== 512n || kindTotal !== totalAccepted ||
+      view.getUint32(316, true) !== 0 || view.getBigUint64(304, true) !== 0n ||
+      view.getUint32(312, true) !== 0 || summary.subarray(320, 352).some(value => value !== 0) ||
+      summary.subarray(272, 304).every(value => value === 0)) return null;
+  return Object.freeze({ bytes: summary.slice(), digest: digest.slice(),
+    selectedMaximum: view.getBigUint64(32, true), totalAccepted });
+}
+
+async function serviceM6FastHost(client, context, hostTransactions, limits) {
+  if (hostTransactions >= limits.maxHostTransactions) {
+    return Object.freeze({ failed: "host-transaction-limit-exhausted", status: CADR_STATUS_NOT_READY,
+      hostTransactions });
+  }
+  const before = context.transcript.length;
+  let polled;
+  try {
+    let generation = context.blockService.overlayGeneration();
+    await workerOk(client, "media-overlay-state", { busy: true, dirty: generation !== 0n,
+      snapshotBlocked: context.blockService.snapshotBlocked(), overlayGeneration: generation });
+    polled = await context.blockService.poll({
+      tick: context.boundary,
+      nextRequest: async () => {
+        const next = await workerRequest(client, "host-next-request");
+        if (next.status === CADR_STATUS_OK) {
+          if (next.request === null || typeof next.request !== "object") {
+            return { status: STATUS_INVALID_ARGUMENT };
+          }
+          context.outstandingRequest = {
+            generation: next.request.generation, requestId: next.request.requestId,
+            operation: next.request.operation,
+            descriptorByteCount: next.request.descriptorByteCount,
+            requestPayloadByteCount: next.request.requestPayloadByteCount,
+            completionByteCount: next.request.completionByteCount,
+          };
+        }
+        return next;
+      },
+      complete: async ({ request, hostStatus, bytes }) => {
+        const supplied = bytesOf(bytes);
+        if (supplied === null) return { status: STATUS_INVALID_ARGUMENT };
+        const buffer = supplied.buffer.slice(supplied.byteOffset,
+          supplied.byteOffset + supplied.byteLength);
+        const response = await workerRequest(client, "host-complete", {
+          operation: request.operation, hostStatus, generation: request.generation,
+          requestId: request.requestId, bytes: buffer,
+        }, [buffer]);
+        if (response.status === CADR_STATUS_OK) context.outstandingRequest = null;
+        return response;
+      },
+    });
+    generation = context.blockService.overlayGeneration();
+    await workerOk(client, "media-overlay-state", { busy: false, dirty: generation !== 0n,
+      snapshotBlocked: context.blockService.snapshotBlocked(), overlayGeneration: generation });
+  } catch (error) {
+    try {
+      const generation = context.blockService.overlayGeneration();
+      await workerRequest(client, "media-overlay-state", { busy: false, dirty: generation !== 0n,
+        snapshotBlocked: context.blockService.snapshotBlocked(), overlayGeneration: generation });
+    } catch { /* The original host-service error remains authoritative. */ }
+    return Object.freeze({ failed: "host-service-failed", status: error.status ?? STATUS_HOST_FAILURE,
+      hostTransactions });
+  }
+  if (polled.status !== CADR_STATUS_OK || context.transcript.length === before &&
+      (!Array.isArray(polled.events) || polled.events.length === 0)) {
+    return Object.freeze({ failed: "host-service-failed", status: polled.status,
+      hostTransactions });
+  }
+  for (const event of polled.events) {
+    if (event.requestSeen) hostTransactions += 1;
+    context.transcript.push(await transcriptRecord(event, context.transcript.length));
+  }
+  if (context.blockService.hasPendingRequest()) {
+    return Object.freeze({ failed: "positive-latency-host-service-is-not-selected",
+      status: CADR_STATUS_NOT_READY, hostTransactions });
+  }
+  return Object.freeze({ failed: null, status: CADR_STATUS_OK, hostTransactions });
+}
+
+/* READY4 reuses the frozen M6 scheduling and A/B/C proof, but the long spans
+ * advance through CDRM6FAST1.  Every fast stop has a CDRSTATE5/CDRM5Q1
+ * checkpoint-chain link; no JavaScript loop transfers per-slot digests. */
+async function runM6Ready4FastInternal(config, testReady = null) {
+  let limits;
+  const fastSlots = config.fastSlots ?? CADR_M6_FAST_RUN_MAX_SLOTS;
+  const context = {
+    boundary: 0n, lifecycle: "NEW", outstandingRequest: null, lastMachineInfo: null,
+    terminalStateDigest: null, terminalQueueDigest: null, lastRunFraming: null,
+    transcript: [], preflight: null, checkpointChain: await sha256(
+      new TextEncoder().encode("CDRM6FASTCHAIN1\0")), checkpointCount: 0,
+    runEvidence: { sessionId: freshEvidenceId("m6-ready4-session"),
+      privateDiskInstanceId: freshEvidenceId("m6-ready4-private-disk"),
+      privateDiskBaseSha256: null }, blockService: null,
+    lastTransactionLimit: CADR_M6_DEFAULT_LAST_TRANSACTIONS,
+    readyState: { phase: "await-a", formABoundary: null, formBBoundary: null,
+      listenerIdleCBoundary: null, listenerIdleSettledBoundary: null, idleIndex: 0,
+      idleLastBoundary: null, idleClockIndex: 0, formBInputBoundaryReached: false,
+      fastDebugIndex: 0, initial: { batchIndex: 0 }, formB: { batchIndex: 0 } },
+  };
+  if (!Number.isSafeInteger(fastSlots) || fastSlots <= 0 ||
+      fastSlots > CADR_M6_FAST_RUN_MAX_SLOTS) {
+    throw new RangeError("M6 READY4 fastSlots must be a bounded u32");
+  }
+  try {
+    limits = validateLimits(config); context.lastTransactionLimit = limits.lastTransactionLimit;
+    config.ready = testReady ?? await validateReadyContract(config.ready);
+    context.preflight = await preflightM6Artifacts(config);
+    context.preflight.artifacts.forEach((artifact, index) => {
+      const frozen = config.ready.artifacts[index];
+      if (artifact.kind !== frozen.kind || artifact.byteCount !== BigInt(frozen.byte_count) ||
+          !sameBytes(artifact.sha256, hexBytes(frozen.sha256))) {
+        throw Object.assign(new Error("artifact differs from M6 release record"),
+          { status: STATUS_ARTIFACT_MISMATCH });
+      }
+    });
+    const disk = context.preflight.sources.find(source => source.kind === 3);
+    const diskIdentity = context.preflight.artifacts.find(artifact => artifact.kind === 3);
+    context.runEvidence.privateDiskBaseSha256 = diskIdentity.sha256.slice();
+    context.runEvidence = Object.freeze(context.runEvidence);
+    context.blockService = createM4BlockRangeService({ imageByteCount: disk.byteCount,
+      expectedImageByteCount: disk.byteCount, readRange: disk.readRange });
+  } catch (error) {
+    return { outcome: "failed", preflight: null, transcript: [], report: failure(
+      error.status === STATUS_ARTIFACT_MISMATCH ? "artifact-preflight-mismatch" :
+        (error.reason ?? "invalid-boot-configuration"), "preflight",
+      error.status ?? STATUS_INVALID_ARGUMENT,
+      { detail: String(error.message ?? error), mutationStarted: false }) };
+  }
+  try {
+    const sources = new Map(context.preflight.sources.map(item => [item.kind, item]));
+    const fresh = parseMachineInfo(await workerOk(config.client, "machine-info"));
+    if (fresh.lifecycle !== 0 || fresh.artifactMask !== 0 || fresh.boundary !== 0n ||
+        fresh.outstandingRequestId !== 0n || fresh.lastCompletedRequestId !== 0n) {
+      throw new Error("READY4 requires a fresh M6-DEVID worker machine");
+    }
+    for (const kind of CADR_M6_REQUIRED_ARTIFACT_KINDS) await importArtifact(config.client, sources.get(kind));
+    if ((parseMachineInfo(await workerOk(config.client, "machine-info"))).artifactMask !== 0x1f) {
+      throw Object.assign(new Error("worker did not publish the complete artifact set"),
+        { status: STATUS_ARTIFACT_MISMATCH });
+    }
+    await workerOk(config.client, "cold-power-on"); await workerOk(config.client, "boot");
+    await workerOk(config.client, "scheduler-visibility", { hidden: false });
+    await workerOk(config.client, "scheduler-start"); context.lifecycle = "RUNNING";
+    await observeReadyContract(config.ready, context, config.client);
+  } catch (error) {
+    return failResult(config.client, context, "cold-boot-start-failed", "ingress",
+      error.status ?? STATUS_HOST_FAILURE);
+  }
+  let hostTransactions = 0;
+  const maximumTurns = Number(limits.maxBoundaries < BigInt(Number.MAX_SAFE_INTEGER) ?
+    limits.maxBoundaries : BigInt(Number.MAX_SAFE_INTEGER)) + limits.maxHostTransactions * 4 + 64;
+  for (let turn = 0; turn < maximumTurns; turn += 1) {
+    if (context.boundary >= limits.maxBoundaries) {
+      try { await workerOk(config.client, "scheduler-pause"); context.lifecycle = "PAUSED"; } catch {}
+      return failResult(config.client, context, "boundary-limit-exhausted", "run", CADR_STATUS_NOT_READY);
+    }
+    try {
+      const boundaryBefore = context.boundary;
+      let allowed = BigInt(Math.min(fastSlots, Number(limits.maxBoundaries - context.boundary)));
+      if (context.readyState.phase === "suffix" && allowed > 1n) allowed = 1n;
+      const nextInput = nextUnscheduledInputBoundary(config.ready, context.readyState);
+      if (nextInput !== null) {
+        if (nextInput <= context.boundary) throw new Error("M6 missed a scheduled input insertion boundary");
+        allowed = allowed < nextInput - context.boundary - 1n ? allowed : nextInput - context.boundary - 1n;
+      }
+      const nextObservation = nextNativeObservationBoundary(config.ready, context.readyState);
+      if (nextObservation !== null) {
+        if (nextObservation <= context.boundary) throw new Error("M6 missed a frozen native observation boundary");
+        allowed = allowed < nextObservation - context.boundary ? allowed : nextObservation - context.boundary;
+      }
+      if (allowed === 0n) {
+        const witness = await observeReadyContract(config.ready, context, config.client);
+        if (witness === null) continue;
+        throw new Error("M6 READY emerged outside the canonical fast-run path");
+      }
+      const response = await workerOk(config.client, "run-until-event-m6", {
+        clockSlots: Number(allowed),
+      });
+      const fast = parseM6FastRunResponse(response);
+      if (fast.preBoundary !== boundaryBefore || fast.requestedSlots !== Number(allowed)) {
+        throw new Error("CDRM6FAST1 boundary or request framing drift");
+      }
+      const completedDebugMarker = validateM6FastDebugStop(
+        config.ready, context.readyState, fast);
+      let stateDigest; let queueDigest;
+      if (fast.reason === 4) {
+        stateDigest = responseDigest(response, "coreStateDigest");
+        queueDigest = responseDigest(response, "queueDigest");
+        if (stateDigest === null || queueDigest === null) {
+          throw new Error("terminal CDRM6FAST1 omitted M5 failure digests");
+        }
+      } else {
+        stateDigest = responseDigest(await workerOk(config.client, "boundary-digest-v5"), "digest");
+        queueDigest = responseDigest(await workerOk(config.client, "scheduler-queue-digest"), "digest");
+        if (stateDigest === null || queueDigest === null) throw new Error("fast stop omitted checkpoint digests");
+      }
+      context.checkpointChain = await appendM6FastCheckpoint(context.checkpointChain,
+        context.checkpointCount++, fast.bytes, stateDigest, queueDigest);
+      context.terminalStateDigest = stateDigest; context.terminalQueueDigest = queueDigest;
+      context.lastRunFraming = Object.freeze({ operation: "run-until-event-m6",
+        requestedClockSlots: fast.requestedSlots, completedSlots: fast.completedSlots,
+        terminalStatus: fast.terminalStatus, reason: fast.reason,
+        preBoundary: fast.preBoundary, postBoundary: fast.postBoundary });
+      context.boundary = fast.postBoundary;
+      if (fast.reason === 4) {
+        return failResult(config.client, context, "terminal-machine-status", "run", fast.terminalStatus);
+      }
+      context.lastMachineInfo = parseMachineInfo(await workerOk(config.client, "machine-info"));
+      if (context.lastMachineInfo.boundary !== context.boundary ||
+          context.lastMachineInfo.persistentStatus !== fast.persistentStatus ||
+          context.lastMachineInfo.outstandingRequestId !== fast.outstandingRequestId) {
+        throw new Error("CDRM6FAST1 machine-info projection drift");
+      }
+      if (fast.reason === 3) {
+        const serviced = await serviceM6FastHost(config.client, context, hostTransactions, limits);
+        hostTransactions = serviced.hostTransactions;
+        if (serviced.failed !== null) return failResult(config.client, context,
+          serviced.failed, "host-service", serviced.status);
+        continue;
+      }
+      if (context.boundary === boundaryBefore) {
+        return failResult(config.client, context, "zero-progress-run", "run", CADR_STATUS_NOT_READY);
+      }
+      if (fast.reason === 2 && !completedDebugMarker) continue;
+      if ((context.readyState.fastDebugIndex ?? 0) !== 0 &&
+          fast.reason !== 2) {
+        /* A bounded endpoint or host stop may occur between two valid
+         * 16-bit writes.  Retain the accepted partial and continue without
+         * presenting it to the full-marker observer. */
+        continue;
+      }
+      const phaseBeforeObservation = context.readyState.phase;
+      const readyWitness = await observeReadyContract(config.ready, context, config.client);
+      if (context.readyState.phase !== phaseBeforeObservation) {
+        context.readyState.fastDebugIndex = 0;
+      }
+      if (readyWitness === null) continue;
+      await workerOk(config.client, "scheduler-pause"); context.lifecycle = "PAUSED";
+      context.lastMachineInfo = await assertQuiescent(config.client, context.blockService);
+      const summaryResponse = await workerOk(config.client, "m6-disk-evidence-summary");
+      const summary = validM6DevidSummary(summaryResponse);
+      if (summary === null || !sameBytes(await sha256(summary.bytes), summary.digest)) {
+        throw new Error("closed CDRM6E1 evidence summary mismatch");
+      }
+      const hostTranscript = serializeM6HostTranscript(context.transcript,
+        context.preflight.artifactSetSha256);
+      const hostTranscriptSha256 = await sha256(hostTranscript);
+      const ready3Witness = await canonicalM6ReadyWitnessFromValidatedRecord({
+        record: config.ready, releaseRecord: config.ready.releaseRecord,
+        artifactSetSha256: context.preflight.artifactSetSha256,
+        privateDiskBaseSha256: context.runEvidence.privateDiskBaseSha256,
+        formABoundary: readyWitness.formABoundary, formBBoundary: readyWitness.formBBoundary,
+        listenerIdleCBoundary: readyWitness.listenerIdleCBoundary,
+        listenerIdleSettledBoundary: readyWitness.listenerIdleSettledBoundary,
+        readyBoundary: context.boundary, cdrstate5Sha256: stateDigest,
+        cdrm5q1Sha256: queueDigest, hostTranscriptSha256 });
+      const ready4Witness = await canonicalM6ReadyWitnessV4({ ready3Witness,
+        target: CADR_M6_DEVID_PROFILE, selectedMaximum: summary.selectedMaximum,
+        cdrm6e1Sha256: summary.digest });
+      return Object.freeze({ outcome: "ready4", target: CADR_M6_DEVID_PROFILE,
+        contract: CADR_M6_READY4_CONTRACT, runEvidence: context.runEvidence,
+        preflight: publicPreflight(context.preflight), ready: Object.freeze({ ...readyWitness,
+          ready3Witness, ready4Witness }), boundary: context.boundary,
+        cdrstate5Sha256: stateDigest, cdrm5q1Sha256: queueDigest,
+        checkpointChainSha256: context.checkpointChain, checkpointCount: context.checkpointCount,
+        cdrm6e1: summary.bytes, cdrm6e1Sha256: summary.digest,
+        transcript: context.transcript.slice(), hostTranscript, hostTranscriptSha256,
+        machineInfo: context.lastMachineInfo, noPendingOrOrphanedHostRequest: true });
+    } catch (error) {
+      return failResult(config.client, context, "boot-driver-failure", "run",
+        error.status ?? STATUS_HOST_FAILURE);
+    }
+  }
+  return failResult(config.client, context, "turn-limit-exhausted", "run", CADR_STATUS_NOT_READY);
+}
+
+export async function runM6Ready4Fast(config) {
+  return runM6Ready4FastInternal({ ...config });
+}
+
+export async function runSyntheticM6Ready4FastForTest(config, releaseRecord) {
+  const ready = await validateM6ReleaseRecord(releaseRecord, false);
+  return runM6Ready4FastInternal({ ...config, ready }, ready);
+}
+
 /* Unit-test entrypoint. It exercises the complete state machine with a strict
  * synthetic record but cannot change the production compiled-digest gate. */
 export async function runSyntheticM6HeadlessBootForTest(config, releaseRecord) {
@@ -2085,8 +2516,10 @@ async function runM6HeadlessBootConformanceInternal(
         completed_runs: index,
         failed_run: index,
         failure: Object.freeze({
-          run_evidence: result.runEvidence,
+          preflight: result.preflight ?? null,
           report: result.report,
+          run_evidence: result.runEvidence ?? null,
+          transcript_tail: result.transcriptTail ?? result.transcript ?? [],
         }),
       });
     }
@@ -2170,6 +2603,329 @@ const M6_CONFORMANCE_RUN_KEYS = Object.freeze([
   "cdrm5q1_sha256", "host_transcript_sha256", "semantic_witness_sha256",
   "no_pending_or_orphaned_host_request",
 ]);
+
+const M6_FAILURE_CONFORMANCE_KEYS = Object.freeze([
+  "schema", "outcome", "completed_runs", "failed_run", "failure",
+]);
+const M6_FAILURE_KEYS = Object.freeze([
+  "preflight", "report", "run_evidence", "transcript_tail",
+]);
+const M6_FAILURE_PREFLIGHT_REPORT_KEYS = Object.freeze([
+  "schema", "schemaVersion", "outcome", "reason", "phase", "status",
+  "detail", "mutationStarted",
+]);
+const M6_FAILURE_RUN_REPORT_KEYS = Object.freeze([
+  "schema", "schemaVersion", "outcome", "reason", "phase", "status",
+  "boundary", "lifecycle", "cdrstate5Sha256", "cdrm5q1Sha256",
+  "outstandingRequest", "machineInfo", "transcriptCount",
+  "lastHostTransactions", "hostTranscriptSha256", "runFraming",
+]);
+
+function failureDigest(value, label, nullable = false) {
+  if (value === null && nullable) return null;
+  return bytesHex(value, label);
+}
+
+function failureU64(value, label) {
+  if (!unsigned64(value)) throw new TypeError(`${label} must be a u64`);
+  return value.toString();
+}
+
+function failureU32(value, label) {
+  if (!unsigned32(value)) throw new TypeError(`${label} must be a u32`);
+  return value;
+}
+
+function normalizeFailureMachineInfo(value) {
+  if (value === null) return null;
+  exactKeys(value, [
+    "lifecycle", "artifactMask", "boundary", "microinstructions", "generation",
+    "nextRequestId", "outstandingRequestId", "lastCompletedRequestId",
+    "persistentStatus", "profile",
+  ], "M6 failure machineInfo");
+  return Object.freeze({
+    lifecycle: failureU32(value.lifecycle, "machineInfo.lifecycle"),
+    artifactMask: failureU32(value.artifactMask, "machineInfo.artifactMask"),
+    boundary: failureU64(value.boundary, "machineInfo.boundary"),
+    microinstructions: failureU64(value.microinstructions, "machineInfo.microinstructions"),
+    generation: failureU64(value.generation, "machineInfo.generation"),
+    nextRequestId: failureU64(value.nextRequestId, "machineInfo.nextRequestId"),
+    outstandingRequestId: failureU64(
+      value.outstandingRequestId, "machineInfo.outstandingRequestId"),
+    lastCompletedRequestId: failureU64(
+      value.lastCompletedRequestId, "machineInfo.lastCompletedRequestId"),
+    persistentStatus: failureU32(value.persistentStatus, "machineInfo.persistentStatus"),
+    profile: failureU32(value.profile, "machineInfo.profile"),
+  });
+}
+
+function normalizeFailureOutstandingRequest(value) {
+  if (value === null) return null;
+  exactKeys(value, [
+    "generation", "requestId", "operation", "descriptorByteCount",
+    "requestPayloadByteCount", "completionByteCount",
+  ], "M6 failure outstandingRequest");
+  return Object.freeze({
+    generation: failureU64(value.generation, "outstandingRequest.generation"),
+    requestId: failureU64(value.requestId, "outstandingRequest.requestId"),
+    operation: failureU32(value.operation, "outstandingRequest.operation"),
+    descriptorByteCount: failureU64(
+      value.descriptorByteCount, "outstandingRequest.descriptorByteCount"),
+    requestPayloadByteCount: failureU64(
+      value.requestPayloadByteCount, "outstandingRequest.requestPayloadByteCount"),
+    completionByteCount: failureU64(
+      value.completionByteCount, "outstandingRequest.completionByteCount"),
+  });
+}
+
+function normalizeFailureRunFraming(value) {
+  if (value === null) return null;
+  if (value.operation === "run-until-event-m6") {
+    exactKeys(value, [
+      "operation", "requestedClockSlots", "completedSlots", "terminalStatus", "reason",
+      "preBoundary", "postBoundary",
+    ], "M6 fast failure runFraming");
+    if (!Number.isSafeInteger(value.requestedClockSlots) ||
+        value.requestedClockSlots <= 0 ||
+        value.requestedClockSlots > CADR_M6_FAST_RUN_MAX_SLOTS ||
+        !unsigned64(value.completedSlots) ||
+        value.completedSlots > BigInt(value.requestedClockSlots) ||
+        !unsigned32(value.terminalStatus) || !Number.isSafeInteger(value.reason) ||
+        value.reason < 1 || value.reason > 4) {
+      throw new TypeError("M6 fast failure runFraming is malformed");
+    }
+    const preBoundary = failureU64(value.preBoundary, "fast runFraming.preBoundary");
+    const postBoundary = failureU64(value.postBoundary, "fast runFraming.postBoundary");
+    if (postBoundary < preBoundary || postBoundary - preBoundary !== value.completedSlots ||
+        value.reason !== 4) {
+      throw new TypeError("M6 fast failure runFraming is not a terminal stop");
+    }
+    return Object.freeze({
+      operation: value.operation,
+      requestedClockSlots: value.requestedClockSlots,
+      completedSlots: value.completedSlots.toString(),
+      terminalStatus: value.terminalStatus,
+      reason: value.reason,
+      preBoundary,
+      postBoundary,
+    });
+  }
+  exactKeys(value, [
+    "operation", "requestedClockSlots", "returnedBoundaryCount", "terminalStatus",
+    "preCallBoundary", "cachedLastCompleteBoundary", "postCallAttemptedBoundary",
+  ], "M6 failure runFraming");
+  if (value.operation !== "run-digest-batch-m5" ||
+      !Number.isSafeInteger(value.requestedClockSlots) ||
+      value.requestedClockSlots <= 0 || !Number.isSafeInteger(value.returnedBoundaryCount) ||
+      value.returnedBoundaryCount < 0 ||
+      value.returnedBoundaryCount > value.requestedClockSlots ||
+      !unsigned32(value.terminalStatus)) {
+    throw new TypeError("M6 failure runFraming is malformed");
+  }
+  return Object.freeze({
+    operation: value.operation,
+    requestedClockSlots: value.requestedClockSlots,
+    returnedBoundaryCount: value.returnedBoundaryCount,
+    terminalStatus: value.terminalStatus,
+    preCallBoundary: failureU64(value.preCallBoundary,
+      "runFraming.preCallBoundary"),
+    cachedLastCompleteBoundary: value.cachedLastCompleteBoundary === null ? null :
+      failureU64(value.cachedLastCompleteBoundary, "runFraming.cachedLastCompleteBoundary"),
+    postCallAttemptedBoundary: value.postCallAttemptedBoundary === null ? null :
+      failureU64(value.postCallAttemptedBoundary, "runFraming.postCallAttemptedBoundary"),
+  });
+}
+
+function normalizeFailureTranscript(records, label) {
+  if (!Array.isArray(records) || records.length > CADR_M6_HARD_MAX_REPORT_TRANSACTIONS) {
+    throw new TypeError(`${label} exceeds the bounded M6 transcript limit`);
+  }
+  return Object.freeze(records.map((record, index) => {
+    exactKeys(record, [
+      "ordinal", "actor", "guestBoundary", "dueBoundary", "generation", "requestId",
+      "operation", "hostStatus", "descriptorByteCount", "requestPayloadByteCount",
+      "completionByteCount", "descriptorSha256", "requestPayloadSha256",
+      "completionSha256", "firstBlock", "blockCount", "blockBytes",
+      "overlayGeneration",
+    ], `${label}[${index}]`);
+    if (!unsigned32(record.ordinal) || !["issue", "completion"].includes(record.actor)) {
+      throw new TypeError(`${label}[${index}] has an invalid identity`);
+    }
+    return Object.freeze({
+      ordinal: record.ordinal,
+      actor: record.actor,
+      guestBoundary: failureU64(record.guestBoundary, `${label}[${index}].guestBoundary`),
+      dueBoundary: failureU64(record.dueBoundary, `${label}[${index}].dueBoundary`),
+      generation: failureU64(record.generation, `${label}[${index}].generation`),
+      requestId: failureU64(record.requestId, `${label}[${index}].requestId`),
+      operation: failureU32(record.operation, `${label}[${index}].operation`),
+      hostStatus: failureU32(record.hostStatus, `${label}[${index}].hostStatus`),
+      descriptorByteCount: failureU64(
+        record.descriptorByteCount, `${label}[${index}].descriptorByteCount`),
+      requestPayloadByteCount: failureU64(
+        record.requestPayloadByteCount, `${label}[${index}].requestPayloadByteCount`),
+      completionByteCount: failureU64(
+        record.completionByteCount, `${label}[${index}].completionByteCount`),
+      descriptorSha256: failureDigest(record.descriptorSha256,
+        `${label}[${index}].descriptorSha256`),
+      requestPayloadSha256: failureDigest(record.requestPayloadSha256,
+        `${label}[${index}].requestPayloadSha256`),
+      completionSha256: failureDigest(record.completionSha256,
+        `${label}[${index}].completionSha256`),
+      firstBlock: failureU64(record.firstBlock, `${label}[${index}].firstBlock`),
+      blockCount: failureU32(record.blockCount, `${label}[${index}].blockCount`),
+      blockBytes: failureU32(record.blockBytes, `${label}[${index}].blockBytes`),
+      overlayGeneration: failureU64(
+        record.overlayGeneration, `${label}[${index}].overlayGeneration`),
+    });
+  }));
+}
+
+function normalizeFailurePreflight(value) {
+  if (value === null) return null;
+  exactKeys(value, ["profileId", "artifactSetSha256", "artifacts"],
+    "M6 failure preflight");
+  if (typeof value.profileId !== "string" || value.profileId.length === 0 ||
+      !Array.isArray(value.artifacts) ||
+      value.artifacts.length !== CADR_M6_REQUIRED_ARTIFACT_KINDS.length) {
+    throw new TypeError("M6 failure preflight is incomplete");
+  }
+  const artifacts = value.artifacts.map((artifact, index) => {
+    exactKeys(artifact, ["kind", "byteCount", "sha256"],
+      `M6 failure preflight.artifacts[${index}]`);
+    if (artifact.kind !== CADR_M6_REQUIRED_ARTIFACT_KINDS[index]) {
+      throw new TypeError("M6 failure preflight changed the required artifact order");
+    }
+    return Object.freeze({
+      kind: artifact.kind,
+      byteCount: failureU64(artifact.byteCount,
+        `M6 failure preflight.artifacts[${index}].byteCount`),
+      sha256: failureDigest(artifact.sha256,
+        `M6 failure preflight.artifacts[${index}].sha256`),
+    });
+  });
+  return Object.freeze({
+    profileId: value.profileId,
+    artifactSetSha256: failureDigest(value.artifactSetSha256,
+      "M6 failure preflight.artifactSetSha256"),
+    artifacts: Object.freeze(artifacts),
+  });
+}
+
+function normalizeFailureRunEvidence(value) {
+  if (value === null) return null;
+  exactKeys(value, ["sessionId", "privateDiskInstanceId", "privateDiskBaseSha256"],
+    "M6 failure runEvidence");
+  if (typeof value.sessionId !== "string" || value.sessionId.length === 0 ||
+      typeof value.privateDiskInstanceId !== "string" ||
+      value.privateDiskInstanceId.length === 0) {
+    throw new TypeError("M6 failure run evidence is incomplete");
+  }
+  return Object.freeze({
+    sessionId: value.sessionId,
+    privateDiskInstanceId: value.privateDiskInstanceId,
+    privateDiskBaseSha256: failureDigest(value.privateDiskBaseSha256,
+      "M6 failure private disk base digest"),
+  });
+}
+
+function normalizeFailureReport(value, transcriptTail) {
+  if (value === null || typeof value !== "object" || Array.isArray(value) ||
+      value.schema !== CADR_M6_SCHEMA || value.schemaVersion !== 1 ||
+      value.outcome !== "failed" || typeof value.reason !== "string" ||
+      value.reason.length === 0 || typeof value.phase !== "string" ||
+      value.phase.length === 0 || !unsigned32(value.status)) {
+    throw new TypeError("M6 failure report has an invalid identity");
+  }
+  if (value.phase === "preflight") {
+    exactKeys(value, M6_FAILURE_PREFLIGHT_REPORT_KEYS, "M6 preflight failure report");
+    if (typeof value.detail !== "string" || typeof value.mutationStarted !== "boolean" ||
+        value.mutationStarted !== false) {
+      throw new TypeError("M6 preflight failure report is not fail-closed");
+    }
+    return Object.freeze({
+      schema: value.schema,
+      schemaVersion: value.schemaVersion,
+      outcome: value.outcome,
+      reason: value.reason,
+      phase: value.phase,
+      status: value.status,
+      detail: value.detail,
+      mutationStarted: value.mutationStarted,
+    });
+  }
+  exactKeys(value, M6_FAILURE_RUN_REPORT_KEYS, "M6 run failure report");
+  const transactions = normalizeFailureTranscript(
+    value.lastHostTransactions, "M6 failure report.lastHostTransactions");
+  if (canonicalJson(transactions) !== canonicalJson(transcriptTail)) {
+    throw new TypeError("M6 failure report transcript tail disagrees with the run evidence");
+  }
+  if (!Number.isSafeInteger(value.transcriptCount) ||
+      value.transcriptCount < transactions.length ||
+      typeof value.lifecycle !== "string" || value.lifecycle.length === 0) {
+    throw new TypeError("M6 run failure report has invalid bounded state");
+  }
+  return Object.freeze({
+    schema: value.schema,
+    schemaVersion: value.schemaVersion,
+    outcome: value.outcome,
+    reason: value.reason,
+    phase: value.phase,
+    status: value.status,
+    boundary: failureU64(value.boundary, "M6 failure boundary"),
+    lifecycle: value.lifecycle,
+    cdrstate5Sha256: failureDigest(value.cdrstate5Sha256,
+      "M6 failure CDRSTATE5 digest", true),
+    cdrm5q1Sha256: failureDigest(value.cdrm5q1Sha256,
+      "M6 failure CDRM5Q1 digest", true),
+    outstandingRequest: normalizeFailureOutstandingRequest(value.outstandingRequest),
+    machineInfo: normalizeFailureMachineInfo(value.machineInfo),
+    runFraming: normalizeFailureRunFraming(value.runFraming),
+    transcriptCount: value.transcriptCount,
+    lastHostTransactions: transactions,
+    hostTranscriptSha256: failureDigest(value.hostTranscriptSha256,
+      "M6 failure host transcript digest"),
+  });
+}
+
+/* Convert only the bounded, payload-free diagnostic that an inner failed run
+ * already captured before its dedicated worker is disposed.  This is separate
+ * from READY serialization: it never turns a failed run into success evidence. */
+export function canonicalM6FailureDiagnostic(value) {
+  exactKeys(value, M6_FAILURE_CONFORMANCE_KEYS,
+    "cadr-m6-wasm-ready-conformance-v1 failure");
+  if (value.schema !== "cadr-m6-wasm-ready-conformance-v1" ||
+      value.outcome !== "failed" || !Number.isSafeInteger(value.completed_runs) ||
+      value.completed_runs < 0 || value.completed_runs > 2 ||
+      value.failed_run !== value.completed_runs) {
+    throw new TypeError("M6 failure diagnostic is not a first-run conformance failure");
+  }
+  exactKeys(value.failure, M6_FAILURE_KEYS, "M6 failure diagnostic payload");
+  const transcriptTail = normalizeFailureTranscript(
+    value.failure.transcript_tail, "M6 failure transcript_tail");
+  const report = normalizeFailureReport(value.failure.report, transcriptTail);
+  if (report.phase !== "preflight" &&
+      (value.failure.preflight === null || value.failure.run_evidence === null)) {
+    throw new TypeError("M6 run failure omitted required private-run provenance");
+  }
+  return Object.freeze({
+    schema: "cadr-m6-wasm-failure-diagnostic-v1",
+    conformanceSchema: value.schema,
+    outcome: value.outcome,
+    completedRuns: value.completed_runs,
+    failedRun: value.failed_run,
+    failure: Object.freeze({
+      preflight: normalizeFailurePreflight(value.failure.preflight),
+      report,
+      runEvidence: normalizeFailureRunEvidence(value.failure.run_evidence),
+      transcriptTail,
+    }),
+  });
+}
+
+export function serializeM6FailureDiagnostic(value) {
+  return new TextEncoder().encode(canonicalJson(canonicalM6FailureDiagnostic(value)));
+}
 
 async function serializeM6ReadyConformanceInternal(value, production) {
   exactKeys(value, M6_CONFORMANCE_KEYS,

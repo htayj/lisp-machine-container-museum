@@ -3,7 +3,7 @@ type: Reimplementation Specification
 title: CADR-WEB-303 ABI 1.4 headless System 303 Listener boot oracle reimplementation specification
 description: Release-bounded contract for artifact preflight, raw Cadet boot input, source-defined Listener busy and idle witnesses, post-observer quiescence, bounded failures, and three-run native and WebAssembly conformance.
 tags: [mit-cadr, lm-3, system-303, listener, boot, oracle, webassembly, reimplementation]
-timestamp: 2026-07-29T21:07:00-04:00
+timestamp: 2026-07-29T23:20:00-04:00
 ---
 
 # CADR-WEB-303 ABI 1.4 headless System 303 Listener boot oracle reimplementation specification
@@ -539,10 +539,24 @@ matrix are in [the M6-DEVID1 disk-evidence continuation policy](cadr-m6-disk-evi
 
 `CDRM6READY4` is not an alternative success result for this document's READY3
 campaign. If a future reviewed M6-DEVID1 release envelope selects it, its
-binding MUST additionally commit the frozen READY3 witness, exact policy ID,
-selected maximum, and SHA-256 of one exact `CDRM6E1` record. Until then,
+domain-separated `CDRM6READY4` binding MUST additionally commit the frozen
+READY3 witness, NUL-terminated exact M6-DEVID1 target, exact policy ID,
+little-endian selected maximum, and SHA-256 of one exact `CDRM6E1` record. Until then,
 `TODO-RUNTIME-M6-DEVID-READY4` remains open and no READY4 result may be
 reported.
+
+The selected M6 build now provides a bounded, C-owned fast-stop primitive for
+that future campaign. Protocol-v4 `run-until-event-m6` accepts 1 through
+1,048,576 slots and returns one fixed `CDRM6FAST1` record, stopping at the
+first endpoint, any 48-bit debug delta, `WAIT`, or terminal status, in that
+fatal/WAIT/debug/endpoint priority. Each record is followed by separately
+obtained `CDRSTATE5` and `CDRM5Q1` digests and linked with domain
+`CDRM6FASTCHAIN1\0`; therefore fast progress does not replace the frozen M5
+state/queue evidence. The direct, campaign, independent-validator, benchmark,
+and systemd scripts are control-plane scaffolding with explicit `--execute`,
+not observed boot evidence. In particular, their O0/O2 comparator's
+1,130,000-slot receipt check and its 25,000 slots/second, twelve-hour
+projection threshold have not been run against licensed System 303 media.
 
 The O2 continuation canary has a deliberately separate, non-default
 systemd entry point:
