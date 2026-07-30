@@ -3,7 +3,7 @@ type: Architecture Note
 title: Ivory, FEP, and Open Genera VLM implementation layers
 description: A source-, manual-, and runtime-grounded account of the Ivory architecture, physical FEP and IFEP control planes, Open Genera Life Support and VLM, boot and debugger controls, architecture-specific compiler systems, and adjacent platform facilities, with a CADR comparison.
 tags: [genera, open-genera, ivory, i-machine, fep, ifep, vlm, life-support, compiler, linker, boot, debugger, mit-cadr, lm-3]
-timestamp: 2026-07-19T08:55:47-04:00
+timestamp: 2026-07-27T08:38:56-04:00
 ---
 
 # Ivory, FEP, and Open Genera VLM implementation layers
@@ -25,6 +25,12 @@ does not thereby acquire the physical IFEP's top-level command processor or its
 disk-resident FEP filesystem. `NETBOOT-STUBS` deliberately replaces physical
 netboot behavior on the VLM. `BUS-ACCESS` can be present as a system name without
 creating a VME bus in the host process.
+
+The companion
+[Ivory I-machine and Open Genera VLM reimplementation specification](genera/ivory-i-machine-and-vlm-reimplementation-specification.md)
+is the normative tagged-word, instruction, trap, paging, VLM-step, and conformance
+contract. This page remains the broader implementation, boot, host-service, and
+operator dossier.
 
 This is an architecture dossier, not an entry for a Programs-menu application.
 It documents the execution layers, boot and control workflows, host switches and

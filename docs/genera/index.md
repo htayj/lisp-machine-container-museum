@@ -179,6 +179,17 @@ as its Virtual Lisp Machine implementation hosted on Unix.
   - The Ivory instruction contract, physical FEP and IFEP, Open Genera Life Support,
     host controls, debugger surfaces, architecture-specific systems, platform
     conditions, safety boundaries, and recorded pause-path behavior.
+- [Ivory I-machine and Open Genera VLM reimplementation specification](ivory-i-machine-and-vlm-reimplementation-specification.md)
+  defines the 40-bit tagged word and executable formats, complete opcode families,
+  calls, bindings, traps, PHT translation, VLM instruction transaction, Life Support
+  boundary, release profiles, and conformance tests.
+- [Genera browser and WebAssembly investigation and implementation roadmap](genera-browser-webassembly-investigation-and-implementation-roadmap.md)
+  defines the local licensed-input profile, engine-selection corpus, Life Support and
+  coprocessor probes, VLOD/paging/disk work, Cold Load, bounded X11 server, input,
+  persistence, honest partial releases, and optional later translation.
+- [What executes on CADR and Genera Lisp machines](../lisp-machine-instruction-execution-stack.md)
+  traces source through compiled functions and distinguishes Ivory native
+  instructions, VLM interpretation, loader records, and saved-world state.
 - [World loads and the VLOD format](world-loads-and-vlod.md) - How a VLM world stores
   Genera's tagged virtual memory and what can be recovered from it.
 - [Recovering code and assets from a world](recovering-code-and-assets-from-worlds.md)

@@ -3,7 +3,7 @@ type: Coverage Index
 title: Reimplementation specification coverage
 description: The finite D01-D60 worklist for release-bounded, implementation-ready specifications of the CADR, LM-3, and Genera software areas documented by this museum.
 tags: [lisp-machine, mit-cadr, lm-3, genera, reimplementation, specification, coverage]
-timestamp: 2026-07-19T20:42:09-04:00
+timestamp: 2026-07-30T07:36:02-04:00
 ---
 
 # Reimplementation specification coverage
@@ -107,9 +107,9 @@ profiles without treating those implementation milestones as application dossier
 | D47 | RPC, embedding, UX, and Macintosh integration | Planned | — |
 | D48 | CLX, remote X screens, and X server facilities | Planned | — |
 | D49 | CL-HTTP and contributed Web systems | Planned | — |
-| D50 | CADR microcode, microassembler, and console debugger | Planned | — |
+| D50 | CADR microcode, microassembler, and console debugger | Planned | Partial processor contract: [CADR System 303 macroinstruction and microarchitecture](mit-cadr/cadr-macroinstruction-and-microarchitecture-reimplementation-specification.md) |
 | D51 | CADR diagnostics, checkout, and hardware tools | Planned | — |
-| D52 | Ivory, FEP, and Open Genera/VLM implementation layers | Planned | — |
+| D52 | Ivory, FEP, and Open Genera/VLM implementation layers | Planned | Partial processor/VLM contract: [Ivory I-machine and Open Genera VLM](genera/ivory-i-machine-and-vlm-reimplementation-specification.md) |
 | D53 | MUNCH and Munching Squares | Planned | — |
 | D54 | LEXIPHAGE | Planned | — |
 | D55 | Spacewar | Planned | — |
