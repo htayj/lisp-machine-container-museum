@@ -3,7 +3,7 @@ type: Reimplementation Specification
 title: CADR-WEB-303 ABI 1.5 monochrome display and browser renderer reimplementation specification
 description: A release-bounded contract for transferring, validating, rendering, and testing the System 303 monochrome framebuffer without claiming an unrecorded native Listener-pixel oracle.
 tags: [mit-cadr, lm-3, system-303, webassembly, display, framebuffer, renderer, reimplementation]
-timestamp: 2026-07-30T06:59:00-04:00
+timestamp: 2026-07-30T07:03:57-04:00
 ---
 
 # CADR-WEB-303 ABI 1.5 monochrome display and browser renderer reimplementation specification
@@ -212,9 +212,10 @@ The retained 776a427 M7-DEVID intervention child completed its bounded
 1,130,000-guest-boundary run, but the ordinary final receipt was not
 published. This is a validator defect in the outer publication path, not a
 failed guest run. It is recoverable only by a separately committed,
-no-replace offline recovery tool; no recovered receipt has been published at
-the time of this revision. The intervention remains narrower than `M7-P4` and
-does not close `C-M7`.
+no-replace offline recovery tool. That recovery completed from commit
+`97a95ae62d779cfca5a8059b7679947ff21bb64a` and published only the separately
+labeled ignored recovery receipt described below. The intervention remains
+narrower than `M7-P4` and does not close `C-M7`.
 
 `M7-DEVID-RAW` is local, ignored evidence. The child envelope is
 `.8cdaef46c7a239112b4352d01fb06c87.m7-canary-envelope.json`, 28,023 bytes,
@@ -276,14 +277,20 @@ successful PATH-spy derivation and coordinated mutations of repeated unit,
 accounting, guest, gate, launcher, toolchain, control-plane, frozen-release,
 and helper-module fields.
 
-`TODO-EVIDENCE-M7-03`: commit the recovery tool and its focused adversarial
-test, invoke that exact committed blob once to a new ignored recovery-receipt
-filename, record that new file's byte count and SHA-256 here, then make a
-separate evidence commit. The recovery receipt must retain its exact root keys
-`schema`, `outcome`, `source_evidence`, `recovery_tool`, `diagnosis`, and
-`reconstructed_final_receipt`; it must not overwrite, rename, or weaken the
-raw pair. That bookkeeping repair is not a retry and must not be used to claim
-`M7-P4`, `M7-P5`, or `C-M7` closure.
+`EVIDENCE-M7-03` completed once with the exact committed two-module tool
+closure at `97a95ae62d779cfca5a8059b7679947ff21bb64a`. It created the ignored
+mode-0600 file `recovery-receipt.json`, 30,836 bytes, SHA-256
+`5e5e389a3d7d536535066ab65209de6d6dedfad33cca0e3744bf6f08cf46ce4a`.
+The receipt has schema `cadr-m7-devid-o2-canary-recovery-v2`, outcome
+`recovered-final-receipt`, and the exact root keys `schema`, `outcome`,
+`source_evidence`, `recovery_tool`, `diagnosis`, and
+`reconstructed_final_receipt`. It binds the unchanged raw pair, candidate
+`776a427b71a52911df531e1c2aaef29089300be4`, completed boundary `1130000`,
+the corrected and faulty closure digests above, verified unit cleanup and root
+removal, and the ordered committed identities of both recovery modules. The
+ordinary `final-receipt.json` remains absent and both raw inputs retain their
+original identities. This bookkeeping repair was not a retry and does not
+claim `M7-P4`, `M7-P5`, or `C-M7` closure.
 
 ## `TODO-RUNTIME-M7-01`: close raw native/Wasm checkpoint identity
 
