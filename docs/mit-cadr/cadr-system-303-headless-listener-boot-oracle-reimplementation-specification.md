@@ -3,7 +3,7 @@ type: Reimplementation Specification
 title: CADR-WEB-303 ABI 1.4 headless System 303 Listener boot oracle reimplementation specification
 description: Release-bounded contract for artifact preflight, raw Cadet boot input, source-defined Listener busy and idle witnesses, post-observer quiescence, bounded failures, and three-run native and WebAssembly conformance.
 tags: [mit-cadr, lm-3, system-303, listener, boot, oracle, webassembly, reimplementation]
-timestamp: 2026-07-29T18:10:00-04:00
+timestamp: 2026-07-29T15:20:00-04:00
 ---
 
 # CADR-WEB-303 ABI 1.4 headless System 303 Listener boot oracle reimplementation specification
@@ -526,43 +526,6 @@ after disposal and per-run freshness validation, is absent from canonical
 evidence, and its failure also aborts the campaign. This ordering bounds live
 worker resources without changing any guest boundary, witness, or digest.
 
-## M6-DEVID1 evidence continuation and READY4 boundary
-
-`CADR-WEB-303/ABI1.4/protocol-v4/M6-DEVID1` is a separately selected
-continuation-evidence profile, not a revision of the READY3 release profile
-above. It retains the frozen M4 `CDRDISKEVID1` prefix through event 511 and
-commits later complete final records in the fixed `CDRM6E1` summary. The exact
-policy identifier is `M6-PREFIX512-TAILSHA256-v1`; it retains ABI minor 4,
-rejects every snapshot endpoint, and must be selected explicitly at worker
-instantiation. The detailed record, atomic final-event rule, and conformance
-matrix are in [the M6-DEVID1 disk-evidence continuation policy](cadr-m6-disk-evidence-continuation-policy.md).
-
-`CDRM6READY4` is not an alternative success result for this document's READY3
-campaign. If a future reviewed M6-DEVID1 release envelope selects it, its
-binding MUST additionally commit the frozen READY3 witness, exact policy ID,
-selected maximum, and SHA-256 of one exact `CDRM6E1` record. Until then,
-`TODO-RUNTIME-M6-DEVID-READY4` remains open and no READY4 result may be
-reported.
-
-The pending O2 continuation canary has a deliberately separate, non-default
-systemd entry point:
-`scripts/run-cadr-m6-devid-o2-canary-systemd.mjs`. The underlying launcher
-refuses an unsupervised live child. Before artifact access it stages only
-`git archive` output from the named base, applies the selective M6 patch,
-verifies a closed post-patch byte manifest, and runs the frozen M3, M4, M5,
-and focused M6 gates. M7/display paths are rejected.
-
-Its dedicated loop does not call the READY-oriented `runM6HeadlessBoot`. Its
-exact bound is `machine-info.clock_slots_completed == 1,130,000`, not a
-digest-row count. A `WAITING_FOR_HOST` published at that value fails without
-host-service drain; success also requires no outstanding request. The private
-disk is a new per-invocation, initially empty, generation-zero in-memory M4
-block-one overlay over a read-only artifact-root base, not a copied or
-artifact-root-backed writable disk. The supervised child emits an atomic
-result envelope; the outer wrapper queries the retained unit's actual
-resource and exit accounting before it alone publishes the receipt. No such
-canary has been run or may be reported as READY4 from this procedure alone.
-
 ## Failure and abort semantics
 
 M6 failures are fail-closed and bounded:
@@ -582,11 +545,6 @@ partial READY.
 Preflight failure precedes all guest mutation. Later failure may leave volatile
 machine or overlay state in memory, but it does not imply persistence. M6 never
 exports or commits a private disk overlay.
-
-The one-run diagnostic builder separately requires a full
-`--receipt-base`. It archives that commit and records its tree object before
-applying the diagnostic delta; it never derives the diagnostic base from the
-mutable index.
 
 ### Local M6 diagnostic observation
 

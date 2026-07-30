@@ -3,7 +3,7 @@
 set -eu
 
 usage() {
-    echo "usage: $0 [--conformance] [--m4|--m5|--m5-oracle|--m6-devid] --opt O0|O2 [OUTPUT]" >&2
+    echo "usage: $0 [--conformance] [--m4|--m5|--m5-oracle] --opt O0|O2 [OUTPUT]" >&2
     exit 2
 }
 
@@ -14,7 +14,6 @@ if test "${1-}" = --conformance; then mode=conformance; shift; fi
 if test "${1-}" = --m4; then profile=m4; shift; fi
 if test "${1-}" = --m5; then profile=m5; shift; fi
 if test "${1-}" = --m5-oracle; then profile=m5-oracle; shift; fi
-if test "${1-}" = --m6-devid; then profile=m6-devid; shift; fi
 case ${1-} in
     --opt) opt=${2-}; shift 2 ;;
     *) usage ;;
@@ -47,15 +46,10 @@ exec guix shell clang-toolchain lld -- sh -eu -c '
   test "$(clang --version | sed -n "1s/.* \([0-9][0-9.]*\).*/\1/p")" = 21.1.5
   test "$(wasm-ld --version | sed -n "1s/.* \([0-9][0-9.]*\).*/\1/p")" = 21.1.5
   sources="wasm/cadr_wasm_runtime.c wasm/cadr_wasm_adapter.c"
-  profile_sources=""
   extra_defines=""
   if test "$profile" = m4; then extra_defines="-DCADR_M4_WASM"; fi
   if test "$profile" = m5; then extra_defines="-DCADR_M5_WASM"; fi
   if test "$profile" = m5-oracle; then extra_defines="-DCADR_M5_WASM -DCADR_M5_ORACLE_TEST"; fi
-  if test "$profile" = m6-devid; then
-    extra_defines="-DCADR_M5_WASM -DCADR_M6_DEVID_WASM"
-    profile_sources="core/cadr_m6_disk_evidence.c"
-  fi
   if test "$mode" = conformance; then
     sources="wasm/cadr_wasm_runtime.c tests/test_cadr_m3_conformance.c"
     extra_defines="-DCADR_M3_WASM_CONFORMANCE"
@@ -65,7 +59,7 @@ exec guix shell clang-toolchain lld -- sh -eu -c '
     -Wmissing-prototypes -Wformat=2 -fno-builtin -fno-stack-protector $extra_defines \
     -fno-fast-math -fno-strict-overflow -fvisibility=hidden -nostdinc \
     -Iwasm/include -Iinclude -Icore -Icore/usim-port -Itrace \
-    $sources $profile_sources \
+    $sources \
     core/cadr_core.c core/cadr_state_v2.c core/cadr_state_v3.c \
     core/cadr_state_v4.c core/cadr_state_v5.c core/cadr_m4_media.c core/cadr_disk_evidence.c \
     core/cadr_snapshot.c \

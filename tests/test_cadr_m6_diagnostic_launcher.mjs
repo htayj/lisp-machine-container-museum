@@ -1,5 +1,4 @@
 import assert from "node:assert/strict";
-import { execFileSync } from "node:child_process";
 import { readFile, rm, stat, writeFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import { pathToFileURL } from "node:url";
@@ -9,21 +8,8 @@ import {
   revalidateM6DiagnosticIsolated,
 } from "../scripts/build-cadr-m6-diagnostic-isolated.mjs";
 
-const receiptBase = process.env.CADR_M6_DIAGNOSTIC_RECEIPT_BASE ??
-  execFileSync("git", ["rev-parse", "HEAD"], { encoding: "utf8" }).trim();
-await assert.rejects(() => buildM6DiagnosticIsolated(), /requires --receipt-base/,
-  "the diagnostic builder cannot archive the mutable index");
-const build = await buildM6DiagnosticIsolated({ receiptBase });
+const build = await buildM6DiagnosticIsolated();
 try {
-  assert.equal(build.receipt_bound_base, receiptBase);
-  assert.equal(build.schema, "cadr-m6-isolated-diagnostic-build-v3");
-  assert.deepEqual(build.diagnostic_deltas.map(delta => delta.path), [
-    "cadr-web/oracle/patches/0004-m6-postterminal-diagnostic.patch",
-    "cadr-web/oracle/patches/0005-m6-receipt-bound-diagnostic.patch",
-  ], "the base-owned diagnostic deltas are recorded in apply order");
-  assert.equal(build.diagnostic_deltas[0].sha256,
-    "35d690d33a4ee815f476b7893c31276f50f7f34c90709fb61aca65b418d5d2fd",
-    "the historical postterminal delta retains its frozen evidence identity");
   await revalidateM6DiagnosticIsolated(build);
   const escaped = resolve(build.stage_directory, "..", "cadr-m6-delta-escaped-sentinel");
   const traversalPatch = Buffer.from("diff --git a/../cadr-m6-delta-escaped-sentinel b/../cadr-m6-delta-escaped-sentinel\n" +
@@ -57,29 +43,6 @@ try {
   await writeFile(launcherCopy, launcherBytes, { flag: "w" });
 
   const staged = await import(pathToFileURL(build.diagnostic_runner.path).href);
-  const rehashed = await staged.rehashClosedBuild(build);
-  assert.deepEqual(Object.keys(rehashed).sort(),
-    ["diagnostic_runner", "headless", "wasm", "worker"],
-    "the actual staged runner accepts and revalidates the v3 receipt-bound record");
-  const { diagnostic_deltas, receipt_bound_base, ...legacyFields } = build;
-  await assert.rejects(() => staged.rehashClosedBuild(Object.freeze({
-    ...legacyFields,
-    diagnostic_delta_sha256: diagnostic_deltas[0].sha256,
-    schema: "cadr-m6-isolated-diagnostic-build-v2",
-  })), /closed build record/,
-  "the staged runner refuses the pre-receipt v2 key set instead of silently weakening it");
-  await assert.rejects(() => staged.rehashClosedBuild(Object.freeze({
-    ...build, receipt_bound_base: "0".repeat(39),
-  })), /closed build record/,
-  "the staged runner rejects a malformed receipt-bound base");
-  await assert.rejects(() => staged.rehashClosedBuild(Object.freeze({
-    ...build, diagnostic_deltas: Object.freeze([...diagnostic_deltas].reverse()),
-  })), /ordered diagnostic delta identities/,
-  "the staged runner rejects reordered otherwise-valid delta identities");
-  await assert.rejects(() => revalidateM6DiagnosticIsolated(Object.freeze({
-    ...build, receipt_bound_base: "0".repeat(40),
-  })), /receipt base/,
-  "outer revalidation resolves the named receipt base and rejects a substituted full hash");
   const report = Object.freeze({
     reason: "terminal-machine-status", status: 12,
     runFraming: Object.freeze({ operation: "run-digest-batch-m5", terminalStatus: 12,

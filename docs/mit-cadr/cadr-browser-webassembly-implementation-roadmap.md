@@ -617,11 +617,6 @@ commit identity.
 
 ### M6 — Reach a headless System 303 boot oracle
 
-M6-DEVID1 is a separate, non-ready evidence-continuation profile: it preserves
-the frozen M4 512-event record and commits later final events through `CDRM6E1`.
-It deliberately disables snapshots and does not change this M6 Listener-ready
-exit gate. See [the M6-DEVID1 disk-evidence continuation policy](cadr-m6-disk-evidence-continuation-policy.md).
-
 Deliverables:
 
 - automated WASM boot test;
