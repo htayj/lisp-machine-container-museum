@@ -90,7 +90,7 @@ M9_WASM_O2 := build/cadr-web-m9-O2.wasm
 M12_WASM_O0 := build/cadr-web-m12-O0.wasm
 M12_WASM_O2 := build/cadr-web-m12-O2.wasm
 
-.PHONY: all test clean audit forbidden-symbols exported-symbols mutable-globals dependency-audit header-audit mutant-audit python-cross-parse m3-wasm m3-browser m3-differential m3-conformance m3-snapshot-cross-target m4-unit m4-browser m4-differential m4-media-compare m5-unit m6-devid-wasm m7-unit m10-unit m11-unit m12-unit
+.PHONY: all test clean audit forbidden-symbols exported-symbols mutable-globals dependency-audit header-audit mutant-audit python-cross-parse m3-wasm m3-browser m3-differential m3-conformance m3-snapshot-cross-target m4-unit m4-browser m4-differential m4-media-compare m5-unit m6-devid-wasm m6-diagnostic-receipt-unit m7-unit m7-native-source-pin m7-native-source-unit m10-unit m11-unit m12-unit
 
 all: $(LIBRARY) $(HOST_BINARY) $(M2_HOST_BINARY) $(M3_HOST_BINARY) $(M3_SNAPSHOT_HOST_BINARY)
 
@@ -157,10 +157,18 @@ build/test_cadr_m4_block_service: tests/test_cadr_m4_block_service.c host/cadr_m
 # The upstream TV file is deliberately compiled as the pinned historical
 # source, whose pre-C11 diagnostic style is not a new CADR-WEB warning debt.
 # The test translation unit itself retains the repository's strict flags.
-build/cadr_m7_native_tv_test.o: tests/test_cadr_m7_native_tv.c ../l/usim/tv.h | build
+m7-native-source-pin:
+	@test -f ../l/usim/tv.c && test ! -L ../l/usim/tv.c && test "$$(sha256sum ../l/usim/tv.c | cut -d' ' -f1)" = 26b017bee040648edd5ade643f5777f819513f71639171207e40c06c3425a7d7
+	@test -f ../l/usim/tv.h && test ! -L ../l/usim/tv.h && test "$$(sha256sum ../l/usim/tv.h | cut -d' ' -f1)" = 9e482b23e7f34e59910fd0338c745e886dbd6a2a9f593d2eaaf109f2baeea8f4
+	@test -f ../l/usim/bus-interface.h && test ! -L ../l/usim/bus-interface.h && test "$$(sha256sum ../l/usim/bus-interface.h | cut -d' ' -f1)" = 6afb89db8e68661e3dc9b569cc27d91d9d3f37e933dc728e79e7c0e7e89ef23b
+	@test -f ../l/usim/ucode.h && test ! -L ../l/usim/ucode.h && test "$$(sha256sum ../l/usim/ucode.h | cut -d' ' -f1)" = c9894ea50d7f307045460b0cfe21d0af36d5e4f1704a539f5c7e0eea3ac0f41c
+	@test -f ../l/usim/utrace.h && test ! -L ../l/usim/utrace.h && test "$$(sha256sum ../l/usim/utrace.h | cut -d' ' -f1)" = a9cce84dd5b963f0273b90799f62321290ad05c978efdf46b14992915834626e
+	@test -f ../l/usim/COPYING.md && test ! -L ../l/usim/COPYING.md && test "$$(sha256sum ../l/usim/COPYING.md | cut -d' ' -f1)" = 9019d704e2460ec451759ad06b9edc3bc33fc57aedca436c3a77066b38b024af
+
+build/cadr_m7_native_tv_test.o: tests/test_cadr_m7_native_tv.c ../l/usim/tv.h m7-native-source-pin | build
 	$(CC) $(CPPFLAGS) $(CFLAGS) -DNDEBUG -I../l/usim -c -o $@ $<
 
-build/cadr_m7_native_tv_upstream.o: ../l/usim/tv.c ../l/usim/tv.h | build
+build/cadr_m7_native_tv_upstream.o: ../l/usim/tv.c ../l/usim/tv.h m7-native-source-pin | build
 	$(CC) -std=c11 -DNDEBUG -w -I../l/usim -c -o $@ $<
 
 build/test_cadr_m7_native_tv: build/cadr_m7_native_tv_test.o build/cadr_m7_native_tv_upstream.o | build
@@ -277,7 +285,7 @@ $(M12_WASM_O0): wasm/build-wasm.sh wasm/cadr_wasm_adapter.c wasm/cadr_wasm_runti
 $(M12_WASM_O2): wasm/build-wasm.sh wasm/cadr_wasm_adapter.c wasm/cadr_wasm_runtime.c $(M12_CORE_SOURCES) $(CORE_HEADERS) | build
 	sh wasm/build-wasm.sh --m12 --opt O2 $@
 
-test: $(TEST_BINARIES) $(HOST_BINARY) $(M2_HOST_BINARY) $(M3_HOST_BINARY) mutant-audit python-cross-parse m3-wasm m3-conformance m3-browser m4-unit m4-browser m5-unit m6-devid-wasm m6-diagnostic-receipt-unit m7-unit audit
+test: $(TEST_BINARIES) $(HOST_BINARY) $(M2_HOST_BINARY) $(M3_HOST_BINARY) mutant-audit python-cross-parse m3-wasm m3-conformance m3-browser m4-unit m4-browser m5-unit m6-devid-wasm m6-diagnostic-receipt-unit m7-unit m7-native-source-unit audit
 	./build/test_cadr_host_api
 	./build/test_cadr_machine_state
 	./build/test_cadr_processor_microengine
@@ -364,24 +372,32 @@ m6-devid-wasm: build/test_cadr_m2_public build/test_cadr_m6_disk_evidence build/
 m6-diagnostic-receipt-unit:
 	guix shell node -- node ../tests/test_cadr_m6_diagnostic_worker.mjs
 
-m7-unit: build/test_cadr_m7_display build/test_cadr_m7_profile_isolation build/test_cadr_m7_native_tv build/cadr-m7-frame-fixture $(M5_WASM_O0) $(M6_DEVID_WASM_O0) $(M7_WASM_O0) $(M7_WASM_O2) $(M7_DEVID_WASM_O0) $(M7_DEVID_WASM_O2)
+m7-unit: build/test_cadr_m7_display build/test_cadr_m7_profile_isolation build/cadr-m7-frame-fixture $(M5_WASM_O0) $(M6_DEVID_WASM_O0) $(M7_WASM_O0) $(M7_WASM_O2) $(M7_DEVID_WASM_O0) $(M7_DEVID_WASM_O2)
 	./build/test_cadr_m7_display
 	./build/test_cadr_m7_profile_isolation
 	@if $(NM) -g --defined-only $(LIBRARY) | grep -Eq 'cadr_(machine_)?display'; then \
 		echo "M7 display symbols leaked into the pre-M7 library" >&2; exit 1; \
 	fi
 	guix shell node -- node ../tests/test_cadr_m7_profile_isolation.mjs
-	./build/test_cadr_m7_native_tv
 	guix shell node -- node ../tests/test_cadr_m7_renderer.mjs
 	guix shell node -- node ../tests/test_cadr_m7_browser_static.mjs
 	guix shell node -- node ../tests/test_cadr_m7_worker.mjs
-	CADR_M7_WASM_VARIANT=O2 guix shell node -- node ../tests/test_cadr_m7_worker.mjs
+	guix shell node -- node ../tests/test_cadr_m7_worker.mjs --variant O2
 	guix shell node -- node ../tests/test_cadr_m7_frame_checkpoint.mjs
 	python3 ../tests/test_cadr_m7_native_frame_witness.py
 	python3 ../tests/test_cadr_m7_native_frame_oracle.py
 	guix shell node -- node ../tests/test_run_cadr_m7_frame_conformance.mjs
 	python3 ../tests/test_run_cadr_m7_browser_conformance.py
 	guix shell node -- node ../tests/test_cadr_m7_devid_o2_canary.mjs
+
+# The exact upstream TV comparison deliberately compiles the ignored pinned
+# public usim checkout.  The clean archive gate uses the explicit logical
+# fixture; the full checkout suite must also pass this source-side comparison.
+m7-native-source-unit: build/test_cadr_m7_native_tv $(M7_WASM_O0) $(M7_WASM_O2) build/cadr-m7-frame-fixture
+	@set -eu; temporary="$$(mktemp -d)"; trap 'rm -rf "$$temporary"' EXIT; \
+		./build/test_cadr_m7_native_tv "$$temporary/native.pbm"; \
+		guix shell node -- node ../tests/test_cadr_m7_worker.mjs --native-pbm "$$temporary/native.pbm"; \
+		guix shell node -- node ../tests/test_cadr_m7_worker.mjs --variant O2 --native-pbm "$$temporary/native.pbm"
 
 m10-unit:
 	guix shell node -- node ../tests/test_cadr_m10_persistence.mjs

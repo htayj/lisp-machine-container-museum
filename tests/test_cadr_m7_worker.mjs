@@ -15,12 +15,24 @@ import {
 } from "../cadr-web/wasm/cadr-display-renderer.mjs";
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
-const WASM_VARIANT = process.env.CADR_M7_WASM_VARIANT ?? "O0";
+const argumentsSeen = new Set();
+let WASM_VARIANT = "O0";
+let NATIVE_PBM = null;
+for (let index = 2; index < process.argv.length; index += 1) {
+  const argument = process.argv[index];
+  if (!["--variant", "--native-pbm"].includes(argument) ||
+      argumentsSeen.has(argument) || index + 1 >= process.argv.length) {
+    throw new TypeError("usage: test_cadr_m7_worker.mjs [--variant O0|O2] [--native-pbm PATH]");
+  }
+  argumentsSeen.add(argument);
+  const value = process.argv[++index];
+  if (argument === "--variant") WASM_VARIANT = value;
+  else NATIVE_PBM = resolve(value);
+}
 assert.ok(["O0", "O2"].includes(WASM_VARIANT), "M7 Wasm test variant");
 const WASM = resolve(ROOT, `cadr-web/build/cadr-web-m7-${WASM_VARIANT}.wasm`);
 const WORKER = pathToFileURL(resolve(ROOT, "cadr-web/wasm/cadr-worker.js"));
 const FIXTURE = resolve(ROOT, "cadr-web/build/cadr-m7-frame-fixture");
-const NATIVE_TV = resolve(ROOT, "cadr-web/build/test_cadr_m7_native_tv");
 const WORKER_RESPONSE_TIMEOUT_MS = 30000;
 
 class Probe {
@@ -74,6 +86,14 @@ function rendererRawPixels(framebuffer) {
   return pixels;
 }
 
+function explicitFixturePixels() {
+  const pixels = new Uint8Array(CADR_DISPLAY_WIDTH * CADR_DISPLAY_HEIGHT);
+  pixels[0] = 1;
+  pixels[31] = 1;
+  pixels[CADR_DISPLAY_WIDTH + 33] = 1;
+  return pixels;
+}
+
 async function rejectedByOlderProtocol(module) {
   const worker = new Worker(WORKER, { type: "module" });
   const probe = new Probe(worker);
@@ -91,14 +111,13 @@ async function rejectedByOlderProtocol(module) {
 
 const temporary = await mkdtemp(resolve(tmpdir(), "cadr-m7-worker-"));
 const snapshotPath = resolve(temporary, "frame.cdrsnap1");
-const nativePbmPath = resolve(temporary, "native.pbm");
 const module = await WebAssembly.compile(await readFile(WASM));
 
 try {
   await rejectedByOlderProtocol(module);
   execFileSync(FIXTURE, [snapshotPath]);
-  execFileSync(NATIVE_TV, [nativePbmPath]);
-  const nativePixels = nativePbmPixels(await readFile(nativePbmPath));
+  const expectedPixels = NATIVE_PBM === null ? explicitFixturePixels() :
+    nativePbmPixels(await readFile(NATIVE_PBM));
   const snapshotBytes = await readFile(snapshotPath);
   const snapshot = snapshotBytes.buffer.slice(
     snapshotBytes.byteOffset, snapshotBytes.byteOffset + snapshotBytes.byteLength);
@@ -139,9 +158,11 @@ try {
     framebuffer.apply(reply.frame);
     assert.equal(framebuffer.framebufferGeneration, initialFramebufferGeneration + 1n);
     const wasmPixels = rendererRawPixels(framebuffer);
-    assert.equal(sha256(wasmPixels), sha256(nativePixels),
-      "pinned native TV and Wasm/browser raw logical pixels are identical");
-    assert.deepEqual(wasmPixels, nativePixels);
+    assert.equal(sha256(wasmPixels), sha256(expectedPixels),
+      NATIVE_PBM === null ?
+        "explicit logical fixture and Wasm/browser raw pixels are identical" :
+        "pinned native TV and Wasm/browser raw logical pixels are identical");
+    assert.deepEqual(wasmPixels, expectedPixels);
     assert.equal(framebuffer.rawBit(0, 0), true);
     assert.equal(framebuffer.rawBit(31, 0), true);
     assert.equal(framebuffer.rawBit(33, 1), true);

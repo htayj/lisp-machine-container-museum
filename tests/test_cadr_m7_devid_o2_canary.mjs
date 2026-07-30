@@ -305,4 +305,21 @@ assert.doesNotMatch(m6GateRecipe, /test_cadr_m6_diagnostic_worker/,
 assert.match(makefile,
   /^test:.*m6-devid-wasm.*m6-diagnostic-receipt-unit.*m7-unit/m,
   "the checkout-only diagnostic integration remains mandatory in the full suite");
+const m7GateRecipe = makefile.slice(
+  makefile.indexOf("m7-unit:"),
+  makefile.indexOf("m7-native-source-unit:"),
+);
+assert.doesNotMatch(m7GateRecipe, /test_cadr_m7_native_tv|\.\.\/l\/usim/,
+  "the clean archived M7 gate must not depend on the ignored native source checkout");
+assert.match(makefile,
+  /^test:.*m7-unit.*m7-native-source-unit.*audit/m,
+  "the native TV comparison remains mandatory in the full checkout suite");
+assert.match(makefile,
+  /^m7-native-source-unit:.*build\/test_cadr_m7_native_tv/m,
+  "the checkout-only M7 source target must fail if its pinned native source is absent");
+assert.match(makefile,
+  /^m7-native-source-pin:\n(?:\t.*\n){6}/m,
+  "the checkout-only native TV target pins its complete local source and license closure");
+assert.doesNotMatch(m7GateRecipe, /CADR_M7_NATIVE_PBM|--native-pbm/,
+  "the clean M7 gate cannot inherit or request a native PBM");
 console.log("receipt-bound M7-DEVID O2 canary tests passed");
