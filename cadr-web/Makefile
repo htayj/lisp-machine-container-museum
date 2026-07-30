@@ -163,6 +163,8 @@ m7-native-source-pin:
 	@test -f ../l/usim/bus-interface.h && test ! -L ../l/usim/bus-interface.h && test "$$(sha256sum ../l/usim/bus-interface.h | cut -d' ' -f1)" = 6afb89db8e68661e3dc9b569cc27d91d9d3f37e933dc728e79e7c0e7e89ef23b
 	@test -f ../l/usim/ucode.h && test ! -L ../l/usim/ucode.h && test "$$(sha256sum ../l/usim/ucode.h | cut -d' ' -f1)" = c9894ea50d7f307045460b0cfe21d0af36d5e4f1704a539f5c7e0eea3ac0f41c
 	@test -f ../l/usim/utrace.h && test ! -L ../l/usim/utrace.h && test "$$(sha256sum ../l/usim/utrace.h | cut -d' ' -f1)" = a9cce84dd5b963f0273b90799f62321290ad05c978efdf46b14992915834626e
+	@test -f ../l/usim/usym.h && test ! -L ../l/usim/usym.h && test "$$(sha256sum ../l/usim/usym.h | cut -d' ' -f1)" = 7e804d625b5de406dcb3e553e8c1fdc2c0ab61067e7ede5efe4b3ccd227d09e5
+	@test -f ../l/usim/trace.h && test ! -L ../l/usim/trace.h && test "$$(sha256sum ../l/usim/trace.h | cut -d' ' -f1)" = 23123fbffed86585ad29b4645853e4ac44e69ae4b805c439adea96eac16cbb89
 	@test -f ../l/usim/COPYING.md && test ! -L ../l/usim/COPYING.md && test "$$(sha256sum ../l/usim/COPYING.md | cut -d' ' -f1)" = 9019d704e2460ec451759ad06b9edc3bc33fc57aedca436c3a77066b38b024af
 
 build/cadr_m7_native_tv_test.o: tests/test_cadr_m7_native_tv.c ../l/usim/tv.h m7-native-source-pin | build
@@ -384,7 +386,6 @@ m7-unit: build/test_cadr_m7_display build/test_cadr_m7_profile_isolation build/c
 	guix shell node -- node ../tests/test_cadr_m7_worker.mjs
 	guix shell node -- node ../tests/test_cadr_m7_worker.mjs --variant O2
 	guix shell node -- node ../tests/test_cadr_m7_frame_checkpoint.mjs
-	python3 ../tests/test_cadr_m7_native_frame_witness.py
 	python3 ../tests/test_cadr_m7_native_frame_oracle.py
 	guix shell node -- node ../tests/test_run_cadr_m7_frame_conformance.mjs
 	python3 ../tests/test_run_cadr_m7_browser_conformance.py
@@ -394,6 +395,7 @@ m7-unit: build/test_cadr_m7_display build/test_cadr_m7_profile_isolation build/c
 # public usim checkout.  The clean archive gate uses the explicit logical
 # fixture; the full checkout suite must also pass this source-side comparison.
 m7-native-source-unit: build/test_cadr_m7_native_tv $(M7_WASM_O0) $(M7_WASM_O2) build/cadr-m7-frame-fixture
+	python3 ../tests/test_cadr_m7_native_frame_witness.py
 	@set -eu; temporary="$$(mktemp -d)"; trap 'rm -rf "$$temporary"' EXIT; \
 		./build/test_cadr_m7_native_tv "$$temporary/native.pbm"; \
 		guix shell node -- node ../tests/test_cadr_m7_worker.mjs --native-pbm "$$temporary/native.pbm"; \
