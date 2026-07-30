@@ -424,6 +424,7 @@ m11-unit: build/test_cadr_m11_core_audio
 	$(CC) $(CPPFLAGS) $(CFLAGS) -Icore -o build/test_cadr_m11_audio_model tests/test_cadr_m11_audio_model.c core/cadr_audio_model.c
 	./build/test_cadr_m11_audio_model
 	./build/test_cadr_m11_core_audio
+	python3 ../tests/test_cadr_m11_fixed_table_oracle.py
 	python3 ../tests/test_cadr_native_source_witness.py
 
 # M8/M9's dedicated ABI profile maps CDRINP1 records directly to IOB state,

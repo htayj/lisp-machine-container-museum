@@ -1,9 +1,9 @@
 ---
 type: Reimplementation Specification
 title: CADR audio, beeper, and Votrax reimplementation specification
-description: A Phase 1, source-bounded contract for deterministic CADR beeper and Votrax event delivery, without a hardware or PCM-emulation claim.
+description: A Phase 1, source-bounded contract for deterministic CADR beeper and Votrax event delivery, without a hardware, device, or historical-PCM-emulation claim.
 tags: [mit-cadr, audio, votrax, reimplementation, cadr-web, preservation]
-timestamp: 2026-07-30T22:20:00-04:00
+timestamp: 2026-07-30T23:10:00-04:00
 ---
 
 # CADR audio, beeper, and Votrax reimplementation specification
@@ -14,8 +14,10 @@ This is the Phase 1 contract for `C-M11`: deterministic audio-event production,
 queue transport, and clean-room PCM rendering for the selected CADR-WEB System 303
 profile. The M11 build owns one model per machine, maps IOB address `0764110` to a
 post-slot beeper event, and exposes an isolated v7 worker subhandler in the narrow
-M12 Wasm profile. It has synthetic C, Node, O0/O2 Wasm-export, and Worklet-queue
-tests; no CADR, LM-3, System 303, or audio-device runtime has been opened.
+M12 Wasm profile. Its synthetic C, Node, O0/O2 Wasm-export, and Worklet-queue
+tests are supplemented by one source-bound System 303 `%BEEP` runtime observation.
+No audio-device, browser-integration, Votrax, or System 46 runtime equivalence is
+claimed.
 
 It claims:
 
@@ -30,11 +32,10 @@ It does not claim:
 - emulation of a CADR analog beeper, a Votrax device, an SC-01/SC-01A, or any
   hardware timing;
 - PCM, pixel, timing, perceptual, browser, or AudioWorklet identity;
-- a System 303 or System 46 runtime observation; or
+- a System 46 runtime observation, or a Votrax runtime observation on any system;
 - historical device, PCM, or browser identity;
 - generic `CDRSNAP1` inclusion of the audio queue: it restores a fresh M11 model;
-- a preserved-system or hardware observation of the selected M8/M11 order; or
-- a preserved System 303 runtime observation.
+- a preserved-system or hardware observation of the selected M8/M11 order.
 
 `MUST`, `MUST NOT`, `SHOULD`, and `MAY` are normative in the contract sections.
 The model is deliberately independent of the shared core until an integration gate
@@ -51,9 +52,11 @@ the files are present in the repository.
 | `S46-SRC` | Public System 46 source snapshot | The separately preserved Votrax source and the pinned serial-stream defaults: 300 baud, seven data bits, even parity, and one stop bit | The behavior of a particular System 46 load band |
 | `USIM-SRC` | Pinned public `usim` source | Current SDL3 software's use of an 8 kHz signed-16 sine-oriented backend and `%BEEP` inputs | CADR hardware behavior or cross-platform PCM equality |
 | `USIM-WITNESS-PREP` | Disposable, content-pinned public-usim source closure | The exact M11 source anchors, patch, and compile-only executable identity can be reproduced without copying media or launching a machine | An observed beep, any PCM output, or CADR behavior |
+| `303-RUN-M11` | Isolated System 303 Xvfb session plus the source-injected public-usim witness | The selected Listener form invoked the source-defined beeper path; the retained witness establishes ordered trigger/job and PCM-block metadata for that one session | PCM audible-device output, hardware behavior, browser/Wasm equivalence, Votrax, or a System 46 result |
 | `INF-M11` | Clean-room inference | The event queue, canonical record, witness, and failure rules needed for deterministic browser transport | Their use by the historical CADR |
 | `TEST-M11` | Synthetic C test | The listed reference-model transitions and byte layouts | A preserved-system or hardware runtime result |
-| `TODO-RUNTIME-M11` | Oracle obligation | Nothing yet | Any observed historical claim |
+| `TEST-M11-FIXED` | Independent Python reference plus native and selected-M12 Wasm differential execution | The declared synthetic event, witness, snapshot, fixed-table PCM, and pause/adopt/resume cases agree across three implementations | SDL3/device waveform identity, browser integration, or CADR hardware behavior |
+| `TODO-RUNTIME-M11` | Further oracle obligation | The exact additional run it names when completed | Any claim outside its selected input, artifact, and runtime path |
 
 The selected source profile wins for its own source-level claim. The Phase 1 queue,
 wire records, and safety-oriented backpressure rules are `INF-M11`; they are not
@@ -411,6 +414,75 @@ CADR analog behavior, or a host-device observation. It never acknowledges frames
 `NO-AUDIO`, UART, a stale cursor, and an invalid renderer input report the documented
 failure without fabricating silent PCM.
 
+### `CDRM11FIX1` fixed-table differential oracle
+
+`M11-T20` has an independent Python reference that constructs the canonical
+`CDRAUD1` records, `CDRAUDS1` snapshots, witness chain, and signed-16 bytes without
+loading the C model or a Wasm module. It compiles the actual
+`cadr_audio_model.c` twice (native `O0` and `O2`) and imports the same synthetic
+states into newly created selected-M12 Wasm `O0` and `O2` instances. Each native
+and Wasm semantic result must be byte-identical to that reference; agreement between
+native and Wasm alone is insufficient.
+
+The inner canonical payload is `CDRM11FIX1`. The outer `CDRM11FIX2` result keeps
+semantic results separate from provenance: it records the complete selected-M12
+source/header closure, Makefile and build-script hashes, native executable
+identities, freshly forced O0/O2 Wasm sizes and hashes, and Guix/clang/wasm-ld build
+identities. Both layers are compact canonical JSON with one trailing newline;
+duplicate keys, alternate whitespace, booleans in numeric fields, extra keys, and
+any non-exact fixture state are rejected.
+
+The fixed table is the signed 32-phase Q0.15 sequence in
+`cadr_audio_model.c`. For half wavelength `h`, event-frame offset `e`, cursor offset
+`c`, and rendered index `i`, the normative clean-room reference is:
+
+```text
+step = floor((1,000,000 * 2^32) / (2 * h * 8,000))
+table-index = ((((e + c + i) mod 2^32) * (step mod 2^32)) mod 2^32) >> 27
+sample[i] = sine32[table-index]
+```
+
+The product and phase are explicitly reduced modulo `2^32`, matching the selected
+unsigned-C operation rather than host floating-point arithmetic. This fixture's
+short 500-microsecond / 1,058-microsecond case contains exactly nine signed-16
+samples:
+
+```text
+0, 23170, 32767, 23170, 0, -23170, -32767, -23170, 0
+```
+
+Their little-endian signed-16 SHA-256 is
+`8184a534d19b4bc250487a11cb896191d3d34837af8c91cd3536af9e9c1d06cb`.
+A separate 1,025-frame job uses a 499-microsecond half wavelength, partially
+acknowledges 200 frames, and serializes the
+resulting 825-frame `CDRAUDS1` state as a transport pause, destroys the source
+native model, adopts that snapshot into a fresh native model before resuming, and
+does the corresponding fresh-instance Wasm adoption. The exact long-packet hashes
+are: frames `0..511`,
+`295b2a187b03b4cd96cbbf3f46e189f20e6b0453d4df67bd3b3f10a200ed88dd`;
+the partial frames `200..511`,
+`5468d03d776da739f624a63ce3a85dc8a0d6c1f01838cacf6bda5a51a6f05563`;
+frames `512..1023`,
+`18057f330bac60216ca485aa36eabeaf1343bfa22b55bfe1875eddd895734f38`; and
+frame `1024`,
+`8f96c15501bef61baf5bd943201979595736b66b6a7e3b35c353729ab8d9a561`.
+The reference obtains the 499-microsecond half wavelength and each event-frame
+offset by decoding the canonical `CDRAUD1` event, and obtains the cursor offset
+from the selected render cursor. Its explicit mutant instead forces both offsets
+to zero for every resumed packet; every such mutant hash must diverge, preventing
+a fixed-zero-offset implementation from ratcheting these results.
+The final adopted state is exactly the empty queue with head and next sequence `3`,
+zero queued frames, and both witness values equal to the established final witness.
+“Pause” here means that pointer-free transfer boundary; it does not claim an
+historical CADR audio pause command.
+
+This is `TEST-M11-FIXED` evidence for the clean-room fixed-table renderer and the
+selected Wasm transport. It is not evidence that SDL3's floating-point oscillator,
+an audio device, the CADR beeper, or a listener's audible output has those hashes.
+The public SDL3 implementation carries oscillator phase across repeated jobs, while
+the clean-room table starts from each event's encoded frame offset; identical jobs
+can therefore have different SDL3 hashes without falsifying this fixture.
+
 ## Transfer and snapshot representations
 
 ### `CDRAUD1` event-queue transfer
@@ -514,7 +586,7 @@ a later one.
 | `C-M11-01-MODEL` | Strict C test proves 64-byte LE events, canonical validation, order, external-authority rollback resistance, head-sequence/head-witness/final-witness integrity, resumable 64x512 queueing, atomic backpressure, partial ack, reset/restore stale ack, UART profiles, and `NOT_READY` rendering | Passes locally for the standalone model |
 | `C-M11-02-CORE` | M11 core mapping for `0764110`, post-slot enqueue, and composed M8/M9/M11 v7 test with no M6/M7/M10 regression | Passes: the native composition test fixes `CDRINP1`-before-post-slot-`BEEP` order; a runtime comparison remains open |
 | `C-M11-03-SNAPSHOT` | Pointer-free `CDRAUDS1` round trip, malformed-sidecar rejection, fresh local authority, stale-cursor-after-adoption, and composed M12 rollback/publication tests | Passes. `CDRSNAP1` remains frozen; M12 carries the sidecar in `CDRM12S1`, while protocol-v7 generic restore remains blocked on M9 continuation. |
-| `C-M11-04-PCM` | Deterministic fixed-table signed-16 render fixtures with no host `libm` drift | Passes as a clean-room renderer; SDL3/device identity is not claimed |
+| `C-M11-04-PCM` | Deterministic fixed-table signed-16 render fixtures with no host `libm` drift | Passes for `CDRM11FIX2`: an independent reference, native O0/O2, and freshly forced selected-M12 Wasm O0/O2 agree through fresh `CDRAUDS1` adoption; SDL3/device identity is not claimed |
 | `C-M11-05-WORKLET` | AudioWorklet queue generation clear, whole-packet acknowledgement, and bounded-backpressure test | Passes in Node queue tests; browser lifecycle campaign remains open |
 | `C-M11-06-ORACLE` | Non-destructive, source-bound preserved-system or hardware comparison for each historical claim retained | The System 303 `%BEEP` path now has a source-bound runtime witness; Votrax and System 46 remain open |
 
@@ -522,6 +594,7 @@ Focused Phase 1 test command:
 
 ```sh
 make -C cadr-web m11-unit
+python3 scripts/cadr-m11-fixed-table-oracle.py --output build/cadr-oracle/cdrm11fix2.json
 python3 scripts/cadr-m11-native-audio-oracle.py prepare
 python3 scripts/cadr-m11-native-audio-oracle.py build
 ```
@@ -623,6 +696,7 @@ behavior, browser AudioWorklet equivalence, or full `C-M11`.
 | `M11-T17` | `C-M11-03-SNAPSHOT` | `CDRAUDS1` round trips valid semantic state, rejects malformed bytes atomically, and leaves pre-import cursors stale after fresh-authority adoption |
 | `M11-T18` | `C-M11-05-WORKLET` | The Worklet queue emits Float32 converted from supplied PCM, acknowledges only a fully rendered packet, bounds frames, and clears stale generations |
 | `M11-T19` | `C-M11-02-CORE` | The cumulative ABI 1.10 composed M12 profile accepts M8 `CDRINP1` before an M11 `BEEP` at the ready boundary, retains independent input/audio sequence domains, and exposes both surfaces through v7 without widening v6 |
+| `M11-T20` | `C-M11-04-PCM` | `CDRM11FIX2` requires a standalone Python event/witness/snapshot/fixed-sine32 reference, native O0/O2, and freshly rebuilt selected-M12 Wasm O0/O2 to agree on every exact semantic field. Its 1,025-frame 499-microsecond fixture derives wavelength and event offsets from `CDRAUD1`, retains the 200-frame partial acknowledgement, and proves that forcing the resumed event/cursor offsets to zero diverges. It rejects alternate canonical-state values, malformed JSON, duplicate keys, wrong long hashes, and direct resume that bypasses fresh `CDRAUDS1` adoption. |
 
 ## Runtime closure probes and known unknowns
 
@@ -631,7 +705,7 @@ behavior, browser AudioWorklet equivalence, or full `C-M11`.
 | `TODO-RUNTIME-M11-01` | **Closed 2026-07-30:** isolated System 303 Xvfb session evaluated `(SI:%BEEP 500. 100000.)`; retained 199 ordered job/PCM pairs, reviewed screenshot, exact source/load-band/run provenance, and clean shutdown | Selected beeper trigger and native ordering established; browser equivalence remains a separate gate |
 | `TODO-RUNTIME-M11-02` | Use an isolated serial observation fixture for System 303 Votrax and capture the emitted bytes plus the source-side utterance termination boundary | Stream configuration, byte ordering, and confirmation that the `-1` terminator is not transmitted for that exact artifact |
 | `TODO-RUNTIME-M11-03` | Repeat the isolated probe for one pinned System 46 artifact | Whether that loaded artifact exhibits the source-default 300/7E1 profile |
-| `TODO-RUNTIME-M11-04` | Compare a reviewed fixed-point or table-driven renderer against an independently implemented oracle on synthetic beeps | Eligibility for `C-M11-04-PCM` |
+| `TODO-RUNTIME-M11-04` | **Closed 2026-07-30:** execute the standalone fixed-sine32 reference against native O0/O2 and freshly rebuilt selected-M12 Wasm O0/O2, including partial-ack snapshot adoption into fresh instances | `C-M11-04-PCM` for the narrow synthetic clean-room profile only |
 
 The reviewed Listener screenshot above is appropriate only for the now-completed
 runtime invocation claim; the queue and waveform claims remain hash/record evidence.
