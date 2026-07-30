@@ -386,7 +386,6 @@ m7-unit: build/test_cadr_m7_display build/test_cadr_m7_profile_isolation build/c
 	guix shell node -- node ../tests/test_cadr_m7_worker.mjs
 	guix shell node -- node ../tests/test_cadr_m7_worker.mjs --variant O2
 	guix shell node -- node ../tests/test_cadr_m7_frame_checkpoint.mjs
-	python3 ../tests/test_cadr_m7_native_frame_oracle.py
 	guix shell node -- node ../tests/test_run_cadr_m7_frame_conformance.mjs
 	python3 ../tests/test_run_cadr_m7_browser_conformance.py
 	guix shell node -- node ../tests/test_cadr_m7_devid_o2_canary.mjs
@@ -396,6 +395,7 @@ m7-unit: build/test_cadr_m7_display build/test_cadr_m7_profile_isolation build/c
 # fixture; the full checkout suite must also pass this source-side comparison.
 m7-native-source-unit: build/test_cadr_m7_native_tv $(M7_WASM_O0) $(M7_WASM_O2) build/cadr-m7-frame-fixture
 	python3 ../tests/test_cadr_m7_native_frame_witness.py
+	python3 ../tests/test_cadr_m7_native_frame_oracle.py
 	@set -eu; temporary="$$(mktemp -d)"; trap 'rm -rf "$$temporary"' EXIT; \
 		./build/test_cadr_m7_native_tv "$$temporary/native.pbm"; \
 		guix shell node -- node ../tests/test_cadr_m7_worker.mjs --native-pbm "$$temporary/native.pbm"; \

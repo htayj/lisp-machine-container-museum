@@ -310,7 +310,7 @@ const m7GateRecipe = makefile.slice(
   makefile.indexOf("m7-native-source-unit:"),
 );
 assert.doesNotMatch(m7GateRecipe,
-  /test_cadr_m7_native_tv|test_cadr_m7_native_frame_witness|\.\.\/l\/usim/,
+  /test_cadr_m7_native_tv|test_cadr_m7_native_frame_(?:witness|oracle)|\.\.\/l\/usim/,
   "the clean archived M7 gate must not depend on the ignored native source checkout");
 assert.match(makefile,
   /^test:.*m7-unit.*m7-native-source-unit.*audit/m,
@@ -323,8 +323,8 @@ assert.match(makefile,
   /^m7-native-source-unit:.*build\/test_cadr_m7_native_tv/m,
   "the checkout-only M7 source target must fail if its pinned native source is absent");
 assert.match(m7NativeRecipe,
-  /test_cadr_m7_native_frame_witness\.py[\s\S]*--native-pbm/,
-  "the mandatory checkout-only target retains both native source oracles");
+  /test_cadr_m7_native_frame_witness\.py[\s\S]*test_cadr_m7_native_frame_oracle\.py[\s\S]*--native-pbm/,
+  "the mandatory checkout-only target retains all native source oracles");
 assert.match(makefile,
   /^m7-native-source-pin:\n(?:\t.*\n){8}/m,
   "the checkout-only native TV target pins its complete local source and license closure");
