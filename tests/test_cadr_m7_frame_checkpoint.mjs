@@ -262,6 +262,19 @@ async function testFullM7ControlFlowUsesFrozenReleaseBinding() {
     await config.client.request("run-digest-batch-m5");
     return { outcome: "ready", releaseRecordSha256: new Uint8Array(32) };
   }), /not bound to the frozen release record/);
+
+  await assert.rejects(runM7CheckpointedM6BootForTest({
+    nativeCapture: nativeRecord(), client: new CheckpointClient({
+      boundary: BOUNDARY - 1n, batches: [1], frame: portableRecord(),
+    }),
+  }, async config => {
+    await config.client.request("machine-info");
+    await config.client.request("run-digest-batch-m5");
+    return { outcome: "failed", report: {
+      reason: "ready-observation-mismatch", phase: "ready-observation",
+      status: 2, boundary: BOUNDARY + 64n,
+    } };
+  }), /ready-observation-mismatch; phase=ready-observation; status=2; boundary=982990278/);
 }
 
 await testStrictRecordAndFirstDifference();

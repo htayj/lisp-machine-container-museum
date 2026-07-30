@@ -661,6 +661,18 @@ async function portableCheckpoint({ nativeFrame, pinned, wasmPath, artifactRoot,
     return Object.freeze({ result, sessionId: ready.session_id, workerLogSessionId: client.sessionId,
       module: wasmIdentity, worker: workerIdentity, adapter,
       frameFile, witnessFile, readyFile, workerLogFile, termination, ready });
+  } catch (error) {
+    const failure = Object.freeze({
+      schema: "cadr-m7-portable-failure-v1",
+      session_id: sessionId,
+      error_name: typeof error?.name === "string" ? error.name : "Error",
+      error_message: String(error?.message ?? error),
+    });
+    await writePrivateNew(resolve(portableDirectory, "failure.json"), failure);
+    await writePrivateNew(resolve(portableDirectory, "worker.ndjson"),
+      new TextEncoder().encode(
+        `${client.log.map(entry => canonicalJson(entry)).join("\n")}\n`));
+    throw error;
   } finally {
     if (termination === null) {
       try { await client.close(); } catch { /* preserve original failure */ }

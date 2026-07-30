@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { EventEmitter } from "node:events";
+import { readFile } from "node:fs/promises";
 import { PassThrough } from "node:stream";
 
 import {
@@ -9,6 +10,14 @@ import {
   runNativeCapture,
   validateP4Manifest,
 } from "../scripts/run-cadr-m7-frame-conformance.mjs";
+
+const runnerSource = await readFile(new URL(
+  "../scripts/run-cadr-m7-frame-conformance.mjs", import.meta.url), "utf8");
+assert.match(runnerSource, /cadr-m7-portable-failure-v1/);
+assert.equal(runnerSource.includes(
+  'resolve(portableDirectory, "worker.ndjson")'), true);
+assert.equal(runnerSource.includes(
+  'await unlink(resolve(session.path, "manifest.json"))'), true);
 
 const canonicalFixture = new TextEncoder().encode('{"a":1}\n');
 assert.equal(matchesCanonicalJsonBytes(canonicalFixture, { a: 1 }, true), true);

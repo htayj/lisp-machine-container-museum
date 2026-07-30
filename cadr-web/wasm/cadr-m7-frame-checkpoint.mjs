@@ -317,7 +317,19 @@ export class CadrM7CBoundaryClient {
 async function runM7CheckpointedM6BootInternal({ nativeCapture, ...config }, runBoot) {
   const client = new CadrM7CBoundaryClient(config.client, nativeCapture);
   const result = await runBoot({ ...config, client });
-  required(result?.outcome === "ready", "underlying frozen M6 boot did not reach READY");
+  if (result?.outcome !== "ready") {
+    const reason = result?.report?.reason ?? "missing-failure-reason";
+    const phase = result?.report?.phase ?? "missing-failure-phase";
+    const status = Number.isSafeInteger(result?.report?.status) ?
+      result.report.status : "missing-failure-status";
+    const boundary = typeof result?.report?.boundary === "bigint" ?
+      result.report.boundary.toString() :
+      (typeof result?.report?.boundary === "number" ||
+       typeof result?.report?.boundary === "string" ?
+        String(result.report.boundary) : "missing-failure-boundary");
+    throw new TypeError(
+      `M7 frame checkpoint: underlying frozen M6 boot did not reach READY (${reason}; phase=${phase}; status=${status}; boundary=${boundary})`);
+  }
   required(client.checkpoint !== null, "M6 reached READY without an M7 C checkpoint");
   const releaseRecordSha256 = bytesOf(result.releaseRecordSha256);
   required(releaseRecordSha256 !== null &&
