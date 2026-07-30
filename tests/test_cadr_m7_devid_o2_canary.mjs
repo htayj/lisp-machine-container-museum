@@ -291,4 +291,9 @@ const makefile = await readFile(resolve(root, "cadr-web/Makefile"), "utf8");
 assert.match(makefile,
   /^m6-devid-wasm:.*build\/test_cadr_m2_public.*\$\(M5_WASM_O0\).*\$\(M6_DEVID_WASM_O0\).*\$\(M6_DEVID_WASM_O2\)$/m,
   "the independently runnable frozen M6 gate declares every binary used by its worker tests");
+const m6HeadlessTest = await readFile(resolve(root,
+  "tests/test_cadr_m6_headless_boot.mjs"), "utf8");
+assert.doesNotMatch(m6HeadlessTest,
+  /from tests import test_cadr_m6_native_witness/,
+  "the archived frozen gate must not depend on the ignored native source checkout");
 console.log("receipt-bound M7-DEVID O2 canary tests passed");

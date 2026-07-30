@@ -872,14 +872,14 @@ async function syntheticReleaseRecord(profileArtifacts = fixtures.profile.artifa
 
 {
   const python = String.raw`
-import tempfile
+import json
 from pathlib import Path
-from tests import test_cadr_m6_native_witness as fixture
-with tempfile.TemporaryDirectory() as temporary:
-    root = Path(temporary)
-    case = fixture.WitnessTests()
-    record = fixture.m6w.verify(case.bundles(root))
-    print(fixture.m6w.canonical(record).decode("utf-8"))
+root = Path.cwd()
+record = json.loads(
+    (root / "cadr-web/oracle/cadr-m6-release-record.json").read_text(
+        encoding="utf-8"))
+print(json.dumps(record, sort_keys=True, separators=(",", ":"),
+                 ensure_ascii=True))
 `;
   const releaseRecord = JSON.parse(execFileSync(
     "python3", ["-c", python],
@@ -889,7 +889,7 @@ with tempfile.TemporaryDirectory() as temporary:
     .flat().find(event => event.phase === "form-a");
   assert.equal(firstFormA.due_boundary,
     CADR_M6_FORM_A_START_BOUNDARY.toString(),
-    "Python and JavaScript share the selected 50M Form-A anchor");
+    "Python and JavaScript parse the archived release record with the selected 50M Form-A anchor");
 }
 
 {
