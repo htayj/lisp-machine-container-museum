@@ -4,6 +4,9 @@
 #include "cadr_state_v2.h"
 #include "cadr_trace_engine.h"
 #include "cadr_disk_evidence.h"
+#if defined(CADR_M6_DEVID_WASM)
+#include "cadr_m6_disk_evidence.h"
+#endif
 
 #include <string.h>
 
@@ -42,6 +45,9 @@ void cadr_bus_device_cold_power_on(cadr_machine_state *const state)
 {
     cadr_state_v2_invalidate(state);
     cadr_disk_evidence_reset(&state->disk_evidence);
+#if defined(CADR_M6_DEVID_WASM)
+    cadr_m6_disk_evidence_cold_power_on(&state->m6_disk_evidence);
+#endif
     (void)memset(&state->bus, 0, sizeof(state->bus));
     (void)memset(&state->devices, 0, sizeof(state->devices));
     state->devices.disk.compatibility_profile = CADR_DISK_COMPAT_SYSTEM_303;
