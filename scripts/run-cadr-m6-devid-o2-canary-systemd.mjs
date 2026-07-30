@@ -31,7 +31,7 @@ export function systemdCommand(argv, nonce = randomBytes(16).toString("hex")) {
       "--property=MemoryMax=3221225472",
       "--property=MemorySwapMax=0",
       "--property=CPUQuota=200%",
-      "--property=TasksMax=64",
+      "--property=TasksMax=128",
       "--property=UMask=0077",
       "--property=NoNewPrivileges=yes",
       "--property=RemainAfterExit=yes",
@@ -125,15 +125,20 @@ export function parseSystemdShow(text) {
 }
 
 export function validateSystemdSuccess(waited, accounting) {
-  const counters = ["MemoryPeak", "CPUUsageNSec",
-    "IOReadBytes", "IOWriteBytes", "IPIngressBytes", "IPEgressBytes"];
+  const counters = ["MemoryPeak", "CPUUsageNSec"];
+  const ioCounters = ["IOReadBytes", "IOWriteBytes"];
+  const ipCounters = ["IPIngressBytes", "IPEgressBytes"];
   if (waited?.Result !== "success" || waited.ExecMainCode !== "1" ||
       waited.ExecMainStatus !== "0" || accounting?.Result !== "success" ||
       accounting.ExecMainCode !== "1" || accounting.ExecMainStatus !== "0" ||
       counters.some(key => !/^[0-9]+$/.test(accounting?.[key] ?? "")) ||
+      ioCounters.some(key => !(/^[0-9]+$/.test(accounting?.[key] ?? "") ||
+        accounting?.[key] === "[not set]")) ||
+      ipCounters.some(key => !(/^[0-9]+$/.test(accounting?.[key] ?? "") ||
+        accounting?.[key] === "[no data]")) ||
       !(/^[0-9]+$/.test(accounting?.TasksCurrent ?? "") ||
         accounting?.TasksCurrent === "[not set]")) {
-    throw new Error("systemd terminal result or accounting values are not successful and numeric");
+    throw new Error("systemd terminal result or accounting evidence is invalid");
   }
   return accounting;
 }
@@ -142,7 +147,7 @@ export function validateEffectiveSystemdPolicy(value) {
   const expected = Object.freeze({
     RuntimeMaxUSec: "4h", TimeoutStopUSec: "30s",
     MemoryMax: "3221225472", MemorySwapMax: "0",
-    CPUQuotaPerSecUSec: "2s", TasksMax: "64", UMask: "0077",
+    CPUQuotaPerSecUSec: "2s", TasksMax: "128", UMask: "0077",
     NoNewPrivileges: "yes", PrivateNetwork: "yes",
     RestrictAddressFamilies: "AF_INET AF_UNIX", KillMode: "control-group",
     ExitType: "cgroup", Restart: "no", OOMPolicy: "kill",

@@ -142,7 +142,7 @@ assert.doesNotMatch(systemdWrapperSource, /\b(?:CPUAccounting|TasksPeak)\b/,
   "removed systemd 261 properties cannot silently return to policy or queries");
 for (const property of [
   "--property=MemoryMax=3221225472", "--property=MemorySwapMax=0",
-  "--property=CPUQuota=200%", "--property=TasksMax=64",
+  "--property=CPUQuota=200%", "--property=TasksMax=128",
   "--property=MemoryAccounting=yes", "--property=TasksAccounting=yes",
   "--property=PrivateNetwork=yes",
   "--property=RestrictAddressFamilies=AF_UNIX AF_INET",
@@ -321,15 +321,30 @@ const accountingFixture = parseSystemdShow([
 assert.equal(accountingFixture.TasksCurrent, "[not set]");
 assert.equal(validateSystemdSuccess({ Result: "success", ExecMainCode: "1",
   ExecMainStatus: "0" }, accountingFixture), accountingFixture);
+assert.equal(validateSystemdSuccess({ Result: "success", ExecMainCode: "1",
+  ExecMainStatus: "0" }, {
+    ...accountingFixture, IOReadBytes: "[not set]",
+    IOWriteBytes: "[not set]", IPIngressBytes: "[no data]",
+    IPEgressBytes: "[no data]",
+  }).MemoryPeak, "10",
+"systemd 261 unavailable-counter sentinels remain explicit evidence");
 assert.throws(() => validateSystemdSuccess({ Result: "oom-kill",
-  ExecMainCode: "2", ExecMainStatus: "9" }, accountingFixture), /not successful/);
+  ExecMainCode: "2", ExecMainStatus: "9" }, accountingFixture), /invalid/);
 assert.throws(() => validateSystemdSuccess({ Result: "success",
   ExecMainCode: "1", ExecMainStatus: "0" },
-{ ...accountingFixture, MemoryPeak: "[not set]" }), /numeric/);
+{ ...accountingFixture, MemoryPeak: "[not set]" }), /invalid/);
+assert.throws(() => validateSystemdSuccess({ Result: "success",
+  ExecMainCode: "1", ExecMainStatus: "0" },
+{ ...accountingFixture, IOReadBytes: "[no data]" }), /invalid/,
+"IO accounting accepts only its own exact unavailable sentinel");
+assert.throws(() => validateSystemdSuccess({ Result: "success",
+  ExecMainCode: "1", ExecMainStatus: "0" },
+{ ...accountingFixture, IPIngressBytes: "[not set]" }), /invalid/,
+"IP accounting accepts only its own exact unavailable sentinel");
 const effectivePolicy = {
   RuntimeMaxUSec: "4h", TimeoutStopUSec: "30s",
   MemoryMax: "3221225472", MemorySwapMax: "0",
-  CPUQuotaPerSecUSec: "2s", TasksMax: "64", UMask: "0077",
+  CPUQuotaPerSecUSec: "2s", TasksMax: "128", UMask: "0077",
   NoNewPrivileges: "yes", PrivateNetwork: "yes",
   RestrictAddressFamilies: "AF_INET AF_UNIX", KillMode: "control-group",
   ExitType: "cgroup", Restart: "no", OOMPolicy: "kill",
