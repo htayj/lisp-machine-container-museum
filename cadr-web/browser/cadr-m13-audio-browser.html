@@ -1,0 +1,14 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>CADR M13 browser-audio probe</title>
+</head>
+<body>
+  <button id="cadr-m13-audio-start" type="button">Start CADR audio</button>
+  <button id="cadr-m13-audio-start-close" type="button">Start then close CADR audio</button>
+  <button id="cadr-m13-audio-start-fault" type="button">Start failing CADR audio</button>
+  <output id="cadr-m13-audio-status" role="status" aria-live="polite">Audio is stopped.</output>
+  <script type="module" src="./cadr-m13-audio-browser.mjs"></script>
+</body>
+</html>

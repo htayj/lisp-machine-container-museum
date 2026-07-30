@@ -1,0 +1,10 @@
+/* M13 host chrome.  The CADR framebuffer is intentionally not styled as a
+ * modern UI surface; this only makes the separate containment controls clear. */
+:root { color-scheme: light; font-family: sans-serif; }
+body { margin: 0; color: #111; background: #fff; }
+#cadr-shell-root { display: grid; gap: .75rem; padding: 1rem; }
+.cadr-m13-controls { display: flex; flex-wrap: wrap; gap: .5rem; }
+.cadr-m13-controls button { min-height: 2.5rem; min-width: 8rem; }
+:focus-visible { outline: .2rem solid #0645ad; outline-offset: .15rem; }
+.cadr-m13-status { border-inline-start: .25rem solid #333; padding-inline-start: .5rem; }
+.cadr-m13-guest { image-rendering: pixelated; max-inline-size: 100%; height: auto; }
