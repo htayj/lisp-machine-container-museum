@@ -44,13 +44,23 @@ machine-readable metadata layer while retaining ordinary Markdown as the source.
 - [Reimplementation specification coverage](reimplementation-specification-coverage.md)
   tracks the D01-D60 reconstruction contracts, their release profiles, visual
   evidence obligations, and completion gates.
+- [What executes on CADR and Genera Lisp machines](lisp-machine-instruction-execution-stack.md)
+  follows Lisp source through compiled functions to CADR macroinstructions and
+  microinstructions or Ivory instructions and VLM interpretation, and distinguishes
+  executable code from loader commands and saved-world state.
 - [CADR System 303 macroinstruction and microarchitecture specification](mit-cadr/cadr-macroinstruction-and-microarchitecture-reimplementation-specification.md)
   defines the 16-bit compiler-visible ISA, 48-bit control-store engine, release
   deltas, restart rules, and objective conformance tests.
+- [Ivory I-machine and Open Genera VLM specification](genera/ivory-i-machine-and-vlm-reimplementation-specification.md)
+  defines the 40-bit tagged object model, complete instruction families, calls,
+  traps, memory translation, VLM execution, and Life Support boundary.
 - [CADR browser and WebAssembly implementation roadmap](mit-cadr/cadr-browser-webassembly-implementation-roadmap.md)
   gives the complete `usim`-centered path from deterministic headless execution
   through display, input, crash-consistent private disks, offline museum release,
   and optional networking or translation.
+- [CADR-WEB reproducible offline museum release scaffolding](mit-cadr/cadr-web-reproducible-museum-release-scaffolding.md)
+  records M14's deterministic package, provenance, rights, compatibility, and
+  conformance-report boundary without claiming CW4.
 - [CADR-WEB-303 ABI1.1 deterministic tracing and snapshot specification](mit-cadr/cadr-deterministic-tracing-and-snapshot-reimplementation-specification.md)
   defines the new portable-core CDRGTRC1/CDRSNAP1 trace and continuation boundary.
 - [CADR-WEB-303 ABI1.2 headless WebAssembly core specification](mit-cadr/cadr-webassembly-headless-core-reimplementation-specification.md)
@@ -91,12 +101,19 @@ machine-readable metadata layer while retaining ordinary Markdown as the source.
 - [CADR-WEB-303 browser hardening and accessibility reimplementation specification](mit-cadr/cadr-browser-hardening-and-accessibility-reimplementation-specification.md)
   specifies the M13 hostile-input, resource, no-network, worker-loss, persistence,
   audio, and external accessible-control contract without claiming runtime closure.
+- [CADR-WEB-303 M13 conformance campaign checklist](mit-cadr/cadr-m13-conformance-checklist.md)
+  records case-by-case F01--F15b evidence, source identities, and the remaining
+  runtime obligations before C-M13 can close.
 - [CADR-WEB portable core and host ABI](mit-cadr/cadr-web-core-architecture-decision.md)
   records the portable machine boundary and the deterministic pull-style contract
   between the CADR core and native or browser hosts.
 - [Native CADR instruction-boundary oracle](mit-cadr/cadr-native-instruction-oracle-design.md)
   describes the frozen pre-refactor witness used to prove exact clock-slot,
   canonical-state, and ordered-mutation parity during core extraction.
+- [Genera browser and WebAssembly investigation roadmap](genera/genera-browser-webassembly-investigation-and-implementation-roadmap.md)
+  gates a local licensed-world implementation through Ivory engine validation,
+  communication and coprocessor closure, paging, Cold Load, a bounded X11 server,
+  persistence, and explicit useful partial releases.
 - [Lisp Listeners and editable input reimplementation specification](lisp-listeners-reimplementation-specification.md)
   defines the System 46, System 303, and Genera 8.5 Listener state, histories,
   input editing, ZDT/ZTOP embodiments, command dispatch, recovery, visible regions,

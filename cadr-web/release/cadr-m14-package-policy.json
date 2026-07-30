@@ -1,0 +1,38 @@
+{
+  "schema": "cadr-m14-package-policy-v1",
+  "profile": "CADR-WEB-303/CW4-MUSEUM",
+  "status": "scaffold-only",
+  "offline": true,
+  "canonicalJson": "UTF-8, sorted object keys, no insignificant whitespace, LF",
+  "logicalEpoch": 0,
+  "entries": [
+    {"url": "/", "output": "index.html", "source": "cadr-web/browser/cadr-m13-shell.html", "mediaType": "text/html", "rightsId": "tracked-mit-cadr-reconstruction"},
+    {"url": "/cadr-shell.mjs", "output": "cadr-shell.mjs", "source": "cadr-web/browser/cadr-m13-artifact-shell.mjs", "mediaType": "text/javascript", "rightsId": "tracked-mit-cadr-reconstruction"},
+    {"url": "/cadr-shell.css", "output": "cadr-shell.css", "source": "cadr-web/browser/cadr-m13-shell.css", "mediaType": "text/css", "rightsId": "tracked-mit-cadr-reconstruction"},
+    {"url": "/cadr-worker.js", "output": "cadr-worker.js", "source": "cadr-web/browser/cadr-m13-artifact-worker.mjs", "mediaType": "text/javascript", "rightsId": "tracked-mit-cadr-reconstruction"},
+    {"url": "/profiles/cadr-web-303.json", "output": "profiles/cadr-web-303.json", "source": "cadr-web/profiles/cadr-web-303.json", "mediaType": "application/json", "rightsId": "tracked-mit-cadr-reconstruction"},
+    {"url": "/profiles/cadr-web-303.ini.in", "output": "profiles/cadr-web-303.ini.in", "source": "cadr-web/profiles/cadr-web-303.ini.in", "mediaType": "text/plain", "rightsId": "tracked-mit-cadr-reconstruction"}
+  ],
+  "generated": [
+    "logical-build-manifest.json",
+    "source-map.json",
+    "rights-provenance.json",
+    "browser-compatibility-matrix.json",
+    "USER-GUIDE.md",
+    "CONFORMANCE-REPORT.md"
+  ],
+  "excludedPrivateInputs": [
+    "CADR and System 303 load bands with unresolved redistribution provenance",
+    "user-selected CADR disk copies and private M10 state",
+    "M10 overlay and exports",
+    "computer-use captures",
+    "licensed Symbolics or Open Genera media",
+    "other user-imported media"
+  ],
+  "unresolvedComponents": [
+    "cadr.wasm",
+    "cadr-audio-worklet.mjs",
+    "M10 host-cleanup and state evidence, including its transitive supervisor inputs",
+    "M11-M13 joined release evidence"
+  ]
+}

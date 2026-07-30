@@ -1,0 +1,19 @@
+{
+  "schema": "cadr-m14-browser-matrix-v1",
+  "evidenceStatus": "not-evaluated",
+  "registeredAdapters": [],
+  "required": [
+    {"id": "chromium-current", "engine": "Blink", "adapter": null, "networkMode": "denied"},
+    {"id": "firefox-current", "engine": "Gecko", "adapter": null, "networkMode": "denied"},
+    {"id": "webkit-current", "engine": "WebKit", "adapter": null, "networkMode": "denied"}
+  ],
+  "checks": [
+    "closed package inventory",
+    "CSP accepts only packaged resources",
+    "dedicated worker starts without network",
+    "keyboard-only shell navigation",
+    "IndexedDB availability and bounded failure",
+    "AudioWorklet availability or explicit unsupported disposition",
+    "fullscreen and pointer-capture availability or explicit unsupported disposition"
+  ]
+}

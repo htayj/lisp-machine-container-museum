@@ -132,6 +132,9 @@ the public LM-3 software and the `usim` emulator.
 - [CADR browser and WebAssembly implementation roadmap](cadr-browser-webassembly-implementation-roadmap.md)
   sequences the pinned `usim` port through deterministic execution, boot, display,
   complete input, private storage, release, networking, and optional translation.
+- [CADR-WEB reproducible offline museum release scaffolding](cadr-web-reproducible-museum-release-scaffolding.md)
+  defines M14's closed logical manifest, offline inventory, source map, browser
+  matrix, rights ledger, generated guide/report, and explicit nonclaim of CW4.
 - [CADR-WEB-303 ABI1.3 boot-media controller specification](cadr-boot-media-controller-reimplementation-specification.md)
   defines the selected disk registers, CCWs, asynchronous range service, volatile
   block-1 overlay, controller/media evidence, failures, and M4 conformance gate.
@@ -167,6 +170,9 @@ the public LM-3 software and the `usim` emulator.
 - [CADR-WEB-303 browser hardening and accessibility reimplementation specification](cadr-browser-hardening-and-accessibility-reimplementation-specification.md)
   defines the M13 hostile-input, resource, no-network, worker-loss, persistence,
   audio, and external accessible-control contract without claiming runtime closure.
+- [CADR-WEB-303 M13 conformance campaign checklist](cadr-m13-conformance-checklist.md)
+  records each M13 F01--F15b evidence path and source hash, its bounded result, and
+  the runtime work still required before C-M13 can close.
 - [CADR-WEB-303 ABI1.1 deterministic tracing and snapshot specification](cadr-deterministic-tracing-and-snapshot-reimplementation-specification.md)
   defines the new portable-core CDRGTRC1/CDRSNAP1 observation and continuation
   contract without presenting it as a historical CADR file format.
@@ -179,6 +185,9 @@ the public LM-3 software and the `usim` emulator.
 - [Native CADR instruction-boundary oracle design](cadr-native-instruction-oracle-design.md)
   freezes the exact pre-refactor execution witness used to prove portable-core
   state and ordered-mutation parity at every outer clock-slot boundary.
+- [What executes on CADR and Genera Lisp machines](../lisp-machine-instruction-execution-stack.md)
+  places the CADR two-level execution stack beside Ivory hardware and the Open
+  Genera VLM without confusing loader records with processor instructions.
 - [CADR diagnostics, checkout, and hardware tools](cadr-diagnostics-checkout-and-hardware-tools.md)
   documents ordered machine and memory tests, destructive disk checkout, PROM and
   embedded-controller workflows, the continuity/probe test stand, and the complete

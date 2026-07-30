@@ -1,0 +1,11 @@
+{
+  "schema": "cadr-m14-conformance-gates-v1",
+  "releaseClaim": "none",
+  "gates": [
+    {"id": "CW0", "status": "not-evaluated", "evidence": []},
+    {"id": "CW1", "status": "not-evaluated", "evidence": []},
+    {"id": "CW2", "status": "not-evaluated", "evidence": []},
+    {"id": "CW3", "status": "not-evaluated", "evidence": []},
+    {"id": "CW4", "status": "not-evaluated", "evidence": []}
+  ]
+}
