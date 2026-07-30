@@ -607,14 +607,24 @@ function validateNativeMetadata(value, expectedJoin, script, witness, transcript
   }
   exactKeys(value.runtime_provenance, ["python", "rendered_config", "private_executable", "child_argv", "child_environment"],
     `${label} runtime provenance`);
-  exactKeys(value.runtime_provenance.python, ["path", "bytes", "sha256", "version", "implementation"],
+  exactKeys(value.runtime_provenance.python, ["schema", "inherited_fd", "bytes", "sha256", "device", "inode",
+    "sys_executable", "proc_self_exe", "version", "implementation"],
     `${label} Python identity`);
-  if (typeof value.runtime_provenance.python.path !== "string" ||
-      unsigned(value.runtime_provenance.python.bytes, `${label} Python bytes`) === 0 ||
-      !digest(value.runtime_provenance.python.sha256, `${label} Python digest`) ||
-      typeof value.runtime_provenance.python.version !== "string" ||
-      typeof value.runtime_provenance.python.implementation !== "string") {
+  const python = value.runtime_provenance.python;
+  if (python.schema !== "cadr-m8-m9-python-identity-v1" || python.inherited_fd !== 3 ||
+      unsigned(python.bytes, `${label} Python bytes`) === 0 ||
+      !digest(python.sha256, `${label} Python digest`) ||
+      !decimal(python.device, `${label} Python device`) || !decimal(python.inode, `${label} Python inode`, { zero: false }) ||
+      typeof python.version !== "string" || typeof python.implementation !== "string") {
     fail(`${label} Python/toolchain identity is incomplete`);
+  }
+  for (const [field, reference] of [["sys_executable", "sys-executable"], ["proc_self_exe", "proc-self-exe"]]) {
+    exactKeys(python[field], ["reference", "bytes", "sha256", "device", "inode"], `${label} Python ${field}`);
+    if (python[field].reference !== reference || python[field].bytes !== python.bytes ||
+        python[field].sha256 !== python.sha256 || python[field].device !== python.device ||
+        python[field].inode !== python.inode) {
+      fail(`${label} Python ${field} differs from inherited descriptor 3`);
+    }
   }
   exactKeys(value.runtime_provenance.rendered_config, ["bytes", "sha256"], `${label} rendered config`);
   if (unsigned(value.runtime_provenance.rendered_config.bytes, `${label} rendered config bytes`) === 0 ||

@@ -12,6 +12,7 @@
  */
 import { spawn, spawnSync } from "node:child_process";
 import { createHash, randomUUID } from "node:crypto";
+import { closeSync, constants as FS_SYNC, fstatSync, openSync, readFileSync } from "node:fs";
 import { constants as FS, chmod, lstat, mkdir, open, readFile, readdir, unlink } from "node:fs/promises";
 import { dirname, relative, resolve } from "node:path";
 import { Worker } from "node:worker_threads";
@@ -116,22 +117,82 @@ function rebuildM9WasmPair() {
     stderr_sha256: sha256(result.stderr) });
 }
 
-export function resolveNativePythonExecutable() {
+export function resolveNativePythonExecutable({ spawnSyncImpl = spawnSync, path = process.env.PATH ?? "" } = {}) {
   /* Node locates a command before applying `options.env`, while CPython derives
    * sys.executable after startup.  Launching the bare `python3` command with
    * the scrubbed native-runtime environment therefore gives CPython an empty
    * executable name on this host.  Resolve once under the caller's controlled
    * PATH, then execute that exact absolute interpreter under the scrubbed
-   * environment so the oracle can bind its own interpreter identity. */
-  const result = spawnSync("python3", ["-c", "import os, sys; print(os.path.realpath(sys.executable))"], {
-    cwd: ROOT, encoding: "utf8", env: { LANG: "C", LC_ALL: "C", TZ: "UTC", PATH: process.env.PATH ?? "" },
+   * environment.  The launch below binds the opened interpreter descriptor,
+   * rather than claiming that a pathname is immutable after this resolution. */
+  const result = spawnSyncImpl("python3", ["-c", "import os, sys; print(os.path.realpath(sys.executable))"], {
+    cwd: ROOT, encoding: "utf8", env: { LANG: "C", LC_ALL: "C", TZ: "UTC", PATH: path },
   });
-  const executable = result.stdout.trim();
+  const output = typeof result.stdout === "string" && result.stdout.endsWith("\n")
+    ? result.stdout.slice(0, -1) : null;
+  const executable = output ?? "";
   if (result.error !== undefined || result.signal !== null || result.status !== 0 ||
-      !executable.startsWith("/")) {
-    fail(`cannot resolve an exact Python interpreter for native capture: ${(result.stderr ?? "").slice(-1000)}`);
+      output === null || executable.length === 0 || /[\r\n\0]/.test(executable) ||
+      !executable.startsWith("/") || resolve(executable) !== executable) {
+    const detail = result.error?.message ?? (typeof result.stderr === "string" ? result.stderr.slice(-1000) : "");
+    fail(`cannot resolve an exact Python interpreter for native capture: ${detail || "resolver output is not one canonical absolute line"}`);
   }
   return executable;
+}
+
+export function nativePythonFdIdentity(fd, { fstatSyncImpl = fstatSync, readFileSyncImpl = readFileSync } = {}) {
+  const info = fstatSyncImpl(fd, { bigint: true });
+  if (!info.isFile()) fail("native-capture Python descriptor is not a regular file");
+  /* Linux /proc/self/fd/N opens this already-held file description, so a
+   * pathname replacement cannot redirect either the hash or exec target. */
+  const bytes = readFileSyncImpl(`/proc/self/fd/${fd}`);
+  return Object.freeze({ bytes: bytes.byteLength, sha256: sha256(bytes),
+    device: info.dev.toString(), inode: info.ino.toString() });
+}
+
+export function openNativePythonExecutable({ resolvePythonExecutable = resolveNativePythonExecutable,
+  openSyncImpl = openSync, closeSyncImpl = closeSync, identityForFd = nativePythonFdIdentity } = {}) {
+  const executable = resolvePythonExecutable();
+  let fd;
+  try { fd = openSyncImpl(executable, FS_SYNC.O_RDONLY | FS_SYNC.O_NOFOLLOW); }
+  catch (error) { fail(`cannot open resolved Python interpreter for native capture: ${error?.message ?? String(error)}`); }
+  try { return Object.freeze({ fd, identity: identityForFd(fd) }); }
+  catch (error) { closeSyncImpl(fd); throw error; }
+}
+
+function exactObject(value, fields, label) {
+  if (value === null || typeof value !== "object" || Array.isArray(value) ||
+      Object.keys(value).length !== fields.length || Object.keys(value).some(key => !fields.includes(key))) {
+    fail(`${label} has an unexpected shape`);
+  }
+}
+function decimalString(value, label, { zero = true } = {}) {
+  if (typeof value !== "string" || !/^(?:0|[1-9][0-9]*)$/.test(value) || (!zero && value === "0")) {
+    fail(`${label} is not a canonical unsigned decimal`);
+  }
+}
+export function assertFdBoundPythonIdentity(value, expected, label = "native M8/M9 Python identity") {
+  exactObject(value, ["schema", "inherited_fd", "bytes", "sha256", "device", "inode",
+    "sys_executable", "proc_self_exe", "version", "implementation"], label);
+  if (value.schema !== "cadr-m8-m9-python-identity-v1" || value.inherited_fd !== 3 ||
+      !Number.isSafeInteger(value.bytes) || value.bytes <= 0 || typeof value.sha256 !== "string" ||
+      !/^[0-9a-f]{64}$/.test(value.sha256) || typeof value.version !== "string" ||
+      typeof value.implementation !== "string") {
+    fail(`${label} is incomplete`);
+  }
+  decimalString(value.device, `${label} device`); decimalString(value.inode, `${label} inode`, { zero: false });
+  for (const [field, reference] of [["sys_executable", "sys-executable"], ["proc_self_exe", "proc-self-exe"]]) {
+    exactObject(value[field], ["reference", "bytes", "sha256", "device", "inode"], `${label} ${field}`);
+    if (value[field].reference !== reference || value[field].bytes !== value.bytes ||
+        value[field].sha256 !== value.sha256 || value[field].device !== value.device ||
+        value[field].inode !== value.inode) {
+      fail(`${label} ${field} differs from inherited descriptor 3`);
+    }
+  }
+  for (const field of ["bytes", "sha256", "device", "inode"]) {
+    if (value[field] !== expected[field]) fail(`${label} differs from the inherited descriptor`);
+  }
+  return value;
 }
 
 async function assertPrivateDirectory(path, label) {
@@ -515,31 +576,35 @@ function parseNativeWitness(bytes, rows) {
   return Object.freeze({ schema: "CDRM8N1", record_bytes: 64, record_count: rows.length, sha256: sha256(bytes) });
 }
 
-export async function runNativeCapture({ prepared, nativeConfig, output, sessionId, diskId, inputScript, campaign }) {
+export async function runNativeCapture({ prepared, nativeConfig, output, sessionId, diskId, inputScript, campaign }, {
+  openPythonExecutable = openNativePythonExecutable, identityForFd = nativePythonFdIdentity,
+  closeSyncImpl = closeSync, spawnImpl = spawn,
+} = {}) {
   const args = [NATIVE_ORACLE, "native-capture", "--prepared", prepared, "--config", nativeConfig, "--output", output, "--session-id", sessionId, "--private-disk-instance-id", diskId, "--input-script", inputScript, "--campaign", campaign, "--execute"];
-  const nativePythonExecutable = resolveNativePythonExecutable();
-  const nativePythonBefore = await toolIdentity(nativePythonExecutable, "native-capture Python executable");
-  return new Promise((resolveRun, rejectRun) => {
-    const child = spawn(nativePythonExecutable, args, { cwd: ROOT, env: { LANG: "C", LC_ALL: "C", TZ: "UTC" }, stdio: ["ignore", "pipe", "pipe"] }); const stdout = []; const stderr = [];
+  const nativePython = openPythonExecutable();
+  try { return await new Promise((resolveRun, rejectRun) => {
+    const child = spawnImpl("/proc/self/fd/3", args, { cwd: ROOT,
+      env: { LANG: "C", LC_ALL: "C", TZ: "UTC" }, stdio: ["ignore", "pipe", "pipe", nativePython.fd] }); const stdout = []; const stderr = [];
     child.stdout.on("data", chunk => stdout.push(chunk)); child.stderr.on("data", chunk => stderr.push(chunk)); child.once("error", rejectRun);
     child.once("close", async (code, signal) => { try {
       const text = Buffer.concat(stdout).toString("utf8").trim(); let response = null; try { response = JSON.parse(text); } catch { /* reported below */ }
-      const nativePythonAfter = await toolIdentity(nativePythonExecutable, "native-capture Python executable after exit");
-      if (nativePythonAfter.bytes !== nativePythonBefore.bytes || nativePythonAfter.sha256 !== nativePythonBefore.sha256) {
-        throw new Error("native M8/M9 capture Python executable changed during child execution");
+      const nativePythonAfter = identityForFd(nativePython.fd);
+      for (const field of ["bytes", "sha256", "device", "inode"]) {
+        if (nativePythonAfter[field] !== nativePython.identity[field]) {
+          throw new Error("native M8/M9 capture Python descriptor changed during child execution");
+        }
       }
       if (code !== 0 || response?.status !== "captured") {
         rejectRun(new Error(`native M8/M9 capture failed (code=${code}, signal=${signal ?? "none"}): ${response?.error ?? Buffer.concat(stderr).toString("utf8").slice(-2000)}`));
         return;
       }
       const reportedPython = response?.metadata?.runtime_provenance?.python;
-      if (reportedPython?.bytes !== nativePythonBefore.bytes || reportedPython?.sha256 !== nativePythonBefore.sha256) {
-        throw new Error("native M8/M9 capture Python provenance differs from the pre-spawn executable");
-      }
+      assertFdBoundPythonIdentity(reportedPython, nativePython.identity,
+        "native M8/M9 capture Python provenance");
       resolveRun(Object.freeze({ response, oracle_process: Object.freeze({ returncode: code, signal: signal ?? null }) }));
     } catch (error) { rejectRun(error); }
     });
-  });
+  }); } finally { closeSyncImpl(nativePython.fd); }
 }
 
 async function portableReplay({ wasmPath, artifactRoot, pinned, portableDirectory, sessionId, initialCampaign }) {

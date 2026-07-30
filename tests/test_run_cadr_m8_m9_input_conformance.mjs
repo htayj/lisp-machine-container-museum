@@ -1,12 +1,18 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { readFile } from "node:fs/promises";
+import { EventEmitter } from "node:events";
+import { closeSync } from "node:fs";
+import { chmod, copyFile, mkdtemp, readFile, rename, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
   deriveCadrM8M9DeactivationProducer,
+  nativePythonFdIdentity,
+  openNativePythonExecutable,
   quiesceKeyboardInput,
   resolveNativePythonExecutable,
+  runNativeCapture,
 } from "../scripts/run-cadr-m8-m9-input-conformance.mjs";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
@@ -32,18 +38,96 @@ assert.ok(source.indexOf("expected-input.cdrinp1") !== source.indexOf("observed-
 
 const nativePython = resolveNativePythonExecutable();
 assert.match(nativePython, /^\//, "native capture binds an absolute Python executable before environment scrubbing");
-const scrubbedPython = spawnSync(nativePython, ["-c",
-  "import os, pathlib, sys; print(int(bool(sys.executable) and pathlib.Path(sys.executable).is_file()))"], {
-  cwd: root, encoding: "utf8", env: { LANG: "C", LC_ALL: "C", TZ: "UTC" },
-});
-assert.equal(scrubbedPython.status, 0, scrubbedPython.stderr);
-assert.equal(scrubbedPython.stdout.trim(), "1",
-  "the exact interpreter remains self-identifying when the native child has no PATH");
-assert.match(source, /spawn\(nativePythonExecutable, args/, "native capture must not launch bare python3 after scrubbing PATH");
-assert.match(source, /nativePythonAfter\.sha256 !== nativePythonBefore\.sha256/,
-  "native capture re-hashes its exact Python executable after child exit");
-assert.match(source, /reportedPython\?\.sha256 !== nativePythonBefore\.sha256/,
-  "native capture rejects an oracle Python provenance that differs from the pre-spawn executable");
+const missingPython = Object.assign(new Error("spawn python3 ENOENT"), { code: "ENOENT" });
+assert.throws(() => resolveNativePythonExecutable({ path: "", spawnSyncImpl: (_command, _args, options) => {
+  assert.equal(options.env.PATH, "", "resolver accepts an explicit missing PATH test seam");
+  return { error: missingPython, status: null, signal: null };
+} }), /cannot resolve an exact Python interpreter.*ENOENT/,
+"a missing python3 reports its spawn error rather than dereferencing absent stdout");
+for (const output of ["/trusted/python\nsecond\n", "/trusted/python\r\n", "/trusted/\0python\n", "/trusted/../python\n"]) {
+  assert.throws(() => resolveNativePythonExecutable({ spawnSyncImpl: () => ({ stdout: output, stderr: "", status: 0, signal: null }) }),
+    /resolver output is not one canonical absolute line/,
+    `resolver rejects malformed Python output ${JSON.stringify(output)}`);
+}
+
+const pythonFixture = await mkdtemp(resolve(tmpdir(), "cadr-m8-m9-python-fd-"));
+try {
+  const original = resolve(pythonFixture, "python-original");
+  const replacement = resolve(pythonFixture, "python-replacement");
+  await copyFile(nativePython, original); await chmod(original, 0o700);
+  const held = openNativePythonExecutable({ resolvePythonExecutable: () => original });
+  try {
+    await writeFile(replacement, "#!/bin/sh\nexit 97\n", { mode: 0o700 }); await chmod(replacement, 0o700);
+    await rename(replacement, original);
+    const inherited = spawnSync("/proc/self/fd/3", ["-c", `
+import importlib.util, json
+spec = importlib.util.spec_from_file_location("m8_m9_fd_identity", "${resolve(root, "scripts/cadr-m8-m9-native-input-oracle.py")}")
+module = importlib.util.module_from_spec(spec); spec.loader.exec_module(module)
+print(json.dumps(module.runtime_python_identity(), sort_keys=True))
+`], { cwd: root, encoding: "utf8", env: { LANG: "C", LC_ALL: "C", TZ: "UTC" },
+      stdio: ["ignore", "pipe", "pipe", held.fd] });
+    assert.equal(inherited.status, 0, inherited.stderr);
+    const reported = JSON.parse(inherited.stdout);
+    for (const field of ["bytes", "sha256", "device", "inode"]) {
+      assert.equal(reported[field], held.identity[field], `oracle binds ${field} to inherited fd 3`);
+      assert.equal(reported.sys_executable[field], held.identity[field], `sys.executable binds ${field} to fd 3`);
+      assert.equal(reported.proc_self_exe[field], held.identity[field], `/proc/self/exe binds ${field} to fd 3`);
+    }
+    assert.equal(reported.inherited_fd, 3);
+    assert.equal(reported.sys_executable.reference, "sys-executable");
+    assert.equal(reported.proc_self_exe.reference, "proc-self-exe");
+    assert.notEqual((await readFile(original)).toString(), (await readFile(`/proc/self/fd/${held.fd}`)).toString(),
+      "atomic pathname replacement cannot substitute the descriptor-backed interpreter");
+    await copyFile(`/proc/self/fd/${held.fd}`, replacement); await chmod(replacement, 0o700); await rename(replacement, original);
+    assert.deepEqual(nativePythonFdIdentity(held.fd), held.identity,
+      "restoring the pathname does not alter the open interpreter descriptor");
+  } finally { closeSync(held.fd); }
+} finally { await rm(pythonFixture, { recursive: true, force: true }); }
+
+const fdIdentity = Object.freeze({ bytes: 123, sha256: "a".repeat(64), device: "7", inode: "11" });
+const parentPythonFd = 29;
+function capturedPythonIdentity({ version = "test", implementation = "cpython" } = {}) {
+  return { schema: "cadr-m8-m9-python-identity-v1", inherited_fd: 3, ...fdIdentity,
+    sys_executable: { reference: "sys-executable", ...fdIdentity },
+    proc_self_exe: { reference: "proc-self-exe", ...fdIdentity }, version, implementation };
+}
+function capturedResponse(python = capturedPythonIdentity()) {
+  return { status: "captured", metadata: { runtime_provenance: { python } } };
+}
+function fakeNativeSpawn(response) {
+  return (executable, _args, options) => {
+    assert.equal(executable, "/proc/self/fd/3", "runner executes the inherited fd rather than a pathname");
+    assert.equal(options.env.PATH, undefined, "native child environment remains scrubbed");
+    assert.equal(options.stdio[3], parentPythonFd,
+      "native child receives a non-3 parent descriptor specifically as child fd 3");
+    const child = new EventEmitter(); child.stdout = new EventEmitter(); child.stderr = new EventEmitter();
+    queueMicrotask(() => { child.stdout.emit("data", Buffer.from(JSON.stringify(response))); child.emit("close", 0, null); });
+    return child;
+  };
+}
+const captureArguments = { prepared: "prepared", nativeConfig: "config", output: "output", sessionId: "session",
+  diskId: "disk", inputScript: "script", campaign: "campaign" };
+await assert.rejects(runNativeCapture(captureArguments, {
+  openPythonExecutable: () => ({ fd: parentPythonFd, identity: fdIdentity }),
+  identityForFd: () => ({ ...fdIdentity, sha256: "b".repeat(64) }), closeSyncImpl: () => {},
+  spawnImpl: fakeNativeSpawn(capturedResponse()),
+}), /descriptor changed during child execution/,
+"post-exit descriptor identity drift rejects dynamically");
+for (const [label, mutate, pattern] of [
+  ["schema", value => { value.schema = "wrong"; }, /is incomplete/],
+  ["inherited fd", value => { value.inherited_fd = 4; }, /is incomplete/],
+  ["sys reference", value => { value.sys_executable.reference = "wrong"; }, /differs from inherited descriptor 3/],
+  ["sys inode", value => { value.sys_executable.inode = "12"; }, /differs from inherited descriptor 3/],
+  ["proc hash", value => { value.proc_self_exe.sha256 = "b".repeat(64); }, /differs from inherited descriptor 3/],
+  ["version type", value => { value.version = 1; }, /is incomplete/],
+  ["top-level inode", value => { value.inode = "12"; }, /differs from inherited descriptor 3/],
+]) {
+  const altered = capturedPythonIdentity(); mutate(altered);
+  await assert.rejects(runNativeCapture(captureArguments, {
+    openPythonExecutable: () => ({ fd: parentPythonFd, identity: fdIdentity }), identityForFd: () => fdIdentity,
+    closeSyncImpl: () => {}, spawnImpl: fakeNativeSpawn(capturedResponse(altered)),
+  }), pattern, `child Python ${label} mutation rejects dynamically`);
+}
 
 const deactivation = deriveCadrM8M9DeactivationProducer({ coreState: {
   csr: 0x14, scancode: 0x18000, mouseX: 44, mouseY: 54, inputSequence: 208,

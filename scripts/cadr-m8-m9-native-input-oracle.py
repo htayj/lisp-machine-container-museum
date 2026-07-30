@@ -90,10 +90,44 @@ def tool_identity(name: str, version_arguments: tuple[str, ...] = ("--version",)
 
 
 def python_identity() -> dict[str, Any]:
+    """Identify the host Python used to prepare or build an inert closure."""
     executable = Path(sys.executable).resolve()
     return {"path": str(executable), "bytes": executable.stat().st_size,
             "sha256": sha256(executable), "version": sys.version,
             "implementation": sys.implementation.name}
+
+
+def runtime_python_identity() -> dict[str, Any]:
+    """Bind Python to the inherited fd-3 execution object without host paths."""
+    try:
+        descriptor = os.fstat(3)
+    except OSError as exc:
+        raise M8M9OracleError("M8/M9 native capture requires inherited Python descriptor 3") from exc
+    if not sys.executable:
+        raise M8M9OracleError("M8/M9 native capture Python has no executable identity")
+
+    def identity(path: Path, label: str, reference: str) -> dict[str, Any]:
+        try:
+            information = path.stat()
+            raw = path.read_bytes()
+        except OSError as exc:
+            raise M8M9OracleError(f"M8/M9 native capture cannot read {label}") from exc
+        if (not stat.S_ISREG(information.st_mode) or information.st_dev != descriptor.st_dev or
+                information.st_ino != descriptor.st_ino):
+            raise M8M9OracleError(f"M8/M9 native capture {label} differs from inherited descriptor 3")
+        return {"reference": reference, "bytes": len(raw),
+                "sha256": hashlib.sha256(raw).hexdigest(),
+                "device": str(information.st_dev), "inode": str(information.st_ino)}
+
+    from_sys = identity(Path(sys.executable), "sys.executable", "sys-executable")
+    from_proc = identity(Path("/proc/self/exe"), "proc-self-exe", "proc-self-exe")
+    for field in ("bytes", "sha256", "device", "inode"):
+        if from_sys[field] != from_proc[field]:
+            raise M8M9OracleError("M8/M9 native capture Python identity is internally inconsistent")
+    return {"schema": "cadr-m8-m9-python-identity-v1", "inherited_fd": 3,
+            **{field: from_sys[field] for field in ("bytes", "sha256", "device", "inode")},
+            "sys_executable": from_sys, "proc_self_exe": from_proc,
+            "version": sys.version, "implementation": sys.implementation.name}
 
 
 def marker(prepared: Path, name: str) -> dict[str, Any]:
@@ -455,7 +489,7 @@ def native_capture(*, prepared_value: str, config_value: str, output_value: str,
             "prepared": {"path": str(prepared.relative_to(ROOT)), "source_tree_sha256": prepared_marker["prepared_source_tree_sha256"],
                          "source_file_count": prepared_marker["prepared_source_file_count"], "executable": build_marker},
             "runtime_provenance": {
-                "python": python_identity(), "rendered_config": rendered_config_identity,
+                "python": runtime_python_identity(), "rendered_config": rendered_config_identity,
                 "private_executable": {"sha256_at_start": private_executable_start,
                                        "sha256_at_exec": private_executable_exec,
                                        "sha256_at_end": private_executable_end},
