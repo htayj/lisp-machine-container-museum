@@ -60,6 +60,47 @@ function exactKeys(value, keys, label) {
 function isHash(value) { return typeof value === "string" && /^[0-9a-f]{64}$/.test(value); }
 function equal(left, right) { return canonicalJson(left) === canonicalJson(right); }
 
+function boundedGateStream(bytes, redactions) {
+  const tailLimit = 2048;
+  const startByte = Math.max(0, bytes.byteLength - tailLimit);
+  let text = null;
+  try {
+    text = new TextDecoder("utf-8", { fatal: true }).decode(
+      bytes.subarray(startByte));
+    const controls = [...text].filter(character => {
+      const code = character.codePointAt(0);
+      return (code < 0x20 && !["\n", "\r", "\t"].includes(character)) ||
+        code === 0x7f;
+    }).length;
+    if (controls !== 0) text = null;
+  } catch {
+    text = null;
+  }
+  if (text !== null) {
+    for (const [source, replacement] of redactions) {
+      if (typeof source === "string" && source.length > 0) {
+        text = text.split(source).join(replacement);
+      }
+    }
+  }
+  return Object.freeze({
+    byte_count: bytes.byteLength, sha256: sha256(bytes),
+    tail: text === null ? null : Object.freeze({
+      start_byte: startByte, text,
+    }),
+  });
+}
+
+function gateRecord(line, result, elapsedNs, redactions) {
+  return Object.freeze({
+    command: line, elapsed_ns: elapsedNs.toString(),
+    exit_code: result.status, signal: result.signal,
+    spawn_error_code: result.error?.code ?? null,
+    stdout: boundedGateStream(result.stdout ?? Buffer.alloc(0), redactions),
+    stderr: boundedGateStream(result.stderr ?? Buffer.alloc(0), redactions),
+  });
+}
+
 export function parseM7Invocation(argv) {
   const result = { execute: false, systemdChild: false, receiptBase: null,
     candidateCommit: null, patch: null, artifactRoot: null, output: null,
@@ -199,16 +240,23 @@ async function verifyControlPlane(revision) {
   return Object.freeze(records);
 }
 
-function runFrozenGates(stage) {
-  return Object.freeze(FROZEN_GATE_COMMANDS.map(line => {
+function runFrozenGates(stage, redactions) {
+  const records = [];
+  for (const line of FROZEN_GATE_COMMANDS) {
+    const started = process.hrtime.bigint();
     const result = spawnSync(line[0], line.slice(1), { cwd: stage, encoding: "buffer", maxBuffer: 64 * 1024 * 1024 });
-    if (result.error !== undefined) throw result.error;
-    const record = Object.freeze({ command: line, exit_code: result.status, signal: result.signal,
-      stdout: Object.freeze({ byte_count: (result.stdout ?? Buffer.alloc(0)).byteLength, sha256: sha256(result.stdout ?? Buffer.alloc(0)) }),
-      stderr: Object.freeze({ byte_count: (result.stderr ?? Buffer.alloc(0)).byteLength, sha256: sha256(result.stderr ?? Buffer.alloc(0)) }) });
-    if (record.exit_code !== 0 || record.signal !== null) throw Object.assign(new Error(`frozen staged M7 gate failed: ${line.join(" ")}`), { gate: record });
-    return record;
-  }));
+    const record = gateRecord(line, result, process.hrtime.bigint() - started,
+      redactions);
+    if (record.exit_code !== 0 || record.signal !== null ||
+        record.spawn_error_code !== null) {
+      throw Object.assign(
+        new Error(`frozen staged M7 gate failed: ${line.join(" ")}`),
+        { gate: record, completedGates: Object.freeze([...records]) },
+      );
+    }
+    records.push(record);
+  }
+  return Object.freeze(records);
 }
 
 async function stagedIdentities(stage, wasmPath) {
@@ -220,11 +268,42 @@ async function stagedIdentities(stage, wasmPath) {
 }
 
 async function currentToolchainIdentity() {
+  const executables = [];
+  for (const name of ["make", "guix", "cc", "ar", "nm", "python3"]) {
+    const path = command("which", [name], { cwd: ROOT }).trim();
+    const version = spawnSync(path, ["--version"], {
+      cwd: ROOT, encoding: "buffer", maxBuffer: 1024 * 1024,
+    });
+    if (version.error !== undefined || version.status !== 0 ||
+        version.signal !== null) {
+      throw new Error(`could not identify M7 gate executable ${name}`);
+    }
+    const versionBytes = Buffer.concat([
+      version.stdout ?? Buffer.alloc(0), version.stderr ?? Buffer.alloc(0),
+    ]);
+    executables.push(Object.freeze({
+      name, path_sha256: sha256(Buffer.from(path, "utf8")),
+      executable: await identity(path),
+      version: Object.freeze({
+        byte_count: versionBytes.byteLength, sha256: sha256(versionBytes),
+      }),
+    }));
+  }
+  const environmentNames = Object.freeze([
+    "GUIX_LOCPATH", "LANG", "LC_ALL", "NODE_OPTIONS", "PATH", "TZ",
+  ]);
+  const environment = Object.fromEntries(environmentNames.map(name =>
+    [name, process.env[name] ?? null]));
   return Object.freeze({
     node_version: process.version,
     node_executable: await identity(process.execPath),
     guix_channels: command("guix", ["describe", "-f", "channels"],
       { cwd: ROOT }).trim(),
+    gate_environment: Object.freeze({
+      names: environmentNames,
+      sha256: sha256(Buffer.from(canonicalJson(environment), "utf8")),
+    }),
+    gate_executables: Object.freeze(executables),
   });
 }
 
@@ -367,21 +446,38 @@ export function validateM7DevidCanaryChildReceipt(value) {
   }
   for (let index = 0; index < FROZEN_GATE_COMMANDS.length; index += 1) {
     const gate = value.frozen_stage_gates[index];
-    exactKeys(gate, ["command", "exit_code", "signal", "stderr", "stdout"],
+    exactKeys(gate, ["command", "elapsed_ns", "exit_code", "signal",
+      "spawn_error_code", "stderr", "stdout"],
       `M7 frozen gate ${index}`);
     if (!equal(gate.command, FROZEN_GATE_COMMANDS[index]) ||
-        gate.exit_code !== 0 || gate.signal !== null) {
+        gate.exit_code !== 0 || gate.signal !== null ||
+        gate.spawn_error_code !== null ||
+        !/^[1-9][0-9]*$/.test(gate.elapsed_ns)) {
       throw new Error("M7 frozen stage gate did not pass exactly");
     }
-    validateIdentity(gate.stdout, `M7 frozen gate ${index} stdout`,
-      { allowEmpty: true });
-    validateIdentity(gate.stderr, `M7 frozen gate ${index} stderr`,
-      { allowEmpty: true });
+    for (const [name, stream] of [["stdout", gate.stdout],
+      ["stderr", gate.stderr]]) {
+      exactKeys(stream, ["byte_count", "sha256", "tail"],
+        `M7 frozen gate ${index} ${name}`);
+      validateIdentity({ byte_count: stream.byte_count, sha256: stream.sha256 },
+        `M7 frozen gate ${index} ${name}`, { allowEmpty: true });
+      if (stream.tail !== null) {
+        exactKeys(stream.tail, ["start_byte", "text"],
+          `M7 frozen gate ${index} ${name} tail`);
+        if (!Number.isSafeInteger(stream.tail.start_byte) ||
+            stream.tail.start_byte < 0 ||
+            typeof stream.tail.text !== "string" ||
+            Buffer.byteLength(stream.tail.text, "utf8") > 4096) {
+          throw new Error("M7 frozen gate tail is malformed");
+        }
+      }
+    }
   }
   for (const [when, toolchain] of [["start", value.toolchain_at_start],
     ["end", value.toolchain_at_end]]) {
-    exactKeys(toolchain, ["guix_channels", "node_executable",
-      "node_version"], `M7 toolchain at ${when}`);
+    exactKeys(toolchain, ["gate_environment", "gate_executables",
+      "guix_channels", "node_executable", "node_version"],
+    `M7 toolchain at ${when}`);
     if (typeof toolchain.node_version !== "string" ||
         !/^v[0-9]+\./.test(toolchain.node_version) ||
         typeof toolchain.guix_channels !== "string" ||
@@ -390,6 +486,29 @@ export function validateM7DevidCanaryChildReceipt(value) {
     }
     validateIdentity(toolchain.node_executable,
       `M7 Node executable at ${when}`);
+    exactKeys(toolchain.gate_environment, ["names", "sha256"],
+      `M7 gate environment at ${when}`);
+    if (!equal(toolchain.gate_environment.names,
+      ["GUIX_LOCPATH", "LANG", "LC_ALL", "NODE_OPTIONS", "PATH", "TZ"]) ||
+        !isHash(toolchain.gate_environment.sha256) ||
+        !Array.isArray(toolchain.gate_executables) ||
+        toolchain.gate_executables.length !== 6) {
+      throw new Error(`M7 gate environment or executable set at ${when} is malformed`);
+    }
+    for (const [index, name] of
+      ["make", "guix", "cc", "ar", "nm", "python3"].entries()) {
+      const executable = toolchain.gate_executables[index];
+      exactKeys(executable, ["executable", "name", "path_sha256", "version"],
+        `M7 gate executable ${name} at ${when}`);
+      if (executable.name !== name || !isHash(executable.path_sha256)) {
+        throw new Error(`M7 gate executable ${name} at ${when} is malformed`);
+      }
+      validateIdentity(executable.executable,
+        `M7 gate executable ${name} bytes at ${when}`);
+      validateIdentity(executable.version,
+        `M7 gate executable ${name} version at ${when}`,
+        { allowEmpty: true });
+    }
   }
   if (!equal(value.toolchain_at_start, value.toolchain_at_end)) {
     throw new Error("M7 toolchain changed during execution");
@@ -647,7 +766,13 @@ async function runM7Child(options) {
       throw new Error("closed M7 manifest source closure differs from staged tree");
     }
     frozenRelease = await frozenReleaseIdentity(options.stageRoot);
-    gates = runFrozenGates(options.stageRoot);
+    gates = runFrozenGates(options.stageRoot, Object.freeze([
+      Object.freeze([options.stageRoot, "<STAGE>"]),
+      Object.freeze([options.privateRoot, "<PRIVATE>"]),
+      Object.freeze([options.artifactRoot, "<ARTIFACT_ROOT>"]),
+      Object.freeze([ROOT, "<REPOSITORY>"]),
+      Object.freeze([process.env.HOME, "<HOME>"]),
+    ]));
     if (!equal((await verifyM7Manifest(options.stageRoot, paths, manifestBytes, patch, identities)).parsed, verifiedManifest.parsed) ||
         !equal(await sourceClosureIdentity(options.stageRoot, revision, paths), sourceClosure)) throw new Error("staged M7 sources changed during frozen gates");
     const wasmPath = resolve(options.stageRoot, "cadr-web/build/cadr-web-m7-devid-O2.wasm");
@@ -694,15 +819,24 @@ async function runM7Child(options) {
   } catch (error) {
     const launcherAtEnd = await identity(LAUNCHER_PATH);
     const toolchainAtEnd = await currentToolchainIdentity();
+    const boundedFailure = error?.gate === undefined ?
+      boundedCanaryFailure(error) : Object.freeze({
+        reason: "frozen-gate-failed",
+        diagnostic_sha256: sha256(Buffer.from(canonicalJson(Object.freeze({
+          completed_stage_gates: error.completedGates,
+          failed_stage_gate: error.gate,
+        })), "utf8")),
+      });
     const failure = Object.freeze({ schema: "cadr-m7-devid-o2-canary-failure-v1", receipt_bound_base: revision,
       candidate_commit: candidateCommit, base_tree: baseTree, candidate_tree: candidateTree,
       patch: Object.freeze({ paths, sha256: sha256(patch) }), outer_cleanup_required: true,
-      failure: boundedCanaryFailure(error), outer_launcher_at_start: launcherAtStart,
+      failure: boundedFailure, outer_launcher_at_start: launcherAtStart,
       outer_launcher_at_end: launcherAtEnd,
       toolchain_at_start: toolchainAtStart, toolchain_at_end: toolchainAtEnd,
       closed_post_patch_manifest: verifiedManifest?.bytes ?? null,
       candidate_control_plane: controlPlane, staged_source_closure: sourceClosure,
-      frozen_stage_gates: gates, frozen_release: frozenRelease,
+      frozen_stage_gates: gates ?? error?.completedGates ?? null,
+      failed_stage_gate: error?.gate ?? null, frozen_release: frozenRelease,
       staged_artifacts_before: before, staged_artifacts_after: after });
     await writeCanonicalNoReplaceReceipt(options.resultEnvelope, Object.freeze({
       schema: "cadr-m7-devid-o2-canary-result-envelope-v1", outcome: "canary-failed", receipt: failure }));

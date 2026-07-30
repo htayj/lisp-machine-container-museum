@@ -340,7 +340,7 @@ m5-unit: build/test_cadr_m5_scheduler $(M5_WASM_O0)
 	guix shell node -- node ../tests/test_cadr_m5_visibility_adapter.mjs
 	guix shell node -- node ../tests/test_cadr_m5_wasm_exports.mjs
 
-m6-devid-wasm: build/test_cadr_m6_disk_evidence build/test_cadr_m6_disk_evidence_differential build/cadr_m6_tail_fixture build/test_cadr_m6_fast_run $(M6_DEVID_WASM_O0) $(M6_DEVID_WASM_O2)
+m6-devid-wasm: build/test_cadr_m6_disk_evidence build/test_cadr_m6_disk_evidence_differential build/cadr_m6_tail_fixture build/test_cadr_m6_fast_run $(M5_WASM_O0) $(M6_DEVID_WASM_O0) $(M6_DEVID_WASM_O2)
 	./build/test_cadr_m6_disk_evidence
 	./build/test_cadr_m6_disk_evidence_differential
 	./build/test_cadr_m6_fast_run

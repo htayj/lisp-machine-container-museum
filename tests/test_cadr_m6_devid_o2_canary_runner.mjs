@@ -21,7 +21,8 @@ import {
   writeCanonicalNoReplaceReceipt,
 } from "../scripts/run-cadr-m6-devid-o2-canary.mjs";
 import { cleanupTransientUnit, normalizeOuterInvocation, parseSystemdShow,
-  outerFailureReceipt, removeOwnedCanaryRoots, requireVacantReceiptPaths, systemdCommand,
+  outerFailureReceipt, removeOwnedCanaryRoots, requireVacantReceiptPaths,
+  systemdCommand, validateSystemdFailure,
   validateResultEnvelope, validateUnitAbsent,
   validateEffectiveSystemdPolicy, validateSystemdSuccess } from
   "../scripts/run-cadr-m6-devid-o2-canary-systemd.mjs";
@@ -312,6 +313,20 @@ assert.throws(() => validateUnitAbsent({
   }).failures.child).sort(), ["diagnostic_sha256", "reason"],
   "outer serialization reconstructs the two-field witness defensively");
   assert.doesNotMatch(JSON.stringify(receipt), /\/private|input|root/);
+  const gate = {
+    command: ["make", "-B", "-C", "cadr-web", "m6-devid-wasm"],
+    elapsed_ns: "123", exit_code: 2, signal: null, spawn_error_code: null,
+    stdout: { byte_count: 10, sha256: "cd".repeat(32), tail: null },
+    stderr: { byte_count: 20, sha256: "ef".repeat(32),
+      tail: { start_byte: 0, text: "bounded failure" } },
+  };
+  const gateReceipt = outerFailureReceipt({
+    reason: "canary-child-failed", unit: systemdUnit,
+    childFailure, childFailedStageGate: gate,
+  });
+  assert.deepEqual(gateReceipt.failed_stage_gate, gate);
+  assert.deepEqual(gateReceipt.submission, { exit_code: null, signal: null });
+  assert.doesNotMatch(JSON.stringify(gateReceipt), /\/tmp|\/home/);
 }
 const accountingFixture = parseSystemdShow([
   "MemoryPeak=10", "CPUUsageNSec=20", "TasksCurrent=[not set]",
@@ -328,6 +343,18 @@ assert.equal(validateSystemdSuccess({ Result: "success", ExecMainCode: "1",
     IPEgressBytes: "[no data]",
   }).MemoryPeak, "10",
 "systemd 261 unavailable-counter sentinels remain explicit evidence");
+assert.equal(validateSystemdFailure({
+  Result: "exit-code", ExecMainCode: "1", ExecMainStatus: "7",
+}, {
+  ...accountingFixture, Result: "exit-code", ExecMainCode: "1",
+  ExecMainStatus: "7",
+}).Result, "exit-code");
+assert.throws(() => validateSystemdFailure({
+  Result: "exit-code", ExecMainCode: "1", ExecMainStatus: "7",
+}, {
+  ...accountingFixture, Result: "exit-code", ExecMainCode: "1",
+  ExecMainStatus: "8",
+}), /invalid/);
 assert.throws(() => validateSystemdSuccess({ Result: "oom-kill",
   ExecMainCode: "2", ExecMainStatus: "9" }, accountingFixture), /invalid/);
 assert.throws(() => validateSystemdSuccess({ Result: "success",

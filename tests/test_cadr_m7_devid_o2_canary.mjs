@@ -166,6 +166,14 @@ const toolchain = {
   node_version: process.version,
   node_executable: identity,
   guix_channels: "test-channel",
+  gate_environment: {
+    names: ["GUIX_LOCPATH", "LANG", "LC_ALL", "NODE_OPTIONS", "PATH", "TZ"],
+    sha256: "8".repeat(64),
+  },
+  gate_executables: ["make", "guix", "cc", "ar", "nm", "python3"].map(name => ({
+    name, path_sha256: "9".repeat(64), executable: identity,
+    version: identity,
+  })),
 };
 const finalReceipt = {
   schema: "cadr-m7-devid-o2-canary-receipt-v1",
@@ -188,8 +196,10 @@ const finalReceipt = {
   staged_source_closure: { schema: "cadr-m6-stage-source-closure-v1",
     file_count: 1, total_byte_count: 1, sha256: "6".repeat(64) },
   frozen_stage_gates: gateCommands.map(command => ({
-    command, exit_code: 0, signal: null, stdout: identity,
-    stderr: { byte_count: 0, sha256: "7".repeat(64) },
+    command, elapsed_ns: "1", exit_code: 0, signal: null,
+    spawn_error_code: null,
+    stdout: { ...identity, tail: null },
+    stderr: { byte_count: 0, sha256: "7".repeat(64), tail: null },
   })),
   frozen_release: { release_record: identity, profile: identity, artifacts },
   outer_launcher_at_start: identity, outer_launcher_at_end: identity,
@@ -228,4 +238,9 @@ const command = systemdCommand(["--execute"], "12".repeat(16), "m7-devid");
 assert.match(command.unit, /^cadr-m7-devid-o2-canary-/);
 assert.ok(command.args.includes("--setenv=M7_DEVID_SYSTEMD_CHILD=1"));
 assert.ok(command.args.some(value => String(value).endsWith("run-cadr-m7-devid-o2-canary.mjs")));
+
+const makefile = await readFile(resolve(root, "cadr-web/Makefile"), "utf8");
+assert.match(makefile,
+  /^m6-devid-wasm:.*\$\(M5_WASM_O0\).*\$\(M6_DEVID_WASM_O0\).*\$\(M6_DEVID_WASM_O2\)$/m,
+  "the independently runnable frozen M6 gate declares the M5 Wasm used by its worker tests");
 console.log("receipt-bound M7-DEVID O2 canary tests passed");

@@ -159,6 +159,17 @@ export function validateSystemdSuccess(waited, accounting) {
   return accounting;
 }
 
+export function validateSystemdFailure(waited, accounting) {
+  if (waited?.Result !== "exit-code" || waited.ExecMainCode !== "1" ||
+      !/^[1-9][0-9]*$/.test(waited.ExecMainStatus ?? "") ||
+      accounting?.Result !== "exit-code" ||
+      accounting.ExecMainCode !== waited.ExecMainCode ||
+      accounting.ExecMainStatus !== waited.ExecMainStatus) {
+    throw new Error("systemd accounted child failure evidence is invalid");
+  }
+  return accounting;
+}
+
 export function validateEffectiveSystemdPolicy(value) {
   const expected = Object.freeze({
     RuntimeMaxUSec: "4h", TimeoutStopUSec: "30s",
@@ -231,6 +242,7 @@ export async function cleanupTransientUnit({
 export function outerFailureReceipt({
   reason, unit, accounting = null, run = null, primary = null,
   cleanupFailure = null, childFailure = null, childEnvelopeRetained = false,
+  childFailedStageGate = null, childCompletedStageGates = null,
   profile = "m6-devid",
 }) {
   const boundedChildFailure = childFailure === null ? null : Object.freeze({
@@ -240,16 +252,74 @@ export function outerFailureReceipt({
   return Object.freeze({
     schema: `${profileConfig(profile).receiptSchema.replace("-receipt-v1", "-outer-failure-v1")}`, reason, unit,
     systemd_accounting: accounting,
-    child: Object.freeze({ exit_code: run?.code ?? null,
+    submission: Object.freeze({ exit_code: run?.code ?? null,
       signal: run?.signal ?? null }),
+    child: Object.freeze({
+      exit_code: accounting?.ExecMainCode === "1" &&
+        /^[0-9]+$/.test(accounting?.ExecMainStatus ?? "") ?
+        Number(accounting.ExecMainStatus) : null,
+      signal: accounting?.ExecMainCode === "2" ?
+        accounting.ExecMainStatus : null,
+    }),
     failures: Object.freeze({
       primary: primary === null ? null : boundedCanaryFailure(primary),
       cleanup: cleanupFailure === null ? null :
         boundedCanaryFailure(cleanupFailure),
       child: boundedChildFailure,
     }),
+    ...(childFailedStageGate === null ? {} :
+      { failed_stage_gate: childFailedStageGate }),
+    ...(childCompletedStageGates === null ? {} :
+      { completed_stage_gates: childCompletedStageGates }),
     ...(childEnvelopeRetained ? { child_envelope_retained: true } : {}),
   });
+}
+
+function boundedFailedStageGate(value) {
+  if (value === null || typeof value !== "object" || Array.isArray(value) ||
+      Object.keys(value).sort().join(",") !==
+        "command,elapsed_ns,exit_code,signal,spawn_error_code,stderr,stdout" ||
+      !Array.isArray(value.command) || value.command.length < 1 ||
+      value.command.some(part => typeof part !== "string" ||
+        part.length < 1 || part.length > 128) ||
+      !(value.exit_code === null || Number.isSafeInteger(value.exit_code)) ||
+      !(value.signal === null || typeof value.signal === "string") ||
+      !(value.spawn_error_code === null ||
+        /^[A-Z0-9_]{1,32}$/.test(value.spawn_error_code)) ||
+      !/^[1-9][0-9]*$/.test(value.elapsed_ns ?? "")) {
+    return null;
+  }
+  for (const stream of [value.stdout, value.stderr]) {
+    if (stream === null || typeof stream !== "object" ||
+        Object.keys(stream).sort().join(",") !== "byte_count,sha256,tail" ||
+        !Number.isSafeInteger(stream.byte_count) || stream.byte_count < 0 ||
+        !/^[0-9a-f]{64}$/.test(stream.sha256 ?? "")) return null;
+    if (stream.tail !== null &&
+        (typeof stream.tail !== "object" ||
+         Object.keys(stream.tail).sort().join(",") !== "start_byte,text" ||
+         !Number.isSafeInteger(stream.tail.start_byte) ||
+         stream.tail.start_byte < 0 ||
+         typeof stream.tail.text !== "string" ||
+         Buffer.byteLength(stream.tail.text, "utf8") > 4096)) return null;
+  }
+  return Object.freeze({
+    command: Object.freeze([...value.command]), exit_code: value.exit_code,
+    signal: value.signal, elapsed_ns: value.elapsed_ns,
+    spawn_error_code: value.spawn_error_code,
+    stdout: Object.freeze({ ...value.stdout,
+      tail: value.stdout.tail === null ? null :
+        Object.freeze({ ...value.stdout.tail }) }),
+    stderr: Object.freeze({ ...value.stderr,
+      tail: value.stderr.tail === null ? null :
+        Object.freeze({ ...value.stderr.tail }) }),
+  });
+}
+
+function boundedCompletedStageGates(value) {
+  if (!Array.isArray(value) || value.length > 16) return null;
+  const records = value.map(boundedFailedStageGate);
+  return records.some(record => record === null) ? null :
+    Object.freeze(records);
 }
 
 export function validateResultEnvelope(value, profile = "m6-devid") {
@@ -274,6 +344,13 @@ export function validateResultEnvelope(value, profile = "m6-devid") {
         !/^[a-z0-9-]{1,64}$/.test(failure.reason) ||
         !/^[0-9a-f]{64}$/.test(failure.diagnostic_sha256)) {
       throw new Error("supervised child failure envelope is malformed");
+    }
+    if (profile === "m7-devid" && failure.reason ===
+        "frozen-gate-failed" &&
+        (boundedFailedStageGate(value.receipt.failed_stage_gate) === null ||
+         boundedCompletedStageGates(value.receipt.frozen_stage_gates) ===
+           null)) {
+      throw new Error("supervised M7 gate failure diagnostics are malformed");
     }
   }
   return value;
@@ -318,7 +395,11 @@ export async function runSystemdCanary(profile = "m6-devid",
     }
     accounting = parseSystemdShow(shown.stdout.toString("utf8"));
     validateEffectiveSystemdPolicy(accounting);
-    validateSystemdSuccess(waited, accounting);
+    if (result.outcome === "canary-complete") {
+      validateSystemdSuccess(waited, accounting);
+    } else {
+      validateSystemdFailure(waited, accounting);
+    }
   } catch (error) {
     primary = error;
   }
@@ -340,7 +421,12 @@ export async function runSystemdCanary(profile = "m6-devid",
       outerFailureReceipt({ reason, unit: command.unit, accounting, run,
         primary, cleanupFailure,
         childFailure: result?.outcome === "canary-failed" ?
-          result.receipt.failure : null, profile }));
+          result.receipt.failure : null,
+        childFailedStageGate: result?.outcome === "canary-failed" ?
+          boundedFailedStageGate(result.receipt.failed_stage_gate) : null,
+        childCompletedStageGates: result?.outcome === "canary-failed" ?
+          boundedCompletedStageGates(result.receipt.frozen_stage_gates) : null,
+        profile }));
     await unlink(envelope).catch(() => undefined);
     if (primary !== null && cleanupFailure !== null) {
       throw new AggregateError([primary, cleanupFailure], reason);
