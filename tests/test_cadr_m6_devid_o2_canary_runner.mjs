@@ -355,6 +355,17 @@ assert.throws(() => validateSystemdFailure({
   ...accountingFixture, Result: "exit-code", ExecMainCode: "1",
   ExecMainStatus: "8",
 }), /invalid/);
+assert.throws(() => validateSystemdFailure({
+  Result: "exit-code", ExecMainCode: "1", ExecMainStatus: "7",
+}, {
+  ...accountingFixture, MemoryPeak: "not-a-counter",
+  Result: "exit-code", ExecMainCode: "1", ExecMainStatus: "7",
+}), /counters/);
+assert.deepEqual(outerFailureReceipt({
+  reason: "canary-child-failed", unit: systemdUnit,
+  run: { code: 0, signal: null },
+  accounting: { ExecMainCode: "1", ExecMainStatus: "7" },
+}).child, { exit_code: 7, signal: null });
 assert.throws(() => validateSystemdSuccess({ Result: "oom-kill",
   ExecMainCode: "2", ExecMainStatus: "9" }, accountingFixture), /invalid/);
 assert.throws(() => validateSystemdSuccess({ Result: "success",

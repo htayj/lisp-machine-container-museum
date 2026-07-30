@@ -18,6 +18,14 @@ const LAUNCHER = resolve(ROOT, "scripts/run-cadr-m6-devid-o2-canary.mjs");
 const M7_LAUNCHER = resolve(ROOT, "scripts/run-cadr-m7-devid-o2-canary.mjs");
 const UNIT_PREFIX = "cadr-m6-devid-o2-canary-";
 const M7_UNIT_PREFIX = "cadr-m7-devid-o2-canary-";
+const M7_FROZEN_GATE_COMMANDS = Object.freeze([
+  Object.freeze(["make", "-B", "-C", "cadr-web", "m3-wasm"]),
+  Object.freeze(["make", "-B", "-C", "cadr-web", "m4-unit"]),
+  Object.freeze(["make", "-B", "-C", "cadr-web", "m4-browser"]),
+  Object.freeze(["make", "-B", "-C", "cadr-web", "m5-unit"]),
+  Object.freeze(["make", "-B", "-C", "cadr-web", "m6-devid-wasm"]),
+  Object.freeze(["make", "-B", "-C", "cadr-web", "m7-unit"]),
+]);
 
 function profileConfig(profile) {
   if (profile === "m6-devid") return Object.freeze({ launcher: LAUNCHER,
@@ -140,26 +148,34 @@ export function parseSystemdShow(text) {
   return Object.freeze(result);
 }
 
-export function validateSystemdSuccess(waited, accounting) {
+function validateAccountingCounters(accounting) {
   const counters = ["MemoryPeak", "CPUUsageNSec"];
   const ioCounters = ["IOReadBytes", "IOWriteBytes"];
   const ipCounters = ["IPIngressBytes", "IPEgressBytes"];
-  if (waited?.Result !== "success" || waited.ExecMainCode !== "1" ||
-      waited.ExecMainStatus !== "0" || accounting?.Result !== "success" ||
-      accounting.ExecMainCode !== "1" || accounting.ExecMainStatus !== "0" ||
-      counters.some(key => !/^[0-9]+$/.test(accounting?.[key] ?? "")) ||
+  if (counters.some(key => !/^[0-9]+$/.test(accounting?.[key] ?? "")) ||
       ioCounters.some(key => !(/^[0-9]+$/.test(accounting?.[key] ?? "") ||
         accounting?.[key] === "[not set]")) ||
       ipCounters.some(key => !(/^[0-9]+$/.test(accounting?.[key] ?? "") ||
         accounting?.[key] === "[no data]")) ||
       !(/^[0-9]+$/.test(accounting?.TasksCurrent ?? "") ||
         accounting?.TasksCurrent === "[not set]")) {
+    throw new Error("systemd accounting counters are invalid");
+  }
+  return accounting;
+}
+
+export function validateSystemdSuccess(waited, accounting) {
+  validateAccountingCounters(accounting);
+  if (waited?.Result !== "success" || waited.ExecMainCode !== "1" ||
+      waited.ExecMainStatus !== "0" || accounting?.Result !== "success" ||
+      accounting.ExecMainCode !== "1" || accounting.ExecMainStatus !== "0") {
     throw new Error("systemd terminal result or accounting evidence is invalid");
   }
   return accounting;
 }
 
 export function validateSystemdFailure(waited, accounting) {
+  validateAccountingCounters(accounting);
   if (waited?.Result !== "exit-code" || waited.ExecMainCode !== "1" ||
       !/^[1-9][0-9]*$/.test(waited.ExecMainStatus ?? "") ||
       accounting?.Result !== "exit-code" ||
@@ -299,6 +315,7 @@ function boundedFailedStageGate(value) {
          Object.keys(stream.tail).sort().join(",") !== "start_byte,text" ||
          !Number.isSafeInteger(stream.tail.start_byte) ||
          stream.tail.start_byte < 0 ||
+         stream.tail.start_byte > stream.byte_count ||
          typeof stream.tail.text !== "string" ||
          Buffer.byteLength(stream.tail.text, "utf8") > 4096)) return null;
   }
@@ -320,6 +337,34 @@ function boundedCompletedStageGates(value) {
   const records = value.map(boundedFailedStageGate);
   return records.some(record => record === null) ? null :
     Object.freeze(records);
+}
+
+function validateM7FailedGateSequence(receipt) {
+  const completed = boundedCompletedStageGates(receipt.frozen_stage_gates);
+  const failed = boundedFailedStageGate(receipt.failed_stage_gate);
+  if (completed === null || failed === null ||
+      completed.length >= M7_FROZEN_GATE_COMMANDS.length) {
+    throw new Error("supervised M7 gate failure diagnostics are malformed");
+  }
+  for (let index = 0; index < completed.length; index += 1) {
+    const gate = completed[index];
+    if (JSON.stringify(gate.command) !==
+          JSON.stringify(M7_FROZEN_GATE_COMMANDS[index]) ||
+        gate.exit_code !== 0 || gate.signal !== null ||
+        gate.spawn_error_code !== null) {
+      throw new Error("supervised M7 completed gate prefix is false");
+    }
+  }
+  const failureCount = Number(Number.isSafeInteger(failed.exit_code) &&
+      failed.exit_code > 0) +
+    Number(failed.signal !== null) +
+    Number(failed.spawn_error_code !== null);
+  if (JSON.stringify(failed.command) !==
+        JSON.stringify(M7_FROZEN_GATE_COMMANDS[completed.length]) ||
+      failureCount !== 1) {
+    throw new Error("supervised M7 failed gate is not the next failed command");
+  }
+  return Object.freeze({ completed, failed });
 }
 
 export function validateResultEnvelope(value, profile = "m6-devid") {
@@ -346,11 +391,8 @@ export function validateResultEnvelope(value, profile = "m6-devid") {
       throw new Error("supervised child failure envelope is malformed");
     }
     if (profile === "m7-devid" && failure.reason ===
-        "frozen-gate-failed" &&
-        (boundedFailedStageGate(value.receipt.failed_stage_gate) === null ||
-         boundedCompletedStageGates(value.receipt.frozen_stage_gates) ===
-           null)) {
-      throw new Error("supervised M7 gate failure diagnostics are malformed");
+        "frozen-gate-failed") {
+      validateM7FailedGateSequence(value.receipt);
     }
   }
   return value;

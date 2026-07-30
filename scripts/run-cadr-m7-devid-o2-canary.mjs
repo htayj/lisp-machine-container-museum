@@ -60,7 +60,7 @@ function exactKeys(value, keys, label) {
 function isHash(value) { return typeof value === "string" && /^[0-9a-f]{64}$/.test(value); }
 function equal(left, right) { return canonicalJson(left) === canonicalJson(right); }
 
-function boundedGateStream(bytes, redactions) {
+export function boundedM7GateStream(bytes, redactions) {
   const tailLimit = 2048;
   const startByte = Math.max(0, bytes.byteLength - tailLimit);
   let text = null;
@@ -96,8 +96,8 @@ function gateRecord(line, result, elapsedNs, redactions) {
     command: line, elapsed_ns: elapsedNs.toString(),
     exit_code: result.status, signal: result.signal,
     spawn_error_code: result.error?.code ?? null,
-    stdout: boundedGateStream(result.stdout ?? Buffer.alloc(0), redactions),
-    stderr: boundedGateStream(result.stderr ?? Buffer.alloc(0), redactions),
+    stdout: boundedM7GateStream(result.stdout ?? Buffer.alloc(0), redactions),
+    stderr: boundedM7GateStream(result.stderr ?? Buffer.alloc(0), redactions),
   });
 }
 
@@ -290,7 +290,9 @@ async function currentToolchainIdentity() {
     }));
   }
   const environmentNames = Object.freeze([
-    "GUIX_LOCPATH", "LANG", "LC_ALL", "NODE_OPTIONS", "PATH", "TZ",
+    "AR", "CC", "GUIX_LOCPATH", "HOME", "LANG", "LC_ALL", "MAKEFLAGS",
+    "MFLAGS", "NM", "NODE_OPTIONS", "PATH", "TMPDIR", "TZ",
+    "XDG_CACHE_HOME",
   ]);
   const environment = Object.fromEntries(environmentNames.map(name =>
     [name, process.env[name] ?? null]));
@@ -489,7 +491,9 @@ export function validateM7DevidCanaryChildReceipt(value) {
     exactKeys(toolchain.gate_environment, ["names", "sha256"],
       `M7 gate environment at ${when}`);
     if (!equal(toolchain.gate_environment.names,
-      ["GUIX_LOCPATH", "LANG", "LC_ALL", "NODE_OPTIONS", "PATH", "TZ"]) ||
+      ["AR", "CC", "GUIX_LOCPATH", "HOME", "LANG", "LC_ALL", "MAKEFLAGS",
+        "MFLAGS", "NM", "NODE_OPTIONS", "PATH", "TMPDIR", "TZ",
+        "XDG_CACHE_HOME"]) ||
         !isHash(toolchain.gate_environment.sha256) ||
         !Array.isArray(toolchain.gate_executables) ||
         toolchain.gate_executables.length !== 6) {

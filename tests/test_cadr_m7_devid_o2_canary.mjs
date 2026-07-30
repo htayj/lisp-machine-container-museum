@@ -5,7 +5,8 @@ import { resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { Worker } from "node:worker_threads";
 import {
-  assertSelectiveM7Patch, parseM7Invocation, validateM7ClosedManifest,
+  assertSelectiveM7Patch, boundedM7GateStream, parseM7Invocation,
+  validateM7ClosedManifest,
   validateM7DevidCanaryChildReceipt, validateM7DevidCanaryReceipt,
 } from "../scripts/run-cadr-m7-devid-o2-canary.mjs";
 import { validateM7DevidCanaryStageReceipt } from
@@ -14,7 +15,8 @@ import { createM7ClosedManifest } from
   "../scripts/build-cadr-m7-devid-o2-canary-manifest.mjs";
 import { Client } from
   "../scripts/run-cadr-m6-devid-o2-canary-stage.mjs";
-import { systemdCommand } from "../scripts/run-cadr-m6-devid-o2-canary-systemd.mjs";
+import { systemdCommand, validateResultEnvelope } from
+  "../scripts/run-cadr-m6-devid-o2-canary-systemd.mjs";
 
 const root = resolve(fileURLToPath(new URL("..", import.meta.url)));
 const launcher = resolve(root, "scripts/run-cadr-m7-devid-o2-canary.mjs");
@@ -167,7 +169,9 @@ const toolchain = {
   node_executable: identity,
   guix_channels: "test-channel",
   gate_environment: {
-    names: ["GUIX_LOCPATH", "LANG", "LC_ALL", "NODE_OPTIONS", "PATH", "TZ"],
+    names: ["AR", "CC", "GUIX_LOCPATH", "HOME", "LANG", "LC_ALL",
+      "MAKEFLAGS", "MFLAGS", "NM", "NODE_OPTIONS", "PATH", "TMPDIR", "TZ",
+      "XDG_CACHE_HOME"],
     sha256: "8".repeat(64),
   },
   gate_executables: ["make", "guix", "cc", "ar", "nm", "python3"].map(name => ({
@@ -239,8 +243,52 @@ assert.match(command.unit, /^cadr-m7-devid-o2-canary-/);
 assert.ok(command.args.includes("--setenv=M7_DEVID_SYSTEMD_CHILD=1"));
 assert.ok(command.args.some(value => String(value).endsWith("run-cadr-m7-devid-o2-canary.mjs")));
 
+const failedGate = {
+  ...finalReceipt.frozen_stage_gates[4], exit_code: 2,
+};
+const failedEnvelope = {
+  schema: "cadr-m7-devid-o2-canary-result-envelope-v1",
+  outcome: "canary-failed",
+  receipt: {
+    schema: "cadr-m7-devid-o2-canary-failure-v1",
+    failure: {
+      reason: "frozen-gate-failed", diagnostic_sha256: "a".repeat(64),
+    },
+    frozen_stage_gates: finalReceipt.frozen_stage_gates.slice(0, 4),
+    failed_stage_gate: failedGate,
+  },
+};
+assert.equal(validateResultEnvelope(failedEnvelope, "m7-devid"),
+  failedEnvelope);
+assert.throws(() => validateResultEnvelope({
+  ...failedEnvelope, receipt: { ...failedEnvelope.receipt,
+    failed_stage_gate: { ...failedGate, command: ["arbitrary-command"] } },
+}, "m7-devid"), /next failed command/);
+assert.throws(() => validateResultEnvelope({
+  ...failedEnvelope, receipt: { ...failedEnvelope.receipt,
+    failed_stage_gate: { ...failedGate, exit_code: 0 } },
+}, "m7-devid"), /next failed command/);
+assert.throws(() => validateResultEnvelope({
+  ...failedEnvelope, receipt: { ...failedEnvelope.receipt,
+    failed_stage_gate: { ...failedGate,
+      stderr: { ...failedGate.stderr, tail: {
+        start_byte: failedGate.stderr.byte_count + 1, text: "bad",
+      } } } },
+}, "m7-devid"), /malformed/);
+
+const redacted = boundedM7GateStream(
+  Buffer.from(`before /private/secret after`),
+  [["/private/secret", "<PRIVATE>"]],
+);
+assert.equal(redacted.tail.text, "before <PRIVATE> after");
+assert.doesNotMatch(JSON.stringify(redacted), /private\/secret/);
+assert.equal(boundedM7GateStream(
+  Buffer.from([0xff, 0xfe, 0xfd]), []).tail, null);
+assert.ok(boundedM7GateStream(Buffer.alloc(8192, 0x61), [])
+  .tail.text.length <= 2048);
+
 const makefile = await readFile(resolve(root, "cadr-web/Makefile"), "utf8");
 assert.match(makefile,
-  /^m6-devid-wasm:.*\$\(M5_WASM_O0\).*\$\(M6_DEVID_WASM_O0\).*\$\(M6_DEVID_WASM_O2\)$/m,
-  "the independently runnable frozen M6 gate declares the M5 Wasm used by its worker tests");
+  /^m6-devid-wasm:.*build\/test_cadr_m2_public.*\$\(M5_WASM_O0\).*\$\(M6_DEVID_WASM_O0\).*\$\(M6_DEVID_WASM_O2\)$/m,
+  "the independently runnable frozen M6 gate declares every binary used by its worker tests");
 console.log("receipt-bound M7-DEVID O2 canary tests passed");
