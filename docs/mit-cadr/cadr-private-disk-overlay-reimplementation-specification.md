@@ -3,7 +3,7 @@ type: Reimplementation Specification
 title: CADR-WEB-303 C-M10 private disk overlay reimplementation specification
 description: Normative Phase 1 contract for a synthetic, immutable-base, content-addressed CADR-WEB private-disk overlay and its recovery records.
 tags: [mit-cadr, cadr-web, preservation, disk, reimplementation]
-timestamp: 2026-07-29T20:00:00-04:00
+timestamp: 2026-07-29T23:01:17-04:00
 ---
 
 # CADR-WEB-303 C-M10 private disk overlay reimplementation specification
@@ -11,16 +11,17 @@ timestamp: 2026-07-29T20:00:00-04:00
 ## Status and reconstruction claim
 
 `CADR-WEB-303/ABI1.5/protocol-v6/C-M10-PERSIST-v1` is a clean-room Phase 1
-format and deterministic in-memory backend for private CADR disk pages. It provides
+format, deterministic in-memory backend, and browser IndexedDB durable-selection
+adapter for private CADR disk pages. It provides
 semantic and representation compatibility with the **selected C-M10 format profile**:
 exactly sized canonical records, SHA-256-addressed immutable pages and tree nodes,
 base-equal removal, generation/head activation, recovery selection, and bounded
 retention collection. The implementation uses only synthetic bytes in its tests.
 
-It does not claim historical CADR private-pack compatibility, a browser durable-store
-implementation, a worker or controller integration, public API compatibility, or
-the `CW3-PERSISTENT` power-loss gate. It neither reads nor stores the selected base
-image, licensed media, a private disk, or a world snapshot. `CDROVL1` archive
+It does not claim historical CADR private-pack compatibility, worker or controller
+integration, public API compatibility, a browser-engine crash/power-removal oracle,
+or the `CW3-PERSISTENT` power-loss gate. It neither reads nor stores the selected
+base image, licensed media, a private disk, or a world snapshot. `CDROVL1` archive
 encoding remains deliberately unimplemented because its decision fixes only the
 overall shape and directory entries, not its header layout.
 
@@ -36,6 +37,8 @@ not unobserved historical behavior.
 | `ROAD-M10` | Repository roadmap | M10 deliverable and old-or-new-generation persistence objective | Exact fields, algorithms, or browser implementation |
 | `INF-M10` | Explicit clean-room inference | Candidate manifest offsets, in-memory object store, reference model, and defensive parser policy | That those choices were selected historical or Sol layouts |
 | `TEST-M10` | Synthetic Node tests | Exercised canonical records, transaction seams, recovery, and wrapper integrity paths | Real media behavior, browser persistence, or a power-loss campaign |
+| `SRC-M10-IDB` | Tracked readable source | Closed IndexedDB schema, copied immutable staging, session/writer fencing, bounded recovery, and the one-transaction head/activation primitive | CADR or filesystem behavior |
+| `TEST-M10-IDB` | Disposable Chromium campaign | Chromium IndexedDB behavior under each durable seam's abort, dedicated-worker termination, and page reload; follow-up writers; fallback recovery; activation bounds; schema, handle, durability, foreign-origin/UUID, and version-change checks | Browser-engine crash, OS power loss, quota exhaustion, private media, or worker integration |
 | `TODO-RUNTIME-M10` | Open oracle | The precise unclosed browser/runtime probe | Any result before it runs |
 
 ## Profile, compatibility levels, and evidence ledger
@@ -50,7 +53,8 @@ The base is a read-only input callback, never an object in the overlay store.
 | `L0-format` | Strict parsers and canonical serializers for `CDROVN1`, `CDROVM1`, and `CDROVH1` | Archive/header layouts not selected |
 | `L1-memory` | Deterministic in-memory COW map, generations, atomic head/activation, recovery, and bounded collection | Worker and browser persistence |
 | `L1-wrapper` | `CDRM10W1` binding wrapper around a complete `CDRM5WK1` v3 envelope | Snapshot restore integration |
-| `CW3` | Not claimed | Browser restart and power-loss proof at every durable-store seam |
+| `L2-indexeddb-selection` | UUID-confined Chromium IndexedDB object staging and head/activation selection, exercised at six durable seams | COW/controller integration, engine crash, quota, and power removal |
+| `CW3` | Not claimed | Browser-engine restart and external power-loss proof at every durable-store seam |
 
 | Subsystem | Source/artifact witness | Runtime/manual witness | Status |
 | --- | --- | --- | --- |
@@ -59,6 +63,7 @@ The base is a read-only input callback, never an object in the overlay store.
 | Fixed records | `DEC-M10` | No preserved format artifact inspected | normative selected profile |
 | Phase 1 manifest offsets | `INF-M10` | No preserved format artifact inspected | frozen for this selected profile |
 | Phase 1 implementation | [`cadr-m10-persistence.mjs`](../../cadr-web/wasm/cadr-m10-persistence.mjs) and synthetic tests | No private-media run | `L0-format`/`L1-memory` only |
+| Browser durable selection | [`cadr-m10-indexeddb.mjs`](../../cadr-web/browser/cadr-m10-indexeddb.mjs) | Chromium 150.0.7871.124 headed-under-Xvfb and headless campaigns on synthetic data, 2026-07-29 | `L2-indexeddb-selection` only |
 
 ## Architecture and state model
 
@@ -83,6 +88,55 @@ The caller MUST independently establish that its callback exposes the complete,
 immutable 269,562,880-byte base with the selected whole-image SHA-256 before
 initialization. Checking individual callback pages cannot establish that
 prerequisite, and this Phase 1 backend does not hash the whole base.
+
+### `C-M10-IDB-v1` durable-selection adapter
+
+`C-M10-IDB-v1` is `SRC-M10-IDB`: a browser adapter in
+[`cadr-m10-indexeddb.mjs`](../../cadr-web/browser/cadr-m10-indexeddb.mjs), not a
+second COW planner. The worker/core must first construct and validate its candidate
+pages, nodes, and complete manifest. The adapter copies those supplied immutable
+bytes before any asynchronous operation, verifies their content-address keys, then
+stages only `pages`, `nodes`, and `manifests`. The selected base is never supplied to
+or retained by this adapter.
+
+Each disk UUID has one derived IndexedDB database name; a handle for one UUID cannot
+address another UUID's `meta`, `head`, activation, or quarantine records. A database
+contains only the closed records `m10-meta`, `m10-pages`, `m10-nodes`,
+`m10-manifests`, `m10-heads`, `m10-activations`, and `m10-quarantine`. Byte-bearing
+records contain an `ArrayBuffer` copy and an exact lowercase hash key; control
+records reject unknown fields, noncanonical decimal u64s, unexpected UUID bindings,
+or noncanonical activation keys. Opening requires the exact sorted object-store set
+and requires every store to have the string key path `key`, `autoIncrement` false,
+and zero indexes. Missing or extra stores, a wrong key path, auto-increment, or any
+index reject and close the connection. Every adapter read-write transaction requests
+IndexedDB `durability: "strict"` and rejects if that transaction option is
+unavailable. A content-address collision requires byte equality.
+This is a namespace/immutability safety boundary, not a cross-origin access control
+replacement; browser same-origin policy separately confines another origin's IDB.
+
+The adapter retains the selected 4096-record activation bound *per UUID database*.
+Recovery requests at most 4097 activation records and refuses an over-bound database.
+At the bound, publication prunes only the oldest unprotected record in that same
+database; it retains the current head activation and immediate predecessor, and
+refuses if neither can be safely removed. It does not collect immutable pages, nodes,
+or manifests in this slice: unactivated staged objects can leak, but cannot become
+selected state. The in-memory backend remains the only implemented M10 content GC.
+
+Every reopened durable handle advances the stored session high-water and clears the
+writer lease and any prior session's pending-generation reservation in the same
+metadata transaction before recovery. This is safe because publication clears the
+reservation in the same transaction that writes the new head and activation: a
+reservation left at reopen is necessarily pre-publication, while a completed
+publication already has a cleared reservation. Every public adapter operation
+rechecks that session after its asynchronous storage/hash work. Closing one handle
+marks only that handle closed; every subsequent operation through it rejects before
+durable mutation, and it does not close a newer handle's shared IDB connection. A
+version-change event closes the database and makes later handle use
+fail as a version-change error. An IndexedDB
+`QuotaExceededError` or aborted transaction is surfaced as a failed staging or
+activation operation; because a transaction contains the head, matching activation,
+and pending-generation clear together, it cannot report a partial new control pair.
+The quota branch is source-inspected but not capacity-exhaustion tested.
 
 An overlay map is a three-level radix-256 tree. Its root is level 2, the next level
 is 1, and leaves are level 0. The index bytes of the 24-bit LBA select levels 2, 1,
@@ -373,11 +427,63 @@ publication. `TEST-M10` runs a synthetic fault at all of them. This proves only 
 in-memory transition implementation, not loss behavior of IndexedDB, OPFS, browser
 termination, or an actual power source.
 
+### Browser durable-selection suffix
+
+`SRC-M10-IDB` implements only the durable suffix of this transaction. Its caller
+first owns steps 1--8, reserves a generation through the adapter, and supplies a
+complete candidate manifest plus the immutable closure to stage. The adapter
+revalidates the candidate's disk/profile/artifact binding, direct parent, reachable
+node/page closure, entry count, session, writer lease, and expected active head. It
+then performs this browser-specific order:
+
+1. `before-stage`; copy, validate, CAS-stage immutable candidate bytes; then
+   `after-stage`.
+2. Verify the candidate closure and reread current control state.
+3. `before-head-activation`; boundedly preflight an activation slot.
+4. In one IndexedDB read-write transaction, recheck the stored old head and its
+   matching activation, then put the next head, identical next activation, and
+   pending-generation clear. The transaction's completion is the publication point.
+5. `after-head-activation`, `before-reread-head`, a fresh atomic control snapshot
+   and complete closure verification, then `after-reread-head`.
+
+The ledger is exactly `before-stage`, `after-stage`, `before-head-activation`,
+`after-head-activation`, `before-reread-head`, and `after-reread-head`. Hooks occur
+only outside an active IDB transaction. Therefore a hook cannot extend a transaction
+across an arbitrary callback: it observes either the pre-publication pair or the
+completed transaction. These hooks do not interrupt an outstanding request *inside*
+the publication transaction; the engine-crash oracle below remains open. A rejection
+before completion leaves the old selected head;
+a post-completion callback/re-read error performs the normal uncertain-result reread
+and returns durable success only if that reread names the new head.
+
+`TEST-M10-IDB` ran a disposable Chromium 150.0.7871.124 origin both headed under
+Xvfb and headless against all six ledger seams. For each seam it separately injected
+an exception, terminated the dedicated worker at the parked hook, and reloaded the
+page; it also mutated the caller's candidate page only after `commit` had entered.
+Each restart saw exactly generation/head `(0,1)` or `(1,2)` with the original
+matching map root, never a head without its matching activation or a late-mutated
+page. After each of the nine pre-publication faults, a fresh reopened writer cleared
+the abandoned reservation, reserved generation 2, and durably committed head
+sequence 2. The same campaign retained a nonmutating canonical full-store hash for a
+second same-origin UUID database, reopened and reread an iframe's foreign-origin
+database, rejected real missing-store, extra-store, wrong-key-path, auto-increment,
+and indexed schemas, proved a stale handle's `close()` did not close the current
+handle or permit closed-handle metadata mutation, instrumented page-realm
+read-write transactions to require strict durability, forced fallback recovery from
+a corrupt current head while quarantining a forged high-sequence activation, and
+published at the real 4096-record activation boundary. It also forced a same-origin
+IDB version upgrade to confirm that the old handle was fenced. The HTTP harness
+served only an exact preloaded fixture allowlist, validated `Host`, and returned 404
+for GET and HEAD probes of repository-private and unrelated paths. This is
+browser-runtime evidence, not an assertion about
+sudden browser-engine death, host kill during an internal IDB commit, device removal,
+quota exhaustion, or CADR media.
+
 ### Writer fencing and activation recovery
 
 `beginWriter` issues a new writer epoch only when no lease is active. `closeWriter`
-releases it. Reopening first issues a new session token, advances the epoch
-high-water, and clears old leases, so every previous API object is stale before
+releases it. Reopening first issues a new session token, advances the session
+high-water, and clears old leases and pending reservations, so every previous API object is stale before
 recovery awaits. A head records the epoch that published it, but a head sequence
 remains the optimistic commit comparison value. Exhaustion of any session, writer,
 generation, or head-sequence u64 fails closed; values never wrap.
@@ -391,11 +497,16 @@ Open/reopen uses the following defensive order:
    generation without treating a zero generation as absence.
 3. Provided the backend contains no more than 4096 activation records total,
    quarantine malformed keys and records, then try canonical records for the disk
-   in descending head-sequence order. A key is exactly
+   in descending head-sequence order. Each candidate is reread by its exact key
+   before use. Its outer key, UUID namespace, and sequence MUST equal the parsed
+   head's UUID and sequence; a high outer sequence cannot promote lower-sequence
+   head bytes. A key is exactly
    `lowercase-disk-uuid-hex ":" canonical-decimal-u64`, with a nonzero sequence.
    Malformed records do not stop a later valid candidate, but an over-limit
    activation volume refuses recovery rather than performing an unbounded scan.
-4. If a fallback succeeds, expose that root read-only in `RECOVERY_REQUIRED`.
+4. If a fallback succeeds, retain the exact validated head and manifest bytes as a
+   private read-only snapshot and expose only that snapshot in `RECOVERY_REQUIRED`;
+   later `active()` calls do not return the corrupt current-head store.
    If none succeeds, refuse the mount. It MUST NOT manufacture an empty overlay.
 
 This makes unactivated manifests deliberately unrecoverable: creation alone is not
@@ -437,6 +548,7 @@ separate confidentiality and deletion policy.
 | Pin/unpin root | `snapshot`, `clone`, or `export`; complete root hash | monotonic owned retained/released GC reference | stale session, invalid tree, unknown reference, or cross-disk ownership rejects |
 | Collect | positive finite step budget | backend-global incremental mark/sweep report | concurrent invocation rejects; mutation blocks or invalidates |
 | Wrap snapshot | bound overlay identity, complete `CDRM5WK1` v3, and injected semantic validator | `CDRM10W1` bytes | absent validator or structural/semantic/integrity failure rejects |
+| IndexedDB durable selection | selected binding, session/writer epoch, reserved complete manifest, immutable closure | atomically activated next head plus matching activation | closed-schema, stale-session, quota, version-change, bounded-activation, or closure failure rejects; a post-publication fault rereads |
 
 This is a semantic JavaScript module inventory, not an historical source interface.
 No CADR Lisp function, ABI, worker operation, or browser persistence API is claimed.
@@ -466,6 +578,12 @@ overlay transaction is evidence of a filesystem-level atomic operation.
 | `M10-F16` | `L1-memory` | Reopen synchronously inside final pin-map publication | stale publication rolls back its exact reference and leaves no leaked root |
 | `M10-F17` | `L1-memory` | Fill activation log with hash-valid same-UUID heads to 4096, commit, and reopen | oldest unprotected valid history prunes, size remains bounded, new head recovers |
 | `M10-F18` | `L1-memory` | Queue reopen after exact pin publication but before the outer result continuation | old call returns its retained ID; foreign disk cannot unpin; reopened same disk may release it |
+| `M10-I01` | `L2-indexeddb-selection` | Abort, terminate the worker, and reload at all six external durable seams | reopen selects exactly old or new complete state; every pre-publication case then admits a fresh successful writer |
+| `M10-I02` | `L2-indexeddb-selection` | Corrupt current head and add a forged higher-sequence activation carrying genesis bytes | fallback returns the exact validated read-only snapshot twice; forged record is removed and quarantined |
+| `M10-I03` | `L2-indexeddb-selection` | Exercise every operation on a closed handle; open databases with missing/extra stores, wrong key path, auto-increment, or an index | current handle stays usable; closed handle cannot mutate metadata; every non-exact schema rejects and closes |
+| `M10-I04` | `L2-indexeddb-selection` | Hash every store of a second UUID without reopening it; reopen/reread a foreign-origin database | same-origin foreign UUID is byte-inventory unchanged; foreign origin rereads the same selected state |
+| `M10-I05` | `L2-indexeddb-selection` | Fill a real database to 4096 canonical activations, publish, and inspect | current/new records survive, oldest disposable record prunes, total remains 4096 |
+| `M10-I06` | `L2-indexeddb-selection` | Instrument page-realm transactions and statically require the adapter's single transaction factory | every observed read-write transaction requests strict durability; no adapter bypass exists |
 | `M10-W01` | `L1-wrapper` | Wrap a structurally valid synthetic `CDRSNAP1` in M5; corrupt outer or inner bytes | both binding and inner integrity reject |
 | `M10-W02` | `L1-wrapper` | Omit or reject the injected validator and wrap arbitrary M5 payload bytes | validator omission fails closed and arbitrary bytes never pass structural validation |
 | `M10-W03` | `L1-wrapper` | Validator mutates its argument and caller-owned M5 during an await | emitted wrapper contains the exact pre-validation snapshot and reparses successfully |
@@ -476,16 +594,24 @@ Run the Phase 1 synthetic checks with:
 ```sh
 node tests/test_cadr_m10_persistence.mjs
 node tests/test_cadr_m10_wrapper.mjs
+node tests/test_cadr_m10_indexeddb_static.mjs
+node scripts/run-cadr-m10-indexeddb-browser.mjs
+xvfb-run -a node scripts/run-cadr-m10-indexeddb-browser.mjs --headed
 python3 .agents/skills/write-reimplementation-specs/scripts/audit_spec.py \
   --require-frontmatter docs/mit-cadr/cadr-private-disk-overlay-reimplementation-specification.md
 ```
 
-`TODO-RUNTIME-M10-CW3-POWERLOSS`: implement a browser durable backend with an
-independently inspected atomic head/activation primitive. For each transaction seam,
-kill/reopen a disposable synthetic disk, enumerate old/new active generation and
-map hashes, and demonstrate exactly old-or-new complete state. Bind the result to
-browser/storage implementation identities and keep the selected base media out of
-the test.
+`TODO-RUNTIME-M10-CW3-ENGINE-CRASH`: using a pinned browser/storage implementation,
+induce and classify browser-engine process loss and host-level kill while an actual
+IDB request is outstanding, then reopen a disposable synthetic disk and compare the
+complete activated closure. The Chromium abort, worker termination, and page reload
+campaign closes only the hooks before or after transaction completion; it does not
+claim an engine-internal crash or external power-loss result.
+
+`TODO-RUNTIME-M10-IDB-QUOTA`: impose a repeatable, measured storage quota on the
+disposable origin, exhaust it during immutable staging and control publication, and
+verify both the typed quota result and the complete reopened selection. The current
+campaign does not claim that capacity-exhaustion oracle.
 
 ## Snapshot and rights boundary
 
@@ -502,12 +628,15 @@ contains no screenshot or runtime claim and requires none.
 - The `CDROVM1` offset table is the frozen clean-room Phase 1 candidate for this
   profile, not an observed historical layout. A change requires a new schema/profile.
 - `CDROVL1` header offsets/digest grammar are unselected and its codec is deferred.
-- Concrete worker-validator wiring, LMFS semantics, history compaction, a production
-  browser store, controller/guest completion, and a base-media test have not run.
+- Concrete worker-validator wiring, COW/controller integration, LMFS semantics,
+  durable immutable-object GC, history compaction, controller/guest completion, a
+  quota-exhaustion oracle, a browser-engine crash/power-loss oracle, and a base-media
+  test remain open. The browser store is only the selected durable-selection suffix.
 - The historical CADR private-disk representation, if any, was not inspected and is
   not being reconstructed by this clean-room profile.
-- `C-M10` and `CW3-PERSISTENT` remain open. The current tests are evidence for
-  selected synthetic format/backend behavior only.
+- `C-M10` integration and `CW3-PERSISTENT` remain open. The current evidence covers
+  selected synthetic format/backend behavior plus Chromium durable-selection seams;
+  it is not CADR media or filesystem evidence.
 - This new page must be linked from the MIT CADR and root documentation indexes by
   the owner of those mixed files; Phase 1 file ownership intentionally leaves them
   unchanged.
@@ -517,4 +646,5 @@ contains no screenshot or runtime claim and requires none.
 - [CADR browser WebAssembly implementation roadmap](cadr-browser-webassembly-implementation-roadmap.md), M10 section, verified 2026-07-29.
 - [`cadr-m4-media.mjs`](../../cadr-web/wasm/cadr-m4-media.mjs), selected immutable base metadata and 1024-byte block boundary, inspected 2026-07-29.
 - [CADR-WEB deterministic machine scheduler reimplementation specification](cadr-deterministic-machine-scheduler-reimplementation-specification.md), `CDRM5WK1` version-3 inner envelope, verified 2026-07-29.
+- [`cadr-m10-indexeddb.mjs`](../../cadr-web/browser/cadr-m10-indexeddb.mjs) and [`run-cadr-m10-indexeddb-browser.mjs`](../../scripts/run-cadr-m10-indexeddb-browser.mjs), inspected and run headed under Xvfb and headless with Chromium 150.0.7871.124 on 2026-07-29; all input was synthetic and the temporary browser profile was removed after each campaign.
 - `DEC-M10`, reviewed Phase 1 reconstruction decision supplied to this implementation on 2026-07-29; it is a project decision, not a historical artifact witness.
