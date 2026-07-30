@@ -27,6 +27,10 @@
 #define CADR_AUDIO_FRAMES_PER_PACKET UINT32_C(512)
 #define CADR_AUDIO_SAMPLE_RATE UINT32_C(8000)
 #define CADR_AUDIO_INCARNATION_SLOTS UINT32_C(64)
+#define CADR_AUDIO_SNAPSHOT_HEADER_BYTES UINT32_C(188)
+#define CADR_AUDIO_SNAPSHOT_MAX_BYTES \
+    (CADR_AUDIO_SNAPSHOT_HEADER_BYTES + \
+     CADR_AUDIO_QUEUE_PACKETS * CADR_AUDIO_CANONICAL_EVENT_BYTES)
 
 typedef enum cadr_audio_status {
     CADR_AUDIO_STATUS_OK = 0,
@@ -209,6 +213,18 @@ cadr_audio_status cadr_audio_model_ack(cadr_audio_model *model,
 cadr_audio_status cadr_audio_model_render_pcm_s16le(
     const cadr_audio_model *model, const cadr_audio_cursor *cursor,
     int16_t *samples, uint32_t sample_capacity, uint32_t *frames_written);
+
+/* CDRAUDS1 is a canonical, pointer-free transport for queue semantic state.
+ * It contains no cursor, authority, address, or consumer-epoch capability.
+ * Import atomically adopts valid state into an already live destination and
+ * starts a fresh consumer epoch, making every prior cursor stale. */
+cadr_audio_status cadr_audio_model_snapshot_size(
+    const cadr_audio_model *model, uint32_t *out_byte_count);
+cadr_audio_status cadr_audio_model_snapshot_serialize(
+    const cadr_audio_model *model, uint8_t *bytes, uint32_t capacity,
+    uint32_t *out_written);
+cadr_audio_status cadr_audio_model_snapshot_adopt(
+    cadr_audio_model *destination, const uint8_t *bytes, uint32_t byte_count);
 
 void cadr_audio_event_encode(const cadr_audio_event *event,
                              uint8_t bytes[CADR_AUDIO_CANONICAL_EVENT_BYTES]);

@@ -6,6 +6,8 @@ import {
   CADR_M9_KEYBOARD_ALL_UP,
   CADR_M9_POINTER_ORDINARY_CAPACITY,
   CADR_M9_POINTER_PROFILE,
+  CADR_M9_CONTROLLER_VERSION,
+  CADR_M9_CORE_ABI,
   CADR_M9_PROTOCOL_VERSION,
   CADR_M9_SCHEDULER_KIND_POINTER,
   CadrM9PointerController,
@@ -14,7 +16,10 @@ import {
   encodeCadrM9Edge32,
 } from "../cadr-web/wasm/cadr-m9-pointer.mjs";
 
-assert.equal(CADR_M9_POINTER_PROFILE, "CADR-WEB-303/ABI1.6/protocol-v6/C-M9-PTR-X11-EDGE32-v1");
+assert.equal(CADR_M9_CONTROLLER_VERSION, "C-M9.1");
+assert.equal(CADR_M9_CORE_ABI, "ABI1.8");
+assert.equal(CADR_M9_POINTER_PROFILE,
+  "CADR-WEB-303/controller-C-M9.1/core-ABI1.8/protocol-v6/PTR-X11-EDGE32-v1");
 assert.deepEqual(CADR_M9_BUTTONS.map(({ name, bit, x11, dom }) => ({ name, bit, x11, dom })), [
   { name: "tail", bit: 1, x11: 1, dom: 0 }, { name: "middle", bit: 2, x11: 2, dom: 1 },
   { name: "head", bit: 4, x11: 3, dom: 2 },

@@ -33,6 +33,7 @@
 /build/.genera-computer-use-runtime.lock
 /build/.genera-computer-use-vlm.lock
 /build/genera-probe-*/
+/build/cadr-m13/
 /cadr-web/build/
 /cadr-web/oracle/*.failure.json
 /cadr-web/*.o

@@ -1,27 +1,30 @@
 ---
 type: Reimplementation Specification
 title: CADR browser pointer and interactive lifecycle reimplementation specification
-description: A release-bounded, host-side Phase 1 contract for EDGE32 pointer ingress, focus and capture deactivation, and accessible controls without a claim of CW2 interactive closure.
+description: A release-bounded browser-to-core contract for EDGE32 pointer ingress, focus and capture deactivation, accessible controls, and an ABI 1.8 IOB subset without a claim of CW2 interactive closure.
 tags: [mit-cadr, cadr-web, input, pointer, lifecycle, reimplementation]
-timestamp: 2026-07-29T21:06:55-04:00
+timestamp: 2026-07-30T22:10:00-04:00
 ---
 
 # CADR browser pointer and interactive lifecycle reimplementation specification
 
 ## Status and reconstruction claim
 
-`CADR-WEB-303/ABI1.6/protocol-v6/C-M9-PTR-X11-EDGE32-v1` defines the Phase 1
-browser-host pointer boundary for the System 303 reconstruction.  A conforming
-implementation produces the selected finite EDGE32 event representation, applies
-the defined browser coordinate/capture/lifecycle rules, and leaves a typed queue
-for a future core/worker bridge.
+`CADR-WEB-303/controller-C-M9.1/core-ABI1.8/protocol-v6/PTR-X11-EDGE32-v1` defines the
+dedicated-worker browser-host and browser-to-core pointer boundary for the System 303
+reconstruction. A conforming implementation produces the selected finite EDGE32
+event representation, applies the defined browser coordinate/capture/lifecycle
+rules, then emits a typed record to the selected ABI 1.8 IOB subset. The worker now owns
+the dedicated v6 pointer controller; the browser channel shares request IDs
+with M8 rather than allowing separate adapters to collide.
 
-It claims a tested semantic contract for synthetic host input only.  It does not
-claim that current CADR core ABI 1.5 contains pointer ingress or `CDRSTATE6`, that
-an unmodified `usim` binary consumes these entries, historical source/API/binary
-compatibility, Pointer Lock behavior, a saved DOM state, a runnable System 303
-application workflow, or the `CW2-INTERACTIVE` exit gate.  No licensed or private
-runtime was opened for this work.
+It claims tested synthetic host semantics and a reconstructed browser/core
+delivery boundary. It does not claim that an unmodified `usim` binary consumes
+these entries; that `CDRINP1` is historical; or that a `CDRSTATE6` snapshot
+block, historical source/API/binary compatibility, Pointer Lock behavior, a saved
+DOM state, runnable System 303 application workflow, or the `CW2-INTERACTIVE`
+exit gate has been established.
+The direct-core tests are not a native input trace or a guest workflow observation.
 
 ## Normative language and evidence codes
 
@@ -34,12 +37,14 @@ that the selected historical executable used these JavaScript objects.
 | `S46-SRC` | Public System 46 source pin | A release-bounded public CADR ancestor | This browser representation or a System 303 runtime result |
 | `C303-SRC` | Public maintained System 303 Fossil pin | The selected maintained source profile | That its source is a complete input specification |
 | `USIM-X11-SRC` | Public X11 `usim` source pin | The selected X11 mapping witness/profile basis | A browser event, DOM capture, or live runtime observation |
-| `P1-INF` | Explicit reconstruction inference | The finite host bridge needed by the selected web profile | A historical implementation expression |
-| `P1-TEST` | Synthetic conformance tests | The exact implemented Phase 1 behavior | Preserved-machine behavior |
+| `P1-INF` | Explicit reconstruction inference | The finite host bridge and `CDRINP1` record needed by the selected web profile | A historical implementation expression |
+| `P1-CORE` | Tracked ABI 1.8 core/IOB implementation and direct C conformance test | Exact record validation, completed-boundary delivery, mouse word packing, readiness behavior, and post-delivery witness | Native `usim` equivalence or a preserved-machine behavior claim |
+| `P1-TEST` | Synthetic Node, worker, and direct-core conformance tests | The exact implemented host behavior, dedicated-worker dispatch, core delivery, and shared browser request ordering | Preserved-machine behavior |
 | `TODO-RUNTIME` | Unperformed harness oracle | Nothing yet | A claim that the branch has been exercised |
 
 `USIM-X11-SRC` controls the chosen three-button mapping where this contract needs
-one.  Browser mechanics and all serialization proposed for ABI 1.6 are `P1-INF`.
+one. Browser mechanics and `CDRINP1` serialization are reconstruction choices;
+the direct core behavior is `P1-CORE`.
 If a preserved runtime differs, the result becomes a separate selectable profile;
 it is not silently folded into this one.
 
@@ -47,7 +52,7 @@ it is not silently folded into this one.
 
 | Profile | Exact target | Compatibility level | Reserved |
 | --- | --- | --- | --- |
-| `CADR-WEB-303/ABI1.6/protocol-v6/C-M9-PTR-X11-EDGE32-v1` | System 303-oriented browser host, X11 three-button profile, 768×963 logical display | L1 synthetic host-input semantics | current core ABI, historical API, native runtime, visual/timing identity, CW2 |
+| `CADR-WEB-303/controller-C-M9.1/core-ABI1.8/protocol-v6/PTR-X11-EDGE32-v1` | C-M9 controller version 1 over combined core ABI 1.8; System 303-oriented browser host, X11 three-button profile, 768×963 logical display | L1 host semantics plus a tested reconstructed IOB boundary | historical API, native runtime, visual/timing identity, snapshot compatibility, CW2 |
 
 The profile has no fallback SDL mapping.  The selected mapping is tail/middle/head
 bit `0/1/2`, X11 button `1/2/3`, and DOM `PointerEvent.button` `0/1/2`.
@@ -58,9 +63,11 @@ bit `0/1/2`, X11 button `1/2/3`, and DOM `PointerEvent.button` `0/1/2`.
 | --- | --- | --- | --- |
 | X11 event surface | [`x11.c` lines 22–26](https://tumbleweed.nu/r/usim/file?ci=330d8248ec2e12af071e287920e681600f75df9ffd854aada5f8a64c9adad64d&name=x11.c&ln=22-26) and [244–263](https://tumbleweed.nu/r/usim/file?ci=330d8248ec2e12af071e287920e681600f75df9ffd854aada5f8a64c9adad64d&name=x11.c&ln=244-263), `USIM-X11-SRC` | None in this phase | selects motion/press/release, dispatches x/y/button, and performs a pending X warp |
 | Mouse state and mapping | [`mouse.c` lines 13–69](https://tumbleweed.nu/r/usim/file?ci=330d8248ec2e12af071e287920e681600f75df9ffd854aada5f8a64c9adad64d&name=mouse.c&ln=13-69), `USIM-X11-SRC` | None in this phase | names tail/middle/head, maps X buttons 1/2/3, and requests warp on transition to cursor state `Son` |
+| IOB mouse words/readiness | [`iob.c` lines 149–171](https://tumbleweed.nu/r/usim/file?ci=330d8248ec2e12af071e287920e681600f75df9ffd854aada5f8a64c9adad64d&name=iob.c&ln=149-171) and [201–210](https://tumbleweed.nu/r/usim/file?ci=330d8248ec2e12af071e287920e681600f75df9ffd854aada5f8a64c9adad64d&name=iob.c&ln=201-210), `USIM-X11-SRC` | None in this phase | source-visible IOB packing, readiness, vector, and read-clearing behavior; not a browser mapping or runtime result |
 | Profile selection | `C303-SRC`, exact `USIM-X11-SRC` witnesses above, `S46-SRC` pins below | None in this phase | selected evidence boundary |
 | EDGE32, queue, coalescing, lifecycle, transforms, controls | `P1-INF` | `P1-TEST` only | normative reconstruction |
-| `CDRSTATE6` block | `P1-INF` | None | proposed future contract |
+| `CDRINP1` / ABI 1.8 IOB subset | `P1-INF`, selected `iob.c` source witness | `P1-CORE` only | reconstructed delivery, not native equivalence |
+| `CDRSTATE6` block | `P1-INF` | None | proposed future contract; not serialized by ABI 1.8 |
 | Listener/editor/window workflow | None | `TODO-RUNTIME-CW2-01` | open |
 
 ## Architecture and ownership
@@ -68,10 +75,10 @@ bit `0/1/2`, X11 button `1/2/3`, and DOM `PointerEvent.button` `0/1/2`.
 ```text
 DOM PointerEvent / accessible control
         -> M9 adapter: exact layout transform, focus, capture, rebase
-        -> M9 controller: EDGE32 queue, buttons, generations, emergency tail
-        -> future dedicated protocol-v6 host subhandler
-        -> future complete-boundary core/worker bridge
-        -> CADR input/device state and future CDRSTATE6 block
+        -> shared browser v6 channel and worker M9 controller
+        -> EDGE32 queue, buttons, generations, emergency tail
+        -> exact CDRINP1 at a completed core boundary
+        -> ABI 1.8 IOB mouse state; future CDRSTATE6 remains absent
 ```
 
 The browser owns DOM focus, capture, layout epoch, pointer identity, physical
@@ -81,10 +88,10 @@ The aggregate bit is the union of its two source bits: the first source acquisit
 emits the guest down and the final source release emits the guest up.  DOM capture
 depends only on the physical mask.  Production submit mode updates these mirrors
 only after a positive worker response; rejected first-down submission rolls back
-its provisional DOM capture.  Those host details are never serialized.  The future
-core owns legacy cursor/input state.  A future scheduler kind is `4`, but generic
+its provisional DOM capture. Those host details are never serialized. The ABI 1.8
+core owns the selected legacy IOB input state. A future scheduler kind is `4`, but generic
 `scheduler-events` rejects both keyboard kind `3` and pointer kind `4`; only
-dedicated host-originated subhandlers may accept them.
+the named dedicated subhandlers may emit `CDRINP1` records.
 
 ## Semantic data model
 
@@ -113,6 +120,37 @@ Motion has `changedMask=0` and the current `buttonsAfter`.  An edge has a one-ho
 `changedMask`, and `buttonsAfter XOR changedMask` is the immediately preceding
 button mask.  Duplicate down, unheld up, unmapped button, reserved bits, invalid
 coordinate, or stale generation is rejected without a partial button mutation.
+
+### ABI 1.8 delivery and selected IOB subset
+
+Each accepted keyboard or pointer entry is delivered in a little-endian,
+exactly 40-byte `CDRINP1` record: magic `CDRINP1` plus zero byte; schema `1`;
+kind `1` keyboard or `2` EDGE32 pointer; zero flags; exact machine generation;
+strictly-next shared ingress ordinal; payload; and zero reserved word. The core
+accepts it only while the machine is `RUNNING` at a completed `BOUNDARY_READY`
+phase. It validates all of those fields before dispatch and advances its input
+sequence/ordinal only after the target IOB operation succeeds.
+
+For an accepted EDGE32 record, the ABI 1.8 subset writes its reconstruction
+coordinate `x` to IOB address `0764106`, and reconstruction `y` plus
+tail/middle/head after-state bits to `0764104`. The browser has no raw
+mouse-encoder source, so it supplies no raw-encoder transition behavior.
+Mouse Y read clears CSR mouse-ready bit 4; mouse X read does not. Delivery sets
+bit 4 and unconditionally requests Unibus vector `0264`, matching the selected
+X11 `mouse.c`. The maintained SDL3 route through `iob_set_mouse_ready` instead
+gates that request on CSR mouse-interrupt-enable bit 1; that is a classified
+alternate-source difference, not silently averaged behavior. The direct core
+test deliberately clears CSR bit 1 while enabling the Unibus receiver and
+observes pending vector `0264`. The addresses, switch packing, readiness, and vector are selected from
+the pinned `iob.c` witness; direct EDGE32-coordinate packing is an explicit
+reconstruction inference, not a claim that browser EDGE32 reproduces native
+encoder timing, raw bits, or native interrupt ordering.
+
+`CDRIOB91` is a 64-byte, read-only post-delivery observation: magic/schema/size,
+CSR, keyboard scancode, mouse X/Y words, input sequence, keyboard FIFO count,
+shared ordinal, generation, and lifecycle. It helps test browser/core behavior
+but cannot replace the separate native pre-IOB witness. ABI 1.8 M9 input state
+is not in the M5 snapshot wire layout; v6 snapshot operations return `NOT_READY`.
 
 ## Complete Phase 1 input and control inventory
 
@@ -296,7 +334,7 @@ or host logical rebase.
 | `pointer-motion` | inside x/y, tick, generation | EDGE32 motion or eligible coalesce | stale/outside/pressure: no mutation |
 | `pointer-down` | mapped DOM button, mandatory x and y, tick, generation | matching button edge, held-order push | missing coordinate/duplicate/unmapped/pressure: no mutation |
 | `pointer-up` | mapped DOM button, either both x/y or neither | matching button edge, held-order removal; omission uses the controller cursor | one coordinate only/unheld/unmapped/pressure: no mutation |
-| `pointer-neutralize` | cause, tick, current generation | atomic LIFO pointer ups then typed M8 all-up; `capture-loss` additionally advances remote generation and returns exact prior/next generations | insufficient whole tail or generation exhaustion: fail-stop, no partial tail/advance |
+| `pointer-neutralize` | cause, tick, current generation | shared worker transaction: atomic LIFO pointer ups then exactly one typed M8 all-up; only after complete core delivery clears M8 held keys; `capture-loss` additionally advances remote generation | insufficient whole tail or generation exhaustion: fail-stop, no partial tail/advance or M8 clear |
 | `pointer-warp-request` | cursor-state 3, x/y, generation | clamped generation-tagged logical rebase request | other state/stale: reject |
 | `pointer-state`, `pointer-drain` | none / max count | host observation or typed ingress drain | malformed request: reject |
 
@@ -307,12 +345,15 @@ or multiple values convention, condition/restart, module/load contract, or binar
 calling convention is claimed compatible with System 46, System 303, or `usim`.
 This is a semantic browser-host protocol, not a source compatibility layer.
 
-| Selected Phase 1 module | Coverage | Missing closure |
+| Selected module | Coverage | Missing closure |
 | --- | --- | --- |
-| `cadr-m9-pointer.mjs` | normative synthetic controller and dedicated v6 branch | worker dispatch/core kind-4 application |
-| `cadr-m9-interactive-lifecycle.mjs` | normative host lifecycle and proposed CDRSTATE6 parser | current ABI field and snapshot serializer |
-| `cadr-m9-pointer-adapter.mjs` | normative browser transform/capture/rebase seam | actual browser shell/worker transport |
+| `cadr-m9-pointer.mjs` | normative synthetic controller and dedicated v6 branch | historical pointer-device API |
+| `cadr-m9-interactive-lifecycle.mjs` | normative host lifecycle and proposed CDRSTATE6 parser | snapshot serializer |
+| `cadr-m9-pointer-adapter.mjs` | normative browser transform/capture/rebase seam and shared-ID hook | a System 303 pointer-device callback |
 | `cadr-m9-pointer-controls.mjs` | normative accessibility control view | production DOM styling and application integration |
+| `cadr-m8-m9-worker-channel.mjs` | shared v6 request IDs, physical-key binding, and pointer event binding | layout/lifecycle acknowledgement from a CADR pointer device |
+| `cadr_m9_input.h`, `cadr_core.c`, and `usim-port/iob.c` | ABI 1.8 strict ingress and selected IOB keyboard/mouse delivery | native `usim` timing, raw encoder behavior, or snapshot compatibility |
+| `cadr-worker.js` | instantiates and dispatches the M8/M9 v6 subhandlers; rejects generic kinds 3/4; delivers only after core preflight | historical guest input API or snapshot integration |
 
 ## Conformance suite
 
@@ -323,14 +364,22 @@ This is a semantic browser-host protocol, not a source compatibility layer.
 | `T-M9-ORDER` | explicit edge/keyboard/clock/lifecycle/warp/tick/generation barrier tokens, stale generation/ordinal, generic v6 scheduler kinds | only legal adjacency coalesces; malformed ingress is mutation-free; kind 3/4 generic ingress rejects |
 | `T-M9-PRESSURE` | 60 ordinary entries plus all three buttons | exactly four emergency cells produce LIFO ups and all-up |
 | `T-M9-LIFE` | every deactivation trigger, submitted capture-loss accept/reject/mismatched generation, drain/ack/resume/new-transform ingress, duplicate trigger, active re-enable, invalid layout, injected neutralization failure | remote and local generations remain equal across resumed epoch-1 motion, or the bridge absorbing-fail-stops; paused state, invalid old transform, no interposed guest instruction |
-| `T-M9-SNAPSHOT` | CDRSTATE6 mutants, reset/restore/terminal/dirty states | reserved bytes reject; host state remains excluded; warning only for M10 `DIRTY` |
+| `T-M9-SNAPSHOT` | CDRSTATE6 mutants, reset/restore/terminal/dirty states | proposed-block reserved bytes reject; ABI 1.8 worker snapshot requests reject rather than serialize non-restorable input state |
 | `T-M9-TRANSFORM` | all 768×963 transform coordinates and boundary mutants | floor/half-open exact map; stale/outside disable |
 | `T-M9-ADAPTER` | direct and production-submit focus/capture/down ordering, rejection rollback, async fencing, pointer-owner filtering, mixed physical/accessibility ownership in both orders, outside move/up, warp rebase | source and aggregate mirrors are exact; capture follows only physical ownership; no first-click loss/overtake, outside or foreign-pointer motion, or OS cursor warp |
 | `T-M9-A11Y` | direct and production-submit button toggles, rejected toggle, directions, Release All accept/reject, release/focus/live controls | state updates only after acceptance; Release All rejection remains terminal after queue drain |
+| `T-M9-WORKER-CHANNEL` | v6 display-capable worker, M8/M9 interleaving, and DOM binding seams | pointer state is owned by the worker, generic kind 4 remains rejected, and shared request IDs are monotonic |
+| `T-M9-IOB` | Direct ABI 1.8 machine receives pointer, keyboard, all-up, stale ordinal, malformed record, and out-of-range coordinate cases | Pointer words/readiness, keyboard FIFO, and ordinal/sequence commit are exact and failure is mutation-free |
+| `T-M8-M9-DEACTIVATE` | key→pointer→blur and pointer→key→capture-loss interleavings | M8 remains held before delivery commit; the tail contains pointer-up then exactly one all-up; commit clears both controllers |
 
 The executable tests are [pointer queue and EDGE32 tests](../../tests/test_cadr_m9_pointer.mjs),
 [interactive lifecycle tests](../../tests/test_cadr_m9_interactive_lifecycle.mjs), and
 [browser adapter/accessibility tests](../../tests/test_cadr_m9_pointer_adapter.mjs).
+[`tests/test_cadr_m8_m9_worker.mjs`](../../tests/test_cadr_m8_m9_worker.mjs) and
+[`tests/test_cadr_m8_m9_worker_channel.mjs`](../../tests/test_cadr_m8_m9_worker_channel.mjs)
+add the actual v6 worker and shared browser-channel seam. The direct
+[`test_cadr_m9_input_bridge.c`](../../cadr-web/tests/test_cadr_m9_input_bridge.c)
+adds ABI 1.8 IOB delivery coverage; neither test claims a native runtime result.
 
 ## Preserved-system comparison procedure and open probes
 
@@ -351,6 +400,97 @@ both the native and browser machines, retaining equivalent logical input trace,
 framebuffer checkpoints, Lisp results, base/private artifact checksums, session,
 and clean/forced termination status.  Only this closes `CW2-INTERACTIVE`.
 
+The tracked [`cadr-m8-m9-native-input-oracle.py`](../../scripts/cadr-m8-m9-native-input-oracle.py)
+now has a fail-closed `native-capture` entry point. It creates a fresh private
+runtime, copies and hashes the five M6 artifacts plus the base disk, records every
+native call in 64-byte `CDRM8N1` records before `kbd_event` or `mouse_event`
+mutates IOB state, and removes the transient runtime after it copies only reviewed
+0600 sidecars into the requested 0700 output directory. The M6 completion halt is
+intentionally deferred only until the complete post-idle M8/M9 script is witnessed;
+it then halts through the original M6 completion condition. A missing record, an
+early exit, a changed private disk, or any non-private path fails the capture.
+
+[`run-cadr-m8-m9-input-conformance.mjs`](../../scripts/run-cadr-m8-m9-input-conformance.mjs)
+is the direct-boundary, explicitly non-CW2 campaign entry point. After explicit `--execute`, it uses
+a newly allocated ignored 0700 session; materializes one native script covering all
+100 selected physical keys (down and up), motion, all three button transitions,
+and capture-loss neutralization; runs the strict native capture; then independently
+boots the protocol-v6 M9 Wasm machine to the frozen M6 READY contract and sends the
+same controller-derived actions through the real worker. It retains `CDRM8N1`,
+`CDRINP1`, `CDRIOB91` state receipts, the M6/raw receipts, hashes, private-disk
+identity, and worker shutdown record. There is no synthetic/native fallback.
+
+The frozen adapter expands an EDGE32 one-hot changed mask to native
+`mouse_event(x, y, selector)`: motion `0`, tail `1`, middle `2`, head `3`; native
+input does not receive EDGE32's after-mask directly. Therefore the paired result
+records the representations and their shared action schedule, but does not claim
+their bytes are equal or native behavioral equivalence. After the source closure
+has been prepared and built and the M9 Wasm file has been built, the exact campaign
+command is:
+
+```sh
+guix shell node -- node scripts/run-cadr-m8-m9-input-conformance.mjs --execute --native-config build/cadr-oracle/m6-run-smoke/usim.ini --prepared build/cadr-oracle/m8-m9-x11-prepared-v4 --wasm cadr-web/build/cadr-web-m9-O0.wasm
+```
+
+This command was not launched while the M6 benchmark was active. `make -C cadr-web
+m8-m9-unit` is the public static preflight only. The campaign cannot replace
+`TODO-RUNTIME-M9-X11-01`, `TODO-RUNTIME-M9-WARP-01`, or `TODO-RUNTIME-CW2-01`:
+it contains no native X11 observation, screenshot review, Listener/editor/window
+workflow, or Lisp-result equivalence claim.
+
+The separate
+[`run-cadr-m8-m9-x11-campaign.mjs`](../../scripts/run-cadr-m8-m9-x11-campaign.mjs)
+uses a witness-enabled X11 build with the established computer-use harness.
+It injects only the descriptors which the selected source maps to an
+unmodified keysym present in the captured live Xvfb map. Each applicable key
+must produce exactly its down record followed by one all-up record after a
+bounded witness-quiescence poll; a source-unmapped browser descriptor is
+explicitly not applicable to this native subcampaign and is never fallback
+injected. The separately joined worker/core campaign remains the all-100
+browser proof. A selected-source keysym present only in a shifted live X column
+is separately classified `native-modifier-chord-not-exercised`; it is an open,
+non-closing exception rather than “unreachable.” Before the first measured
+case, the runner records `xinput --query-state` for the live Virtual Core
+keyboard and requires zero held keys. The native run also requires one exact
+record for motion and each press and release of all three mouse buttons. This
+is deliberately not an all-100 native acceptance claim.
+A separate fresh session captures Listener evaluation, `(ED T)` Zmacs entry,
+editor input, framebuffer screenshots, and the harness shutdown record. The
+entry point is implemented and statically tested but unexecuted. It captures
+the live X keycode/keysym and modifier maps, rendered `Mod4 = Super` profile,
+and source identities before accepting a disposition. The currently prepared
+ignored closure has patch SHA-256
+`76244361da1d1306503e6ff81bfa3b4bafe23f15d0e03286ac40406b27bc0c06`,
+source-tree SHA-256
+`d8499d015cf5edf778adb7519f5e2081c982e14a5841b494cec519475a342fe2`,
+and X11 executable SHA-256
+`dc86d6cfaee2ef2bb7e19aea0e3e6e7f27045d0844ddc457ac93c0e0f2cb3b6e`
+(1,243,768 bytes).
+Its build marker also records the exact `pkg-config` executable and version,
+the resolved X11 cflags, libs and libdir queries, and the resolved `libX11`
+file identity. Each runtime campaign additionally binds the runner, imported
+modules, harness, patch, Git revision, and scoped dirty status.
+
+In the selected source, `x11.c` SHA-256
+`05f1f3ed15214ff454da6b0be83a557153fe6baa815a38b112c2887de8a11794`
+passes `e.xbutton.button` unchanged to `mouse_event`. The selected `mouse.c`
+SHA-256
+`abb8746fd2b8e63456fd93d3187b4ecb2bbcc4f5e0a9c994058f3b0f7f1cc198`
+then toggles tail, middle, or head state for selector `1`, `2`, or `3`.
+Consequently the pre-mutation native witness field named `buttons` is a
+changed-button selector (`0` motion; `1` tail; `2` middle; `3` head), not the
+browser EDGE32 accumulated post-event mask. Press and release deliberately
+carry the same selector.
+Its exact run command is:
+
+```sh
+guix shell node -- node scripts/run-cadr-m8-m9-x11-campaign.mjs --execute --prepared build/cadr-oracle/m8-m9-x11-prepared-v4 --browser-manifest build/cadr-oracle/REPLACE-WITH-DIRECT-CAMPAIGN/manifest.json
+```
+
+Even a successful native run does not close CW2 until a separate browser run
+retains and compares the same logical workflow, framebuffer checkpoints, and
+Lisp result.
+
 ## Known unknowns and nonclaims
 
 - The selected historical X11 source/runtime's exact pointer queue/chord timing,
@@ -358,7 +498,7 @@ and clean/forced termination status.  Only this closes `CW2-INTERACTIVE`.
   independently exercised in a named System 303 session.
 - `MOUSE-SEIZE` is represented here only as a future guest routing concern; it is
   never authority to request browser Pointer Lock.
-- No source-level API/module closure, existing ABI 1.5 pointer import, binary
+- No source-level API/module closure, native pointer import, binary
   compatibility, snapshot compatibility, timing guarantee, or full CADR UI workflow
   has been established.
 - The named source pins are intentionally not averaged: System 46 is a historical
@@ -372,8 +512,9 @@ and clean/forced termination status.  Only this closes `CW2-INTERACTIVE`.
 | X11 emulator source profile | `usim` Fossil `330d8248ec2e12af071e287920e681600f75df9ffd854aada5f8a64c9adad64d` | public source evidence; no binary/runtime claim |
 | Selected `x11.c` witness | SHA-256 `05f1f3ed15214ff454da6b0be83a557153fe6baa815a38b112c2887de8a11794` | locally hashed public source copy; event selection/dispatch and warp witness only |
 | Selected `mouse.c` witness | SHA-256 `92075bb5a5a45d6b18aad0413628f95c16fb8e73fb42de2b04962a695fff5b65` | locally hashed public source copy; state/button/warp witness only |
+| Selected `iob.c` witness | 11,717 bytes, SHA-256 `2b1ffa8c8c0cf146f0ece08ec5e09659db76b97b0866fb48ec01bd7d024fedc9` | locally hashed public source copy; IOB address/packing/readiness witness only |
 | System 46 source profile | Git commit `8e978d7d1704096a63edd4386a3b8326a2e584af` | public source evidence; distinct historical release |
-| Phase 1 implementation | `cadr-web/wasm/cadr-m9-pointer.mjs`, lifecycle/adapter/control modules | independently written, tracked source |
+| Browser/core implementation | `cadr-web/wasm/cadr-m9-pointer.mjs`, lifecycle/adapter/control modules, browser channel, worker dispatch, and `cadr-web/core/cadr_m9_input.h` | independently written, tracked source; reconstructed ABI 1.8 IOB boundary, no native equivalence claim |
 
 - MIT CADR System Software, [System 46 source pin](https://github.com/mietek/mit-cadr-system-software/tree/8e978d7d1704096a63edd4386a3b8326a2e584af), verified as the selected public reference on 2026-07-29.
 - Maintained LM-3 System 303 and `usim` Fossil pins listed above are separate selected source profiles. The two `usim` files were hashed from the prepared public-source copy on 2026-07-29; the preparation record asserted the Fossil identity from its pinned manifest but did not live-verify the unavailable local Fossil administrative database. Their exact pointer runtime behavior remains a `TODO-RUNTIME`, not an asserted observation.

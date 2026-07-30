@@ -1,0 +1,46 @@
+diff --git a/Makefile.usim b/Makefile.usim
+--- a/Makefile.usim
++++ b/Makefile.usim
+@@ -40,7 +40,7 @@
+ USIM_CFLAGS		+= -DWITH_SDL3=1
+ USIM_LDFLAGS	+= -lm
+ 
+-USIM_KEYBOARD	= sdl3-audio.c sdl3-keyboard.c
++USIM_KEYBOARD	= cadr_m11_audio_witness.c sdl3-audio.c sdl3-keyboard.c
+ USIM_MOUSE		= sdl3-mouse.c
+ USIM_TV			= sdl3-video.c
+ 
+diff --git a/sdl3-audio.c b/sdl3-audio.c
+--- a/sdl3-audio.c
++++ b/sdl3-audio.c
+@@ -8,6 +8,7 @@
+ 
+ #include <SDL3/SDL.h>
+ 
++#include "cadr_m11_audio_witness.h"
+ #include "sdl3-audio.h"
+ #include "ucode.h"
+ #include "utrace.h"
+@@ -44,12 +45,14 @@
+ 		t += dt;
+ 		if (idx == BUFFER_SIZE) 
+ 		{
++			cadr_m11_native_audio_witness_pcm(buffer, (uint32_t)idx, (uint32_t)spec.freq);
+ 			SDL_PutAudioStreamData(sdl_audiostream, buffer, idx * 2);
+ 			idx = 0;
+ 		}
+ 	}
+ 	if (idx > 0) 
+ 	{
++		cadr_m11_native_audio_witness_pcm(buffer, (uint32_t)idx, (uint32_t)spec.freq);
+ 		SDL_PutAudioStreamData(sdl_audiostream, buffer, idx * 2);
+ 	}
+ }
+@@ -218,5 +221,7 @@
+ 	int duration_in_us = DTP_FIX_VAL(mmem[22]);	//M-1 M-MEM 22
+ #undef DTP_FIX																						
+ #undef DTP_FIX_VAL
++	cadr_m11_native_audio_witness_job((uint32_t)half_wavelength_in_us,
++		(uint32_t)(half_wavelength_in_us * 2), (uint32_t)duration_in_us);
+ 	sdl3_audio_internal_beep(half_wavelength_in_us * 2, duration_in_us);
+ }

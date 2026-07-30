@@ -3,32 +3,52 @@ type: Reimplementation Specification
 title: CADR-WEB-303 C-M12 debugger reimplementation specification
 description: An isolated Phase 1 contract for deterministic outer-slot stepping, breakpoint stops, paused direct-array inspection, and privacy-bounded debugger evidence.
 tags: [mit-cadr, cadr-web, debugger, microcode, trace, reimplementation]
-timestamp: 2026-07-29T21:55:11-04:00
+timestamp: 2026-07-30T23:15:00-04:00
 ---
 
 # CADR-WEB-303 C-M12 debugger reimplementation specification
 
 ## Status and reconstruction claim
 
-`CADR-WEB-303/ABI1.7/protocol-v7/C-M12-DBG-v1` is an isolated Phase 1 debugger
-contract for the browser CADR reconstruction. Its reference model implements a
+`CADR-WEB-303/ABI1.10/protocol-v7/C-M12-DBG-v1` is a Phase 1 debugger contract
+with a deliberately narrow integrated M12 build profile. Its reference model implements a
 64-record breakpoint table, one-complete-outer-slot micro-step, a mandatory
-generated/native-oracle-gated macro-step, read-only paused inspection, pure trace
-filtering, and bounded canonical evidence records.
+generated/native-oracle-gated macro-step, read-only paused inspection, an installed
+copied trace-filter state, and bounded canonical evidence records.
+
+The narrow M12 profile now provides the cumulative ABI 1.10 core adapter, scalar-only
+protocol-v7 worker branch, O0/O2 Wasm builds, a browser-accessible scalar-inspector
+panel, and a pointer-free `CDRM12C1` breakpoint-configuration sidecar. Its adapter calls the real core exactly once for
+a successful micro-step, binds the five read-only inspector arrays to the live
+machine, and invalidates/rebinds that owner across machine replacement. It
+recognizes only the public System 303 source labels `QMLP` (I-MEM 0164) and `DMLP`
+(I-MEM 0200) as candidate macro-loop boundaries.
+
+The M12 direct-Wasm generic snapshot is now the `CDRM12S1` composed envelope,
+which retains the frozen lower-profile `CDRSNAP1`, `CDRAUDS1`, and `CDRM12C1`
+records and gives their adoption one staged publication boundary.
 
 It claims semantic and selected wire-representation compatibility for those
-clean-room rules only. It does not claim that ABI 1.7, protocol v7, M8/M11,
-shared worker dispatch, CDRSNAP1 integration, a historical CADR debugger, a
-preserved System 303 load band, or a QMLP/DMLP macro-dispatch map is implemented
-or runtime-verified. In particular, changing a location counter or revisiting
-QMLP is never evidence of a macro boundary.
+clean-room rules and that narrow adapter only. It does not claim a preserved-system
+or hardware observation of the selected M8/M11 order, generic protocol-v7 M9 input
+continuation, AudioWorklet behavior, a historical CADR debugger,
+preserved System 303 load-band behavior, or that the two source labels fully
+establish historical macro-step semantics.
+In particular, changing a location counter or revisiting an arbitrary PC is
+never evidence of a macro boundary.
 
-The current implementation is intentionally isolated in
-[`cadr_m12_debugger.c`](../../cadr-web/core/cadr_m12_debugger.c) and
-[`cadr-m12-debugger.mjs`](../../cadr-web/wasm/cadr-m12-debugger.mjs). It does
-not modify the shared ABI, worker, snapshot, or build surfaces. Integration is
-conditional on the separate ABI 1.6/protocol-v6 M8/M11 work being integrated
-without changing its ownership or timing contracts.
+The implementation comprises the reference model
+[`cadr_m12_debugger.c`](../../cadr-web/core/cadr_m12_debugger.c), machine adapter
+[`cadr_m12_machine_adapter.c`](../../cadr-web/core/cadr_m12_machine_adapter.c),
+and closed protocol subhandler
+[`cadr-m12-debugger.mjs`](../../cadr-web/wasm/cadr-m12-debugger.mjs). It updates
+the ABI, M12 Wasm build, and worker surfaces without changing their earlier
+protocol branches. `CDRM12C1` is available through direct Wasm exports and closed
+v7 save/restore operations. The v7 build composes M8/M9 `CDRINP1` ingress with M11
+audio and M12 controls. Direct generic Wasm save/import uses `CDRM12S1`; the worker
+still rejects generic protocol-v7 snapshots because the frozen M5 `CDRSNAP1` payload
+does not carry M9 ingress ordering. Full M12 closure remains conditional on that M9
+continuation decision and provenance-bound runtime evidence.
 
 `MUST`, `MUST NOT`, `SHOULD`, and `MAY` are normative below.
 
@@ -36,12 +56,14 @@ without changing its ownership or timing contracts.
 
 | Code | Evidence class | Establishes | Does not establish |
 | --- | --- | --- | --- |
-| `C303-DBG-SRC` | Public maintained System 303 debugger analysis | Console-debugger context and the distinction between raw control state and symbolic interpretation | This browser representation, source-to-band identity, or macro dispatch PCs |
+| `C303-DBG-SRC` | Public maintained System 303 debugger analysis | Console-debugger context and the distinction between raw control state and symbolic interpretation | This browser representation or source-to-band identity |
+| `C303-MACRO-SRC` | Public System 303 `uc-macrocode.lisp` plus `ucadr.sym`, checked in repository worktree `f6d3212c03e563b54b19082a97080eb697d6b060` with recorded input hashes | The named QMLP and DMLP source locations 0164 and 0200 | A selected load band's execution, all macro boundaries, or historical console behavior |
 | `TRACE-SRC` | Local trace-engine source | Existing complete-boundary trace vocabulary and a retained-output engine | A C-M12 filter or future worker routing |
 | `DEC-M12` | Explicit reconstruction decision | Fixed limits, stop order, record schemas, privacy policy, isolated protocol boundary, and live-host lease safety rules | A historical algorithm or storage layout |
-| `SRC-M12` | New readable Phase 1 reference source | The implemented callback, debugger/domain/lease identities, filter, and byte behavior | A shared-core integration or preserved-runtime result |
-| `TEST-M12` | Synthetic C and Node tests | The listed deterministic unit cases | CADR, LM-3, or browser runtime behavior |
-| `ORACLE-M12` | Open generated/native oracle obligation | Nothing until an identified control-store witness closes it | QMLP/DMLP dispatch locations or macro semantics |
+| `SRC-M12` | New readable Phase 1 source | The implemented callback, debugger/domain/lease identities, filter, scalar ABI adapter, and byte behavior | Preserved-runtime result |
+| `TEST-M12` | Strict native C and Node/Wasm tests | The listed deterministic adapter, O0/O2 export, and worker cases | CADR or LM-3 behavior |
+| `TEST-M12-BROWSER` | Local Chromium accessibility/protocol probe using generated M12 Wasm | Keyboard activation reaches the scalar A-memory read and copied trace-filter install through the real v7 worker | System 303 boot, a historical debugger UI, selected-load-band behavior, or real diagnostic provenance |
+| `ORACLE-M12` | Open generated/native oracle obligation | The source labels only; no generated/native execution witness yet | Complete macro semantics or selected-load-band timing |
 | `TODO-RUNTIME-M12` | Unperformed native/Wasm runtime probe | Nothing until the named campaign runs | User-visible debugger behavior or timing |
 
 The public System 303 console-debugger discussion is useful historical context,
@@ -52,41 +74,145 @@ second debuggee link. See the separate
 | Level | Includes | Reserved |
 | --- | --- | --- |
 | `M12-L0` | Pure C state machine, exact records, callback seam, caller-owned direct-array incarnation domain and lease, pure filters | ABI, worker, snapshot, audio, Worklet, and native runtime integration |
-| `M12-L1` | `M12-L0` plus an integrated ABI 1.7/protocol-v7 adapter after M8/M11 closure | Generated/native macro oracle and snapshot adoption rules |
+| `M12-L1` | `M12-L0` plus composed M8/M9/M11 ABI 1.10/protocol-v7 input/audio order, scalar browser inspector reads, `CDRM12C1` sidecar transport, and direct-Wasm `CDRM12S1` staged generic restore | Protocol-v7 M9 input continuation |
 | `M12-L2` | `M12-L1` plus provenance-bound native and Wasm differential probes | Preserved System 303 macro semantics and historical console compatibility |
 | `M12-L3` | `M12-L2` plus named CADR harness observations | Historical timing, source-interface, binary, and pixel identity |
 
-Only `M12-L0` is implemented. The profile name identifies a target, not a claim
-that the shared public ABI has already reached minor 7.
+`M12-L0`, the narrow cumulative ABI 1.10/protocol-v7 adapter seam, composed M8/M9/M11 input
+and audio order, direct-Wasm `CDRM12C1` save/restore, and direct-Wasm composed
+snapshot adoption are implemented and tested. Protocol-v7 M9 input continuation
+and provenance-bound runtime evidence remain open.
 
 ## Architecture and explicit integration obligations
 
 ```text
-future ABI1.7 core complete-slot adapter
+ABI1.10 core complete-slot adapter
         -> C-M12 debugger state model
         -> CDRDBGSTOP1 / CDRPROV1 / CDRBUG1
-        -> future protocol-v7 worker branch
+        -> protocol-v7 worker branch
 
-generated or native dispatch oracle ----^  (mandatory for macro-step)
+public System 303 QMLP/DMLP source labels ----^  (candidate loop map only)
+generated/native execution oracle ----------------^  (still required for closure)
 
 caller-owned incarnation domain -> debugger -> registered owner/incarnation
                                            -> read-only inspector lease
-existing retained trace item -> pure C-M12 filter predicate
+retained-trace owner -> installed copied C-M12 filter predicate
 ```
 
 | Boundary | Present Phase 1 responsibility | Required later proof; deliberately absent now |
 | --- | --- | --- |
-| **CORE** | The caller supplies one callback that reports zero or one completed outer clock slot. C-M12 owns no machine object and does not make device, bus, memory, or deposit calls. | ABI 1.7 must invoke the callback only around the actual complete core boundary, retain transient 19/20 status outside durable lifecycle, and preserve M8/M11 same-boundary order. |
-| **SNAPSHOT** | Debugger state and leases are outside CDRSNAP1. `CDRDBGSTOP1` is a report, not continuation state. | Decide a versioned breakpoint-configuration block, restore order, and whether restored pause increments a generation; never serialize a live pointer lease. |
+| **CORE** | The adapter invokes `cadr_machine_run` with an exact one-slot budget and rejects any zero or multi-slot result. The composed profile accepts M8/M9 `CDRINP1` only at a ready boundary, then records M11 `BEEP` as post-slot; a strict native composition test fixes their distinct sequence domains and a worker test proves both v7 branches are installed. C-M12 makes no device, bus, memory, or deposit call of its own. | Compare this source-level order with a provenance-bound runtime trace. |
+| **SNAPSHOT** | `CDRM12C1` serializes only profile identity, generation, and 64 breakpoint records. `CDRM12S1` places frozen `CDRSNAP1`, `CDRAUDS1`, and `CDRM12C1` payloads in that exact order and stages all three before publication. It excludes leases, live pointers, stop reports, callback state, and M9 ingress ordering. | Define a separate M9 continuation record or retain protocol-v7 generic-snapshot rejection; never serialize a live pointer lease. |
 | **PCM** | No PCM samples, render state, or audio queue is read or written. | An M11 bridge must prove audio events retain their documented post-slot and intra-slot order around an M12 stop. |
 | **WORKLET** | The protocol reference imports neither worker nor AudioWorklet code. | A later control UI must prove pause/resume cannot race an audio consumer or cause a second device-visible event. |
-| **INCARNATION** | C-M12 receives a caller-owned live-host domain; it does not allocate process-global identity state, serialize a domain, or expose a lease to JavaScript. | ABI 1.7 integration must allocate one stable domain at the host lineage that owns all debugger/owner lifetimes, serialize users of that domain, define teardown before core-array release, and keep pointer-bearing domain/debugger/owner/lease state out of CDRSNAP1 and protocol payloads. |
-| **ORACLE** | `macro-step` accepts only an explicit dispatch oracle callback. A null/unavailable oracle returns `ORACLE_UNAVAILABLE`. | Generate and pin exact QMLP/DMLP macro-dispatch PC sets from a selected control-store/native witness, then cross-check native behavior. No LC-change heuristic or QMLP-visit fallback is permitted. |
-| **Runtime** | Synthetic tests exercise only the model. No CADR/LM-3 or licensed Genera process was opened. | Run an isolated System 303 native/Wasm probe with identity, slot trace, source revision, clean stop, and a discriminating macro-boundary trace. |
+| **BROWSER PANEL** | A separately mounted, keyboard-accessible host panel issues only `debug-inspect-read` and `debug-trace-filter` requests to the v7 worker. The inspector export makes a single copied scalar record; the panel never receives a Wasm view, direct array, lease, storage capability, or raw guest bytes. | Bind this panel to a full M13/M10 artifact and run its screen-reader and private-System-303 workflows. |
+| **INCARNATION** | The adapter owns one stable debugger/domain/owner tuple, never exposes a lease to JavaScript, retires the owner before a rebind, and keeps it outside CDRSNAP1/protocol data. | Exercise same-address reuse and teardown in a composed profile and retain sanitizer evidence. |
+| **ORACLE** | `macro-step` uses the public source-defined QMLP/DMLP loop labels only; it has no LC-change, decoded-word, trap, or arbitrary-PC fallback. | Generate and pin exact dispatch behavior from a selected control-store/native witness, then cross-check native behavior. |
+| **Runtime** | Native, O0/O2 Wasm, and worker tests exercise the adapter. No CADR/LM-3 or licensed Genera process was opened. | Run an isolated System 303 native/Wasm probe with identity, slot trace, source revision, clean stop, and a discriminating macro-boundary trace. |
 
-The JavaScript module is a protocol and byte-format reference only. Its injected
-`invoke` callback models a later worker-to-core seam; it cannot supply a direct
-CPU array, mutable medium, screen, or input payload to a browser client.
+### `CDRM12C1` breakpoint-configuration sidecar
+
+`CDRM12C1` is exactly 1,088 bytes: the eight-byte magic, `version:u32le = 1`,
+`total_bytes:u32le = 1088`, the M12 profile hash, machine event generation,
+`breakpoint_count:u32le = 64`, a zero reserved word, and 64 fixed
+`(enabled:u32le, kind:u32le, value:u64le)` records. It has no pointer, lease,
+incarnation, pause state, callback, stop record, machine-state payload, or private
+artifact reference. Restore decodes and validates all records before it copies the
+table, so a malformed sidecar leaves the live debugger unchanged. The direct Wasm
+exports require a caller-reserved 1,088-byte input buffer; the v7 worker reserves
+that buffer internally and returns cloned sidecar bytes. This is a configuration
+sidecar, not proof that a generic machine snapshot continues a paused debugger.
+
+### `CDRM12S1` composed generic snapshot and transaction
+
+`CDRM12S1` is an inferred, safety-corrected M12 composition record; it is not a
+historical CADR format. It leaves every component byte format unchanged. Its
+48-byte little-endian header contains magic `"CDRM12S1"`, `version:u32le = 1`,
+`header_bytes:u32le = 48`, `total_bytes:u64le`, `cdrsnap1_bytes:u64le`,
+`cdrauds1_bytes:u32le`, `cdrm12c1_bytes:u32le = 1088`, and a zero reserved
+`u64le`. The three exact component payloads follow contiguously in the named
+order. Lower ABI profiles continue to save and restore bare `CDRSNAP1`.
+
+Save observes one serialized adapter boundary and writes `CDRSNAP1`, then
+`CDRAUDS1`, then `CDRM12C1`; no component publication occurs during save. Restore
+has this transaction contract:
+
+1. Validate envelope version, sizes, reserved field, exact exhaustion, and bounded
+   component lengths without changing live state.
+2. Parse `CDRSNAP1` into a newly allocated unpublished machine.
+3. Adopt and validate `CDRAUDS1` only into that machine's initially empty audio
+   model, require its generation to equal the restored machine event generation,
+   and create a fresh local consumer epoch.
+4. Decode `CDRM12C1` against the replacement generation and preflight a
+   nonrecycled inspector-owner incarnation.
+5. At the commit point, retire the old inspector owner, reinitialize the debugger
+   paused on the replacement boundary, bind a new owner, publish the decoded
+   breakpoint table, swap the global machine, invalidate the retained audio
+   cursor, and destroy the old machine.
+
+Any envelope, core, audio, generation, configuration, or preflight failure occurs
+before the commit point: the staged machine is destroyed and the live machine,
+debugger configuration, inspector owner/leases, audio model, and retained cursor
+remain unchanged. Incarnation exhaustion returns status 21 before retirement rather
+than collapsing into a malformed-record error. After owner retirement, the preflighted tail has no permitted
+failure. Success deliberately does not restore a stop record, suppression,
+run ordinal, callback, lease, or old pause generation; the debugger begins paused
+with the restored machine event generation, and every old inspector lease and
+audio cursor is stale. Direct Wasm tests distinguish malformed pre-commit failure
+from successful publication in both O0 and O2 builds. For each rejected
+envelope/core/audio/config stage they byte-compare the public machine-info,
+debugger state, audio status, and both pointer-free sidecars before and after
+rejection. The direct-array lease is intentionally not a Wasm object; its native
+adapter test separately proves that a failed preflight preserves a live lease and a
+successful rebind stales it.
+
+The JavaScript module is both the protocol/byte-format reference and the closed
+v7 subhandler. Its worker backend invokes only scalar Wasm exports; it cannot
+supply a direct CPU array, mutable medium, screen, or input payload to a browser
+client.
+
+### ABI 1.10 scalar inspector and browser control boundary
+
+`cadr_wasm_m12_inspect_read(array_kind:u32, index:u32)` is the additive ABI 1.10
+export. It opens and consumes a process-local inspector lease inside one
+synchronous Wasm call, then writes exactly this 24-byte little-endian copy-out
+record at the ordinary transient output address:
+
+| Offset | Field |
+| --- | --- |
+| 0 | debugger `generation:u64` |
+| 8 | requested `array_kind:u32` |
+| 12 | requested `index:u32` |
+| 16 | copied `value:u32` |
+| 20 | reserved `u32 = 0` |
+
+The only valid array kinds are A memory (1, 1,024 words), M memory (2, 32),
+dispatch/control store (3, 2,048), PDL (4, 1,024), and micro stack (5, 32).
+The worker clones the four scalar fields into the closed
+`debug-inspect-read` success result and checks that request and result kinds and
+indices agree. No pointer, owner token, lease, array view, byte range, or generic
+address is serializable or returned. An inactive adapter returns status 9; a bad
+kind/index returns 2; a changed inspection generation returns 3. The output
+buffer is transient and is not a lease.
+
+[`cadr-m12-debugger-panel.mjs`](../../cadr-web/browser/cadr-m12-debugger-panel.mjs)
+is the browser-facing integration component. It accepts only a shell-owned async
+operation function; it has no browser-storage, path, disk, `WebAssembly.Memory`,
+or direct-worker authority. Its named controls are keyboard-reachable, status
+changes use polite live output, and it displays only an eight-digit hexadecimal
+scalar word. The Chromium probe mounts it with generated M12 Wasm and the real v7
+worker, activates a read with the keyboard, and activates the persisted trace
+filter. This is `TEST-M12-BROWSER` evidence for that host path only, **not** an
+observation of a System 303 load band or the historical CADR console debugger.
+
+The component can render only an already canonical `CDRPROV1` record. Its optional
+diagnostic control accepts no free-text field: when a trusted host provides a
+validated terminal stop and provenance record, it builds `CDRBUG1` with the fixed
+ASCII summary `C-M12 terminal debugger outcome; raw guest content excluded`.
+The fixed schema excludes raw memory, media, trace, pixels, input, local paths,
+and arbitrary notes. This is a technical privacy bound, not a legal/privacy review
+of a particular publication; M13's artifact-specific review and export campaign
+remain required.
 
 ## State model and invariants
 
@@ -107,7 +233,7 @@ state.
 | Incarnation domain | Caller-owned self token, next nonzero incarnation, live lifecycle word, zero reserved word | It starts as all zero, initializes once at its stable address, is never copied/moved/reinitialized, and outlives every associated debugger, owner, and lease. The caller serializes its users. |
 | Inspector owner | Debugger token, nonzero incarnation, five direct-array pointers/counts | One stable, caller-allocated owner is registered at a time and must be retired before it or its arrays cease to exist. |
 | Inspector lease | Debugger token, owner token/incarnation, generation; no array pointers | Legal only while paused, generation-equal, and the exact owner incarnation remains registered; no mutation entry point exists. It has live-host-only meaning and is not serializable. |
-| Trace filter | Flags plus scalar constraints | Pure predicate over an already supplied metadata record; it owns no trace item or output cursor. |
+| Trace filter | Flags plus scalar constraints and one adapter-owned installed copy | Validation precedes replacement; caller mutation cannot alter the installed copy. A retained-trace owner may apply the copied predicate before exposing a record. The filter owns no trace item or output cursor and is not in `CDRM12C1`. |
 
 The direct inspector arrays are exactly A memory (1024 words), M memory (32),
 dispatch memory (2048), PDL (1024), and micro stack (32). Before any debugger is
@@ -191,10 +317,12 @@ nonboolean post flag is rejected before C-M12 commits state.
 ### Macro-step
 
 Macro-step begins only when `dispatch_oracle(current.micro_pc)` returns YES. The
-oracle is mandatory and intentionally unresolved for QMLP/DMLP in this phase. It
-then repeats the micro-step core boundary, stopping after the preceding slot when
-the next PC is an oracle-validated dispatch PC. Thus the next macro boundary is
-reached but its slot has not executed.
+generic model continues to require an explicit oracle. The integrated adapter's
+only source-supported answers are YES for System 303 `QMLP` 0164 and `DMLP` 0200,
+and NO for every other PC; it neither infers a third loop nor substitutes a
+location-counter rule. It then repeats the micro-step core boundary, stopping after
+the preceding slot when the next PC is one of those source-supported candidate
+loops. Thus that candidate boundary is reached but its slot has not executed.
 
 ```text
 require oracle YES at initial PC
@@ -203,7 +331,7 @@ repeat at most 1,048,576 completed slots:
     if a breakpoint stops: return DEBUG_STOP
     ask oracle about resulting PC
     if YES: return OK before executing that PC
-    if UNAVAILABLE: return ORACLE_UNAVAILABLE
+    if a supplied generic oracle is unavailable: return ORACLE_UNAVAILABLE
 return LIMIT_REACHED = 20 and record a macro-limit stop
 ```
 
@@ -256,7 +384,7 @@ writable authority.
 | 8 | schema u32 = 1 |
 | 12 | byte count u32 = 128 |
 | 16 | reserved u32 = 0 |
-| 20, 24, 28 | ABI major 1, ABI minor 7, protocol 7 u32 |
+| 20, 24, 28 | ABI major 1, ABI minor 10, protocol 7 u32 |
 | 32 | profile SHA-256 |
 | 64 | core SHA-256 |
 | 96 | snapshot SHA-256 |
@@ -297,11 +425,14 @@ ID and dispatches these isolated operations to its injected future backend:
 | --- | --- | --- |
 | `debug-breakpoint-set` | `slot`, `{kind,value:u64 bigint}` | Set one validated table record |
 | `debug-breakpoint-clear` | `slot` | Clear one record |
+| `debug-inspect-read` | `arrayKind:u32`, `index:u32` | Copy one paused A/M/dispatch/PDL/micro-stack word through the scalar ABI 1.10 export |
 | `debug-micro-step` | none | Request one complete outer slot |
 | `debug-macro-step` | none | Request oracle-gated macro step |
 | `debug-resume-one-boundary` | none | Arm one-record suppression |
 | `debug-trace-filter` | scalar filter | Install/query a pure metadata predicate at a later boundary |
 | `debug-stop-record` | none | Retrieve a validated stop report at a later boundary |
+| `debug-config-snapshot-save` | none | Copy exactly one pointer-free 1,088-byte `CDRM12C1` configuration record into a transient response buffer |
+| `debug-config-snapshot-restore` | `snapshot:ArrayBuffer` exactly 1,088 bytes | Validate the closed `CDRM12C1` record before atomically replacing the breakpoint table; live pointer leases and machine state are not serialized or adopted |
 
 Unknown operations return `null` to the outer worker; extra fields are rejected
 before backend invocation. Every recognized response has the ordinary
@@ -313,11 +444,14 @@ schema:
 | Operation family | Permitted statuses | Success or terminal result |
 | --- | --- | --- |
 | Breakpoint set/clear | `0`, `2`, `9` | Canonical validated slot and, for set, breakpoint echoed from the request; backend supplies no result |
+| Scalar inspector read | `0`, `2`, `3`, `9` | Status 0 has exactly `{generation:u64 bigint,arrayKind:u32,index:u32,value:u32}` correlated to the request; no lease, pointer, array, bytes, or host identity is returned |
 | Resume one boundary | `0`, `2`, `3` | `{suppressionArmed:true}` synthesized by the subhandler |
 | Trace filter | `0`, `2` | Canonical validated filter echoed from the request |
 | Micro-step | `0`, `2`, `9`, `19` | Status 0 has exactly generation, clock slot, micro-PC, and raw LC; status 19 has exactly one validated 136-byte stop |
 | Macro-step | `0`, `2`, `9`, `13`, `19`, `20` | Status 0 has the same exact state; status 19/20 has exactly one validated 136-byte stop whose reason matches the status |
 | Stop record | `0`, `3`, `9` | Status 0 has exactly one validated 136-byte stop |
+| Configuration snapshot save | `0`, `2`, `9` | Status 0 has exactly `result:{snapshot:ArrayBuffer}` containing one 1,088-byte `CDRM12C1`; no provenance, pointer, lease, raw memory, or private field is returned |
+| Configuration snapshot restore | `0`, `2`, `9` | Status 0 has no result; malformed, wrong-generation, or semantically invalid input leaves the live breakpoint table and every lease unchanged |
 
 A nonzero nonterminal response has no result. A malformed backend envelope,
 extra result field, operation-inappropriate status, or terminal status/stop
@@ -326,7 +460,8 @@ Exceptions are mapped to status 2 with fixed reason `backend-rejected`; backend
 messages, paths, byte payloads, and private fields are never reflected. Statuses
 19 and 20 are marked `terminal: true` but are transient control outcomes, not
 persisted lifecycle states. The module deliberately has no generic scheduler,
-trace-output, inspector array, snapshot, PCM, worker, or Worklet operation.
+trace-output, generic array/address/byte-range, snapshot, PCM, worker, or Worklet
+operation; `debug-inspect-read` is its only scalar inspector route.
 
 ## Failure and recovery
 
@@ -347,8 +482,9 @@ trace-output, inspector array, snapshot, PCM, worker, or Worklet operation.
   can create a canonical stop and return those terminal statuses.
 - `NOT_READY` from zero-slot completion is retryable and preserves current state
   and leases. A bad completion is not a retryable inferred zero slot.
-- `ORACLE_UNAVAILABLE` never becomes a guessed macro step. It is a gate for the
-  generated/native oracle work.
+- `ORACLE_UNAVAILABLE` never becomes a guessed macro step. It remains the result
+  for a generic unavailable oracle; the integrated adapter instead has the closed
+  two-label source map and remains gated on native execution evidence.
 - A breakpoint `DEBUG_STOP` or macro `LIMIT_REACHED` retains only a bounded stop
   record. Resuming after a macro limit has no suppression because it was not a
   breakpoint stop.
@@ -374,7 +510,12 @@ trace-output, inspector array, snapshot, PCM, worker, or Worklet operation.
 | `M12-JS-01` | L0 | Serialize/parse all records, exact-size and oversized inputs, shared `BUG-X01..03` vectors | Exact 1 MiB passes; oversize rejects before getter/clone/decode; cross-record and macro-slot invariants match C |
 | `M12-JS-02` | L0 | Validate filters and protocol branch against adversarial fake backends | Closed statuses/results accept canonical values; extra fields, private path/bytes, arbitrary statuses, and terminal mismatches reject without disclosure |
 | `M12-JS-03` | L0 | Inspect the native C-M12 source surface from the Node suite | Domain/reinitialize/exhaustion and debugger self/lifecycle checks exist; padding-wide virgin checks, C11 atomics, and process-global incarnation allocator symbols are absent |
-| `M12-CORE-01` | L1 | Integrate actual core outer-slot callback and retain trace | Every callback result maps to one real complete boundary; no debugger side channel alters core |
+| `M12-CORE-01` | Narrow adapter seam | Strict native adapter test: pre-PC breakpoint, one successful step, direct-array read, stale lease after rebind, and QMLP source-label macro stop | A successful micro-step invokes exactly one actual core outer slot; reads remain lease-gated and rebind invalidates ownership |
+| `M12-CORE-02` | Snapshot sidecar | Save/restore 64 breakpoint records; malformed kind/value/magic/length rejection | `CDRM12C1` is pointer-free and restore is atomic |
+| `M12-WASM-01` | Narrow adapter seam | O0 and O2 M12 modules expose the checked scalar debugger bridge, scalar paused inspector reads, direct `CDRM12C1` save/restore, and reject inactive-machine stepping | The cumulative ABI 1.10 adapter has no JavaScript pointer or array lease route |
+| `M12-WASM-02` | Composed snapshot transaction | Build a public synthetic `CDRM12S1`; independently corrupt its reserved header and each of the `CDRSNAP1`, `CDRAUDS1`, and `CDRM12C1` stages; then repair and import it in O0 and O2 modules | Every pre-commit failure preserves machine/debugger/audio state and both sidecars byte-for-byte; the native adapter separately preserves its live lease. Success publishes the saved breakpoint only after core/audio staging and later save emits `CDRM12S1` |
+| `M12-WORKER-01` | Narrow adapter seam | Protocol-v7 worker test drives breakpoint/stop/resume/filter/micro/macro requests through a real M12 Wasm module | The installed v7 branch preserves the earlier worker branches and returns closed result shapes |
+| `M12-BROWSER-01` | Browser accessibility seam | Serve only the generated M12 Wasm and required browser/worker modules under a restrictive same-origin CSP; keyboard-focus Read word at A[0], then keyboard-focus Apply trace filter | The real browser worker returns one copied scalar word and accepts the installed filter without a Wasm memory/lease/storage capability crossing the UI boundary |
 | `M12-ORACLE-01` | L2 | Generate candidate dispatch PC map from pinned selected artifact; compare native trace | Each macro start/end is independently established; QMLP/LC heuristics alone fail |
 | `M12-RUN-01` | L3 | Isolated CADR Xvfb run with private session and provenance | Reproduce pre/post breakpoint and macro stop/limit with harness identity and clean/forced-stop result |
 
@@ -382,27 +523,58 @@ trace-output, inspector array, snapshot, PCM, worker, or Worklet operation.
 
 | ID | Setup and discriminating result | Claim closed |
 | --- | --- | --- |
-| `ORACLE-M12-QMLP-01` | Pin a selected generated control-store/native witness; emit candidate dispatch PCs during synthetic macro trace; compare two native runs | Exact selected QMLP/DMLP macro dispatch set |
-| `ORACLE-M12-CORE-01` | Instrument future ABI adapter around one clock, one inhibited slot, and one host wait | Callback `0`/`1` completion meaning and M8/M11 ordering |
-| `TODO-M12-ABI17-DOMAIN-01` | In the eventual adapter, allocate one zero-initialized domain and stable-address debugger in the core host lineage; exercise normal teardown, a same-address core/debugger reuse, copied-debugger rejection, and adapter failure after attempted owner bind | Adapter lifetime/serialization rules for noncopyable, nonserializable pointer-bearing domain, debugger, owner, and lease state |
-| `TODO-M12-ABI17-STATUS-01` | Specify and test whether operation-scoped status 21 stays host-internal or receives a closed protocol response mapping | ABI1.7/protocol-v7 treatment of domain-exhaustion without mistaking it for terminal 19/20 |
+| `ORACLE-M12-QMLP-01` | Run the prepared, compile-verified disposable public-usim witness and retain its canonical candidate-loop record; compare a discriminating selected-load-band trace | Exact selected QMLP/DMLP macro dispatch set; preparation/build alone has not run it |
+| `ORACLE-M12-CORE-01` | Instrument the composed adapter around one clock, one inhibited slot, and one host wait | Callback `0`/`1` completion meaning and source-level ordering comparison |
+| `TODO-M12-ABI110-DOMAIN-01` | Exercise the adapter's existing zero-initialized stable domain through normal teardown, same-address core/debugger reuse, copied-debugger rejection, and failed owner bind in a composed profile | Adapter lifetime/serialization rules for noncopyable, nonserializable pointer-bearing domain, debugger, owner, and lease state |
+| `TODO-M12-ABI110-STATUS-01` | Specify and test whether operation-scoped status 21 stays host-internal or receives a closed protocol response mapping | cumulative ABI1.10/protocol-v7 treatment of domain-exhaustion without mistaking it for terminal 19/20 |
 | `TODO-RUNTIME-M12-01` | Start disposable System 303 CADR harness session, record artifact/source/harness identities and action trace, then stop and verify integrity | Bounded runtime debugger observation for the selected load band |
 
 No historical console command grammar, symbolic decoding, control-memory patching,
 temporary historical breakpoint behavior, source compatibility, native binary
-compatibility, browser UI, source-to-band identity, exact timing, or screenshot
-claim is made. There is no C-M12 application key, menu, pointer, presentation, or
-Help binding inventory; it is a headless debugger service below those interfaces.
+compatibility, source-to-band identity, exact timing, or screenshot claim is made.
+The browser panel is a modern accessible host control, not a historical UI, and has
+no CADR application key, menu, pointer, presentation, or Help binding inventory.
+
+After the separately running M6 benchmark has released the private-runtime slot,
+the following exact native-capture form may collect the public-usim candidate-loop
+witness. It was not run for this work. Replace only the bracketed private-runtime
+path and date/session fields; use a fresh empty 0700 output directory under
+`build/cadr-oracle/` and current-owner regular non-symlink configuration and private
+disk files within a 0700 runtime.
+
+```sh
+python3 scripts/cadr-m12-native-debugger-oracle.py native-capture \
+  --prepared build/cadr-oracle/m12-debugger-witness-campaign-20260729-v2 \
+  --config <private-runtime>/usim.ini \
+  --private-runtime <private-runtime> \
+  --private-disk <private-runtime>/disk-sys-303-0.img \
+  --output build/cadr-oracle/m12-runtime-YYYYMMDD \
+  --session-id m12-YYYYMMDD-1 --candidate-pause-resume --execute
+```
+
+The entrypoint requires explicit `--execute`, makes a fresh executable copy beneath
+the output directory, clears ambient locale/timezone state, and rejects an altered
+private disk or a missing/non-real witness. `--candidate-pause-resume` is M12-only:
+it writes a private 0600 control file, waits for the hook's candidate-loop
+`candidate-pause-enter` record, writes `resume`, and requires the matching
+`candidate-pause-resume` record. This is a controlled witness pause/resume at a
+source-named candidate loop, **not** historical CADR debugger behavior. A successful
+metadata record hashes the public closure/patch/executable, private configuration
+and disk before/after, witness and logs; records the portable toolchain and ordered
+actions; and retains clean versus forced-stop state. It does not prepare private
+runtime artifacts; the project runtime-preparation policy remains a prerequisite.
+A refused or invalid capture exits nonzero.
 
 ## Artifact identities and sources
 
 | Role | Portable identity | Rights/publication boundary |
 | --- | --- | --- |
-| C reference model | [`cadr_m12_debugger.h`](../../cadr-web/core/cadr_m12_debugger.h) and [`cadr_m12_debugger.c`](../../cadr-web/core/cadr_m12_debugger.c) | Original tracked reconstruction code; not historical CADR source |
-| Protocol/format reference | [`cadr-m12-debugger.mjs`](../../cadr-web/wasm/cadr-m12-debugger.mjs) | Original tracked reconstruction code; isolated from shared worker |
+| C reference model and adapter | [`cadr_m12_debugger.h`](../../cadr-web/core/cadr_m12_debugger.h), [`cadr_m12_debugger.c`](../../cadr-web/core/cadr_m12_debugger.c), and [`cadr_m12_machine_adapter.c`](../../cadr-web/core/cadr_m12_machine_adapter.c) | Original tracked reconstruction code, including `CDRM12C1`; not historical CADR source |
+| Protocol/format, browser panel, and worker bridge | [`cadr-m12-debugger.mjs`](../../cadr-web/wasm/cadr-m12-debugger.mjs), [`cadr-m12-debugger-panel.mjs`](../../cadr-web/browser/cadr-m12-debugger-panel.mjs), [`cadr-m12-debugger-browser.mjs`](../../cadr-web/browser/cadr-m12-debugger-browser.mjs), and [`cadr-worker.js`](../../cadr-web/wasm/cadr-worker.js) | Original tracked reconstruction code; scalar-only v7 route and modern host controls, not a historical browser API |
 | C conformance | [`test_cadr_m12_debugger.c`](../../cadr-web/tests/test_cadr_m12_debugger.c) | Synthetic data only |
-| Node conformance | [`test_cadr_m12_debugger.mjs`](../../tests/test_cadr_m12_debugger.mjs) | Synthetic data only |
+| Node/Wasm/browser conformance | [`test_cadr_m12_debugger.mjs`](../../tests/test_cadr_m12_debugger.mjs), [`test_cadr_m12_wasm_exports.mjs`](../../tests/test_cadr_m12_wasm_exports.mjs), [`test_cadr_m12_worker.mjs`](../../tests/test_cadr_m12_worker.mjs), and [`test_cadr_m12_debugger_browser.py`](../../tests/test_cadr_m12_debugger_browser.py) | Generated or synthetic data only; no preserved System 303 process opened |
+| Native candidate-loop witness | [`cadr-m12-native-debugger-oracle.py`](../../scripts/cadr-m12-native-debugger-oracle.py), [patch](../../cadr-web/oracle/patches/0007-m12-debugger-witness.patch), and [witness](../../cadr-web/oracle/native/cadr_m12_debugger_witness.c) | Public-source-only disposable preparation/build; unrun and not a runtime claim |
 | Existing trace substrate | [`cadr_trace_engine.h`](../../cadr-web/trace/cadr_trace_engine.h) | Local source witness for complete-boundary/retained-trace vocabulary; not an M12 integration claim |
 | CADR debugger context | [CADR microcode, microassembler, and console debugger](cadr-microcode-microassembler-and-console-debugger.md) | Public-source and runtime-boundary analysis; no proprietary Genera payload is used here |
 
-Last verified: 2026-07-29.
+Last verified: 2026-07-30.

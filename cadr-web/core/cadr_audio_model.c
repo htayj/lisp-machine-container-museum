@@ -223,8 +223,9 @@ cadr_audio_status cadr_audio_event_validate(
             CADR_AUDIO_FRAMES_PER_PACKET : (uint32_t)remaining;
         if (get32(bytes + 32U) != expected_frames ||
             get32(bytes + 56U) != CADR_AUDIO_SOURCE_BEEPER_303 ||
-            get32(bytes + 36U) != (CADR_AUDIO_EVENT_SYNTHETIC |
-                                    CADR_AUDIO_EVENT_WAVEFORM_NOT_READY) ||
+            (get32(bytes + 36U) != CADR_AUDIO_EVENT_SYNTHETIC &&
+             get32(bytes + 36U) != (CADR_AUDIO_EVENT_SYNTHETIC |
+                                     CADR_AUDIO_EVENT_WAVEFORM_NOT_READY)) ||
             get32(bytes + 40U) == 0U) {
             return CADR_AUDIO_STATUS_INVALID_ARGUMENT;
         }
@@ -283,6 +284,11 @@ static int renderer_valid(uint32_t renderer_profile)
 {
     return renderer_profile == CADR_AUDIO_RENDERER_NO_AUDIO ||
         renderer_profile == CADR_AUDIO_RENDERER_USIM_SDL3_SINE;
+}
+
+static int renderer_can_render_pcm(uint32_t renderer_profile)
+{
+    return renderer_profile == CADR_AUDIO_RENDERER_USIM_SDL3_SINE;
 }
 
 static uint32_t queue_index(const cadr_audio_model *model, uint32_t offset)
@@ -630,8 +636,10 @@ static cadr_audio_status pump_pending_job(cadr_audio_model *model)
         event.kind = CADR_AUDIO_EVENT_BEEP;
         event.frame_count = remaining > CADR_AUDIO_FRAMES_PER_PACKET ?
             CADR_AUDIO_FRAMES_PER_PACKET : (uint32_t)remaining;
-        event.flags = CADR_AUDIO_EVENT_SYNTHETIC |
-            CADR_AUDIO_EVENT_WAVEFORM_NOT_READY;
+        event.flags = CADR_AUDIO_EVENT_SYNTHETIC;
+        if (!renderer_can_render_pcm(model->renderer_profile)) {
+            event.flags |= CADR_AUDIO_EVENT_WAVEFORM_NOT_READY;
+        }
         event.primary = model->pending_half_wavelength_us;
         event.secondary = model->pending_duration_us;
         event.payload = model->pending_next_frame;
@@ -758,7 +766,11 @@ cadr_audio_status cadr_audio_model_copy(const cadr_audio_model *model,
     if (capacity < CADR_AUDIO_CANONICAL_EVENT_BYTES) return CADR_AUDIO_STATUS_WRONG_LENGTH;
     status = cursor_current(model, cursor);
     if (status != CADR_AUDIO_STATUS_OK) return status;
-    (void)memmove(bytes, cursor->event, CADR_AUDIO_CANONICAL_EVENT_BYTES);
+    {
+        uint8_t stable[CADR_AUDIO_CANONICAL_EVENT_BYTES];
+        (void)memcpy(stable, cursor->event, sizeof(stable));
+        (void)memcpy(bytes, stable, sizeof(stable));
+    }
     *written = CADR_AUDIO_CANONICAL_EVENT_BYTES;
     return CADR_AUDIO_STATUS_OK;
 }
@@ -813,16 +825,214 @@ cadr_audio_status cadr_audio_model_render_pcm_s16le(
     const cadr_audio_model *model, const cadr_audio_cursor *cursor,
     int16_t *samples, uint32_t sample_capacity, uint32_t *frames_written)
 {
+    /* A compact fixed table is an intentionally clean-room DDS renderer.  It
+     * never invokes host libm or Web Audio and is not a claim that SDL's
+     * floating-point oscillator has bit-identical output.  Values are one
+     * full, signed 32-phase sine period at Q0.15 scale. */
+    static const int16_t sine32[32] = {
+         0,  6393, 12539, 18204, 23170, 27245, 30273, 32137,
+     32767, 32137, 30273, 27245, 23170, 18204, 12539,  6393,
+         0, -6393,-12539,-18204,-23170,-27245,-30273,-32137,
+    -32767,-32137,-30273,-27245,-23170,-18204,-12539, -6393
+    };
     cadr_audio_status status;
-    (void)samples;
-    (void)sample_capacity;
+    const uint32_t kind = cursor == NULL ? 0U : get32(cursor->event + 28U);
+    const uint32_t half_wavelength_us = cursor == NULL ? 0U :
+        get32(cursor->event + 40U);
+    const uint64_t event_frame_offset = cursor == NULL ? 0U :
+        get64(cursor->event + 48U);
+    uint64_t denominator;
+    uint64_t phase_step;
+    uint64_t first_frame;
+    uint32_t count;
+    uint32_t index;
     if (frames_written != NULL) *frames_written = 0U;
-    if (model == NULL || cursor == NULL || frames_written == NULL) {
+    if (model == NULL || cursor == NULL || samples == NULL ||
+        sample_capacity == 0U || frames_written == NULL) {
         return CADR_AUDIO_STATUS_INVALID_ARGUMENT;
     }
     status = cursor_current(model, cursor);
     if (status != CADR_AUDIO_STATUS_OK) return status;
-    return CADR_AUDIO_STATUS_NOT_READY;
+    if (!renderer_can_render_pcm(model->renderer_profile) ||
+        kind != CADR_AUDIO_EVENT_BEEP || half_wavelength_us == 0U) {
+        return CADR_AUDIO_STATUS_NOT_READY;
+    }
+    denominator = (uint64_t)half_wavelength_us * UINT64_C(2) *
+        CADR_AUDIO_SAMPLE_RATE;
+    if (denominator == 0U || denominator > (UINT64_MAX >> 32U)) {
+        return CADR_AUDIO_STATUS_OVERFLOW;
+    }
+    phase_step = (UINT64_C(1000000) << 32U) / denominator;
+    if (event_frame_offset > UINT64_MAX - cursor->frame_offset) {
+        return CADR_AUDIO_STATUS_OVERFLOW;
+    }
+    first_frame = event_frame_offset + cursor->frame_offset;
+    count = cursor->frames_remaining < sample_capacity ?
+        cursor->frames_remaining : sample_capacity;
+    for (index = 0U; index < count; ++index) {
+        const uint32_t frame_phase = (uint32_t)(first_frame + index);
+        const uint32_t phase = frame_phase * (uint32_t)phase_step;
+        samples[index] = sine32[phase >> 27U];
+    }
+    *frames_written = count;
+    return CADR_AUDIO_STATUS_OK;
+}
+
+static void snapshot_encode_event(const cadr_audio_event *event,
+                                  uint8_t bytes[CADR_AUDIO_CANONICAL_EVENT_BYTES])
+{
+    cadr_audio_event_encode(event, bytes);
+}
+
+static void snapshot_decode_event(const uint8_t bytes[CADR_AUDIO_CANONICAL_EVENT_BYTES],
+                                  cadr_audio_event *event)
+{
+    (void)memset(event, 0, sizeof(*event));
+    event->sequence = get64(bytes);
+    event->generation = get64(bytes + 8U);
+    event->post_slot = get64(bytes + 16U);
+    event->intra_slot = get32(bytes + 24U);
+    event->kind = get32(bytes + 28U);
+    event->frame_count = get32(bytes + 32U);
+    event->flags = get32(bytes + 36U);
+    event->primary = get32(bytes + 40U);
+    event->secondary = get32(bytes + 44U);
+    event->payload = get64(bytes + 48U);
+    event->source_profile = get32(bytes + 56U);
+    event->reserved0 = get32(bytes + 60U);
+}
+
+cadr_audio_status cadr_audio_model_snapshot_size(
+    const cadr_audio_model *model, uint32_t *out_byte_count)
+{
+    uint64_t total;
+    if (out_byte_count != NULL) *out_byte_count = 0U;
+    if (model == NULL || out_byte_count == NULL ||
+        cadr_audio_model_verify_witness(model) != CADR_AUDIO_STATUS_OK) {
+        return CADR_AUDIO_STATUS_INVALID_ARGUMENT;
+    }
+    total = CADR_AUDIO_SNAPSHOT_HEADER_BYTES +
+        (uint64_t)model->count * CADR_AUDIO_CANONICAL_EVENT_BYTES;
+    if (total > UINT32_MAX) return CADR_AUDIO_STATUS_OVERFLOW;
+    *out_byte_count = (uint32_t)total;
+    return CADR_AUDIO_STATUS_OK;
+}
+
+cadr_audio_status cadr_audio_model_snapshot_serialize(
+    const cadr_audio_model *model, uint8_t *bytes, uint32_t capacity,
+    uint32_t *out_written)
+{
+    static const uint8_t magic[8] = { 'C','D','R','A','U','D','S','1' };
+    uint32_t byte_count;
+    uint32_t index;
+    uint32_t offset = 16U;
+    cadr_audio_status status;
+    if (out_written != NULL) *out_written = 0U;
+    if (bytes == NULL || out_written == NULL) return CADR_AUDIO_STATUS_INVALID_ARGUMENT;
+    status = cadr_audio_model_snapshot_size(model, &byte_count);
+    if (status != CADR_AUDIO_STATUS_OK) return status;
+    if (capacity < byte_count) return CADR_AUDIO_STATUS_WRONG_LENGTH;
+    (void)memset(bytes, 0, byte_count);
+    (void)memcpy(bytes, magic, sizeof(magic));
+    put32(bytes + 8U, UINT32_C(1));
+    put32(bytes + 12U, byte_count);
+    put64(bytes + offset, model->generation); offset += 8U;
+    put64(bytes + offset, model->head_sequence); offset += 8U;
+    put64(bytes + offset, model->next_sequence); offset += 8U;
+    put64(bytes + offset, model->last_post_slot); offset += 8U;
+    put64(bytes + offset, model->active_post_slot); offset += 8U;
+    put64(bytes + offset, model->queued_frames); offset += 8U;
+    put64(bytes + offset, model->pending_total_frames); offset += 8U;
+    put64(bytes + offset, model->pending_next_frame); offset += 8U;
+    put64(bytes + offset, model->pending_post_slot); offset += 8U;
+    put32(bytes + offset, model->count); offset += 4U;
+    put32(bytes + offset, model->head_frame_offset); offset += 4U;
+    put32(bytes + offset, model->last_intra_slot); offset += 4U;
+    put32(bytes + offset, model->have_last); offset += 4U;
+    put32(bytes + offset, model->slot_open); offset += 4U;
+    put32(bytes + offset, model->renderer_profile); offset += 4U;
+    put32(bytes + offset, model->pending_active); offset += 4U;
+    put32(bytes + offset, model->pending_half_wavelength_us); offset += 4U;
+    put32(bytes + offset, model->pending_duration_us); offset += 4U;
+    (void)memcpy(bytes + offset, model->witness, CADR_AUDIO_WITNESS_BYTES);
+    offset += CADR_AUDIO_WITNESS_BYTES;
+    (void)memcpy(bytes + offset, model->head_witness, CADR_AUDIO_WITNESS_BYTES);
+    offset += CADR_AUDIO_WITNESS_BYTES;
+    for (index = 0U; index < model->count; ++index) {
+        snapshot_encode_event(&model->queue[queue_index(model, index)], bytes + offset);
+        offset += CADR_AUDIO_CANONICAL_EVENT_BYTES;
+    }
+    if (offset != byte_count) return CADR_AUDIO_STATUS_INVALID_ARGUMENT;
+    *out_written = byte_count;
+    return CADR_AUDIO_STATUS_OK;
+}
+
+cadr_audio_status cadr_audio_model_snapshot_adopt(
+    cadr_audio_model *destination, const uint8_t *bytes, uint32_t byte_count)
+{
+    static const uint8_t magic[8] = { 'C','D','R','A','U','D','S','1' };
+    cadr_audio_model decoded = { 0 };
+    uint32_t count;
+    uint32_t expected;
+    uint32_t index;
+    uint32_t offset = 16U;
+    uint64_t accepted_sequence_high_water;
+    cadr_audio_status status;
+    if (destination == NULL || bytes == NULL || byte_count < CADR_AUDIO_SNAPSHOT_HEADER_BYTES ||
+        memcmp(bytes, magic, sizeof(magic)) != 0 || get32(bytes + 8U) != UINT32_C(1) ||
+        get32(bytes + 12U) != byte_count) {
+        return CADR_AUDIO_STATUS_INVALID_ARGUMENT;
+    }
+    count = get32(bytes + 88U);
+    if (count > CADR_AUDIO_QUEUE_PACKETS ||
+        count > (UINT32_MAX - CADR_AUDIO_SNAPSHOT_HEADER_BYTES) /
+            CADR_AUDIO_CANONICAL_EVENT_BYTES) {
+        return CADR_AUDIO_STATUS_INVALID_ARGUMENT;
+    }
+    expected = CADR_AUDIO_SNAPSHOT_HEADER_BYTES +
+        count * CADR_AUDIO_CANONICAL_EVENT_BYTES;
+    if (byte_count != expected) return CADR_AUDIO_STATUS_WRONG_LENGTH;
+    decoded.generation = get64(bytes + offset); offset += 8U;
+    decoded.head_sequence = get64(bytes + offset); offset += 8U;
+    decoded.next_sequence = get64(bytes + offset); offset += 8U;
+    decoded.last_post_slot = get64(bytes + offset); offset += 8U;
+    decoded.active_post_slot = get64(bytes + offset); offset += 8U;
+    decoded.queued_frames = get64(bytes + offset); offset += 8U;
+    decoded.pending_total_frames = get64(bytes + offset); offset += 8U;
+    decoded.pending_next_frame = get64(bytes + offset); offset += 8U;
+    decoded.pending_post_slot = get64(bytes + offset); offset += 8U;
+    decoded.count = get32(bytes + offset); offset += 4U;
+    decoded.head_frame_offset = get32(bytes + offset); offset += 4U;
+    decoded.last_intra_slot = get32(bytes + offset); offset += 4U;
+    decoded.have_last = get32(bytes + offset); offset += 4U;
+    decoded.slot_open = get32(bytes + offset); offset += 4U;
+    decoded.renderer_profile = get32(bytes + offset); offset += 4U;
+    decoded.pending_active = get32(bytes + offset); offset += 4U;
+    decoded.pending_half_wavelength_us = get32(bytes + offset); offset += 4U;
+    decoded.pending_duration_us = get32(bytes + offset); offset += 4U;
+    (void)memcpy(decoded.witness, bytes + offset, CADR_AUDIO_WITNESS_BYTES);
+    offset += CADR_AUDIO_WITNESS_BYTES;
+    (void)memcpy(decoded.head_witness, bytes + offset, CADR_AUDIO_WITNESS_BYTES);
+    offset += CADR_AUDIO_WITNESS_BYTES;
+    for (index = 0U; index < count; ++index) {
+        snapshot_decode_event(bytes + offset, &decoded.queue[index]);
+        offset += CADR_AUDIO_CANONICAL_EVENT_BYTES;
+    }
+    /* The imported high-water is authenticated by the queue witness and is
+     * needed before the generic semantic verifier can bind a fresh local
+     * authority.  Restore it atomically if any invariant rejects the bytes. */
+    if (!authority_valid(destination) || destination->count != 0U) {
+        return CADR_AUDIO_STATUS_INVALID_ARGUMENT;
+    }
+    accepted_sequence_high_water =
+        destination->authority->accepted_sequence_high_water;
+    destination->authority->accepted_sequence_high_water = decoded.next_sequence;
+    status = cadr_audio_model_adopt_semantic_state(destination, &decoded);
+    if (status != CADR_AUDIO_STATUS_OK) {
+        destination->authority->accepted_sequence_high_water =
+            accepted_sequence_high_water;
+    }
+    return status;
 }
 
 void cadr_audio_model_witness_copy(const cadr_audio_model *model,

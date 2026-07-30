@@ -172,6 +172,10 @@ static void test_partial_ack_render_and_restore_session(void)
     uint8_t before_anchor[CADR_AUDIO_WITNESS_BYTES];
     uint8_t after_anchor[CADR_AUDIO_WITNESS_BYTES];
     uint32_t frames_written = UINT32_MAX;
+    int16_t pcm[CADR_AUDIO_FRAMES_PER_PACKET] = { 0 };
+    static const int16_t expected_remainder_pcm[5] = {
+        30273, 18204, 0, -12539, -27245
+    };
 
     initialize_fresh(&model, &authority, UINT64_C(7),
                      CADR_AUDIO_RENDERER_USIM_SDL3_SINE,
@@ -196,8 +200,11 @@ static void test_partial_ack_render_and_restore_session(void)
           remainder.frame_offset == UINT32_C(4) &&
           remainder.frames_remaining == UINT32_C(5));
     CHECK(cadr_audio_model_render_pcm_s16le(
-              &model, &remainder, NULL, 0U, &frames_written) ==
-          CADR_AUDIO_STATUS_NOT_READY && frames_written == 0U);
+              &model, &remainder, pcm, CADR_AUDIO_FRAMES_PER_PACKET,
+              &frames_written) == CADR_AUDIO_STATUS_OK &&
+          frames_written == UINT32_C(5) &&
+          memcmp(pcm, expected_remainder_pcm,
+                 sizeof(expected_remainder_pcm)) == 0);
 
     restored = model;
     CHECK(cadr_audio_model_start_consumer_session(&model) ==
@@ -242,6 +249,50 @@ static void test_partial_ack_render_and_restore_session(void)
     CHECK(cadr_audio_model_peek(&model, &restored_cursor) ==
           CADR_AUDIO_STATUS_EMPTY);
     CHECK(cadr_audio_model_verify_witness(&model) == CADR_AUDIO_STATUS_OK);
+}
+
+static void test_pointer_free_snapshot_transport(void)
+{
+    cadr_audio_model source = { 0 };
+    cadr_audio_model destination = { 0 };
+    cadr_audio_authority source_authority = { 0 };
+    cadr_audio_authority destination_authority = { 0 };
+    cadr_audio_cursor source_cursor;
+    cadr_audio_cursor destination_cursor;
+    uint8_t bytes[CADR_AUDIO_SNAPSHOT_MAX_BYTES];
+    uint32_t size = 0U;
+    uint32_t written = 0U;
+
+    initialize_fresh(&source, &source_authority, UINT64_C(11),
+                     CADR_AUDIO_RENDERER_USIM_SDL3_SINE,
+                     UINT64_C(7001), UINT64_C(3));
+    CHECK(cadr_audio_model_accept_beep_job(
+              &source, UINT64_C(9), UINT32_C(744), UINT32_C(125000)) ==
+          CADR_AUDIO_STATUS_OK);
+    CHECK(cadr_audio_model_peek(&source, &source_cursor) == CADR_AUDIO_STATUS_OK);
+    CHECK(cadr_audio_model_ack(&source, &source_cursor, UINT32_C(7)) ==
+          CADR_AUDIO_STATUS_OK);
+    CHECK(cadr_audio_model_snapshot_size(&source, &size) == CADR_AUDIO_STATUS_OK &&
+          size > CADR_AUDIO_SNAPSHOT_HEADER_BYTES);
+    CHECK(cadr_audio_model_snapshot_serialize(&source, bytes, sizeof(bytes),
+                                               &written) == CADR_AUDIO_STATUS_OK &&
+          written == size);
+    initialize_fresh(&destination, &destination_authority, UINT64_C(1),
+                     CADR_AUDIO_RENDERER_NO_AUDIO,
+                     UINT64_C(7002), UINT64_C(1));
+    CHECK(cadr_audio_model_snapshot_adopt(&destination, bytes, written) ==
+          CADR_AUDIO_STATUS_OK);
+    CHECK(cadr_audio_model_peek(&destination, &destination_cursor) ==
+          CADR_AUDIO_STATUS_OK &&
+          destination_cursor.consumer_epoch == UINT64_C(2) &&
+          destination_cursor.sequence == source_cursor.sequence &&
+          destination_cursor.frame_offset == UINT32_C(7) &&
+          memcmp(destination_cursor.event, source_cursor.event,
+                 sizeof(source_cursor.event)) == 0);
+    bytes[12] ^= UINT8_C(1);
+    CHECK(cadr_audio_model_snapshot_adopt(&destination, bytes, written) ==
+          CADR_AUDIO_STATUS_INVALID_ARGUMENT);
+    CHECK(cadr_audio_model_verify_witness(&destination) == CADR_AUDIO_STATUS_OK);
 }
 
 static void test_large_resumable_job(void)
@@ -907,6 +958,7 @@ int main(void)
           CADR_AUDIO_STATUS_OK);
     test_literals_and_beep_validation();
     test_partial_ack_render_and_restore_session();
+    test_pointer_free_snapshot_transport();
     test_large_resumable_job();
     test_sixty_three_uart_then_513_frame_job();
     test_uart_boundaries_and_profiles();

@@ -132,6 +132,105 @@ class IsolationAndStateTests(unittest.TestCase):
                 config,
             )
 
+    def test_m11_rendered_config_enables_only_the_required_pcm_path(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            base = Path(temporary)
+            runtime = base / "runtime"
+            paths = {
+                "prommcr": base / "promh.mcr",
+                "promsym": base / "promh.sym",
+                "mcrsym": base / "ucadr.sym",
+                "disk": base / "disk.img",
+                "hosts": base / "hosts",
+                "sys": base / "sys",
+                "usite": base / "usite",
+                "chaos": base / "chaos",
+            }
+            normal = cadr.render_config(paths, runtime)
+            m11 = cadr.render_config(paths, runtime, m11_audio_witness=True)
+
+            self.assertIn("beep_amplitude = 0\n", normal)
+            self.assertNotIn("use_ascii_beep", normal)
+            self.assertIn("beep_amplitude = 0.8\nuse_ascii_beep = false\n", m11)
+            self.assertNotIn("beep_amplitude = 0\n", m11)
+
+    def test_m11_plan_is_non_live_and_names_the_exact_source_backed_input(self) -> None:
+        closure = {
+            "prepared": "build/cadr-oracle/m11-audio-cm11-v3",
+            "repository_worktree_git": "a" * 40,
+            "source_tree_sha256": "b" * 64,
+            "patch_sha256": "c" * 64,
+            "executable": {"path": "/tmp/checked-usim", "bytes": 1, "sha256": "d" * 64},
+            "witness_schema": "CDRM11USIM1",
+            "witness_schema_version": 2,
+        }
+        source_form = {"form": cadr.M11_AUDIO_TRIGGER_FORM, "literal_arguments": {}, "si_package_spelling": {}}
+        output = io.StringIO()
+        args = cadr.argparse.Namespace(prepared=closure["prepared"], session="m11-plan")
+        with (
+            mock.patch.object(cadr, "m11_audio_closure", return_value=closure) as checked,
+            mock.patch.object(cadr, "m11_audio_source_form", return_value=source_form),
+            mock.patch.object(cadr.subprocess, "Popen") as popen,
+            contextlib.redirect_stdout(output),
+        ):
+            self.assertEqual(cadr.command_m11_audio_plan(args, Path("/unused")), 0)
+
+        payload = json.loads(output.getvalue())
+        checked.assert_called_once_with(closure["prepared"])
+        popen.assert_not_called()
+        self.assertEqual(payload["status"], "planned")
+        self.assertEqual(payload["source_form"]["form"], "(SI:%BEEP 500. 100000.)")
+        self.assertTrue(payload["start_requirements"]["fresh_private_runtime"])
+        self.assertIn("MIT-SHM", payload["start_requirements"]["xvfb"])
+
+    def test_m11_action_ledger_is_private_and_ordered(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            session = Path(temporary) / "session"
+            runtime = session / "runtime"
+            runtime.mkdir(parents=True)
+            runtime.chmod(0o700)
+            state = {
+                "session_dir": str(session),
+                "m11_audio_witness": {
+                    "schema": cadr.M11_AUDIO_WITNESS_SCHEMA,
+                    "action_ledger_path": str(runtime / "m11-audio-actions.ndjson"),
+                    "witness_path": str(runtime / "m11-audio-witness.ndjson"),
+                },
+            }
+            first = cadr.append_m11_audio_action(state, {"record": "intent", "intent_id": "one"})
+            second = cadr.append_m11_audio_action(state, {"record": "outcome", "intent_id": "one"})
+            ledger = runtime / "m11-audio-actions.ndjson"
+
+            self.assertEqual(stat.S_IMODE(ledger.stat().st_mode), 0o600)
+            self.assertNotEqual(first["sha256"], second["sha256"])
+            lines = [json.loads(line) for line in ledger.read_text(encoding="ascii").splitlines()]
+            self.assertEqual(lines[0], {"schema": cadr.M11_AUDIO_WITNESS_SCHEMA, "ledger": "intent-outcome-v1"})
+            self.assertEqual([line["record"] for line in lines[1:]], ["intent", "outcome"])
+
+    def test_m11_environment_scrubs_host_witness_and_uses_only_session_path(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            session = Path(temporary) / "session"
+            runtime = session / "runtime"
+            runtime.mkdir(parents=True)
+            runtime.chmod(0o700)
+            witness = runtime / "m11-audio-witness.ndjson"
+            state = {
+                "session_dir": str(session),
+                "display": ":111",
+                "xauthority": str(runtime / "Xauthority"),
+                "m11_audio_witness": {
+                    "schema": cadr.M11_AUDIO_WITNESS_SCHEMA,
+                    "witness_path": str(witness),
+                    "action_ledger_path": str(runtime / "m11-audio-actions.ndjson"),
+                },
+                "m8_m9_x11_witness": None,
+            }
+            with mock.patch.dict(os.environ, {cadr.M11_AUDIO_WITNESS_ENVIRONMENT: "/tmp/host-path"}, clear=False):
+                environment = cadr.x_environment(state)
+
+            self.assertEqual(environment[cadr.M11_AUDIO_WITNESS_ENVIRONMENT], str(witness))
+            self.assertNotEqual(environment[cadr.M11_AUDIO_WITNESS_ENVIRONMENT], "/tmp/host-path")
+
     def test_process_record_and_identity_include_start_ticks(self) -> None:
         with (
             mock.patch.object(cadr, "proc_start_ticks", return_value=81723),
@@ -595,6 +694,66 @@ class ScreenshotAndShutdownTests(unittest.TestCase):
 
 
 class InputValidationTests(unittest.TestCase):
+    def test_m11_trigger_types_only_the_fixed_form_and_records_joined_witness(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary) / "state"
+            cadr.ensure_state_root(root)
+            session = root / "m11-trigger"
+            cadr.ensure_session_directory(session)
+            runtime = session / "runtime"
+            runtime.mkdir()
+            runtime.chmod(0o700)
+            state = {
+                "schema": cadr.STATE_SCHEMA,
+                "session": "m11-trigger",
+                "session_dir": str(session),
+                "generation": 4,
+                "m11_audio_witness": {
+                    "schema": cadr.M11_AUDIO_WITNESS_SCHEMA,
+                    "witness_path": str(runtime / "m11-audio-witness.ndjson"),
+                    "action_ledger_path": str(runtime / "m11-audio-actions.ndjson"),
+                    "trigger": {"form": cadr.M11_AUDIO_TRIGGER_FORM},
+                },
+            }
+            args = cadr.argparse.Namespace(
+                session="m11-trigger",
+                listener_ready_screenshot=str(session / "screenshots" / "listener.png"),
+                delay_ms=17,
+                timeout=3.0,
+            )
+            xdotool_calls: list[list[str]] = []
+            screenshots = iter((
+                {"path": "before.png", "png_sha256": "a" * 64},
+                {"path": "after.png", "png_sha256": "b" * 64},
+            ))
+            witness = {"path": str(runtime / "m11-audio-witness.ndjson"), "bytes": 80, "sha256": "c" * 64}
+            with (
+                mock.patch.object(cadr, "require_running", return_value=state),
+                mock.patch.object(cadr, "listener_ready_screenshot", return_value={"image": {}, "sidecar": {}}),
+                mock.patch.object(cadr, "take_screenshot", side_effect=lambda *_args: next(screenshots)),
+                mock.patch.object(cadr, "focus_window") as focus,
+                mock.patch.object(cadr, "xdotool", side_effect=lambda _state, argv: xdotool_calls.append(list(argv))),
+                mock.patch.object(cadr, "wait_for_m11_audio_witness", return_value=([{"schema": "CDRM11USIM1"}], witness)),
+                mock.patch.object(cadr, "update_state") as update,
+                contextlib.redirect_stdout(io.StringIO()),
+            ):
+                self.assertEqual(cadr.command_m11_audio_trigger(args, root), 0)
+
+            focus.assert_called_once_with(state)
+            self.assertEqual(
+                xdotool_calls,
+                [
+                    ["type", "--clearmodifiers", "--delay", "17", "--", "(SI:%BEEP 500. 100000.)"],
+                    ["key", "--clearmodifiers", "Return"],
+                ],
+            )
+            update.assert_called_once()
+            ledger = runtime / "m11-audio-actions.ndjson"
+            records = [json.loads(line) for line in ledger.read_text(encoding="ascii").splitlines()]
+            self.assertEqual([record.get("record") for record in records[1:]], ["intent", "outcome"])
+            self.assertEqual(records[1]["form"], cadr.M11_AUDIO_TRIGGER_FORM)
+            self.assertEqual(records[2]["result"], "witness-observed")
+
     def test_timing_number_validators_are_finite_and_bounded(self) -> None:
         self.assertEqual(cadr.positive_float("0.25"), 0.25)
         self.assertEqual(cadr.positive_float("86400"), 86400)
@@ -671,6 +830,7 @@ class ParserInterfaceTests(unittest.TestCase):
         parser = cadr.build_parser()
         cases = (
             (["doctor"], "doctor", cadr.command_doctor),
+            (["m11-audio-plan", "--prepared", "build/cadr-oracle/m11"], "m11-audio-plan", cadr.command_m11_audio_plan),
             (["start", "--session", "demo", "--fresh", "--timeout", "12.5"], "start", cadr.command_start),
             (["status", "--session", "demo"], "status", cadr.command_status),
             (["wait", "--session", "demo", "--stable-for", "2", "--interval", "0.25"], "wait", cadr.command_wait),
@@ -678,6 +838,7 @@ class ParserInterfaceTests(unittest.TestCase):
             (["type", "--session", "demo", "--enter", "hello world"], "type", cadr.command_type),
             (["mouse", "--session", "demo", "click", "12", "34", "--button", "3"], "mouse", cadr.command_mouse),
             (["screenshot", "--session", "demo", "--label", "help-menu"], "screenshot", cadr.command_screenshot),
+            (["m11-audio-trigger", "--session", "demo", "--listener-ready-screenshot", "/tmp/ready.png"], "m11-audio-trigger", cadr.command_m11_audio_trigger),
             (["stop", "--session", "demo", "--discard"], "stop", cadr.command_stop),
         )
         for arguments, command, handler in cases:
@@ -691,6 +852,7 @@ class ParserInterfaceTests(unittest.TestCase):
         self.assertEqual(start.session, cadr.DEFAULT_SESSION)
         self.assertFalse(start.fresh)
         self.assertFalse(start.resume)
+        self.assertIsNone(start.m11_audio_witness)
         self.assertEqual(start.timeout, 60)
 
         click = parser.parse_args(["mouse", "click", "10", "20"])

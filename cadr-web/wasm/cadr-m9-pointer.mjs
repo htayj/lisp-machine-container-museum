@@ -6,8 +6,10 @@
  * consume the typed entries at complete machine boundaries.
  */
 
+export const CADR_M9_CONTROLLER_VERSION = "C-M9.1";
+export const CADR_M9_CORE_ABI = "ABI1.8";
 export const CADR_M9_POINTER_PROFILE =
-  "CADR-WEB-303/ABI1.6/protocol-v6/C-M9-PTR-X11-EDGE32-v1";
+  `CADR-WEB-303/controller-${CADR_M9_CONTROLLER_VERSION}/core-${CADR_M9_CORE_ABI}/protocol-v6/PTR-X11-EDGE32-v1`;
 export const CADR_M9_PROTOCOL_VERSION = 6;
 export const CADR_M9_STATUS_OK = 0;
 export const CADR_M9_STATUS_INVALID_ARGUMENT = 2;

@@ -63,6 +63,9 @@ cadr_status cadr_iob_write(cadr_machine_state *state, uint32_t uaddr, uint16_t v
 cadr_status cadr_iob_clock_tick(cadr_machine_state *state, uint32_t ticks);
 cadr_status cadr_iob_device_service(cadr_machine_state *state);
 cadr_status cadr_iob_keyboard_event(cadr_machine_state *state, uint16_t event);
+#if defined(CADR_M9_CORE)
+cadr_status cadr_iob_pointer_event(cadr_machine_state *state, uint32_t edge32);
+#endif
 cadr_status cadr_disk_read(cadr_machine_state *state, uint32_t offset, uint32_t *out_value);
 cadr_status cadr_disk_write(cadr_machine_state *state, uint32_t offset, uint32_t value);
 #if defined(CADR_M5_ORACLE_TEST)

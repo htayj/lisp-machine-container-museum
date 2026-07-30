@@ -11,6 +11,9 @@
 #if defined(CADR_M6_DEVID_WASM)
 #include "cadr_m6_disk_evidence.h"
 #endif
+#if defined(CADR_M11_CORE)
+#include "cadr_audio_model.h"
+#endif
 
 #include <stdint.h>
 #include <stddef.h>
@@ -20,6 +23,66 @@
 #define CADR_MAX_COMPLETION_BYTES UINT64_C(1048576)
 #define CADR_MAX_ARTIFACT_STREAM_CHUNK_BYTES UINT64_C(1048576)
 typedef cadr_artifact_stream_sha256 cadr_sha256_context;
+
+#if defined(CADR_M11_CORE)
+/* The identity is local-only and never exported as a capability.  It merely
+ * makes stale audio cursors fail closed across a reconstructed machine. */
+#define CADR_M11_AUDIO_IDENTITY UINT64_C(0x434144522d4d3131)
+
+static cadr_status cadr_m11_audio_status(cadr_audio_status status)
+{
+    switch (status) {
+    case CADR_AUDIO_STATUS_OK: return CADR_STATUS_OK;
+    case CADR_AUDIO_STATUS_BACKPRESSURE: return CADR_STATUS_QUEUE_FULL;
+    case CADR_AUDIO_STATUS_STALE: return CADR_STATUS_STALE_GENERATION;
+    case CADR_AUDIO_STATUS_NOT_READY: return CADR_STATUS_NOT_READY;
+    case CADR_AUDIO_STATUS_OVERFLOW: return CADR_STATUS_INVALID_ARGUMENT;
+    default: return CADR_STATUS_INVALID_ARGUMENT;
+    }
+}
+
+static cadr_status cadr_m11_audio_initialize(cadr_machine *machine)
+{
+    cadr_audio_status status;
+    if (machine == NULL) return CADR_STATUS_INVALID_ARGUMENT;
+    status = cadr_audio_incarnation_allocator_initialize(
+        &machine->audio_incarnations, UINT64_C(1));
+    if (status != CADR_AUDIO_STATUS_OK) return cadr_m11_audio_status(status);
+    status = cadr_audio_authority_initialize(
+        &machine->audio_authority, &machine->audio_incarnations,
+        CADR_M11_AUDIO_IDENTITY, UINT64_C(1), UINT64_C(0));
+    if (status != CADR_AUDIO_STATUS_OK) return cadr_m11_audio_status(status);
+    status = cadr_audio_model_initialize(
+        &machine->audio, &machine->audio_authority,
+        machine->state.events.generation, CADR_AUDIO_RENDERER_USIM_SDL3_SINE);
+    if (status != CADR_AUDIO_STATUS_OK) return cadr_m11_audio_status(status);
+    machine->state.devices.audio_model = &machine->audio;
+    return CADR_STATUS_OK;
+}
+
+static cadr_status cadr_m11_audio_reset(cadr_machine *machine)
+{
+    cadr_audio_status status;
+    if (machine == NULL || machine->state.devices.audio_model != &machine->audio) {
+        return CADR_STATUS_INVALID_ARGUMENT;
+    }
+    status = cadr_audio_model_reset(&machine->audio);
+    if (status == CADR_AUDIO_STATUS_OK) {
+        machine->state.devices.audio_model = &machine->audio;
+    }
+    return cadr_m11_audio_status(status);
+}
+
+static void cadr_m11_audio_destroy(cadr_machine *machine)
+{
+    if (machine == NULL) return;
+    if (machine->audio.authority != NULL) (void)cadr_audio_model_destroy(&machine->audio);
+    if (machine->audio_authority.lifecycle != 0U) {
+        (void)cadr_audio_authority_destroy(&machine->audio_authority);
+    }
+    machine->state.devices.audio_model = NULL;
+}
+#endif
 
 static uint32_t cadr_rotr32(const uint32_t value, const uint32_t count)
 {
@@ -685,6 +748,14 @@ cadr_status cadr_machine_create(const cadr_machine_config *config,
     cadr_m6_disk_evidence_cold_power_on(&machine->state.m6_disk_evidence);
 #endif
     cadr_processor_memory_set_main_memory_pages(&machine->state, 8192U);
+#if defined(CADR_M11_CORE)
+    status = cadr_m11_audio_initialize(machine);
+    if (status != CADR_STATUS_OK) {
+        cadr_m11_audio_destroy(machine);
+        free(machine);
+        return status;
+    }
+#endif
 #if defined(CADR_M7_CORE)
     cadr_display_tracker_initialize(&machine->display, &machine->state);
 #endif
@@ -702,8 +773,78 @@ void cadr_machine_destroy(cadr_machine *machine)
     if (machine == NULL) return;
     cadr_trace_engine_stop(&machine->state);
     cadr_discard_completion(machine);
+#if defined(CADR_M11_CORE)
+    cadr_m11_audio_destroy(machine);
+#endif
     free(machine);
 }
+
+#if defined(CADR_M9_CORE)
+static uint16_t cadr_m9_input_u16(const uint8_t *const bytes)
+{
+    return (uint16_t)((uint16_t)bytes[0] | ((uint16_t)bytes[1] << 8U));
+}
+
+static uint32_t cadr_m9_input_u32(const uint8_t *const bytes)
+{
+    return (uint32_t)bytes[0] | ((uint32_t)bytes[1] << 8U) |
+        ((uint32_t)bytes[2] << 16U) | ((uint32_t)bytes[3] << 24U);
+}
+
+static uint64_t cadr_m9_input_u64(const uint8_t *const bytes)
+{
+    uint64_t value = 0U;
+    uint32_t index;
+    for (index = 0U; index < 8U; ++index) {
+        value |= (uint64_t)bytes[index] << (index * 8U);
+    }
+    return value;
+}
+
+cadr_status cadr_machine_m9_input_deliver(cadr_machine *const machine,
+                                           const uint8_t *const bytes,
+                                           const uint32_t byte_count)
+{
+    static const uint8_t magic[8] = { 'C','D','R','I','N','P','1',0 };
+    uint16_t kind;
+    uint64_t generation;
+    uint64_t ordinal;
+    uint32_t payload;
+    cadr_status status;
+
+    if (machine == NULL || bytes == NULL || byte_count != CADR_M9_INPUT_RECORD_BYTES ||
+        memcmp(bytes, magic, sizeof(magic)) != 0 ||
+        cadr_m9_input_u16(bytes + 8U) != CADR_M9_INPUT_SCHEMA ||
+        cadr_m9_input_u32(bytes + 12U) != 0U || cadr_m9_input_u32(bytes + 36U) != 0U) {
+        return CADR_STATUS_INVALID_ARGUMENT;
+    }
+    kind = cadr_m9_input_u16(bytes + 10U);
+    generation = cadr_m9_input_u64(bytes + 16U);
+    ordinal = cadr_m9_input_u64(bytes + 24U);
+    payload = cadr_m9_input_u32(bytes + 32U);
+    if (machine->state.lifecycle != CADR_MACHINE_RUNNING ||
+        machine->state.scheduler.phase != CADR_SCHEDULER_PHASE_BOUNDARY_READY) {
+        return CADR_STATUS_NOT_READY;
+    }
+    if (generation != machine->state.events.generation ||
+        machine->state.devices.iob.input_ingress_ordinal == UINT64_MAX ||
+        ordinal != machine->state.devices.iob.input_ingress_ordinal + UINT64_C(1)) {
+        return CADR_STATUS_STALE_GENERATION;
+    }
+    if (kind == CADR_M9_INPUT_KIND_KEYBOARD) {
+        if ((payload & ~UINT32_C(0xffff)) != 0U) return CADR_STATUS_INVALID_ARGUMENT;
+        status = cadr_iob_keyboard_event(&machine->state, (uint16_t)payload);
+    } else if (kind == CADR_M9_INPUT_KIND_POINTER) {
+        status = cadr_iob_pointer_event(&machine->state, payload);
+    } else {
+        return CADR_STATUS_INVALID_ARGUMENT;
+    }
+    if (status != CADR_STATUS_OK) return status;
+    machine->state.devices.iob.input_ingress_ordinal = ordinal;
+    machine->state.devices.iob.input_sequence += 1U;
+    return CADR_STATUS_OK;
+}
+#endif
 
 cadr_status cadr_machine_import_artifact(cadr_machine *machine,
                                          const cadr_artifact_ingress *ingress,
@@ -852,6 +993,16 @@ cadr_status cadr_machine_cold_power_on(cadr_machine *machine)
     machine->state.scheduler.hidden_policy = CADR_SCHEDULER_HIDDEN_PAUSE;
     cadr_processor_memory_reset(&machine->state);
     cadr_bus_device_cold_power_on(&machine->state);
+#if defined(CADR_M11_CORE)
+    /* The bus/device cold path correctly clears the semantic device record.
+     * `audio_model`, however, is a live machine-owned binding deliberately
+     * excluded from that record's snapshot semantics.  Reattach it after the
+     * device reset and before asking the audio model to prove its own
+     * authority/identity invariants.  Ordinary reset does not take this path:
+     * a missing or foreign binding there remains fail-closed. */
+    machine->state.devices.audio_model = &machine->audio;
+    if (cadr_m11_audio_reset(machine) != CADR_STATUS_OK) return CADR_STATUS_NOT_READY;
+#endif
 #if defined(CADR_M7_CORE)
     cadr_display_tracker_commit_reinitialize(
         &machine->display, &machine->state, display_generation);
@@ -907,6 +1058,10 @@ cadr_status cadr_machine_reset(cadr_machine *machine,
                  sizeof(machine->state.scheduler));
     machine->state.scheduler.phase = CADR_SCHEDULER_PHASE_BOUNDARY_READY;
     machine->state.scheduler.hidden_policy = CADR_SCHEDULER_HIDDEN_PAUSE;
+#if defined(CADR_M11_CORE)
+    status = cadr_m11_audio_reset(machine);
+    if (status != CADR_STATUS_OK) return status;
+#endif
 #if defined(CADR_M7_CORE)
     cadr_display_tracker_commit_reinitialize(
         &machine->display, &machine->state, display_generation);
@@ -2586,13 +2741,29 @@ cadr_status cadr_machine_snapshot_restore(
         state->scheduler.phase = CADR_SCHEDULER_PHASE_BOUNDARY_READY;
         state->scheduler.hidden_policy = CADR_SCHEDULER_HIDDEN_PAUSE;
     }
+    /* Frozen pre-M11 profiles historically allocated the restored machine
+     * without zeroing its not-yet-profiled tail.  M11 adds live audio authority
+     * state which must begin zeroed before its initializer establishes the
+     * binding.  Keep that new requirement strictly compile-gated so it cannot
+     * perturb the pre-M11 Wasm identity. */
+#if defined(CADR_M11_CORE)
+    machine = calloc(1U, sizeof(*machine));
+#else
     machine = malloc(sizeof(*machine));
+#endif
     if (machine == NULL) {
         cadr_snapshot_state_destroy(state);
         return CADR_STATUS_NO_MEMORY;
     }
     machine->state = *state;
     free(state);
+#if defined(CADR_M11_CORE)
+    status = cadr_m11_audio_initialize(machine);
+    if (status != CADR_STATUS_OK) {
+        free(machine);
+        return status;
+    }
+#endif
 #if defined(CADR_M7_CORE)
     cadr_display_tracker_initialize(&machine->display, &machine->state);
 #endif

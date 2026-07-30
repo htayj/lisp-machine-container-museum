@@ -1,0 +1,230 @@
+diff --git a/Makefile.usim b/Makefile.usim
+--- a/Makefile.usim
++++ b/Makefile.usim
+@@ -77,6 +77,26 @@ USIM_IDLE		= cadr_oracle_idle_stubs.c
+ USIM_LASHUP		= cadr_m6_lashup_stubs.c
+ USIM_ORACLE		= cadr_m6_debug_ir_witness.c cadr_m7_frame_witness.c
+ 
++else ifeq ($(USIM_BACKEND), m8-m9-input-oracle)
++
++USIM_CFLAGS		= -DWITH_CADR_M6_ORACLE=1 -DWITH_CADR_M8_M9_INPUT_WITNESS=1
++USIM_KEYBOARD	= kbd.c cadet.c knight.c lmch.c
++USIM_MOUSE		= mouse.c
++USIM_TV			=
++USIM_CHAOS		= uch11.c
++USIM_IDLE		= cadr_oracle_idle_stubs.c
++USIM_LASHUP		= cadr_m6_lashup_stubs.c
++USIM_ORACLE		= cadr_m6_debug_ir_witness.c cadr_m8_m9_input_witness.c cadr_m8_m9_input_driver.c
++
++else ifeq ($(USIM_BACKEND), m8-m9-x11-witness)
++
++USIM_CFLAGS		= $(shell pkg-config x11 --cflags) -DWITH_X11=1 -DWITH_CADR_M8_M9_INPUT_WITNESS=1
++USIM_LDFLAGS		= $(shell pkg-config x11 --libs)
++USIM_KEYBOARD	= kbd.c cadet.c knight.c lmch.c
++USIM_MOUSE		= mouse.c
++USIM_TV			= x11.c
++USIM_ORACLE		= cadr_m8_m9_input_witness.c
++
+ endif
+ 
+ USIM_CHAOS ?= uch11.c uch11-chaosd.c uch11-local.c uch11-udp.c
+@@ -129,7 +150,7 @@ $(OBJDIR)/chaos.challoc.o: $(CHAOSDIR)/chunix/challoc.c | $(OBJDIR)
+ $(OBJDIR)/chaos.chutil.o: $(CHAOSDIR)/chncp/chutil.c | $(OBJDIR)
+ 	$(CC) $(CFLAGS) $(CHAOS_CFLAGS) -w -I$(CHAOSDIR)/chunix -I. -DSELECT -c -o $@ $<
+ 
+-ifneq ($(filter oracle m6-oracle m7-frame-oracle,$(USIM_BACKEND)),)
++ifneq ($(filter oracle m6-oracle m7-frame-oracle m8-m9-input-oracle,$(USIM_BACKEND)),)
+ CHAOS_OBJS :=
+ else
+ CHAOS_OBJS := $(OBJDIR)/chaos.glob.o $(OBJDIR)/chaos.FILE.o $(OBJDIR)/chaos.MINI.o \
+@@ -159,7 +180,7 @@ DEPS := $(SRCS:%.c=$(DEPDIR)/%.d) 
+ usim:
+ 	$(info USIM_BACKEND    = $(USIM_BACKEND))
+ 	$(info USIM_BUILD_TYPE = $(USIM_BUILD_TYPE))
+-	$(error "USIM_BACKEND=x11/sdl2/sdl3/oracle/m6-oracle/m7-frame-oracle and USIM_BUILD_TYPE=debug/release must be set.")
++	$(error "USIM_BACKEND=x11/sdl2/sdl3/oracle/m6-oracle/m7-frame-oracle/m8-m9-input-oracle/m8-m9-x11-witness and USIM_BUILD_TYPE=debug/release must be set.")
+ 
+ ifdef USIM_BACKEND
+ ifdef USIM_BUILD_TYPE
+diff --git a/kbd.c b/kbd.c
+--- a/kbd.c
++++ b/kbd.c
+@@ -13,6 +13,9 @@
+ #ifdef WITH_CADR_ORACLE
+ #include "cadr_oracle_native.h"
+ #endif
++#ifdef WITH_CADR_M8_M9_INPUT_WITNESS
++#include "cadr_m8_m9_input_witness.h"
++#endif
+ 
+ int kbd_type = 1;		/* Default is "cadet". */
+ uint32_t kbd_scancode;
+@@ -98,6 +101,10 @@ kbd_event(int code, int keydown)
+ 	int v;
+ 
+ 	DEBUG(TRACE_KBD, "kbd_event(code=%o, keydown=%o)\n", code, keydown);
++#ifdef WITH_CADR_M8_M9_INPUT_WITNESS
++	if (cadr_m8_m9_input_witness_keyboard(machine_cycles, iob_csr, code, keydown) != 0)
++		errx(1, "C-M8/M9 pre-IOB keyboard witness failed");
++#endif
+ 	v = ((!keydown) << 8) | code;
+ 	if (iob_csr & (1 << 5))
+ 		kbd_queue_key_event(v);	/* Already something there, queue this. */
+diff --git a/mouse.c b/mouse.c
+--- a/mouse.c
++++ b/mouse.c
+@@ -9,6 +9,9 @@
+ #include "ucode.h"
+ #include "usim.h"
+ #include "utrace.h"
++#ifdef WITH_CADR_M8_M9_INPUT_WITNESS
++#include "cadr_m8_m9_input_witness.h"
++#endif
+ 
+ int mouse_y;			/* Current Y coordinate position of the mouse. */
+ int mouse_rawx;			/* Raw X encoder inputs. */
+@@ -38,5 +41,9 @@ mouse_event(int x, int y, int buttons)
+ {
+ 	DEBUG(TRACE_MOUSE, "mouse_event(x = 0%o, y = 0%o, buttons = 0%o)\n", x, y, buttons);
++#ifdef WITH_CADR_M8_M9_INPUT_WITNESS
++	if (cadr_m8_m9_input_witness_pointer(machine_cycles, iob_csr, x, y, buttons) != 0)
++		errx(1, "C-M8/M9 pre-IOB pointer witness failed");
++#endif
+ 	idle_mouse_activity();
+ 	iob_csr |= 1 << 4;
+ 	assert_unibus_interrupt(0264);
+diff --git a/cadet.c b/cadet.c
+--- a/cadet.c
++++ b/cadet.c
+@@ -3,7 +3,11 @@
+ 
++#include <err.h>
+ #include <stdint.h>
+ #include <string.h>
+ #include <stdbool.h>
++#ifdef WITH_CADR_M8_M9_INPUT_WITNESS
++#include "cadr_m8_m9_input_witness.h"
++#endif
+ 
+ #include "iob.h"
+ #include "kbd.h"
+@@ -61,6 +65,10 @@ cadet_allup_event(int mods)
+ 	int v;
+ 
+ 	v = (1 << 15) | (mods & 01777);
++#ifdef WITH_CADR_M8_M9_INPUT_WITNESS
++	if (cadr_m8_m9_input_witness_keyboard(machine_cycles, iob_csr, v, 2) != 0)
++		errx(1, "C-M8/M9 pre-IOB keyboard all-up witness failed");
++#endif
+	if (iob_csr & (1 << 5))
+		kbd_queue_key_event(v);	/* Already something there, queue this. */
+	else {
+@@ -73,11 +81,33 @@ cadet_allup_event(int mods)
+ 	}
+ }
+ 
++#ifdef WITH_CADR_M8_M9_INPUT_WITNESS
++static void
++cadr_m8_m9_witnessed_queue_key_event(int ev)
++{
++	int code;
++	int keydown;
++
++	if (ev & (1 << 15)) {
++		code = ev;
++		keydown = 2;
++	} else {
++		code = ev & 0377;
++		keydown = (ev & (1 << 8)) ? 0 : 1;
++	}
++	if (cadr_m8_m9_input_witness_keyboard(machine_cycles, iob_csr, code, keydown) != 0)
++		errx(1, "C-M8/M9 pre-IOB queued keyboard witness failed");
++	kbd_queue_key_event(ev);
++}
++#else
++#define cadr_m8_m9_witnessed_queue_key_event(ev) kbd_queue_key_event(ev)
++#endif
++
+ static void
+ cadet_queue_all_keys_up(void)
+ {
+ 	cadet_shifts = CADET_IX_UNSHIFT;	/* Hmm... */
+-	kbd_queue_key_event((1 << 15) | 0);
++	cadr_m8_m9_witnessed_queue_key_event((1 << 15) | 0);
+ }
+ 
+ void
+@@ -208,13 +238,13 @@ cadet_process_key(int keysym,	/* keysym, acts as index into kbd_map */
+ 		else
+ 			shkey = CADET_LEFT_GREEK;
+-		kbd_queue_key_event(shkey);
++		cadr_m8_m9_witnessed_queue_key_event(shkey);
+ 	}
+ 	/*
+ 	 *  Press/lift the key itself.
+ 	 */
+-	kbd_queue_key_event(scc | (!keydown) << 8);
++	cadr_m8_m9_witnessed_queue_key_event(scc | (!keydown) << 8);
+ 	if (shkey)
+-		kbd_queue_key_event(shkey | 1 << 8);	/* Lift the shift. */
++		cadr_m8_m9_witnessed_queue_key_event(shkey | 1 << 8);	/* Lift the shift. */
+ 	/*
+ 	 * Re-press the previous keys.
+ 	 */
+@@ -221,8 +251,8 @@ cadet_process_key(int keysym,	/* keysym, acts as index into kbd_map */
+ 	if (oshift & (1 << CADET_IX_TOP))
+-		kbd_queue_key_event(CADET_LEFT_TOP);
++		cadr_m8_m9_witnessed_queue_key_event(CADET_LEFT_TOP);
+ 	if (oshift & (1 << CADET_IX_SHIFT))
+-		kbd_queue_key_event(CADET_LEFT_SHIFT);
++		cadr_m8_m9_witnessed_queue_key_event(CADET_LEFT_SHIFT);
+ 	if (oshift & (1 << CADET_IX_GREEK))
+-		kbd_queue_key_event(CADET_LEFT_GREEK);
++		cadr_m8_m9_witnessed_queue_key_event(CADET_LEFT_GREEK);
+ 	cadet_shifts = oshift;
+ }
+diff --git a/ucode.c b/ucode.c
+--- a/ucode.c
++++ b/ucode.c
+@@ -46,6 +46,9 @@
+ extern uint32_t cadr_m6_disk_status(void);
+ extern uint32_t cadr_m6_disk_outstanding_operation(void);
+ extern uint32_t cadr_m6_disk_interrupt_request(void);
++#ifdef WITH_CADR_M8_M9_INPUT_WITNESS
++#include "cadr_m8_m9_input_driver.h"
++#endif
+ #endif
+ 
+ // cycles do not reset even with reset
+@@ -75,6 +78,9 @@ ucode_run(void)
+ #ifdef WITH_CADR_M6_ORACLE
+     const uint64_t oracle_slot_limit = 1200000000;
+     cadr_m6_witness_init();
++#ifdef WITH_CADR_M8_M9_INPUT_WITNESS
++    if (cadr_m8_m9_input_driver_init() != 0) machine_state.halted = true;
++#endif
+ #elif defined(WITH_CADR_ORACLE)
+     const uint64_t oracle_slot_limit = 100000;
+     cadr_oracle_start(oracle_slot_limit);
+@@ -113,5 +119,17 @@ ucode_run(void)
+ #ifdef WITH_CADR_M6_ORACLE
+-        if (cadr_m6_witness_boundary(machine_cycles, debug_ir, iob_csr, kbd_scancode,
+-                                     the_60_cycle_clock, cadr_m6_disk_busy(), 0))
+-            machine_state.halted = true;
++#ifdef WITH_CADR_M8_M9_INPUT_WITNESS
++        if (cadr_m8_m9_input_driver_boundary(machine_cycles) != 0) machine_state.halted = true;
++#endif
++        if (cadr_m6_witness_boundary(machine_cycles, debug_ir, iob_csr, kbd_scancode,
++                                     the_60_cycle_clock, cadr_m6_disk_busy(), 0)) {
++#ifdef WITH_CADR_M8_M9_INPUT_WITNESS
++            /* C-M8/M9 begins after the frozen M6 idle suffix.  Keep this
++             * isolated private run alive until every pre-IOB input row has
++             * been recorded, rather than silently dropping rows after the
++             * M6 witness asks to halt. */
++            if (cadr_m8_m9_input_driver_complete()) machine_state.halted = true;
++#else
++            machine_state.halted = true;
++#endif
++        }
+ #ifdef WITH_CADR_M7_FRAME_ORACLE
+         if (cadr_m6_witness_failed() != 0U)

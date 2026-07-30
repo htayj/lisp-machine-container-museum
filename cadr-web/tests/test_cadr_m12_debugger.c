@@ -177,7 +177,7 @@ static void test_profile_and_before_suppression(void)
     CHECK(CADR_M12_STATUS_DEBUG_STOP == 19U);
     CHECK(CADR_M12_STATUS_LIMIT_REACHED == 20U);
     CHECK(strcmp(CADR_M12_PROFILE,
-                 "CADR-WEB-303/ABI1.7/protocol-v7/C-M12-DBG-v1") == 0);
+                 "CADR-WEB-303/ABI1.10/protocol-v7/C-M12-DBG-v1") == 0);
     CHECK(cadr_m12_breakpoint_set(&debugger, 5U, &pc) == CADR_M12_STATUS_OK);
     CHECK(cadr_m12_breakpoint_set(&debugger, 2U, &pc) == CADR_M12_STATUS_OK);
     CHECK(cadr_m12_micro_step(&debugger, slot_callback, &fixture) ==

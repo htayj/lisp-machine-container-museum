@@ -60,6 +60,45 @@ uint32_t cadr_wasm_post_terminal_diagnostic(void);
 uint32_t cadr_wasm_display_update(void);
 uint32_t cadr_wasm_display_full(void);
 #endif
+#if defined(CADR_M9_WASM)
+uint32_t cadr_wasm_m9_input_deliver(uint32_t byte_count);
+uint32_t cadr_wasm_m9_input_state(void);
+#endif
+#if defined(CADR_M11_WASM)
+uint32_t cadr_wasm_m11_audio_state(void);
+uint32_t cadr_wasm_m11_audio_peek(void);
+uint32_t cadr_wasm_m11_audio_render(uint32_t generation_low,
+                                    uint32_t generation_high,
+                                    uint32_t sequence_low,
+                                    uint32_t sequence_high,
+                                    uint32_t frame_offset,
+                                    uint32_t requested_frames);
+uint32_t cadr_wasm_m11_audio_ack(uint32_t generation_low,
+                                 uint32_t generation_high,
+                                 uint32_t sequence_low,
+                                 uint32_t sequence_high,
+                                 uint32_t frame_offset, uint32_t frames);
+uint32_t cadr_wasm_m11_audio_snapshot_size(void);
+uint32_t cadr_wasm_m11_audio_snapshot_save(void);
+uint32_t cadr_wasm_m11_audio_snapshot_restore(uint32_t byte_count);
+#endif
+#if defined(CADR_M12_WASM)
+uint32_t cadr_wasm_m12_debug_state(void);
+/* Scalar copy-out only: no inspector lease or direct array crosses Wasm. */
+uint32_t cadr_wasm_m12_inspect_read(uint32_t array_kind, uint32_t index);
+uint32_t cadr_wasm_m12_breakpoint_set(uint32_t index, uint32_t kind,
+                                      uint32_t value_low, uint32_t value_high);
+uint32_t cadr_wasm_m12_breakpoint_clear(uint32_t index);
+uint32_t cadr_wasm_m12_resume_one_boundary(void);
+uint32_t cadr_wasm_m12_micro_step(void);
+uint32_t cadr_wasm_m12_macro_step(void);
+uint32_t cadr_wasm_m12_stop_record(void);
+uint32_t cadr_wasm_m12_trace_filter(uint32_t flags, uint32_t micro_pc,
+                                    uint32_t first_low, uint32_t first_high,
+                                    uint32_t last_low, uint32_t last_high);
+uint32_t cadr_wasm_m12_config_snapshot_save(void);
+uint32_t cadr_wasm_m12_config_snapshot_restore(uint32_t byte_count);
+#endif
 uint32_t cadr_wasm_trace_start(uint32_t transport_mode, uint32_t capacity,
                                uint32_t selector_low, uint32_t selector_high,
                                uint32_t event_low, uint32_t event_high);

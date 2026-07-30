@@ -95,11 +95,12 @@ export class CadrM9PointerAdapter {
   #pendingAccessibleButtons = new Map();
   #terminalFailure = null;
   #rebase = null;
+  #allocateRequestId;
   #nextId = 1;
   #disposed = false;
 
   constructor({ controller = null, submitPointerOperation = null, lifecycle = null,
-    focusGuest = null, captureTarget = null } = {}) {
+    focusGuest = null, captureTarget = null, allocateRequestId = null } = {}) {
     invariant((controller instanceof CadrM9PointerController) !== (submitPointerOperation !== null),
       "supply exactly one controller or pointer operation submitter");
     invariant(submitPointerOperation === null || typeof submitPointerOperation === "function",
@@ -107,8 +108,11 @@ export class CadrM9PointerAdapter {
     invariant(lifecycle === null || lifecycle instanceof CadrM9InteractiveLifecycle,
       "lifecycle must be CadrM9InteractiveLifecycle");
     invariant(focusGuest === null || typeof focusGuest === "function", "focusGuest must be a function");
+    invariant(allocateRequestId === null || typeof allocateRequestId === "function",
+      "allocateRequestId must be a function");
     this.#controller = controller; this.#submit = submitPointerOperation; this.#lifecycle = lifecycle;
     this.#focusGuest = focusGuest; this.#captureTarget = captureTarget;
+    this.#allocateRequestId = allocateRequestId;
   }
 
   get transform() { return this.#transform; }
@@ -173,7 +177,10 @@ export class CadrM9PointerAdapter {
       if (operation.op === "pointer-neutralize") return this.#controller.neutralize(operation);
       throw new TypeError(`C-M9 adapter: unsupported direct operation ${operation.op}`);
     }
-    return this.#submit({ version: CADR_M9_PROTOCOL_VERSION, id: this.#nextId++, ...operation });
+    const id = this.#allocateRequestId === null ? this.#nextId++ : this.#allocateRequestId();
+    invariant(Number.isInteger(id) && id >= 1 && id <= 0xffffffff,
+      "allocated request id must be a positive uint32");
+    return this.#submit({ version: CADR_M9_PROTOCOL_VERSION, id, ...operation });
   }
 
   #deliver(operation, after = null) {

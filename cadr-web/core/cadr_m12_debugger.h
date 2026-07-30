@@ -3,16 +3,16 @@
 
 /*
  * C-M12 Phase 1 debugger model.  This is deliberately outside cadr_host_api.h
- * until ABI 1.7 and protocol v7 are integrated.  It never executes a core
+ * until the cumulative ABI 1.10 and protocol v7 are integrated.  It never executes a core
  * slot itself: a future core adapter supplies the narrow callback below.
  */
 
 #include <stdint.h>
 
 #define CADR_M12_PROFILE \
-    "CADR-WEB-303/ABI1.7/protocol-v7/C-M12-DBG-v1"
+    "CADR-WEB-303/ABI1.10/protocol-v7/C-M12-DBG-v1"
 #define CADR_M12_ABI_MAJOR UINT32_C(1)
-#define CADR_M12_ABI_MINOR UINT32_C(7)
+#define CADR_M12_ABI_MINOR UINT32_C(10)
 #define CADR_M12_PROTOCOL_VERSION UINT32_C(7)
 
 #define CADR_M12_MAX_BREAKPOINTS UINT32_C(64)

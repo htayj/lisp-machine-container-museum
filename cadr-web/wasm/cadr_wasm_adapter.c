@@ -4,6 +4,12 @@
  */
 #include "cadr_boundary_state.h"
 #include "cadr_disk_evidence.h"
+#if defined(CADR_M12_WASM)
+#include "cadr_m12_machine_adapter.h"
+#endif
+#if defined(CADR_M11_WASM)
+#include "cadr_audio_model.h"
+#endif
 #if defined(CADR_M6_DEVID_WASM)
 #include "cadr_m6_disk_evidence.h"
 #include "cadr_m6_fast_run.h"
@@ -38,6 +44,13 @@ static uint8_t *cadr_wasm_meta;
 static uint8_t *cadr_wasm_snapshot;
 static uint64_t cadr_wasm_snapshot_capacity;
 static uint64_t cadr_wasm_snapshot_written;
+#if defined(CADR_M12_WASM)
+static cadr_m12_machine_adapter cadr_wasm_m12_adapter;
+#endif
+#if defined(CADR_M11_WASM)
+static cadr_audio_cursor cadr_wasm_m11_cursor;
+static uint32_t cadr_wasm_m11_cursor_valid;
+#endif
 #if !defined(CADR_M6_DEVID_WASM)
 static uint8_t *cadr_wasm_snapshot_input;
 static uint64_t cadr_wasm_snapshot_input_capacity;
@@ -47,6 +60,10 @@ static uint32_t cadr_wasm_restore_used;
 #define CADR_WASM_TRANSFER_BYTES UINT32_C(1048576)
 #if defined(CADR_M6_DEVID_WASM)
 #define CADR_WASM_OUTPUT_BYTES UINT32_C(512)
+#elif defined(CADR_M12_WASM) || defined(CADR_M11_WASM)
+#define CADR_WASM_OUTPUT_BYTES UINT32_C(1024)
+#elif defined(CADR_M9_WASM)
+#define CADR_WASM_OUTPUT_BYTES UINT32_C(96)
 #elif defined(CADR_M6_DIAGNOSTIC_WASM)
 #define CADR_WASM_OUTPUT_BYTES UINT32_C(320)
 #else
@@ -58,6 +75,12 @@ static uint32_t cadr_wasm_restore_used;
 #if defined(CADR_M6_DEVID_WASM)
 #define CADR_WASM_SNAPSHOT_ABI_MINOR CADR_ABI_MINOR_M5
 #define CADR_WASM_ACTIVE_ABI_MINOR CADR_ABI_MINOR_M5
+#elif defined(CADR_M12_WASM)
+#define CADR_WASM_SNAPSHOT_ABI_MINOR CADR_ABI_MINOR_M5
+#define CADR_WASM_ACTIVE_ABI_MINOR CADR_ABI_MINOR_M12
+#elif defined(CADR_M9_WASM)
+#define CADR_WASM_SNAPSHOT_ABI_MINOR CADR_ABI_MINOR_M5
+#define CADR_WASM_ACTIVE_ABI_MINOR CADR_ABI_MINOR_M9
 #elif defined(CADR_M7_WASM)
 #define CADR_WASM_SNAPSHOT_ABI_MINOR CADR_ABI_MINOR_M5
 #define CADR_WASM_ACTIVE_ABI_MINOR CADR_ABI_MINOR_M7
@@ -74,7 +97,19 @@ static uint32_t cadr_wasm_restore_used;
 
 static void cadr_wasm_meta_result(uint64_t first, uint64_t second);
 /* ABI1.2's nine-chunk CDRSNAP1 adds one directory entry and the D0 disk chunk. */
-#define CADR_WASM_SNAPSHOT_MAX_BYTES UINT32_C(18126780)
+#define CADR_WASM_CDRSNAP_MAX_BYTES UINT32_C(18126780)
+#if defined(CADR_M12_WASM)
+/*
+ * CDRM12S1 is the composed M12 generic-snapshot envelope.  Its three payloads
+ * occur in normative restore order: CDRSNAP1, CDRAUDS1, then CDRM12C1.
+ */
+#define CADR_WASM_M12_SNAPSHOT_HEADER_BYTES UINT32_C(48)
+#define CADR_WASM_SNAPSHOT_MAX_BYTES \
+    (CADR_WASM_M12_SNAPSHOT_HEADER_BYTES + CADR_WASM_CDRSNAP_MAX_BYTES + \
+     CADR_AUDIO_SNAPSHOT_MAX_BYTES + CADR_M12_CONFIG_SNAPSHOT_BYTES)
+#else
+#define CADR_WASM_SNAPSHOT_MAX_BYTES CADR_WASM_CDRSNAP_MAX_BYTES
+#endif
 #define CADR_WASM_COMPLETION_MAX_BYTES UINT32_C(1048576)
 #define CADR_WASM_TRACE_ARENA_MAX_BYTES \
     (CADR_TRACE_MAX_RING_RECORDS * (CADR_TRACE_MAX_RECORD_BYTES + sizeof(uint32_t)) + UINT32_C(4096))
@@ -97,6 +132,29 @@ _Static_assert(sizeof(cadr_artifact_ingress) == 24U, "wasm artifact ingress layo
 _Static_assert(sizeof(cadr_run_request) == 24U, "wasm run request layout");
 _Static_assert(sizeof(cadr_run_result) == 48U, "wasm run result layout");
 _Static_assert(sizeof(cadr_trace_config) == 152U, "wasm trace config layout");
+
+#if defined(CADR_M11_WASM)
+static uint32_t cadr_wasm_m11_status(cadr_audio_status status)
+{
+    switch (status) {
+    case CADR_AUDIO_STATUS_OK: return CADR_STATUS_OK;
+    case CADR_AUDIO_STATUS_STALE: return CADR_STATUS_STALE_GENERATION;
+    case CADR_AUDIO_STATUS_BACKPRESSURE: return CADR_STATUS_QUEUE_FULL;
+    case CADR_AUDIO_STATUS_EMPTY:
+    case CADR_AUDIO_STATUS_NOT_READY: return CADR_STATUS_NOT_READY;
+    default: return CADR_STATUS_INVALID_ARGUMENT;
+    }
+}
+
+static int cadr_wasm_m11_cursor_matches(uint64_t generation, uint64_t sequence,
+                                        uint32_t frame_offset)
+{
+    return cadr_wasm_m11_cursor_valid != 0U &&
+        cadr_wasm_m11_cursor.generation == generation &&
+        cadr_wasm_m11_cursor.sequence == sequence &&
+        cadr_wasm_m11_cursor.frame_offset == frame_offset;
+}
+#endif
 _Static_assert(sizeof(cadr_trace_finish_request) == 24U, "wasm trace finish layout");
 _Static_assert(sizeof(cadr_snapshot_request) == 16U, "wasm snapshot request layout");
 _Static_assert(CADR_MAX_HOST_DESCRIPTOR_BYTES <= CADR_WASM_TRANSFER_BYTES,
@@ -138,14 +196,61 @@ static cadr_status cadr_wasm_ensure_machine(void)
     return cadr_machine_create(&config, &cadr_wasm_machine);
 }
 
+#if defined(CADR_M12_WASM)
+static cadr_status cadr_wasm_m12_ensure_adapter(void)
+{
+    if (cadr_wasm_machine == NULL) return CADR_STATUS_NOT_READY;
+    if (cadr_wasm_m12_adapter.initialized != 0U) return CADR_STATUS_OK;
+    return cadr_m12_machine_adapter_initialize(&cadr_wasm_m12_adapter,
+                                                cadr_wasm_machine);
+}
+
+/* Cold power, reset, and restore replace observable CPU state.  Their caller
+ * must intentionally retire existing debugger leases/breakpoints before this
+ * rebind publishes the new state. */
+static cadr_status cadr_wasm_m12_rebind_adapter(void)
+{
+    if (cadr_wasm_machine == NULL) return CADR_STATUS_NOT_READY;
+    if (cadr_wasm_m12_adapter.initialized == 0U) {
+        return cadr_wasm_m12_ensure_adapter();
+    }
+    return cadr_m12_machine_adapter_rebind(&cadr_wasm_m12_adapter,
+                                            cadr_wasm_machine);
+}
+
+static uint32_t cadr_wasm_m12_state(void)
+{
+    cadr_m12_debugger *debugger;
+    if (cadr_wasm_m12_adapter.initialized == 0U || cadr_wasm_output == NULL) {
+        return CADR_STATUS_NOT_READY;
+    }
+    debugger = &cadr_wasm_m12_adapter.debugger;
+    (void)memset(cadr_wasm_output, 0, CADR_WASM_OUTPUT_BYTES);
+    cadr_wasm_put64(cadr_wasm_output, debugger->generation);
+    cadr_wasm_put64(cadr_wasm_output + 8U, debugger->clock_slots_completed);
+    cadr_wasm_put32(cadr_wasm_output + 16U, debugger->current.micro_pc);
+    cadr_wasm_put32(cadr_wasm_output + 20U, debugger->current.raw_lc);
+    return CADR_STATUS_OK;
+}
+#endif
+
 CADR_WASM_EXPORT("cadr_wasm_create")
 uint32_t cadr_wasm_create(void)
 {
+#if defined(CADR_M12_WASM)
+    cadr_status status;
+#endif
     if (cadr_wasm_machine != NULL) {
         /* M3 modules are single-run: instantiate a fresh module to restart. */
         return CADR_STATUS_NOT_READY;
     }
+#if defined(CADR_M12_WASM)
+    status = cadr_wasm_ensure_machine();
+    if (status == CADR_STATUS_OK) status = cadr_wasm_m12_ensure_adapter();
+    return status;
+#else
     return cadr_wasm_ensure_machine();
+#endif
 }
 
 CADR_WASM_EXPORT("cadr_wasm_input_reserve")
@@ -160,6 +265,52 @@ uint32_t cadr_wasm_input_reserve(uint32_t byte_count)
     cadr_wasm_input_capacity = CADR_WASM_TRANSFER_BYTES;
     return (uint32_t)(uintptr_t)cadr_wasm_input;
 }
+
+#if defined(CADR_M9_WASM)
+/* CDRINP1 is copied through the existing bounded transfer arena.  It is not
+ * a scheduler record: the core applies it only at its completed boundary. */
+CADR_WASM_EXPORT("cadr_wasm_m9_input_deliver")
+uint32_t cadr_wasm_m9_input_deliver(uint32_t byte_count)
+{
+    if (cadr_wasm_machine == NULL || cadr_wasm_input == NULL ||
+        byte_count != CADR_M9_INPUT_RECORD_BYTES ||
+        byte_count > cadr_wasm_input_capacity) {
+        return CADR_STATUS_INVALID_ARGUMENT;
+    }
+    return cadr_machine_m9_input_deliver(cadr_wasm_machine, cadr_wasm_input,
+                                         byte_count);
+}
+
+/* CDRIOB91 is a read-only post-delivery witness, not a replacement for a
+ * native pre-IOB transition trace.  Layout: magic, schema, bytes, CSR,
+ * scancode, mouse X/Y words, shared sequence, keyboard FIFO count, ingress
+ * ordinal, machine generation, and lifecycle. */
+CADR_WASM_EXPORT("cadr_wasm_m9_input_state")
+uint32_t cadr_wasm_m9_input_state(void)
+{
+    const cadr_iob_state *iob;
+    if (cadr_wasm_machine == NULL || cadr_wasm_output == NULL) {
+        return CADR_STATUS_NOT_READY;
+    }
+    iob = &cadr_wasm_machine->state.devices.iob;
+    (void)memset(cadr_wasm_output, 0, CADR_WASM_OUTPUT_BYTES);
+    (void)memcpy(cadr_wasm_output, "CDRIOB91", 8U);
+    cadr_wasm_put32(cadr_wasm_output + 8U, UINT32_C(1));
+    cadr_wasm_put32(cadr_wasm_output + 12U, UINT32_C(64));
+    cadr_wasm_put32(cadr_wasm_output + 16U, iob->csr);
+    cadr_wasm_put32(cadr_wasm_output + 20U, iob->scancode);
+    cadr_wasm_put32(cadr_wasm_output + 24U, iob->mouse_x);
+    cadr_wasm_put32(cadr_wasm_output + 28U, iob->mouse_y);
+    cadr_wasm_put32(cadr_wasm_output + 32U, iob->input_sequence);
+    cadr_wasm_put32(cadr_wasm_output + 36U, iob->key_queue_count);
+    cadr_wasm_put64(cadr_wasm_output + 40U, iob->input_ingress_ordinal);
+    cadr_wasm_put64(cadr_wasm_output + 48U,
+                    cadr_wasm_machine->state.events.generation);
+    cadr_wasm_put32(cadr_wasm_output + 56U,
+                    cadr_wasm_machine->state.lifecycle);
+    return CADR_STATUS_OK;
+}
+#endif
 
 CADR_WASM_EXPORT("cadr_wasm_stream_begin")
 uint32_t cadr_wasm_stream_begin(uint32_t artifact_kind, uint32_t byte_count_low,
@@ -224,15 +375,35 @@ uint32_t cadr_wasm_import(uint32_t artifact_kind, uint32_t byte_count)
 CADR_WASM_EXPORT("cadr_wasm_cold_power_on")
 uint32_t cadr_wasm_cold_power_on(void)
 {
+#if defined(CADR_M12_WASM)
+    cadr_status status;
+#endif
+#if defined(CADR_M12_WASM)
+    if (cadr_wasm_machine == NULL) return CADR_STATUS_NOT_READY;
+    status = cadr_machine_cold_power_on(cadr_wasm_machine);
+    if (status == CADR_STATUS_OK) status = cadr_wasm_m12_rebind_adapter();
+    return status;
+#else
     return cadr_wasm_machine == NULL ? CADR_STATUS_NOT_READY :
         cadr_machine_cold_power_on(cadr_wasm_machine);
+#endif
 }
 
 CADR_WASM_EXPORT("cadr_wasm_boot")
 uint32_t cadr_wasm_boot(void)
 {
+#if defined(CADR_M12_WASM)
+    cadr_status status;
+#endif
+#if defined(CADR_M12_WASM)
+    if (cadr_wasm_machine == NULL) return CADR_STATUS_NOT_READY;
+    status = cadr_machine_boot(cadr_wasm_machine);
+    if (status == CADR_STATUS_OK) status = cadr_wasm_m12_rebind_adapter();
+    return status;
+#else
     return cadr_wasm_machine == NULL ? CADR_STATUS_NOT_READY :
         cadr_machine_boot(cadr_wasm_machine);
+#endif
 }
 
 #if defined(CADR_M5_WASM)
@@ -243,8 +414,16 @@ uint32_t cadr_wasm_reset(void)
     cadr_reset_request request = {
         CADR_ABI_MAJOR, CADR_ABI_MINOR_M5, (uint32_t)sizeof(cadr_reset_request), 0U
     };
+#if defined(CADR_M12_WASM)
+    cadr_status status;
+    if (cadr_wasm_machine == NULL) return CADR_STATUS_NOT_READY;
+    status = cadr_machine_reset(cadr_wasm_machine, &request);
+    if (status == CADR_STATUS_OK) status = cadr_wasm_m12_rebind_adapter();
+    return status;
+#else
     return cadr_wasm_machine == NULL ? CADR_STATUS_NOT_READY :
         cadr_machine_reset(cadr_wasm_machine, &request);
+#endif
 }
 
 CADR_WASM_EXPORT("cadr_wasm_run")
@@ -265,6 +444,143 @@ uint32_t cadr_wasm_run(uint32_t clock_slots)
                           result.microinstructions_executed);
     return status;
 }
+
+#if defined(CADR_M11_WASM)
+/* CDRM11A1 is a closed status view.  It exposes no authority or pointer. */
+CADR_WASM_EXPORT("cadr_wasm_m11_audio_state")
+uint32_t cadr_wasm_m11_audio_state(void)
+{
+    cadr_audio_model *model;
+    if (cadr_wasm_machine == NULL || cadr_wasm_output == NULL) {
+        return CADR_STATUS_NOT_READY;
+    }
+    model = cadr_wasm_machine->state.devices.audio_model;
+    if (model == NULL) return CADR_STATUS_NOT_READY;
+    (void)memset(cadr_wasm_output, 0, CADR_WASM_OUTPUT_BYTES);
+    (void)memcpy(cadr_wasm_output, "CDRM11A1", 8U);
+    cadr_wasm_put32(cadr_wasm_output + 8U, UINT32_C(1));
+    cadr_wasm_put32(cadr_wasm_output + 12U, UINT32_C(40));
+    cadr_wasm_put64(cadr_wasm_output + 16U, model->generation);
+    cadr_wasm_put64(cadr_wasm_output + 24U, model->queued_frames);
+    cadr_wasm_put32(cadr_wasm_output + 32U, model->count);
+    cadr_wasm_put32(cadr_wasm_output + 36U, model->renderer_profile);
+    return CADR_STATUS_OK;
+}
+
+CADR_WASM_EXPORT("cadr_wasm_m11_audio_peek")
+uint32_t cadr_wasm_m11_audio_peek(void)
+{
+    cadr_audio_status status;
+    cadr_audio_model *model;
+    if (cadr_wasm_machine == NULL || cadr_wasm_output == NULL) {
+        return CADR_STATUS_NOT_READY;
+    }
+    model = cadr_wasm_machine->state.devices.audio_model;
+    if (model == NULL) return CADR_STATUS_NOT_READY;
+    (void)memset(&cadr_wasm_m11_cursor, 0, sizeof(cadr_wasm_m11_cursor));
+    cadr_wasm_m11_cursor_valid = 0U;
+    status = cadr_audio_model_peek(model, &cadr_wasm_m11_cursor);
+    if (status != CADR_AUDIO_STATUS_OK) return cadr_wasm_m11_status(status);
+    (void)memset(cadr_wasm_output, 0, CADR_WASM_OUTPUT_BYTES);
+    (void)memcpy(cadr_wasm_output, cadr_wasm_m11_cursor.event,
+                 CADR_AUDIO_CANONICAL_EVENT_BYTES);
+    cadr_wasm_put64(cadr_wasm_output + 64U, cadr_wasm_m11_cursor.generation);
+    cadr_wasm_put64(cadr_wasm_output + 72U, cadr_wasm_m11_cursor.sequence);
+    cadr_wasm_put32(cadr_wasm_output + 80U, cadr_wasm_m11_cursor.frame_offset);
+    cadr_wasm_put32(cadr_wasm_output + 84U, cadr_wasm_m11_cursor.frames_remaining);
+    cadr_wasm_m11_cursor_valid = 1U;
+    return CADR_STATUS_OK;
+}
+
+CADR_WASM_EXPORT("cadr_wasm_m11_audio_render")
+uint32_t cadr_wasm_m11_audio_render(uint32_t generation_low,
+                                    uint32_t generation_high,
+                                    uint32_t sequence_low,
+                                    uint32_t sequence_high,
+                                    uint32_t frame_offset,
+                                    uint32_t requested_frames)
+{
+    const uint64_t generation = ((uint64_t)generation_high << 32U) | generation_low;
+    const uint64_t sequence = ((uint64_t)sequence_high << 32U) | sequence_low;
+    uint32_t frames_written = 0U;
+    cadr_audio_status status;
+    if (cadr_wasm_machine == NULL || cadr_wasm_output == NULL ||
+        requested_frames == 0U || requested_frames > CADR_AUDIO_FRAMES_PER_PACKET ||
+        !cadr_wasm_m11_cursor_matches(generation, sequence, frame_offset)) {
+        return CADR_STATUS_INVALID_ARGUMENT;
+    }
+    status = cadr_audio_model_render_pcm_s16le(
+        cadr_wasm_machine->state.devices.audio_model, &cadr_wasm_m11_cursor,
+        (int16_t *)cadr_wasm_output, requested_frames, &frames_written);
+    if (status != CADR_AUDIO_STATUS_OK) return cadr_wasm_m11_status(status);
+    cadr_wasm_meta_result(frames_written, (uint64_t)frames_written * UINT64_C(2));
+    return CADR_STATUS_OK;
+}
+
+CADR_WASM_EXPORT("cadr_wasm_m11_audio_ack")
+uint32_t cadr_wasm_m11_audio_ack(uint32_t generation_low,
+                                 uint32_t generation_high,
+                                 uint32_t sequence_low,
+                                 uint32_t sequence_high,
+                                 uint32_t frame_offset, uint32_t frames)
+{
+    const uint64_t generation = ((uint64_t)generation_high << 32U) | generation_low;
+    const uint64_t sequence = ((uint64_t)sequence_high << 32U) | sequence_low;
+    cadr_audio_status status;
+    if (cadr_wasm_machine == NULL ||
+        !cadr_wasm_m11_cursor_matches(generation, sequence, frame_offset)) {
+        return CADR_STATUS_INVALID_ARGUMENT;
+    }
+    status = cadr_audio_model_ack(cadr_wasm_machine->state.devices.audio_model,
+                                  &cadr_wasm_m11_cursor, frames);
+    cadr_wasm_m11_cursor_valid = 0U;
+    return cadr_wasm_m11_status(status);
+}
+
+CADR_WASM_EXPORT("cadr_wasm_m11_audio_snapshot_size")
+uint32_t cadr_wasm_m11_audio_snapshot_size(void)
+{
+    uint32_t byte_count = 0U;
+    cadr_audio_status status;
+    if (cadr_wasm_machine == NULL) return CADR_STATUS_NOT_READY;
+    status = cadr_audio_model_snapshot_size(
+        cadr_wasm_machine->state.devices.audio_model, &byte_count);
+    cadr_wasm_meta_result(byte_count, 0U);
+    return cadr_wasm_m11_status(status);
+}
+
+CADR_WASM_EXPORT("cadr_wasm_m11_audio_snapshot_save")
+uint32_t cadr_wasm_m11_audio_snapshot_save(void)
+{
+    uint32_t byte_count = 0U;
+    uint32_t written = 0U;
+    cadr_audio_status status;
+    if (cadr_wasm_machine == NULL || cadr_wasm_input == NULL ||
+        cadr_wasm_input_capacity < CADR_AUDIO_SNAPSHOT_MAX_BYTES) {
+        return CADR_STATUS_NOT_READY;
+    }
+    status = cadr_audio_model_snapshot_serialize(
+        cadr_wasm_machine->state.devices.audio_model, cadr_wasm_input,
+        cadr_wasm_input_capacity, &written);
+    if (status == CADR_AUDIO_STATUS_OK) byte_count = written;
+    cadr_wasm_meta_result(byte_count, 0U);
+    return cadr_wasm_m11_status(status);
+}
+
+CADR_WASM_EXPORT("cadr_wasm_m11_audio_snapshot_restore")
+uint32_t cadr_wasm_m11_audio_snapshot_restore(uint32_t byte_count)
+{
+    cadr_audio_status status;
+    if (cadr_wasm_machine == NULL || cadr_wasm_input == NULL ||
+        byte_count == 0U || byte_count > cadr_wasm_input_capacity) {
+        return CADR_STATUS_INVALID_ARGUMENT;
+    }
+    status = cadr_audio_model_snapshot_adopt(
+        cadr_wasm_machine->state.devices.audio_model, cadr_wasm_input, byte_count);
+    cadr_wasm_m11_cursor_valid = 0U;
+    return cadr_wasm_m11_status(status);
+}
+#endif
 
 #if defined(CADR_M6_DEVID_WASM)
 /* M6-DEVID1's C-owned fast path.  It returns one closed CDRM6FAST1 stop
@@ -314,6 +630,14 @@ static uint32_t cadr_wasm_get32le(const uint8_t *bytes)
     return (uint32_t)bytes[0] | ((uint32_t)bytes[1] << 8U) |
         ((uint32_t)bytes[2] << 16U) | ((uint32_t)bytes[3] << 24U);
 }
+
+#if defined(CADR_M12_WASM)
+static uint64_t cadr_wasm_get64le(const uint8_t *bytes)
+{
+    return (uint64_t)cadr_wasm_get32le(bytes) |
+        ((uint64_t)cadr_wasm_get32le(bytes + 4U) << 32U);
+}
+#endif
 
 #if defined(CADR_M5_WASM)
 CADR_WASM_EXPORT("cadr_wasm_schedule_events")
@@ -810,6 +1134,161 @@ uint32_t cadr_wasm_display_full(void)
 }
 #endif
 
+#if defined(CADR_M12_WASM)
+/* M12's browser ABI is scalar-only.  A direct-array inspector lease is
+ * process-local and never crosses the Wasm or worker boundary.  The state
+ * response is exactly: u64 debugger generation, u64 clock slot, u32 micro PC,
+ * u32 raw location counter, followed by zero padding. */
+CADR_WASM_EXPORT("cadr_wasm_m12_debug_state")
+uint32_t cadr_wasm_m12_debug_state(void)
+{
+    return cadr_wasm_m12_state();
+}
+
+/* A lease is opened and consumed entirely in this one synchronous Wasm call.
+ * The browser receives the copied scalar record only, never a pointer, lease,
+ * owner identity, or array view.  Layout: generation:u64le, array:u32le,
+ * index:u32le, value:u32le, reserved:u32le. */
+CADR_WASM_EXPORT("cadr_wasm_m12_inspect_read")
+uint32_t cadr_wasm_m12_inspect_read(uint32_t array_kind, uint32_t index)
+{
+    cadr_m12_inspector_lease lease;
+    cadr_m12_status status;
+    uint32_t value = 0U;
+    if (cadr_wasm_m12_ensure_adapter() != CADR_STATUS_OK || cadr_wasm_output == NULL) {
+        return CADR_STATUS_NOT_READY;
+    }
+    status = cadr_m12_inspector_lease_open(&cadr_wasm_m12_adapter.debugger, &lease);
+    if (status != CADR_M12_STATUS_OK) return status;
+    status = cadr_m12_inspector_lease_read(&cadr_wasm_m12_adapter.debugger, &lease,
+                                            array_kind, index, &value);
+    if (status != CADR_M12_STATUS_OK) return status;
+    (void)memset(cadr_wasm_output, 0, CADR_WASM_OUTPUT_BYTES);
+    cadr_wasm_put64(cadr_wasm_output, cadr_wasm_m12_adapter.debugger.generation);
+    cadr_wasm_put32(cadr_wasm_output + 8U, array_kind);
+    cadr_wasm_put32(cadr_wasm_output + 12U, index);
+    cadr_wasm_put32(cadr_wasm_output + 16U, value);
+    return CADR_STATUS_OK;
+}
+
+CADR_WASM_EXPORT("cadr_wasm_m12_breakpoint_set")
+uint32_t cadr_wasm_m12_breakpoint_set(uint32_t index, uint32_t kind,
+                                      uint32_t value_low, uint32_t value_high)
+{
+    const cadr_m12_breakpoint breakpoint = {
+        1U, kind, ((uint64_t)value_high << 32U) | value_low
+    };
+    const cadr_status status = cadr_wasm_m12_ensure_adapter();
+    return status == CADR_STATUS_OK ?
+        cadr_m12_machine_adapter_breakpoint_set(&cadr_wasm_m12_adapter, index,
+                                                &breakpoint) : status;
+}
+
+CADR_WASM_EXPORT("cadr_wasm_m12_breakpoint_clear")
+uint32_t cadr_wasm_m12_breakpoint_clear(uint32_t index)
+{
+    const cadr_status status = cadr_wasm_m12_ensure_adapter();
+    return status == CADR_STATUS_OK ?
+        cadr_m12_machine_adapter_breakpoint_clear(&cadr_wasm_m12_adapter, index) :
+        status;
+}
+
+CADR_WASM_EXPORT("cadr_wasm_m12_resume_one_boundary")
+uint32_t cadr_wasm_m12_resume_one_boundary(void)
+{
+    const cadr_status status = cadr_wasm_m12_ensure_adapter();
+    return status == CADR_STATUS_OK ?
+        cadr_m12_machine_adapter_resume_one_boundary(&cadr_wasm_m12_adapter) :
+        status;
+}
+
+CADR_WASM_EXPORT("cadr_wasm_m12_micro_step")
+uint32_t cadr_wasm_m12_micro_step(void)
+{
+    cadr_m12_status status;
+    if (cadr_wasm_m12_ensure_adapter() != CADR_STATUS_OK) return CADR_STATUS_NOT_READY;
+    status = cadr_m12_machine_adapter_micro_step(&cadr_wasm_m12_adapter);
+    if (status == CADR_M12_STATUS_OK) return cadr_wasm_m12_state();
+    if (status == CADR_M12_STATUS_DEBUG_STOP) {
+        if (cadr_wasm_output == NULL ||
+            cadr_m12_machine_adapter_stop_copy(&cadr_wasm_m12_adapter,
+                                                cadr_wasm_output) != CADR_M12_STATUS_OK) {
+            return CADR_STATUS_NOT_READY;
+        }
+    }
+    return status;
+}
+
+CADR_WASM_EXPORT("cadr_wasm_m12_macro_step")
+uint32_t cadr_wasm_m12_macro_step(void)
+{
+    cadr_m12_status status;
+    if (cadr_wasm_m12_ensure_adapter() != CADR_STATUS_OK) return CADR_STATUS_NOT_READY;
+    status = cadr_m12_machine_adapter_macro_step(&cadr_wasm_m12_adapter);
+    if (status == CADR_M12_STATUS_OK) return cadr_wasm_m12_state();
+    if (status == CADR_M12_STATUS_DEBUG_STOP || status == CADR_M12_STATUS_LIMIT_REACHED) {
+        if (cadr_wasm_output == NULL ||
+            cadr_m12_machine_adapter_stop_copy(&cadr_wasm_m12_adapter,
+                                                cadr_wasm_output) != CADR_M12_STATUS_OK) {
+            return CADR_STATUS_NOT_READY;
+        }
+    }
+    return status;
+}
+
+CADR_WASM_EXPORT("cadr_wasm_m12_stop_record")
+uint32_t cadr_wasm_m12_stop_record(void)
+{
+    if (cadr_wasm_m12_ensure_adapter() != CADR_STATUS_OK || cadr_wasm_output == NULL) {
+        return CADR_STATUS_NOT_READY;
+    }
+    return cadr_m12_machine_adapter_stop_copy(&cadr_wasm_m12_adapter,
+                                               cadr_wasm_output);
+}
+
+CADR_WASM_EXPORT("cadr_wasm_m12_trace_filter")
+uint32_t cadr_wasm_m12_trace_filter(uint32_t flags, uint32_t micro_pc,
+                                    uint32_t first_low, uint32_t first_high,
+                                    uint32_t last_low, uint32_t last_high)
+{
+    const cadr_m12_trace_filter filter = {
+        flags, micro_pc,
+        ((uint64_t)first_high << 32U) | first_low,
+        ((uint64_t)last_high << 32U) | last_low
+    };
+    const cadr_status status = cadr_wasm_m12_ensure_adapter();
+    return status == CADR_STATUS_OK ?
+        cadr_m12_machine_adapter_trace_filter(&cadr_wasm_m12_adapter, &filter) :
+        status;
+}
+
+CADR_WASM_EXPORT("cadr_wasm_m12_config_snapshot_save")
+uint32_t cadr_wasm_m12_config_snapshot_save(void)
+{
+    cadr_status status;
+    if (cadr_wasm_m12_ensure_adapter() != CADR_STATUS_OK || cadr_wasm_input == NULL ||
+        cadr_wasm_input_capacity < CADR_M12_CONFIG_SNAPSHOT_BYTES) {
+        return CADR_STATUS_NOT_READY;
+    }
+    status = cadr_m12_machine_adapter_config_snapshot_serialize(
+        &cadr_wasm_m12_adapter, cadr_wasm_input);
+    if (status == CADR_STATUS_OK) {
+        cadr_wasm_meta_result(CADR_M12_CONFIG_SNAPSHOT_BYTES, 0U);
+    }
+    return status;
+}
+
+CADR_WASM_EXPORT("cadr_wasm_m12_config_snapshot_restore")
+uint32_t cadr_wasm_m12_config_snapshot_restore(uint32_t byte_count)
+{
+    if (cadr_wasm_m12_ensure_adapter() != CADR_STATUS_OK || cadr_wasm_input == NULL ||
+        byte_count != CADR_M12_CONFIG_SNAPSHOT_BYTES ||
+        byte_count > cadr_wasm_input_capacity) return CADR_STATUS_INVALID_ARGUMENT;
+    return cadr_m12_machine_adapter_config_snapshot_restore(
+        &cadr_wasm_m12_adapter, cadr_wasm_input);
+}
+#endif
+
 CADR_WASM_EXPORT("cadr_wasm_trace_start")
 uint32_t cadr_wasm_trace_start(uint32_t transport_mode, uint32_t capacity,
                                uint32_t selector_low, uint32_t selector_high,
@@ -896,6 +1375,19 @@ uint32_t cadr_wasm_snapshot_size(void)
     return CADR_STATUS_NOT_READY;
 #endif
     status = cadr_machine_snapshot_size(cadr_wasm_machine, &request, &size);
+#if defined(CADR_M12_WASM)
+    if (status == CADR_STATUS_OK) {
+        uint32_t audio_size = 0U;
+        cadr_audio_status audio_status = cadr_audio_model_snapshot_size(
+            cadr_wasm_machine->state.devices.audio_model, &audio_size);
+        if (audio_status != CADR_AUDIO_STATUS_OK) {
+            status = (cadr_status)cadr_wasm_m11_status(audio_status);
+        } else {
+            size += CADR_WASM_M12_SNAPSHOT_HEADER_BYTES +
+                (uint64_t)audio_size + CADR_M12_CONFIG_SNAPSHOT_BYTES;
+        }
+    }
+#endif
     cadr_wasm_meta_result(size, 0U);
     return status;
 }
@@ -909,22 +1401,84 @@ uint32_t cadr_wasm_snapshot_save(void)
     uint64_t size = 0U;
     uint64_t written = 0U;
     cadr_status status;
+#if defined(CADR_M12_WASM)
+    uint32_t audio_size = 0U;
+    uint32_t audio_written = 0U;
+    uint64_t total;
+    cadr_audio_status audio_status;
+#endif
+#if defined(CADR_M12_WASM)
+    cadr_wasm_snapshot_written = 0U;
+#endif
     if (cadr_wasm_machine == NULL) return CADR_STATUS_NOT_READY;
 #if defined(CADR_M6_DEVID_WASM)
     return CADR_STATUS_NOT_READY;
 #endif
     status = cadr_machine_snapshot_size(cadr_wasm_machine, &request, &size);
     if (status != CADR_STATUS_OK) return status;
+#if defined(CADR_M12_WASM)
+    audio_status = cadr_audio_model_snapshot_size(
+        cadr_wasm_machine->state.devices.audio_model, &audio_size);
+    if (audio_status != CADR_AUDIO_STATUS_OK) {
+        return cadr_wasm_m11_status(audio_status);
+    }
+    total = CADR_WASM_M12_SNAPSHOT_HEADER_BYTES + size +
+        (uint64_t)audio_size + CADR_M12_CONFIG_SNAPSHOT_BYTES;
+    if (total > CADR_WASM_SNAPSHOT_MAX_BYTES) return CADR_STATUS_NO_MEMORY;
+#else
     if (size > CADR_WASM_SNAPSHOT_MAX_BYTES) return CADR_STATUS_NO_MEMORY;
+#endif
     if (cadr_wasm_snapshot == NULL) {
         cadr_wasm_snapshot = malloc(CADR_WASM_SNAPSHOT_MAX_BYTES);
         if (cadr_wasm_snapshot == NULL) return CADR_STATUS_NO_MEMORY;
         cadr_wasm_snapshot_capacity = CADR_WASM_SNAPSHOT_MAX_BYTES;
     }
+#if defined(CADR_M12_WASM)
+    (void)memset(cadr_wasm_snapshot, 0,
+                 CADR_WASM_M12_SNAPSHOT_HEADER_BYTES);
+    status = cadr_machine_snapshot_save(
+        cadr_wasm_machine, &request,
+        cadr_wasm_snapshot + CADR_WASM_M12_SNAPSHOT_HEADER_BYTES,
+        cadr_wasm_snapshot_capacity - CADR_WASM_M12_SNAPSHOT_HEADER_BYTES,
+        &written);
+    if (status == CADR_STATUS_OK) {
+        audio_status = cadr_audio_model_snapshot_serialize(
+            cadr_wasm_machine->state.devices.audio_model,
+            cadr_wasm_snapshot + CADR_WASM_M12_SNAPSHOT_HEADER_BYTES +
+                (size_t)written,
+            (uint32_t)(cadr_wasm_snapshot_capacity -
+                CADR_WASM_M12_SNAPSHOT_HEADER_BYTES - written),
+            &audio_written);
+        status = (cadr_status)cadr_wasm_m11_status(audio_status);
+    }
+    if (status == CADR_STATUS_OK) {
+        status = cadr_m12_machine_adapter_config_snapshot_serialize(
+            &cadr_wasm_m12_adapter,
+            cadr_wasm_snapshot + CADR_WASM_M12_SNAPSHOT_HEADER_BYTES +
+                (size_t)written + audio_written);
+    }
+    if (status == CADR_STATUS_OK) {
+        total = CADR_WASM_M12_SNAPSHOT_HEADER_BYTES + written +
+            (uint64_t)audio_written + CADR_M12_CONFIG_SNAPSHOT_BYTES;
+        (void)memcpy(cadr_wasm_snapshot, "CDRM12S1", 8U);
+        cadr_wasm_put32(cadr_wasm_snapshot + 8U, UINT32_C(1));
+        cadr_wasm_put32(cadr_wasm_snapshot + 12U,
+                        CADR_WASM_M12_SNAPSHOT_HEADER_BYTES);
+        cadr_wasm_put64(cadr_wasm_snapshot + 16U, total);
+        cadr_wasm_put64(cadr_wasm_snapshot + 24U, written);
+        cadr_wasm_put32(cadr_wasm_snapshot + 32U, audio_written);
+        cadr_wasm_put32(cadr_wasm_snapshot + 36U,
+                        CADR_M12_CONFIG_SNAPSHOT_BYTES);
+        cadr_wasm_put64(cadr_wasm_snapshot + 40U, UINT64_C(0));
+        written = total;
+        cadr_wasm_snapshot_written = written;
+    }
+#else
     status = cadr_machine_snapshot_save(cadr_wasm_machine, &request,
                                         cadr_wasm_snapshot, cadr_wasm_snapshot_capacity,
                                         &written);
     if (status == CADR_STATUS_OK) cadr_wasm_snapshot_written = written;
+#endif
     cadr_wasm_meta_result(written, 0U);
     return status;
 }
@@ -973,11 +1527,47 @@ static uint32_t cadr_wasm_snapshot_replace(const uint8_t *bytes,
     cadr_machine *old;
     cadr_status status;
     uintptr_t allocation_mark;
+#if defined(CADR_M12_WASM)
+    uint64_t core_count;
+    uint32_t audio_count;
+    uint32_t config_count;
+    const uint8_t *audio_bytes;
+    const uint8_t *config_bytes;
+    cadr_audio_status audio_status;
+#endif
 #if defined(CADR_M7_WASM)
     uint64_t display_generation;
 #endif
     if (bytes == NULL || byte_count == 0U) return CADR_STATUS_NOT_READY;
     if (cadr_wasm_restore_used != 0U) return CADR_STATUS_NOT_READY;
+#if defined(CADR_M12_WASM)
+    if (byte_count < CADR_WASM_M12_SNAPSHOT_HEADER_BYTES ||
+        memcmp(bytes, "CDRM12S1", 8U) != 0 ||
+        cadr_wasm_get32le(bytes + 8U) != UINT32_C(1) ||
+        cadr_wasm_get32le(bytes + 12U) !=
+            CADR_WASM_M12_SNAPSHOT_HEADER_BYTES ||
+        cadr_wasm_get64le(bytes + 16U) != byte_count ||
+        cadr_wasm_get64le(bytes + 40U) != UINT64_C(0)) {
+        return CADR_STATUS_INVALID_ARGUMENT;
+    }
+    core_count = cadr_wasm_get64le(bytes + 24U);
+    audio_count = cadr_wasm_get32le(bytes + 32U);
+    config_count = cadr_wasm_get32le(bytes + 36U);
+    if (core_count == 0U || core_count > CADR_WASM_CDRSNAP_MAX_BYTES ||
+        audio_count < CADR_AUDIO_SNAPSHOT_HEADER_BYTES ||
+        audio_count > CADR_AUDIO_SNAPSHOT_MAX_BYTES ||
+        config_count != CADR_M12_CONFIG_SNAPSHOT_BYTES ||
+        core_count > byte_count - CADR_WASM_M12_SNAPSHOT_HEADER_BYTES ||
+        (uint64_t)audio_count >
+            byte_count - CADR_WASM_M12_SNAPSHOT_HEADER_BYTES - core_count ||
+        byte_count != CADR_WASM_M12_SNAPSHOT_HEADER_BYTES + core_count +
+            (uint64_t)audio_count + config_count) {
+        return CADR_STATUS_INVALID_ARGUMENT;
+    }
+    audio_bytes = bytes + CADR_WASM_M12_SNAPSHOT_HEADER_BYTES +
+        (size_t)core_count;
+    config_bytes = audio_bytes + audio_count;
+#endif
 #if defined(CADR_M7_WASM)
     if (cadr_wasm_machine == NULL) return CADR_STATUS_NOT_READY;
     status = cadr_display_tracker_prepare_reinitialize(
@@ -985,18 +1575,60 @@ static uint32_t cadr_wasm_snapshot_replace(const uint8_t *bytes,
     if (status != CADR_STATUS_OK) return status;
 #endif
     allocation_mark = cadr_wasm_allocator_mark();
+#if defined(CADR_M12_WASM)
+    status = cadr_machine_snapshot_restore(
+        &request,
+        bytes + CADR_WASM_M12_SNAPSHOT_HEADER_BYTES, core_count,
+        &restored);
+#else
     status = cadr_machine_snapshot_restore(&request, bytes, byte_count, &restored);
+#endif
     if (status != CADR_STATUS_OK) {
         cadr_wasm_allocator_rollback(allocation_mark);
         return status;
     }
+#if defined(CADR_M12_WASM)
+    /*
+     * The replacement is still unpublished.  CDRAUDS1 adoption both validates
+     * its semantic witness and creates a fresh local consumer epoch.
+     */
+    audio_status = cadr_audio_model_snapshot_adopt(
+        restored->state.devices.audio_model, audio_bytes, audio_count);
+    if (audio_status != CADR_AUDIO_STATUS_OK ||
+        restored->state.devices.audio_model->generation !=
+            restored->state.events.generation) {
+        status = audio_status == CADR_AUDIO_STATUS_OK ?
+            CADR_STATUS_INVALID_ARGUMENT :
+            (cadr_status)cadr_wasm_m11_status(audio_status);
+        cadr_machine_destroy(restored);
+        cadr_wasm_allocator_rollback(allocation_mark);
+        return status;
+    }
+#endif
     old = cadr_wasm_machine;
 #if defined(CADR_M7_WASM)
     cadr_display_tracker_commit_reinitialize(
         &restored->display, &restored->state, display_generation);
 #endif
+#if defined(CADR_M12_WASM)
+    /*
+     * CDRM12C1 is decoded against the replacement generation before the live
+     * owner is retired.  The adapter helper's commit tail is intentionally
+     * non-fallible after that retirement.
+     */
+    status = cadr_m12_machine_adapter_rebind_config_snapshot(
+        &cadr_wasm_m12_adapter, restored, config_bytes);
+    if (status != CADR_STATUS_OK) {
+        cadr_machine_destroy(restored);
+        cadr_wasm_allocator_rollback(allocation_mark);
+        return status;
+    }
+#endif
     cadr_wasm_machine = restored;
     cadr_wasm_restore_used = 1U;
+#if defined(CADR_M11_WASM)
+    cadr_wasm_m11_cursor_valid = 0U;
+#endif
     if (old != NULL) cadr_machine_destroy(old);
     return CADR_STATUS_OK;
 }

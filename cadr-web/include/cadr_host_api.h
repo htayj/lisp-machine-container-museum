@@ -24,7 +24,18 @@ extern "C" {
 /* M6 is an ABI1.4 protocol extension, not an ABI-minor increment. */
 #define CADR_ABI_MINOR_M6 UINT32_C(4)
 #define CADR_ABI_MINOR_M7 UINT32_C(5)
-#if defined(CADR_M7_CORE)
+#define CADR_ABI_MINOR_M11 UINT32_C(6)
+#define CADR_ABI_MINOR_M9 UINT32_C(8)
+/* M12 debugger/snapshot is ABI1.9; the browser-safe scalar inspector is the
+ * next additive M12 surface and therefore ABI1.10. */
+#define CADR_ABI_MINOR_M12 UINT32_C(10)
+#if defined(CADR_M12_CORE)
+#define CADR_ABI_MINOR CADR_ABI_MINOR_M12
+#elif defined(CADR_M9_CORE)
+#define CADR_ABI_MINOR CADR_ABI_MINOR_M9
+#elif defined(CADR_M11_CORE)
+#define CADR_ABI_MINOR CADR_ABI_MINOR_M11
+#elif defined(CADR_M7_CORE)
 #define CADR_ABI_MINOR CADR_ABI_MINOR_M7
 #else
 #define CADR_ABI_MINOR CADR_ABI_MINOR_M6

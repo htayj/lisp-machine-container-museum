@@ -3,7 +3,7 @@ type: Historical Article
 title: CADR HACKS, display, sound, and novelty programs
 description: A source- and runtime-bounded dossier on every active System 303 HACKS component, every extra canonical demo source, the menu framework, controls, assets, missing inputs, hardware dependencies, and System 46 lineage.
 tags: [mit-cadr, lm-3, hacks, demos, graphics, sound, games, runtime]
-timestamp: 2026-07-26T14:31:35-04:00
+timestamp: 2026-07-26T16:16:00-04:00
 ---
 
 # CADR HACKS, display, sound, and novelty programs
@@ -559,6 +559,53 @@ No emulator audio substitute can verify the intended speech. Meaningful runtime
 testing requires an isolated compatible serial endpoint or a protocol recorder
 which can establish emitted bytes without claiming to reproduce the Votrax voice.
 
+### What an authentic audio capture requires
+
+**Source fact:** this program does not synthesize a waveform in Lisp. `SPEAK-1`
+combines each six-bit Votrax phoneme code with one of four stress or inflection
+prefixes and writes the resulting byte to `VOTRAX-STREAM`; `-1` terminates the
+utterance. The maintained source configures that stream for 300 baud, eight data
+bits, and two stop bits. The `WORDS` file is the text-to-phoneme dictionary, not a
+collection of sampled speech.
+
+**Emulator inspection, 2026-07-26:** the pinned System 303 `usim` path can generate
+CADR beeps through SDL, but it does not synthesize Votrax speech. Its I/O-board
+implementation recognizes the four serial-interface addresses only as diagnostic
+read/write cases: writes can be traced, but they are not connected to a host serial
+endpoint or speech device. The museum harness also deliberately sets
+`beep_amplitude = 0`; merely enabling that option would affect CADR beeps, not
+Votrax output.
+
+A publishable sample therefore needs two independently preserved stages:
+
+1. Run `VOTRAX` and `WORDS` on CADR and capture the exact ordered serial bytes for a
+   short, researcher-selected phrase, together with the ordinary harness action and
+   session provenance.
+2. Feed those bytes, without translating their phoneme or inflection values, to
+   either a compatible physical Votrax or a validated SC-01-family emulation and
+   record its waveform. Record the device profile, clock, sample format, renderer
+   version, input-byte hash, and output-audio hash.
+
+The inspected Lisp names only `VOTRAX`; it does not establish the exact synthesizer
+box or chip revision attached to the historical CADR. Until a separate hardware
+record identifies that target, even a correct SC-01 rendering must be captioned
+precisely—for example, “CADR VOTRAX byte stream rendered with the MAME SC-01
+profile”—rather than presented as the uniquely established sound of MIT's device.
+
+MAME contains a circuit-level `VOTRAX_SC01`/`VOTRAX_SC01A` device model, but the
+model requires the corresponding 512-byte internal phoneme ROM. No such ROM was
+found among this repository's local preservation inputs on 2026-07-26, and MAME's
+model is not presently wired to `usim`'s serial interface. A renderer using a
+lawfully supplied local ROM is a viable future capture fixture; the ROM must remain
+an untracked local input unless its redistribution rights are established.
+
+An eSpeak, DECtalk, modern neural-TTS, or simple concatenated-phoneme rendering must
+not be labeled “CADR Votrax audio.” At most it would be an explicitly identified
+interpretive sonification of the recovered phoneme sequence. The outstanding audio
+recording is consequently blocked on a compatible hardware capture or a
+rights-cleared local SC-01-family ROM plus the tracked serial-to-synthesizer fixture,
+not on ordinary host audio recording.
+
 ## WORDS
 
 `WORDS` is not an application. It is a Lisp data file of `DEFPROP` forms mapping
@@ -805,9 +852,10 @@ is represented.
   not the suite as a whole.
 - **Open:** FREDKIN's `ELP-ARRAY` and PFOM's `RISING SUN` are absent; their historical
   pixels must remain unknown unless a rights-cleared public witness is found.
-- **Open:** VOTRAX needs a serial protocol fixture or real compatible synthesizer;
-  color modules need a four-bit screen implementation; network alarms need an
-  isolated configured Chaos site.
+- **Open:** VOTRAX needs a serial protocol fixture plus either a real compatible
+  synthesizer or a faithful emulator supplied with its required local ROM; color
+  modules need a four-bit screen implementation; network alarms need an isolated
+  configured Chaos site.
 - **Open:** the exact authorship and pre-System-46 lineage of every experiment is not
   established merely by comments in the latest files. A separate history study
   should corroborate dates and initials against earlier source revisions.
@@ -826,9 +874,14 @@ is represented.
   [`lmio1/hacks.189`](https://github.com/mietek/mit-cadr-system-software/blob/8e978d7d1704096a63edd4386a3b8326a2e584af/src/lmio1/hacks.189),
   and [`lmio1/votrax.6`](https://github.com/mietek/mit-cadr-system-software/blob/8e978d7d1704096a63edd4386a3b8326a2e584af/src/lmio1/votrax.6),
   commit `8e978d7d1704096a63edd4386a3b8326a2e584af`.
+- MAME,
+  [`src/devices/sound/votrax.cpp`](https://github.com/mamedev/mame/blob/c531ffa701750a5345a856ec205c6428057aa63a/src/devices/sound/votrax.cpp),
+  commit `c531ffa701750a5345a856ec205c6428057aa63a`; inspected
+  2026-07-26. This is evidence for the available emulation path and its ROM
+  dependency, not evidence that the CADR runtime has already been connected to it.
 - [CADR software catalog](software-areas-and-applications.md#system-303-hacks-and-demo-directory-census),
   for the complete release census and inclusion boundary.
 - [Genera HACKS demonstration suite](../genera/genera-hacks-demonstration-suite.md),
   for the separately licensed later generation and exact descriptor comparison.
 
-Last verified: 2026-07-18.
+Last verified: 2026-07-26.

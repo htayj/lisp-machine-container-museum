@@ -14,6 +14,7 @@ import contextlib
 import datetime as dt
 import fcntl
 import hashlib
+import importlib.util
 import json
 import math
 import os
@@ -23,6 +24,7 @@ import secrets
 import shutil
 import signal
 import sqlite3
+import stat
 import subprocess
 import sys
 import time
@@ -33,6 +35,11 @@ from typing import Any, Iterator, Sequence
 ROOT = Path(__file__).resolve().parent.parent
 DEFAULT_STATE_ROOT = ROOT / "build" / "cadr-computer-use"
 DEFAULT_SESSION = "default"
+M11_AUDIO_TRIGGER_FORM = "(SI:%BEEP 500. 100000.)"
+M11_AUDIO_WITNESS_SCHEMA = "cadr-computer-use-m11-audio-witness-v1"
+M11_AUDIO_WITNESS_ENVIRONMENT = "CADR_M11_AUDIO_WITNESS"
+M11_AUDIO_BEEP_AMPLITUDE = "0.8"
+M11_AUDIO_SOURCE_WITNESS = ROOT / "scripts" / "cadr_native_source_witness.py"
 SESSION_RE = re.compile(r"[a-zA-Z0-9][a-zA-Z0-9_.-]{0,63}\Z")
 LABEL_RE = re.compile(r"[a-zA-Z0-9][a-zA-Z0-9_.-]{0,47}\Z")
 EXPECTED_WIDTH = 768
@@ -163,6 +170,98 @@ def sha256_file(path: Path) -> str:
         for chunk in iter(lambda: source.read(1024 * 1024), b""):
             digest.update(chunk)
     return digest.hexdigest()
+
+
+def file_identity(path: Path) -> dict[str, Any]:
+    if path.is_symlink() or not path.is_file():
+        raise HarnessError(f"expected a regular file: {path}")
+    return {"path": str(path), "bytes": path.stat().st_size, "sha256": sha256_file(path)}
+
+
+def source_witness_module() -> Any:
+    """Load the narrow public-usim closure validator without accepting a plug-in.
+
+    The M11 mode deliberately has one closure format.  Loading this repository
+    script by its fixed path keeps normal computer-use sessions independent of
+    arbitrary environment-provided helper code while reusing the closure
+    validator that prepared the disposable executable.
+    """
+    if M11_AUDIO_SOURCE_WITNESS.is_symlink() or not M11_AUDIO_SOURCE_WITNESS.is_file():
+        raise HarnessError("the checked M11 source-witness validator is unavailable")
+    spec = importlib.util.spec_from_file_location(
+        "cadr_computer_use_m11_source_witness", M11_AUDIO_SOURCE_WITNESS
+    )
+    if spec is None or spec.loader is None:
+        raise HarnessError("cannot load the checked M11 source-witness validator")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def m11_audio_closure(prepared_value: str) -> dict[str, Any]:
+    """Return the exact built M11 closure accepted by this mode.
+
+    This is intentionally not a general ``usim`` override.  The helper checks
+    the canonical prepare/build markers, patch/support identities, source-tree
+    identity, and executable digest before a session is prepared.
+    """
+    if os.environ.get("CADR_COMPUTER_USE_USIM"):
+        raise HarnessError(
+            "M11 audio-witness mode selects its checked closure itself; unset CADR_COMPUTER_USE_USIM"
+        )
+    validator = source_witness_module()
+    try:
+        prepared = validator.relative_build_path(prepared_value)
+        marker, executable = validator.build_executable(prepared, "m11-audio")
+    except (OSError, ValueError, AttributeError) as exc:
+        raise HarnessError(f"invalid M11 source-witness closure: {exc}") from exc
+    try:
+        relative = prepared.relative_to(ROOT).as_posix()
+    except ValueError as exc:
+        raise HarnessError("M11 source-witness closure escapes the repository") from exc
+    return {
+        "prepared": relative,
+        "repository_worktree_git": marker["repository_worktree_git"],
+        "source_tree_sha256": marker["source_tree_sha256"],
+        "patch_sha256": marker["patch"]["sha256"],
+        "executable": file_identity(executable),
+        "witness_schema": marker["witness_schema"],
+        "witness_schema_version": validator.WITNESSES["m11-audio"]["witness_schema_version"],
+    }
+
+
+def m11_audio_source_form() -> dict[str, Any]:
+    """Bind the fixed test input to the public System 303 source form.
+
+    The literal arguments occur in the System 303 WORM-TRAILS demo.  The
+    trigger uses the explicit SI package spelling requested for Listener input;
+    public System source also contains SI:%BEEP calls, so both spellings are
+    recorded rather than silently treating this as an unsourced shortcut.
+    """
+    literal_source = ROOT / "l" / "sys" / "demo" / "worm-trails.lisp"
+    si_source = ROOT / "l" / "sys" / "io1" / "swar.lisp"
+    for path in (literal_source, si_source):
+        if path.is_symlink() or not path.is_file():
+            raise HarnessError(f"M11 trigger source is unavailable: {path}")
+    literal_text = literal_source.read_text(encoding="latin-1")
+    si_text = si_source.read_text(encoding="latin-1")
+    if "(sys:%beep 500. 100000.)" not in literal_text.lower():
+        raise HarnessError("System 303 source no longer contains the fixed M11 beep arguments")
+    if "(si:%beep" not in si_text.lower():
+        raise HarnessError("System 303 source no longer contains an SI:%BEEP call")
+    return {
+        "form": M11_AUDIO_TRIGGER_FORM,
+        "literal_arguments": {
+            "path": "l/sys/demo/worm-trails.lisp",
+            "line": 95,
+            "sha256": sha256_file(literal_source),
+        },
+        "si_package_spelling": {
+            "path": "l/sys/io1/swar.lisp",
+            "line": 342,
+            "sha256": sha256_file(si_source),
+        },
+    }
 
 
 def sha256_tree(path: Path) -> str:
@@ -461,9 +560,21 @@ def toolchain_provenance() -> dict[str, Any]:
     }
 
 
-def base_paths() -> dict[str, Path]:
+def base_paths(*, selected_usim: Path | None = None) -> dict[str, Path]:
+    usim = selected_usim or ROOT / "l" / "usim" / "usim"
+    override = os.environ.get("CADR_COMPUTER_USE_USIM")
+    if override and selected_usim is None:
+        candidate = Path(override).resolve()
+        allowed = (ROOT / "build" / "cadr-oracle").resolve()
+        try:
+            candidate.relative_to(allowed)
+        except ValueError as exc:
+            raise HarnessError("CADR_COMPUTER_USE_USIM must stay below build/cadr-oracle") from exc
+        if candidate.is_symlink() or not candidate.is_file():
+            raise HarnessError("CADR_COMPUTER_USE_USIM must name a regular non-symlink file")
+        usim = candidate
     return {
-        "usim": ROOT / "l" / "usim" / "usim",
+        "usim": usim,
         "disk": ROOT / "l" / "usim" / "disk-sys-303-0.img",
         "prommcr": ROOT / "l" / "sys" / "ubin" / "promh.mcr",
         "promsym": ROOT / "l" / "sys" / "ubin" / "promh.sym",
@@ -492,10 +603,11 @@ def binary_usable(path: Path) -> bool:
     return result.returncode == 0
 
 
-def ensure_runtime_ready() -> dict[str, Path]:
-    paths = base_paths()
+def ensure_runtime_ready(*, selected_usim: Path | None = None) -> dict[str, Path]:
+    paths = base_paths(selected_usim=selected_usim)
     non_binary = [key for key, path in paths.items() if key != "usim" and not path.exists()]
-    if non_binary or not binary_usable(paths["usim"]):
+    prepared_runtime = False
+    if non_binary:
         launcher = ROOT / "scripts" / "cadr-guix-container.sh"
         environment = os.environ.copy()
         environment["CADR_RUNTIME_LOCK_HELD"] = "1"
@@ -505,12 +617,26 @@ def ensure_runtime_ready() -> dict[str, Path]:
             env=environment,
             timeout=1800,
         )
+        prepared_runtime = True
     missing = [key for key, path in paths.items() if key != "usim" and not path.exists()]
     if missing:
         raise HarnessError(f"CADR preparation did not create required artifacts: {', '.join(missing)}")
 
     if not binary_usable(paths["usim"]):
-        raise HarnessError("usim still cannot execute after rebuilding it in the current Guix environment")
+        if selected_usim is not None:
+            raise HarnessError("the checked M11 source-witness executable cannot run in the current Guix environment")
+        if not prepared_runtime:
+            launcher = ROOT / "scripts" / "cadr-guix-container.sh"
+            environment = os.environ.copy()
+            environment["CADR_RUNTIME_LOCK_HELD"] = "1"
+            run(
+                [launcher, "--mode", "run", "--prepare-only"],
+                cwd=ROOT,
+                env=environment,
+                timeout=1800,
+            )
+        if not binary_usable(paths["usim"]):
+            raise HarnessError("usim still cannot execute after rebuilding it in the current Guix environment")
     return paths
 
 
@@ -561,8 +687,15 @@ def remove_tree(path: Path, parent: Path) -> None:
     shutil.rmtree(path)
 
 
-def render_config(paths: dict[str, Path], runtime: Path) -> str:
+def render_config(
+    paths: dict[str, Path], runtime: Path, *, m11_audio_witness: bool = False
+) -> str:
     fs_root = runtime / "fs-root"
+    audio_configuration = (
+        f"beep_amplitude = {M11_AUDIO_BEEP_AMPLITUDE}\nuse_ascii_beep = false"
+        if m11_audio_witness
+        else "beep_amplitude = 0"
+    )
     return f"""[usim]
 fs_root_directory = {fs_root}
 state_filename = {runtime / 'usim.state'}
@@ -574,8 +707,11 @@ geometry = 0 0
 scale = 1
 scale_filter = nearest
 allow_resize = false
-beep_amplitude = 0
+{audio_configuration}
 special_key = F12
+
+[kbd.modifiers]
+Mod4 = Super
 
 [ucode]
 prommcr_filename = {fs_root / 'sys' / 'ubin' / paths['prommcr'].name}
@@ -594,7 +730,30 @@ disk0 = T-300,{runtime / 'disk-sys-303-0.img'}
 """
 
 
-def prepare_session(session_dir: Path, paths: dict[str, Path], *, fresh: bool) -> tuple[dict[str, Any], bool]:
+def m11_audio_mode_record(closure: dict[str, Any], runtime: Path) -> dict[str, Any]:
+    return {
+        "schema": M11_AUDIO_WITNESS_SCHEMA,
+        "closure": closure,
+        "witness_environment_variable": M11_AUDIO_WITNESS_ENVIRONMENT,
+        "witness_path": str(runtime / "m11-audio-witness.ndjson"),
+        "action_ledger_path": str(runtime / "m11-audio-actions.ndjson"),
+        "audio_configuration": {
+            "beep_amplitude": M11_AUDIO_BEEP_AMPLITUDE,
+            "use_ascii_beep": False,
+        },
+        "trigger": m11_audio_source_form(),
+        "required_witness_events": ["beep-job", "pcm-block"],
+        "xvfb_requirement": "authenticated; MIT-SHM disabled and live-verified before usim launch",
+    }
+
+
+def prepare_session(
+    session_dir: Path,
+    paths: dict[str, Path],
+    *,
+    fresh: bool,
+    m11_audio_closure: dict[str, Any] | None = None,
+) -> tuple[dict[str, Any], bool]:
     previous = read_state(session_dir, required=False)
     runtime = session_dir / "runtime"
     current_revisions = source_revisions()
@@ -693,7 +852,11 @@ def prepare_session(session_dir: Path, paths: dict[str, Path], *, fresh: bool) -
 
     config = runtime / "usim.ini"
     refuse_symlink(config, "private emulator configuration")
-    config.write_text(render_config(paths, runtime), encoding="utf-8", newline="\n")
+    config.write_text(
+        render_config(paths, runtime, m11_audio_witness=m11_audio_closure is not None),
+        encoding="utf-8",
+        newline="\n",
+    )
     config.chmod(0o600)
 
     screenshots = session_dir / "screenshots"
@@ -719,6 +882,13 @@ def prepare_session(session_dir: Path, paths: dict[str, Path], *, fresh: bool) -
         generation = int(previous.get("generation", 0)) + 1
     except (TypeError, ValueError) as exc:
         raise HarnessError("invalid prior session generation") from exc
+    m11_mode = m11_audio_mode_record(m11_audio_closure, runtime) if m11_audio_closure else None
+    if m11_mode is not None:
+        m11_mode["private_config"] = file_identity(config)
+        m11_mode["private_runtime"] = {
+            "path": str(runtime),
+            "mode": oct(runtime.stat().st_mode & 0o777),
+        }
     metadata = {
         "schema": STATE_SCHEMA,
         "session": session_dir.name,
@@ -748,10 +918,140 @@ def prepare_session(session_dir: Path, paths: dict[str, Path], *, fresh: bool) -
             "native_screenshot": str(runtime / "final-framebuffer.pbm"),
             "fs_root": str(runtime / "fs-root"),
         },
+        "m8_m9_x11_witness": (
+            str(session_dir / "x11-input.cdrm8n1")
+            if m11_mode is None and os.environ.get("CADR_COMPUTER_USE_USIM") else None
+        ),
+        "m11_audio_witness": m11_mode,
         "xvfb_screen": {"width": XVFB_WIDTH, "height": XVFB_HEIGHT, "depth": 24},
         "expected_framebuffer": {"width": EXPECTED_WIDTH, "height": EXPECTED_HEIGHT},
     }
     return metadata, can_resume and not fresh
+
+
+def m11_audio_mode(state: dict[str, Any]) -> dict[str, Any] | None:
+    mode = state.get("m11_audio_witness")
+    if mode is None:
+        return None
+    if not isinstance(mode, dict) or mode.get("schema") != M11_AUDIO_WITNESS_SCHEMA:
+        raise HarnessError("session has an invalid M11 audio-witness mode record")
+    return mode
+
+
+def m11_audio_runtime_path(state: dict[str, Any], field: str) -> Path:
+    mode = m11_audio_mode(state)
+    if mode is None:
+        raise HarnessError("this session was not started in M11 audio-witness mode")
+    raw = mode.get(field)
+    if not isinstance(raw, str) or not raw:
+        raise HarnessError(f"M11 audio-witness mode lacks {field}")
+    session_dir = Path(state["session_dir"])
+    runtime = session_dir / "runtime"
+    refuse_symlink(runtime, "M11 private runtime")
+    if not runtime.is_dir() or (runtime.stat().st_mode & 0o777) != 0o700:
+        raise HarnessError("M11 private runtime is no longer an owned 0700 directory")
+    path = Path(raw)
+    try:
+        path.resolve(strict=False).relative_to(runtime.resolve())
+    except (OSError, ValueError) as exc:
+        raise HarnessError(f"M11 {field} escapes the private runtime") from exc
+    return path
+
+
+def m11_private_file(path: Path, *, allow_absent: bool, description: str) -> None:
+    if not path.exists() and not path.is_symlink():
+        if allow_absent:
+            return
+        raise HarnessError(f"missing {description}: {path}")
+    if path.is_symlink() or not path.is_file() or path.stat().st_uid != os.geteuid():
+        raise HarnessError(f"{description} must be a current-owner regular non-symlink file")
+    if (path.stat().st_mode & 0o777) != 0o600:
+        raise HarnessError(f"{description} must have mode 0600")
+
+
+def append_m11_audio_action(state: dict[str, Any], record: dict[str, Any]) -> dict[str, Any]:
+    """Append an fsync'd intent/outcome record to the session-private ledger."""
+    ledger = m11_audio_runtime_path(state, "action_ledger_path")
+    m11_private_file(ledger, allow_absent=True, description="M11 action ledger")
+    header = {"schema": M11_AUDIO_WITNESS_SCHEMA, "ledger": "intent-outcome-v1"}
+    try:
+        payload = json.dumps(record, sort_keys=True, separators=(",", ":"), ensure_ascii=True) + "\n"
+    except (TypeError, ValueError) as exc:
+        raise HarnessError("M11 action record is not serializable") from exc
+    flags = os.O_WRONLY | os.O_APPEND | os.O_CREAT
+    if hasattr(os, "O_NOFOLLOW"):
+        flags |= os.O_NOFOLLOW
+    descriptor = os.open(ledger, flags, 0o600)
+    try:
+        info = os.fstat(descriptor)
+        if not stat.S_ISREG(info.st_mode) or info.st_uid != os.geteuid():
+            raise HarnessError("M11 action ledger is not an owned regular file")
+        os.fchmod(descriptor, 0o600)
+        if info.st_size == 0:
+            os.write(
+                descriptor,
+                (json.dumps(header, sort_keys=True, separators=(",", ":"), ensure_ascii=True) + "\n").encode("ascii"),
+            )
+        os.write(descriptor, payload.encode("ascii"))
+        os.fsync(descriptor)
+    finally:
+        os.close(descriptor)
+    m11_private_file(ledger, allow_absent=False, description="M11 action ledger")
+    return file_identity(ledger)
+
+
+def m11_audio_witness_events(state: dict[str, Any]) -> list[dict[str, Any]]:
+    witness = m11_audio_runtime_path(state, "witness_path")
+    m11_private_file(witness, allow_absent=False, description="M11 native witness")
+    validator = source_witness_module()
+    try:
+        return validator.witness_events("m11-audio", witness)
+    except (OSError, ValueError, AttributeError) as exc:
+        raise HarnessError(f"invalid M11 native witness: {exc}") from exc
+
+
+def wait_for_m11_audio_witness(
+    session_dir: Path, state: dict[str, Any], timeout: float
+) -> tuple[list[dict[str, Any]], dict[str, Any]]:
+    witness = m11_audio_runtime_path(state, "witness_path")
+    deadline = time.monotonic() + timeout
+    last_error: str | None = None
+    while time.monotonic() < deadline:
+        require_running(session_dir)
+        if witness.exists():
+            try:
+                records = m11_audio_witness_events(state)
+                return records, file_identity(witness)
+            except HarnessError as exc:
+                last_error = str(exc)
+        time.sleep(0.02)
+    detail = f"; last witness error: {last_error}" if last_error else ""
+    raise HarnessError(f"M11 did not emit a complete beep-job plus PCM witness within {timeout:g}s{detail}")
+
+
+def listener_ready_screenshot(
+    session_dir: Path, state: dict[str, Any], value: str
+) -> dict[str, Any]:
+    screenshot = Path(value).resolve(strict=True)
+    screenshots = (session_dir / "screenshots").resolve()
+    try:
+        screenshot.relative_to(screenshots)
+    except ValueError as exc:
+        raise HarnessError("Listener-ready evidence must be a curated screenshot from this session") from exc
+    if screenshot.suffix != ".png" or screenshot.is_symlink() or not screenshot.is_file():
+        raise HarnessError("Listener-ready evidence must be a regular PNG screenshot")
+    sidecar = screenshot.with_suffix(".json")
+    if sidecar.is_symlink() or not sidecar.is_file():
+        raise HarnessError("Listener-ready screenshot lacks its provenance sidecar")
+    try:
+        metadata = json.loads(sidecar.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        raise HarnessError("Listener-ready screenshot sidecar is not valid JSON") from exc
+    if (metadata.get("session") != state.get("session") or
+            metadata.get("generation") != state.get("generation") or
+            metadata.get("png_sha256") != sha256_file(screenshot)):
+        raise HarnessError("Listener-ready screenshot does not match this running session and generation")
+    return {"image": file_identity(screenshot), "sidecar": file_identity(sidecar)}
 
 
 def x_environment(state: dict[str, Any]) -> dict[str, str]:
@@ -767,6 +1067,16 @@ def x_environment(state: dict[str, Any]) -> dict[str, str]:
             "HOME": str(Path(state["session_dir"]) / "runtime" / "home"),
         }
     )
+    witness = state.get("m8_m9_x11_witness")
+    if witness:
+        env["CADR_M8_M9_INPUT_WITNESS"] = str(witness)
+    # Do not inherit a host-controlled M11 witness pathname.  Only an opt-in
+    # checked M11 closure receives a session-contained path.
+    env.pop(M11_AUDIO_WITNESS_ENVIRONMENT, None)
+    if m11_audio_mode(state) is not None:
+        m11_witness = m11_audio_runtime_path(state, "witness_path")
+        m11_private_file(m11_witness, allow_absent=True, description="M11 native witness")
+        env[M11_AUDIO_WITNESS_ENVIRONMENT] = str(m11_witness)
     return env
 
 
@@ -818,7 +1128,9 @@ def discover_window(state: dict[str, Any]) -> tuple[int, dict[str, int], str] | 
     return candidates[0] if len(candidates) == 1 else None
 
 
-def start_xvfb(session_dir: Path) -> tuple[subprocess.Popen[bytes], str, Path]:
+def start_xvfb(
+    session_dir: Path, *, disable_mit_shm: bool = False
+) -> tuple[subprocess.Popen[bytes], str, Path]:
     xauthority = session_dir / "runtime" / "Xauthority"
     xlog_path = session_dir / f"xvfb-generation-{read_state(session_dir)['generation']}.log"
     xlog = xlog_path.open("ab", buffering=0)
@@ -830,19 +1142,21 @@ def start_xvfb(session_dir: Path) -> tuple[subprocess.Popen[bytes], str, Path]:
             cookie = secrets.token_hex(16)
             run(["xauth", "-f", xauthority, "add", f":{number}", "MIT-MAGIC-COOKIE-1", cookie])
             xauthority.chmod(0o600)
+            arguments = [
+                "Xvfb",
+                f":{number}",
+                "-screen",
+                "0",
+                f"{XVFB_WIDTH}x{XVFB_HEIGHT}x24",
+                "-nolisten",
+                "tcp",
+                "-noreset",
+            ]
+            if disable_mit_shm:
+                arguments.extend(["-extension", "MIT-SHM"])
+            arguments.extend(["-auth", str(xauthority)])
             process = subprocess.Popen(
-                [
-                    "Xvfb",
-                    f":{number}",
-                    "-screen",
-                    "0",
-                    f"{XVFB_WIDTH}x{XVFB_HEIGHT}x24",
-                    "-nolisten",
-                    "tcp",
-                    "-noreset",
-                    "-auth",
-                    str(xauthority),
-                ],
+                arguments,
                 stdin=subprocess.DEVNULL,
                 stdout=xlog,
                 stderr=subprocess.STDOUT,
@@ -866,6 +1180,35 @@ def start_xvfb(session_dir: Path) -> tuple[subprocess.Popen[bytes], str, Path]:
             xauthority.unlink(missing_ok=True)
     xlog.close()
     raise HarnessError("could not allocate a private Xvfb display in :90 through :199")
+
+
+def verify_mit_shm_disabled(display: str, xauthority: Path) -> dict[str, Any]:
+    """Live-check the M11 X server before its instrumented usim can connect."""
+    command = shutil.which("xdpyinfo")
+    if not command:
+        raise HarnessError("M11 audio-witness mode requires xdpyinfo for its MIT-SHM check")
+    executable = Path(command).resolve()
+    if executable.is_symlink() or not executable.is_file():
+        raise HarnessError("M11 audio-witness xdpyinfo path is not a regular executable")
+    environment = {"DISPLAY": display, "XAUTHORITY": str(xauthority), "LANG": "C", "LC_ALL": "C"}
+    result = run([executable, "-queryExtensions"], env=environment, check=False, timeout=10)
+    if result.returncode != 0:
+        detail = (result.stderr or result.stdout).strip()
+        raise HarnessError(f"M11 audio-witness X extension probe failed: {detail}")
+    if any("MIT-SHM" in line for line in result.stdout.splitlines()):
+        raise HarnessError("M11 audio-witness Xvfb still advertises MIT-SHM")
+    version = run([executable, "-version"], env=environment, check=False, timeout=10)
+    version_bytes = ((version.stdout or "") + (version.stderr or "")).encode("utf-8", errors="replace")
+    return {
+        "authenticated": True,
+        "mit_shm": "disabled-and-verified",
+        "extension_probe_sha256": hashlib.sha256(result.stdout.encode("utf-8")).hexdigest(),
+        "xdpyinfo": {
+            **file_identity(executable),
+            "version_exit_status": version.returncode,
+            "version_sha256": hashlib.sha256(version_bytes).hexdigest(),
+        },
+    }
 
 
 def wait_for_own_record(session_dir: Path) -> dict[str, Any]:
@@ -911,7 +1254,11 @@ def supervise(session_dir: Path, resume: bool) -> int:
     error: str | None = None
     usim_forced = False
     try:
-        xvfb_process, display, xauthority = start_xvfb(session_dir)
+        m11_mode = m11_audio_mode(state)
+        xvfb_process, display, xauthority = start_xvfb(
+            session_dir, disable_mit_shm=m11_mode is not None
+        )
+        m11_xvfb = verify_mit_shm_disabled(display, xauthority) if m11_mode is not None else None
         state = update_state(
             session_dir,
             {
@@ -921,6 +1268,10 @@ def supervise(session_dir: Path, resume: bool) -> int:
                 "xvfb": process_record(xvfb_process.pid),
             },
         )
+        if m11_mode is not None:
+            recorded_mode = dict(m11_mode)
+            recorded_mode["xvfb"] = m11_xvfb
+            state = update_state(session_dir, {"m11_audio_witness": recorded_mode})
         runtime = state["runtime"]
         xdg_runtime = Path(x_environment(state)["XDG_RUNTIME_DIR"])
         home = Path(x_environment(state)["HOME"])
@@ -941,6 +1292,14 @@ def supervise(session_dir: Path, resume: bool) -> int:
                     raise HarnessError(
                         "shared usim changed after session preparation; start the session again"
                     )
+                m11_mode = m11_audio_mode(state)
+                if m11_mode is not None:
+                    expected_config = m11_mode.get("private_config", {}).get("sha256")
+                    actual_config = sha256_file(Path(runtime["config"]))
+                    if actual_config != expected_config:
+                        raise HarnessError(
+                            "M11 private audio configuration changed after preparation; start a fresh session again"
+                        )
                 usim_process = subprocess.Popen(
                     arguments,
                     cwd=Path(runtime["config"]).parent,
@@ -960,6 +1319,11 @@ def supervise(session_dir: Path, resume: bool) -> int:
                     "started_at": now_iso(),
                 },
             )
+            if m11_mode is not None:
+                recorded_mode = dict(m11_mode)
+                recorded_mode["config_sha256_at_exec"] = actual_config
+                recorded_mode["executable_sha256_at_exec"] = usim_hash_at_exec
+                state = update_state(session_dir, {"m11_audio_witness": recorded_mode})
             deadline = time.monotonic() + 30
             found: tuple[int, dict[str, int], str] | None = None
             while time.monotonic() < deadline and not stop_requested and usim_process.poll() is None:
@@ -1127,8 +1491,39 @@ def command_doctor(_args: argparse.Namespace, state_root: Path) -> int:
     return 0 if result["ok"] else 1
 
 
+def command_m11_audio_plan(args: argparse.Namespace, _state_root: Path) -> int:
+    closure = m11_audio_closure(args.prepared)
+    result = {
+        "status": "planned",
+        "mode": "m11-audio-witness",
+        "session": args.session,
+        "closure": closure,
+        "source_form": m11_audio_source_form(),
+        "start_requirements": {
+            "fresh_private_runtime": True,
+            "start_argument": "--fresh",
+            "audio_configuration": {
+                "beep_amplitude": M11_AUDIO_BEEP_AMPLITUDE,
+                "use_ascii_beep": False,
+            },
+            "xvfb": "authenticated; -extension MIT-SHM; live xdpyinfo verification before usim launch",
+            "witness": "session-contained CADR_M11_AUDIO_WITNESS path only",
+        },
+        "trigger_requirements": {
+            "listener_ready_screenshot": "a reviewed screenshot plus sidecar from this same live session/generation",
+            "input_sequence": ["XTEST type exact form", "XTEST Return"],
+            "required_witness_events": ["beep-job", "pcm-block"],
+        },
+    }
+    json_print(result)
+    return 0
+
+
 def command_start(args: argparse.Namespace, state_root: Path) -> int:
     session_dir = session_dir_for(state_root, args.session)
+    m11_closure = m11_audio_closure(args.m11_audio_witness) if args.m11_audio_witness else None
+    if m11_closure is not None and (not args.fresh or args.resume):
+        raise HarnessError("M11 audio-witness mode requires --fresh and does not support --resume")
     with locked(state_root / ".lifecycle.lock", create_parent=False):
         ensure_session_directory(session_dir)
         with locked(session_dir / "control.lock", create_parent=False):
@@ -1136,8 +1531,14 @@ def command_start(args: argparse.Namespace, state_root: Path) -> int:
             if prior and any(live_processes(prior).values()):
                 raise HarnessError(f"session {args.session!r} still owns live processes")
             with locked(RUNTIME_PREPARE_LOCK):
-                paths = ensure_runtime_ready()
-                metadata, resumable = prepare_session(session_dir, paths, fresh=args.fresh)
+                selected_usim = Path(m11_closure["executable"]["path"]) if m11_closure else None
+                paths = ensure_runtime_ready(selected_usim=selected_usim)
+                metadata, resumable = prepare_session(
+                    session_dir,
+                    paths,
+                    fresh=args.fresh,
+                    m11_audio_closure=m11_closure,
+                )
             if args.resume and not resumable:
                 raise HarnessError("--resume needs a state file produced by an earlier clean stop")
             resume = bool(args.resume)
@@ -1193,6 +1594,105 @@ def command_start(args: argparse.Namespace, state_root: Path) -> int:
     if process_matches(record, state.get("boot_id")):
         os.kill(int(record["pid"]), signal.SIGTERM)
     raise HarnessError(f"timed out after {args.timeout:g}s waiting for the CADR window")
+
+
+def command_m11_audio_trigger(args: argparse.Namespace, state_root: Path) -> int:
+    session_dir = session_dir_for(state_root, args.session)
+    with locked(session_dir / "control.lock", create_parent=False):
+        require_session_directory(session_dir)
+        state = require_running(session_dir)
+        mode = m11_audio_mode(state)
+        if mode is None:
+            raise HarnessError("M11 audio trigger requires a session started with --m11-audio-witness")
+        trigger = mode.get("trigger")
+        if not isinstance(trigger, dict) or trigger.get("form") != M11_AUDIO_TRIGGER_FORM:
+            raise HarnessError("M11 session has an unexpected trigger form")
+        witness = m11_audio_runtime_path(state, "witness_path")
+        if witness.exists() or witness.is_symlink():
+            raise HarnessError(
+                "M11 native witness already exists before the requested input; use a fresh session to preserve causal attribution"
+            )
+        listener_evidence = listener_ready_screenshot(
+            session_dir, state, args.listener_ready_screenshot
+        )
+        before = take_screenshot(session_dir, "m11-audio-before-trigger")
+        intent_id = uuid.uuid4().hex
+        intent = {
+            "record": "intent",
+            "intent_id": intent_id,
+            "timestamp": now_iso(),
+            "form": M11_AUDIO_TRIGGER_FORM,
+            "input_sequence": [
+                {"tool": "xdotool", "action": "type", "clearmodifiers": True},
+                {"tool": "xdotool", "action": "key", "key": "Return", "clearmodifiers": True},
+            ],
+            "listener_ready_evidence": listener_evidence,
+            "before_trigger_screenshot": before,
+            "witness_absent_before_input": True,
+        }
+        ledger = append_m11_audio_action(state, intent)
+        try:
+            focus_window(state)
+            xdotool(state, ["type", "--clearmodifiers", "--delay", str(args.delay_ms), "--", M11_AUDIO_TRIGGER_FORM])
+            xdotool(state, ["key", "--clearmodifiers", "Return"])
+        except Exception as exc:
+            ledger = append_m11_audio_action(
+                state,
+                {
+                    "record": "outcome",
+                    "intent_id": intent_id,
+                    "timestamp": now_iso(),
+                    "result": "xtest-delivery-failed",
+                    "error": str(exc),
+                },
+            )
+            raise
+        try:
+            records, witness_identity = wait_for_m11_audio_witness(
+                session_dir, state, args.timeout
+            )
+            after = take_screenshot(session_dir, "m11-audio-after-witness")
+        except Exception as exc:
+            ledger = append_m11_audio_action(
+                state,
+                {
+                    "record": "outcome",
+                    "intent_id": intent_id,
+                    "timestamp": now_iso(),
+                    "result": "witness-not-observed",
+                    "error": str(exc),
+                },
+            )
+            raise
+        outcome = {
+            "record": "outcome",
+            "intent_id": intent_id,
+            "timestamp": now_iso(),
+            "result": "witness-observed",
+            "witness": witness_identity,
+            "witness_records": len(records),
+            "after_witness_screenshot": after,
+        }
+        ledger = append_m11_audio_action(state, outcome)
+        updated_mode = dict(mode)
+        updated_mode["last_trigger"] = {
+            "intent_id": intent_id,
+            "form": M11_AUDIO_TRIGGER_FORM,
+            "witness": witness_identity,
+            "action_ledger": ledger,
+        }
+        update_state(session_dir, {"m11_audio_witness": updated_mode})
+    json_print(
+        {
+            "status": "witness-observed",
+            "session": args.session,
+            "intent_id": intent_id,
+            "form": M11_AUDIO_TRIGGER_FORM,
+            "witness": witness_identity,
+            "action_ledger": ledger,
+        }
+    )
+    return 0
 
 
 def status_payload(state: dict[str, Any]) -> dict[str, Any]:
@@ -1471,17 +1971,37 @@ def build_parser() -> argparse.ArgumentParser:
         description="Operate a private MIT CADR session on an authenticated Xvfb display."
     )
     parser.add_argument("--state-root", help=argparse.SUPPRESS)
-    public_commands = "{doctor,start,status,wait,key,type,mouse,screenshot,stop}"
+    public_commands = "{doctor,m11-audio-plan,start,status,wait,key,type,mouse,screenshot,m11-audio-trigger,stop}"
     subparsers = parser.add_subparsers(dest="command", required=True, metavar=public_commands)
 
     doctor = subparsers.add_parser("doctor", help="check tools and prepared CADR artifacts")
     doctor.set_defaults(handler=command_doctor)
+
+    m11_plan = subparsers.add_parser(
+        "m11-audio-plan",
+        help="validate a checked M11 closure and print the non-live capture contract",
+    )
+    add_session_argument(m11_plan)
+    m11_plan.add_argument(
+        "--prepared",
+        required=True,
+        help="checked build/cadr-oracle M11 prepare/build closure",
+    )
+    m11_plan.set_defaults(handler=command_m11_audio_plan)
 
     start = subparsers.add_parser("start", help="start or resume a detached session")
     add_session_argument(start)
     start_mode = start.add_mutually_exclusive_group()
     start_mode.add_argument("--fresh", action="store_true", help="replace the private disk/source runtime and cold boot")
     start_mode.add_argument("--resume", action="store_true", help="attempt a warm boot from the last cleanly saved state")
+    start.add_argument(
+        "--m11-audio-witness",
+        metavar="PREPARED",
+        help=(
+            "start only a checked M11 source-witness closure with nonzero SDL3 audio; "
+            "requires --fresh"
+        ),
+    )
     start.add_argument("--timeout", type=positive_float, default=60, help="seconds to wait for the usim window")
     start.set_defaults(handler=command_start)
 
@@ -1550,6 +2070,20 @@ def build_parser() -> argparse.ArgumentParser:
     add_session_argument(screenshot)
     screenshot.add_argument("--label", default="screen")
     screenshot.set_defaults(handler=command_screenshot)
+
+    m11_trigger = subparsers.add_parser(
+        "m11-audio-trigger",
+        help="at a reviewed Listener prompt, issue the fixed source-backed %%BEEP witness input",
+    )
+    add_session_argument(m11_trigger)
+    m11_trigger.add_argument(
+        "--listener-ready-screenshot",
+        required=True,
+        help="regular PNG plus sidecar captured from this exact live session/generation",
+    )
+    m11_trigger.add_argument("--delay-ms", type=nonnegative_int, default=40)
+    m11_trigger.add_argument("--timeout", type=positive_float, default=30)
+    m11_trigger.set_defaults(handler=command_m11_audio_trigger)
 
     stop = subparsers.add_parser("stop", help="save emulator state, stop usim, then stop Xvfb")
     add_session_argument(stop)

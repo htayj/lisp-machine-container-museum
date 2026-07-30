@@ -4,6 +4,8 @@ import { readFileSync } from "node:fs";
 
 import {
   CADR_M8_KEYBOARD_PROFILE,
+  CADR_M8_CONTROLLER_VERSION,
+  CADR_M8_CORE_ABI,
   CADR_M8_ONSCREEN_ROWS,
   CADR_M8_ORDINARY_KEY_COUNT,
   CADR_M8_PHYSICAL_KEY_COUNT,
@@ -34,7 +36,10 @@ function mapDigest() {
 }
 
 function testProfileAndEveryPhysicalRow() {
-  assert.equal(CADR_M8_KEYBOARD_PROFILE, "CADR-WEB-303/ABI1.5/protocol-v6/C-M8-KBD-X11-INFO16-v1");
+  assert.equal(CADR_M8_CONTROLLER_VERSION, "C-M8.1");
+  assert.equal(CADR_M8_CORE_ABI, "ABI1.8");
+  assert.equal(CADR_M8_KEYBOARD_PROFILE,
+    "CADR-WEB-303/controller-C-M8.1/core-ABI1.8/protocol-v6/KBD-X11-INFO16-v1");
   assert.equal(CADR_M8_PHYSICAL_KEYS.length, CADR_M8_PHYSICAL_KEY_COUNT);
   assert.equal(ordinary.length, CADR_M8_ORDINARY_KEY_COUNT);
   assert.equal(modifiers.length, CADR_M8_PHYSICAL_MODIFIER_COUNT);
@@ -53,6 +58,16 @@ function testProfileAndEveryPhysicalRow() {
       { accepted: true, reason: "all-up", emitted: 0x8000 }, descriptor.id);
     assert.deepEqual(controller.drain(), [descriptor.scancode, 0x8000], descriptor.id);
   }
+}
+
+{
+  const controller = new CadrM8KeyboardController();
+  controller.keyDown({ code: "KeyQ" });
+  controller.keyDown({ code: "ShiftLeft" });
+  assert.deepEqual(controller.clearHeldForSharedDeactivation(), { heldKeysCleared: 2 });
+  assert.deepEqual(controller.snapshot().heldCodes, []);
+  assert.deepEqual(controller.drain(), [0o122, 0o024],
+    "shared clear does not synthesize a second all-up record");
 }
 
 function testGoldenAndAlternateSourceDefects() {

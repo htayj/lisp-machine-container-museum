@@ -4,6 +4,8 @@ import { readFileSync } from "node:fs";
 import {
   CADR_M12_BUG_HEADER_BYTES,
   CADR_M12_BUG_MAX_BYTES,
+  CADR_M12_ABI_MINOR,
+  CADR_M12_CONFIG_SNAPSHOT_BYTES,
   CADR_M12_DEBUGGER_PROFILE,
   CADR_M12_MACRO_SLOT_LIMIT,
   CADR_M12_PROTOCOL_VERSION,
@@ -43,10 +45,21 @@ function stopRecord(reason = 1, breakpointIndex = 3) {
   };
 }
 
+function configSnapshot() {
+  const bytes = new Uint8Array(CADR_M12_CONFIG_SNAPSHOT_BYTES);
+  const view = new DataView(bytes.buffer);
+  bytes.set(new TextEncoder().encode("CDRM12C1"));
+  view.setUint32(8, 1, true);
+  view.setUint32(12, CADR_M12_CONFIG_SNAPSHOT_BYTES, true);
+  view.setUint32(56, 64, true);
+  return bytes;
+}
+
 function testProfileAndCanonicalStop() {
   assert.equal(CADR_M12_DEBUGGER_PROFILE,
-    "CADR-WEB-303/ABI1.7/protocol-v7/C-M12-DBG-v1");
+    "CADR-WEB-303/ABI1.10/protocol-v7/C-M12-DBG-v1");
   assert.equal(CADR_M12_PROTOCOL_VERSION, 7);
+  assert.equal(CADR_M12_ABI_MINOR, 10);
   assert.equal(CADR_M12_STATUS_DEBUG_STOP, 19);
   assert.equal(CADR_M12_STATUS_LIMIT_REACHED, 20);
   const bytes = serializeCdrDbgStop1(stopRecord());
@@ -80,6 +93,7 @@ function testProvenanceAndPrivacyBoundedBugRecord() {
     coreSha256: hash(40), snapshotSha256: hash(80) });
   assert.equal(provenance.byteLength, 128);
   assert.deepEqual([...provenance.subarray(0, 8)], [...new TextEncoder().encode("CDRPROV1")]);
+  assert.equal(new DataView(provenance.buffer).getUint32(24, true), CADR_M12_ABI_MINOR);
   assert.deepEqual(parseCdrProv1(provenance).snapshotSha256, hash(80));
   const bug = serializeCdrBug1({ terminalStatus: CADR_M12_STATUS_DEBUG_STOP, stop, provenance,
     summary: "bounded debugger stop with source digest" });
@@ -162,6 +176,7 @@ function testProtocolBranch() {
   const invoked = [];
   const breakpointStop = serializeCdrDbgStop1(stopRecord());
   const macroStop = serializeCdrDbgStop1(stopRecord(2, 0xffffffff));
+  const config = configSnapshot();
   const handler = new CadrM12ProtocolSubhandler({
     invoke(operation) {
       invoked.push(operation);
@@ -176,6 +191,14 @@ function testProtocolBranch() {
       if (operation.op === "debug-stop-record") {
         return { status: CADR_M12_STATUS_OK,
           result: { stop: breakpointStop } };
+      }
+      if (operation.op === "debug-config-snapshot-save") {
+        return { status: CADR_M12_STATUS_OK, result: { snapshot: config } };
+      }
+      if (operation.op === "debug-inspect-read") {
+        return { status: CADR_M12_STATUS_OK, result: {
+          generation: 9n, arrayKind: operation.arrayKind, index: operation.index, value: 0x10203040,
+        } };
       }
       return { status: CADR_M12_STATUS_OK };
     },
@@ -203,6 +226,18 @@ function testProtocolBranch() {
     flags: CADR_M12_TRACE_FILTER_FAULT, firstClockSlot: 0n, lastClockSlot: 9n,
   } });
   assert.equal(filter.status, CADR_M12_STATUS_OK);
+  const inspected = handler.handle({ version: 7, id: 18, op: "debug-inspect-read", arrayKind: 1, index: 7 });
+  assert.deepEqual(inspected.result, { generation: 9n, arrayKind: 1, index: 7, value: 0x10203040 });
+  assert.equal(handler.handle({ version: 7, id: 19, op: "debug-inspect-read", arrayKind: 6, index: 0 }).status,
+    CADR_M12_STATUS_INVALID_ARGUMENT);
+  const savedConfig = handler.handle({ version: 7, id: 15, op: "debug-config-snapshot-save" });
+  assert.equal(savedConfig.status, CADR_M12_STATUS_OK);
+  assert.equal(new Uint8Array(savedConfig.result.snapshot).byteLength, CADR_M12_CONFIG_SNAPSHOT_BYTES);
+  const restoredConfig = handler.handle({ version: 7, id: 16, op: "debug-config-snapshot-restore",
+    snapshot: savedConfig.result.snapshot });
+  assert.equal(restoredConfig.status, CADR_M12_STATUS_OK);
+  assert.equal(handler.handle({ version: 7, id: 17, op: "debug-config-snapshot-restore",
+    snapshot: new Uint8Array(1) }).status, CADR_M12_STATUS_INVALID_ARGUMENT);
   assert.equal(handler.handle({ version: 7, id: 4, op: "debug-micro-step", extra: true }).status,
     CADR_M12_STATUS_INVALID_ARGUMENT);
   assert.equal(handler.handle({ version: 7, id: 5, op: "unrelated-op" }), null);

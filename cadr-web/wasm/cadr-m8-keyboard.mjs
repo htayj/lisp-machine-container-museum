@@ -7,8 +7,10 @@
  * host-originated keyboard operations.
  */
 
+export const CADR_M8_CONTROLLER_VERSION = "C-M8.1";
+export const CADR_M8_CORE_ABI = "ABI1.8";
 export const CADR_M8_KEYBOARD_PROFILE =
-  "CADR-WEB-303/ABI1.5/protocol-v6/C-M8-KBD-X11-INFO16-v1";
+  `CADR-WEB-303/controller-${CADR_M8_CONTROLLER_VERSION}/core-${CADR_M8_CORE_ABI}/protocol-v6/KBD-X11-INFO16-v1`;
 export const CADR_M8_PROTOCOL_VERSION = 6;
 export const CADR_M8_STATUS_OK = 0;
 export const CADR_M8_STATUS_INVALID_ARGUMENT = 2;
@@ -343,6 +345,16 @@ export class CadrM8KeyboardController {
     this.#held.clear();
     this.#queue.push(0x8000);
     return this.#result(true, "focus-all-up", 0x8000);
+  }
+
+  /* The composed M8/M9 worker owns the all-up record during shared
+   * deactivation.  Clear only the host-held set after that complete tail has
+   * crossed the core boundary, so pointer capture loss and window blur cannot
+   * leave stale M8 keys or enqueue two all-up records. */
+  clearHeldForSharedDeactivation() {
+    const heldKeysCleared = this.#held.size;
+    this.#held.clear();
+    return Object.freeze({ heldKeysCleared });
   }
 
   drain(maxEvents = this.#queue.length) {

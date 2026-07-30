@@ -3,7 +3,7 @@ type: Architecture Note
 title: CADR microcode, microassembler, and console debugger
 description: A source-grounded guide to the CADR microcode build pipeline, incremental microassembly, microload artifacts, and the complete release-bounded console-debugger interface.
 tags: [mit-cadr, lm-3, microcode, microassembler, console-debugger, preservation]
-timestamp: 2026-07-18T11:26:44-04:00
+timestamp: 2026-07-27T08:38:56-04:00
 ---
 
 # CADR microcode, microassembler, and console debugger
@@ -17,6 +17,12 @@ diagnose a second machine. The maintained LM-3 tree makes this relationship expl
 the released `CADR` system consists of `CADR-MICRO-ASSEMBLER` and
 `CADR-DEBUGGER`, while `UCODE` is a separate Make-System description for the
 machine's microprogram.
+
+The companion
+[System 303 macroinstruction and microarchitecture reimplementation specification](cadr-macroinstruction-and-microarchitecture-reimplementation-specification.md)
+is the normative contract for what the resulting 48-bit control-store words do and
+for the 16-bit Lisp instructions interpreted by `UC-MACROCODE`. This page remains
+the build, tooling, and operator dossier.
 
 This is not a normal source-level debugger running inside the program it examines.
 `CC` is a DDT-like hardware console on one Lisp machine for a separate CADR

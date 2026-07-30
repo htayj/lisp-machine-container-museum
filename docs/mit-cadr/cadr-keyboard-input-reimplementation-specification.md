@@ -1,30 +1,33 @@
 ---
 type: Reimplementation Specification
 title: CADR-WEB-303 C-M8 keyboard input reimplementation specification
-description: Phase 1 host-only contract for a 100-key DOM-code Space Cadet map and canonical 16-bit Cadet input transitions under the selected System 303 X11 profile.
+description: Release-bounded browser-to-core keyboard ingress for a 100-key DOM-code Space Cadet map, canonical Cadet transitions, and a distinct IOB delivery record under the selected System 303 X11 profile.
 tags: [mit-cadr, lm-3, cadr-web, keyboard, x11, reimplementation]
-timestamp: 2026-07-29T21:50:00-04:00
+timestamp: 2026-07-30T22:45:00-04:00
 ---
 
 # CADR-WEB-303 C-M8 keyboard input reimplementation specification
 
 ## Status and reconstruction claim
 
-`CADR-WEB-303/ABI1.5/protocol-v6/C-M8-KBD-X11-INFO16-v1` is a Phase 1,
-host-only input contract. It recreates a selected **16-bit Cadet event stream**:
-an explicit 100-physical-key `KeyboardEvent.code` map, an 18-key physical held
+`CADR-WEB-303/controller-C-M8.1/core-ABI1.8/protocol-v6/KBD-X11-INFO16-v1`
+is a dedicated-worker
+and browser-to-core input contract. It recreates a selected **16-bit Cadet event stream**: an
+explicit 100-physical-key `KeyboardEvent.code` map, an 18-key physical held
 modifier model collapsed to the 11-bit Cadet all-up mask, bounded queueing,
-canonical state bytes, and the dedicated host-side protocol operations that a
-later v6 worker integration may call.
+canonical state bytes, and dedicated v6 operations executed by the browser
+worker. The browser transport shares the worker's monotonic request-ID space
+with M9, so interleaved DOM keyboard and pointer edges cannot reuse an ID.
 
-It claims semantic and selected wire-representation compatibility for those
-synthetic host-controller rules. The table preserves the System 46 Cadet values
+It claims semantic compatibility for the selected host-controller rules and a
+separate, tested core ingress boundary. The table preserves the System 46 Cadet values
 for Macro (`0100`), Call (`0107`), and Repeat (`0115`) and the source-visible
 all-up bit assignments. It does **not** claim that a browser, a physical USB
 keyboard, a preserved System 303 band, or an original keyboard controller has
-run this exact DOM map. It does not wire the controller into the dirty worker,
-widen the core ABI, send generic scheduler keyboard events under protocol v6,
-close C-M8, or confirm any guest-visible runtime behavior.
+run this exact DOM map. It does not send generic scheduler keyboard events under
+protocol v6, claim that `CDRINP1` is historical, close C-M8, or confirm any
+guest-visible runtime behavior. Its selected ABI 1.8 core delivery is a
+reconstruction implementation, not a native-runtime equivalence result.
 
 The M8 onscreen view is a host accessibility representation of the same 100
 descriptors, not a screenshot or a claim about a CADR screen. It consequently
@@ -43,9 +46,10 @@ profile. They do not silently modify either historical source profile.
 | `S303-X11` | Pinned maintained `usim` readable source | X11 key/release flow, modifier query, all-up decision, and `kbd_event` low-word conventions | Browser event semantics, runtime loading, or a USB layout |
 | `S303-CADET` | Pinned maintained `usim` readable source | 11 all-up modifier bit positions and left/right modifier scan codes | A complete physical browser layout |
 | `ALT-SDL3` | Pinned maintained alternate backend source | The 24-bit NKB representation and its Macro/Call collision and Repeat-zero table defects | The selected C-M8 value or wire representation |
-| `DEC-M8` | Frozen reconstruction decision | Profile name, DOM `code` selection, all 100 host descriptors, v6 host-only boundary, bounded queue, and focus-loss transaction | A historical browser or CADR API |
-| `INF-M8` | Explicit reconstruction inference | Canonical `CDRM8KB1` record and rejection/atomicity rules not exposed by a historical source | Original storage or locking implementation |
-| `TEST-M8` | Synthetic Node conformance test | Exhaustively exercised map, masks, rollover, failure, bytes, and protocol boundary | A preserved-system runtime result |
+| `DEC-M8` | Frozen reconstruction decision | Profile name, DOM `code` selection, all 100 host descriptors, dedicated-v6 boundary, bounded queue, focus-loss transaction, and shared browser request IDs | A historical browser or CADR API |
+| `INF-M8` | Explicit reconstruction inference | Canonical `CDRM8KB1` state and `CDRINP1` ingress records, plus rejection/atomicity rules not exposed by a historical source | Original storage or locking implementation |
+| `IMP-M8-M9` | Tracked core/IOB implementation and direct C conformance test | Exact ABI 1.8 record validation, completed-boundary delivery, keyboard IOB call, ordinal commit, and post-delivery witness layout | Native `usim` equivalence or a guest session result |
+| `TEST-M8` | Synthetic Node, worker, and direct-core conformance tests | Exhaustively exercised map, masks, rollover, failure, bytes, protocol boundary, worker dispatch, core IOB delivery, and browser request ordering | A preserved-system runtime result |
 | `OPEN-M8` | Open oracle class | Identifies the exact runtime obligations below | Any result before a named experiment runs |
 
 When sources differ, the profile does not average them: `S46-KBD` supplies the
@@ -58,7 +62,7 @@ could have implemented.
 
 | Profile or witness | Exact identity | Relevant result | Status |
 | --- | --- | --- | --- |
-| Selected C-M8 | `CADR-WEB-303/ABI1.5/protocol-v6/C-M8-KBD-X11-INFO16-v1` | 100 host keys; lower 16-bit Cadet words; no worker wiring | normative Phase 1 |
+| Selected C-M8/M9 ingress | `CADR-WEB-303/controller-C-M8.1/core-ABI1.8/protocol-v6/KBD-X11-INFO16-v1` | C-M8 controller version 1 over combined core ABI 1.8; 100 host keys; lower 16-bit Cadet words; dedicated v6 branch; strict `CDRINP1` delivery | tested reconstructed browser/core boundary |
 | System 46 | Git `8e978d7d1704096a63edd4386a3b8326a2e584af` | `KBD-CONVERT-NEW` consumes all-up words and its 200-entry table assigns Macro `0100`, Call `0107`, Repeat `0115` | source cross-check, not selected runtime |
 | maintained System 303 system tree | Fossil `4df393c68d7f083ce42d5c377039d26043cc18a9031ace28258dc97f4137eb91` | selected system source boundary; restoration check-in, not a historical release date | profile identity only here |
 | maintained `usim` X11 | Fossil `330d8248ec2e12af071e287920e681600f75df9ffd854aada5f8a64c9adad64d` | X11 `KeyPress`/`KeyRelease`, modifier scan, and all-up path | selected event-model source |
@@ -88,12 +92,12 @@ bounded handoff seam (`DEC-M8`/`INF-M8`).
 ## Architecture and ownership
 
 ```text
-DOM key edge or onscreen action ──> host-originated v6 operation ──> worker C-M8 controller
-                                                                      │
-                                                                      ├─ bounded u16 FIFO
-                                                                      └─ canonical CDRM8KB1 state
-
-CADR core / ABI / generic scheduler  <── no C-M8 Phase 1 call path
+DOM key edge or onscreen action ──> shared v6 browser channel ──> worker C-M8 controller
+                                                                     │
+                                                                     ├─ canonical CDRM8KB1 host state
+                                                                     └─ one strict CDRINP1 record per accepted word
+                                                                                 │
+completed CADR boundary ──> ABI 1.8 M9 core ingress ──> IOB keyboard event/FIFO
 ```
 
 - The browser host preserves physical identity as `code`, carries DOM's repeat
@@ -102,12 +106,17 @@ CADR core / ABI / generic scheduler  <── no C-M8 Phase 1 call path
   only retained ownership is a delivery obligation for a pointer down whose
   matching up has not yet been accepted or definitively reconciled by the
   exact canonical `keyboard-up`/`not-held` response.
-- The **worker** owns C-M8 held state, queue capacity, focus-loss recovery,
+- The **worker** owns C-M8 held state, queue capacity, shared focus/capture-loss recovery,
   canonical state, and every accepted unsigned 16-bit word. The controller
   owns no CADR core memory and does not invoke generic scheduler ingress.
-- A later worker integration owns delivery timing, core calls, and failure after
-  it drains a word. C-M8 does not promise rollback once another layer accepts a
-  drained word.
+- The ABI 1.8 implementation accepts a record only while the machine is
+  `RUNNING` at a completed `BOUNDARY_READY` phase. It validates the exact
+  generation and next shared ingress ordinal before calling the IOB keyboard
+  event function; it commits its ordinal and input sequence only after that
+  function succeeds. It does not route input through generic scheduler kinds.
+- `keyboard-drain` remains host-controller observation. In normal v6 delivery,
+  the worker consumes only the exact entries that the core has accepted; it is
+  not an independent guest-delivery interface.
 
 ## Complete physical-input inventory
 
@@ -287,20 +296,22 @@ Held keys serialize in descriptor-index order regardless of down order. The FIFO
 retains queue order. Re-parsing and reserializing valid bytes MUST reproduce the
 same bytes.
 
-## Protocol v6 host-only inventory
+## Protocol v6 and ABI 1.8 input inventory
 
-`CadrM8KeyboardProtocolSubhandler` is a testable M8 branch of the future v6
-worker endpoint, not a complete worker and not a browser-main-thread state
-owner. The outer worker remains solely responsible for request-ID sequencing,
-lifecycle, and non-M8 dispatch. A well-formed host-originated request contains
+`CadrM8KeyboardProtocolSubhandler` is the M8 branch of the implemented v6
+worker endpoint, not a browser-main-thread state owner. The outer worker remains
+solely responsible for request-ID sequencing, lifecycle, and non-M8 dispatch.
+`cadr-m8-m9-worker-channel.mjs` allocates those IDs once for both M8 and M9;
+`CadrM9PointerAdapter` accepts that allocator instead of using a conflicting
+per-adapter sequence. A well-formed host-originated request contains
 protocol version `6`, a positive u32 ID, and one of the operations below.
 Each operation accepts only the fields listed below plus `version`, `id`, and
 `op`; extra fields are rejected before controller mutation.
 
 Handled requests use the canonical worker response core:
 `type: "cadr-response"`, version, ID, operation, unsigned numeric `status`, and
-boolean `ok`. Status `0` is success, `2` invalid argument, and `9` queue
-capacity not ready. The sub-handler adds `result` or `reason` but does not
+boolean `ok`. Status `0` is success, `2` invalid argument, and `9` queue/core
+not-ready. The sub-handler adds `result` or `reason` but does not
 invent a separate M8 response envelope. It returns `null` for requests owned by
 the outer worker.
 
@@ -318,9 +329,31 @@ status `2` and `v6-keyboard-is-host-only`. Batches containing only sequence
 break kind `1` and/or clock kind `2` return `null` unchanged for the existing
 generic scheduler handler. Malformed and unknown-kind batches also delegate so
 that existing validation remains authoritative. The legacy singular
-`scheduler-keyboard-event` name is always rejected. The module imports no core
-or adapter surface. This is an exact Phase 1 boundary; it does not change an
-ABI function, scheduler record, or the existing worker’s request tree.
+`scheduler-keyboard-event` name is always rejected. The response spelling is a
+generic-ingress compatibility label, not a statement that the named M8/M9 path
+is host-only. The branch is installed only for v6 with an ABI 1.8 M9 Wasm
+module. It submits one exact 40-byte `CDRINP1` record per accepted controller
+entry and leaves the generic scheduler request tree closed.
+
+`CDRINP1` is little-endian and exactly 40 bytes. It is a reconstruction record,
+not a native `usim` scheduler or X11 record:
+
+| Offset | Width | Field | Rule |
+| ---: | ---: | --- | --- |
+| 0 | 8 | magic | ASCII `CDRINP1` plus zero byte |
+| 8 | 2 | schema | exactly `1` |
+| 10 | 2 | kind | keyboard `1`; pointer EDGE32 `2` is owned by M9 |
+| 12 | 4 | flags | zero |
+| 16 | 8 | machine generation | exact current generation |
+| 24 | 8 | ingress ordinal | exactly prior ordinal plus one |
+| 32 | 4 | payload | keyboard uses only low 16 bits |
+| 36 | 4 | reserved | zero |
+
+The matching `CDRIOB91` 64-byte worker observation reports post-delivery IOB
+state, sequence, ordinal, generation, and lifecycle. It is not a pre-IOB native
+transition witness. ABI 1.8 M9 input state is deliberately excluded from the
+M5 snapshot layout, and v6 snapshot operations return `NOT_READY` rather than
+emit a non-restorable snapshot.
 
 ## Failure and recovery behavior
 
@@ -329,6 +362,11 @@ ABI function, scheduler record, or the existing worker’s request tree.
 - An onscreen up that receives queue-full remains pending. Removing its
   ownership before accepted delivery is forbidden; disposal is another retry
   boundary, not permission to forget it.
+- `keyboard-focus-lost` and `pointer-neutralize` are composed worker
+  deactivation requests. M9 reserves one complete pointer-up tail plus exactly
+  one all-up; after every record crosses the core boundary, the same serialized
+  request clears M8 held keys. It never invokes standalone `focusLost()` and
+  therefore cannot emit a second all-up.
 - After an accepted atomic `keyboard-focus-lost`, a later onscreen up may
   receive canonical `not-held`; that exact response clears stale ownership and
   permits the physical code to be pressed again. The same rule reconciles an
@@ -340,9 +378,10 @@ ABI function, scheduler record, or the existing worker’s request tree.
 - The canonical parser makes no best-effort repair. Invalid state bytes cannot
   construct a controller.
 - Onscreen pointer cancellation emits only a corresponding host `keyboard-up`
-  operation; disposal does the same for its pointer-held descriptors. Global
-  focus loss remains a future host integration responsibility, whose worker
-  operation is `keyboard-focus-lost`.
+  operation; disposal does the same for its pointer-held descriptors. The
+  browser binding maps a focus-surface `blur` to `keyboard-focus-lost`; it
+  reads `KeyboardEvent.code`, never `KeyboardEvent.key`, and has no guest IOB
+  rollback authority.
 
 ## Conformance suite
 
@@ -362,10 +401,15 @@ uses only synthetic DOM-code records and no CADR media.
 | `M8-ALT-SDL3` | Compare Macro/Call/Repeat to the recorded alternate values | Call and Repeat remain distinct from the SDL3 defects |
 | `M8-CODE-NOT-KEY` | Submit `{code: "KeyQ", key: "KeyZ"}` | Q scan code wins; direct or computed character-key selection fails |
 | `M8-V6-BOUNDARY` | Submit sequence-break, clock, combined kind-1/2, keyboard, and mixed batches | Kind-1/2 batches delegate unchanged; any batch containing kind 3 is rejected; dedicated v6 operations return canonical numeric responses |
+| `M8-WORKER-CHANNEL` | Instantiate a display-capable Wasm module at v6; interleave keyboard and pointer requests through one browser channel | Worker dispatch retains M8/M9 state independently, generic kind 3/4 remains rejected, and request IDs are globally monotonic |
+| `M8-M9-IOB` | Deliver keyboard words, an all-up word, and stale/malformed variants to an internal running ABI 1.8 machine | Exact IOB word/FIFO behavior; no ordinal or sequence commit on rejection; native mouse/keyboard address rules remain separately exercised by M9 |
+| `M8-M9-DEACTIVATE` | Interleave held M8 keys and M9 buttons before blur/capture loss | Complete pointer release plus exactly one all-up crosses the boundary before M8 held state clears |
 
 ## Preserved-system comparison procedure
 
-No runtime comparison has run for C-M8. When wiring starts, run only through a
+No native runtime comparison has run for C-M8. A disposable, source-pinned
+pre-IOB witness patch and input driver now prepare and compile without launching
+a machine; that is build evidence only. When the native campaign starts, run only through a
 fresh private System 303-0 Xvfb computer-use session, preserve the required
 load-band, disk, `usim`, toolchain, input-action, screenshot, and shutdown
 provenance, and keep raw payloads ignored. Compare a small, safe input trace to
@@ -373,11 +417,11 @@ the selected X11 executable before treating any outcome as a System 303 claim.
 
 | Obligation | Setup and action | Discriminating result | Claim closed |
 | --- | --- | --- | --- |
-| `TODO-RUNTIME-M8-1` | Send one mapped ordinary down/up through the future worker bridge in a fresh System 303 X11 session | Guest IOB receives the selected lower-16-bit sequence versus a rejected/misframed word | M8-to-worker framing only |
+| `TODO-RUNTIME-M8-1` | Send one mapped ordinary down/up through the implemented worker-to-core bridge in a fresh System 303 X11 session and compare its `CDRIOB91` state with the patched native pre-IOB witness | Guest IOB receives the selected lower-16-bit sequence versus a rejected/misframed word | M8-to-worker-to-IOB framing only |
 | `TODO-RUNTIME-M8-2` | Hold each class of modifier, release the last ordinary key, inspect guest input trace | Guest sees the 11-bit selected all-up mask versus another encoding | selected mask survives integration |
 | `TODO-RUNTIME-M8-3` | Trigger browser focus loss while keys are held, then resume input | One all-up reaches guest and no stuck modifier remains | host focus wiring, not source provenance |
 | `TODO-RUNTIME-M8-4` | Exercise Call and Repeat in the selected System 303 environment | Their guest effects distinguish `0107`/`0115` from the SDL3 defect values | runtime applicability of selected numbers |
-| `TODO-RUNTIME-M8-5` | Verify the pinned native X11 `usim` executable/source/artifact identities; in one fresh isolated System 303-0 session establish a zero-held baseline before each case, configure and record the exact X11 keycode/keysym/modifier mapping, inject down/up for each of all 100 C-M8 physical descriptors through XTEST, and capture the ordered pre-IOB lower-16-bit transition trace plus final all-up state; run the same 100 independent cases through C-M8 and compare descriptor by descriptor | Exact match; left/right or special-key divergence; native-unreachable mapping; or different all-up sequence are retained separately rather than averaged | All-100 selected-map applicability to the pinned native X11 path, including explicit exceptions; not browser-worker integration or another `usim` build |
+| `TODO-RUNTIME-M8-5` | Verify the pinned native X11 `usim` executable/source/artifact identities; establish and record a zero-held live X map; inject only source-mapped unmodified descriptors and retain exact down/all-up or divergence. Record shifted live keysyms as open modifier-chord cases and source-unmapped browser descriptors as not applicable to this native subcampaign. Separately run all 100 descriptors through C-M8 and the running browser core, interleaving each pair with a bounded scheduler run until READY and the keyboard FIFO quiesce, and preserve those consumption boundaries. | Exact native-subset traces plus explicit non-closing chord/unmapped exceptions; exact all-100 browser CDRINP1/CDRIOB91 receipts without FIFO saturation | selected native X11 subset and all-100 browser-worker/core applicability; modifier-chord exceptions and CW2 remain open |
 
 ## Known unknowns and nonclaims
 
@@ -400,6 +444,6 @@ Genera or local System 303 media is included.
 - System 46 [`kbd.123`](https://github.com/mietek/mit-cadr-system-software/blob/8e978d7d1704096a63edd4386a3b8326a2e584af/src/lmio/kbd.123), Git `8e978d7d1704096a63edd4386a3b8326a2e584af`.
 - maintained [`x11.c`](https://tumbleweed.nu/r/usim/file?ci=330d8248ec2e12af071e287920e681600f75df9f&name=x11.c), [`cadet.c`](https://tumbleweed.nu/r/usim/file?ci=330d8248ec2e12af071e287920e681600f75df9f&name=cadet.c), [`kbd.c`](https://tumbleweed.nu/r/usim/file?ci=330d8248ec2e12af071e287920e681600f75df9f&name=kbd.c), and [SDL3 key map](https://tumbleweed.nu/r/usim/file?ci=330d8248ec2e12af071e287920e681600f75df9f&name=sdl3-keyboard-cadet-scancodes.defs), Fossil `330d8248ec2e12af071e287920e681600f75df9ffd854aada5f8a64c9adad64d`.
 - maintained [LM-3 System 303 check-in](https://tumbleweed.nu/r/sys/info/4df393c68d7f083ce42d5c377039d26043cc18a9031ace28258dc97f4137eb91), Fossil `4df393c68d7f083ce42d5c377039d26043cc18a9031ace28258dc97f4137eb91`.
-- Selected implementation: [`cadr-m8-keyboard.mjs`](../../cadr-web/wasm/cadr-m8-keyboard.mjs) and [`cadr-m8-onscreen-keyboard.mjs`](../../cadr-web/browser/cadr-m8-onscreen-keyboard.mjs).
+- Selected implementation: [`cadr-m8-keyboard.mjs`](../../cadr-web/wasm/cadr-m8-keyboard.mjs), [`cadr-m8-onscreen-keyboard.mjs`](../../cadr-web/browser/cadr-m8-onscreen-keyboard.mjs), the shared browser/worker channel [`cadr-m8-m9-worker-channel.mjs`](../../cadr-web/browser/cadr-m8-m9-worker-channel.mjs), and the ABI record definition [`cadr_m9_input.h`](../../cadr-web/core/cadr_m9_input.h). The actual v6 branch is in [`cadr-worker.js`](../../cadr-web/wasm/cadr-worker.js); [`test_cadr_m9_input_bridge.c`](../../cadr-web/tests/test_cadr_m9_input_bridge.c) and [`tests/test_cadr_m8_m9_worker.mjs`](../../tests/test_cadr_m8_m9_worker.mjs) cover direct-core and worker boundaries. The native witness/driver is tracked in [`cadr_m8_m9_input_witness.c`](../../cadr-web/oracle/native/cadr_m8_m9_input_witness.c), [`cadr_m8_m9_input_driver.c`](../../cadr-web/oracle/native/cadr_m8_m9_input_driver.c), and the exact patch [`0004-m8-m9-pre-iob-input-witness.patch`](../../cadr-web/oracle/patches/0004-m8-m9-pre-iob-input-witness.patch).
 
-Last verified: 2026-07-29.
+Last verified: 2026-07-30.

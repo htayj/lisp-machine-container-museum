@@ -1,0 +1,30 @@
+diff --git a/Makefile.usim b/Makefile.usim
+--- a/Makefile.usim
++++ b/Makefile.usim
+@@ -98,6 +98,7 @@
+ 			  $(OBJDIR)/chaos.libhosts.a
+ 
+ SRCS := usim.c ucfg.c ini.c trace.c dump.c \
++		cadr_m12_debugger_witness.c \
+ 		ucode.c uexec.c uvmem.c udiss.c usym.c \
+ 		misc.c m32.c idle.c \
+ 		machine-control.c \
+diff --git a/ucode.c b/ucode.c
+--- a/ucode.c
++++ b/ucode.c
+@@ -19,6 +19,7 @@
+ #include "machine-control.h"
+ #include "main-memory.h"
+ #include "misc.h"
++#include "cadr_m12_debugger_witness.h"
+ #include "sched.h"
+ #include "tv.h"
+ #include "ucfg.h"
+@@ -59,6 +60,7 @@
+ 	while (!machine_state.halted) 
+ 	{
+         uexec_step();
++        cadr_m12_native_debugger_witness_boundary(machine_cycles, p0_pc, p1_pc, npc, lc);
+ 
+         if (idle_enabled) idle_check(machine_cycles);
+ 

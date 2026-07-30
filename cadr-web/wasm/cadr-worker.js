@@ -1,5 +1,16 @@
 import { m5SlotAdvanceAllowed, runM5DigestBatch } from "./cadr-m5-batch.mjs";
 import { parseCdrDisp1 } from "./cadr-display-renderer.mjs";
+import { CadrM8KeyboardProtocolSubhandler } from "./cadr-m8-keyboard.mjs";
+import { CadrM9PointerProtocolSubhandler } from "./cadr-m9-pointer.mjs";
+import { encodeCdrInp1 } from "./cadr-m8-m9-campaign.mjs";
+import { commitCadrM8M9SharedDeactivation,
+  prepareCadrM8M9SharedDeactivation } from "./cadr-m8-m9-deactivation.mjs";
+import { commitCadrM8M9CoreDelivery } from "./cadr-m8-m9-transaction.mjs";
+import { CadrM11AudioProtocolSubhandler } from "./cadr-m11-audio.mjs";
+import { CadrM12ProtocolSubhandler, CADR_M12_STATUS_OK,
+  CADR_M12_STATUS_DEBUG_STOP,
+  CADR_M12_STATUS_LIMIT_REACHED,
+  CADR_M12_CONFIG_SNAPSHOT_BYTES } from "./cadr-m12-debugger.mjs";
 
 /*
  * CADR-WEB versioned dedicated-worker protocols.
@@ -12,7 +23,10 @@ import { parseCdrDisp1 } from "./cadr-display-renderer.mjs";
  * replay a side-effecting request.  Protocol v1 freezes the M3 request tree;
  * protocol v2 adds the M4 media operations and request-payload framing.  The
  * protocol-v3 tree is the frozen M5 scheduler, protocol v4 adds M6's queue
- * digest and CDRM6I1 observation, and protocol v5 adds M7's display transfer.
+ * digest and CDRM6I1 observation, protocol v5 adds M7's display transfer,
+ * and protocol v6 adds the dedicated M8/M9 host-input branches.  Protocol v7
+ * composes those same CDRINP1 branches with M11 audio and M12 debugger controls.
+ * Neither input version widens generic scheduler ingress.
  * The first well-formed, in-order request selects one version for the session.
  */
 const CADR_M3_PROTOCOL_VERSION = 1;
@@ -20,6 +34,8 @@ const CADR_M4_PROTOCOL_VERSION = 2;
 const CADR_M5_PROTOCOL_VERSION = 3;
 const CADR_M6_PROTOCOL_VERSION = 4;
 const CADR_M7_PROTOCOL_VERSION = 5;
+const CADR_M8_M9_PROTOCOL_VERSION = 6;
+const CADR_M12_PROTOCOL_VERSION = 7;
 const CADR_STATUS_OK = 0;
 const CADR_STATUS_INVALID_ARGUMENT = 2;
 const CADR_STATUS_HOST_FAILURE = 7;
@@ -28,6 +44,7 @@ const CADR_STATUS_NOT_READY = 9;
 const CADR_STATUS_GUEST_FAULT = 12;
 const CADR_STATUS_UNIMPLEMENTED_DEVICE = 13;
 const CADR_STATUS_HALTED = 16;
+const CADR_STATUS_QUEUE_FULL = 17;
 const CADR_TRANSFER_LIMIT = 1048576;
 const CADR_DIGEST_BATCH_MAX = 4096;
 const CADR_M6_FAST_RUN_MAX_SLOTS = 1048576;
@@ -67,6 +84,15 @@ const CADR_M6_DEVID_ONLY_OPERATIONS = new Set([
 const CADR_M7_ONLY_OPERATIONS = new Set([
   "display-update", "display-full",
 ]);
+const CADR_M8_M9_ONLY_OPERATIONS = new Set([
+  "keyboard-down", "keyboard-up", "keyboard-focus-lost", "keyboard-drain", "keyboard-state",
+  "pointer-motion", "pointer-down", "pointer-up", "pointer-neutralize", "pointer-warp-request",
+  "pointer-drain", "pointer-state", "input-state",
+]);
+const CADR_M11_ONLY_OPERATIONS = new Set([
+  "audio-state", "audio-peek", "audio-render", "audio-ack",
+  "audio-snapshot-size", "audio-snapshot-save", "audio-snapshot-restore",
+]);
 const CADR_SCHED_EVENT_SEQUENCE_BREAK = 1;
 const CADR_SCHED_EVENT_CLOCK = 2;
 const CADR_SCHED_EVENT_KEYBOARD = 3;
@@ -104,16 +130,35 @@ let pendingBoundaryDigest = false;
 let lastFailureEvidence = null;
 let diagnosticModule = false;
 let m6DevidModule = false;
+let m8KeyboardProtocol = null;
+let m9PointerProtocol = null;
+let m11AudioProtocol = null;
+let m12DebuggerProtocol = null;
 
 function isM5ProtocolVersion(version) {
   return version === CADR_M5_PROTOCOL_VERSION ||
     version === CADR_M6_PROTOCOL_VERSION ||
-    version === CADR_M7_PROTOCOL_VERSION;
+    version === CADR_M7_PROTOCOL_VERSION ||
+    version === CADR_M8_M9_PROTOCOL_VERSION ||
+    version === CADR_M12_PROTOCOL_VERSION;
 }
 
 function isM6ProtocolVersion(version) {
   return version === CADR_M6_PROTOCOL_VERSION ||
-    version === CADR_M7_PROTOCOL_VERSION;
+    version === CADR_M7_PROTOCOL_VERSION ||
+    version === CADR_M8_M9_PROTOCOL_VERSION ||
+    version === CADR_M12_PROTOCOL_VERSION;
+}
+
+function isM7ProtocolVersion(version) {
+  return version === CADR_M7_PROTOCOL_VERSION ||
+    version === CADR_M8_M9_PROTOCOL_VERSION ||
+    version === CADR_M12_PROTOCOL_VERSION;
+}
+
+function isM8M9ProtocolVersion(version) {
+  return version === CADR_M8_M9_PROTOCOL_VERSION ||
+    version === CADR_M12_PROTOCOL_VERSION;
 }
 
 function isM6DevidProtocolVersion(version) {
@@ -317,6 +362,319 @@ function coreIsRunning(e) {
 function discardWorkerState() {
   instance = null; mediaBusy = false; mediaDirty = false;
   mediaSnapshotBlocked = false; mediaOverlayGeneration = 0n;
+  m8KeyboardProtocol = null; m9PointerProtocol = null;
+  m11AudioProtocol = null; m12DebuggerProtocol = null;
+}
+
+function m9InputCoreState(e) {
+  if (typeof e.cadr_wasm_m9_input_state !== "function" ||
+      typeof e.cadr_wasm_m9_input_deliver !== "function") return null;
+  const pointer = e.cadr_wasm_output_pointer() >>> 0;
+  if (pointer === 0 || pointer + 64 > e.memory.buffer.byteLength ||
+      (e.cadr_wasm_m9_input_state() >>> 0) !== CADR_STATUS_OK) return null;
+  const bytes = new Uint8Array(e.memory.buffer, pointer, 64);
+  if (new TextDecoder().decode(bytes.subarray(0, 8)) !== "CDRIOB91") return null;
+  const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+  if (view.getUint32(8, true) !== 1 || view.getUint32(12, true) !== 64) return null;
+  return Object.freeze({ csr: view.getUint32(16, true), scancode: view.getUint32(20, true),
+    mouseX: view.getUint32(24, true), mouseY: view.getUint32(28, true),
+    inputSequence: view.getUint32(32, true), keyboardFifoCount: view.getUint32(36, true),
+    ingressOrdinal: view.getBigUint64(40, true), generation: view.getBigUint64(48, true),
+    lifecycle: view.getUint32(56, true), bytes: bytes.slice() });
+}
+
+function m9InputEntries(result) {
+  if (result?.result?.emitted !== undefined) {
+    return Object.freeze([{ kind: 1, value: result.result.emitted >>> 0, source: "keyboard" }]);
+  }
+  if (result?.result?.entry !== undefined) {
+    return Object.freeze([{ kind: 2, value: result.result.entry.value >>> 0, source: "pointer" }]);
+  }
+  if (Array.isArray(result?.result?.entries)) {
+    return Object.freeze(result.result.entries.map(entry => Object.freeze({
+      kind: entry.type === "keyboard-all-up" ? 1 : 2, value: entry.value >>> 0, source: "pointer",
+    })));
+  }
+  return Object.freeze([]);
+}
+
+function m9InputPreflight(e, request) {
+  const state = m9InputCoreState(e);
+  if (state === null || state.lifecycle !== 2) {
+    return Object.freeze({ status: CADR_STATUS_NOT_READY, reason: "core-not-running" });
+  }
+  const potentiallyKeyboard = request.op === "keyboard-down" || request.op === "keyboard-up" ||
+    request.op === "keyboard-focus-lost" || request.op === "pointer-neutralize";
+  if (potentiallyKeyboard && (state.csr & (1 << 5)) !== 0 && state.keyboardFifoCount >= 10) {
+    return Object.freeze({ status: CADR_STATUS_QUEUE_FULL, reason: "iob-keyboard-fifo-full" });
+  }
+  return Object.freeze({ status: CADR_STATUS_OK, state });
+}
+
+function m9InputDeliver(e, state, entries) {
+  let ordinal = state.ingressOrdinal;
+  const wireRecords = [];
+  const coreObservations = [];
+  for (const entry of entries) {
+    ordinal += 1n;
+    const record = encodeCdrInp1({ kind: entry.kind, generation: state.generation,
+      ordinal, payload: entry.value });
+    if (copyInput(e, record) === 0 || (e.cadr_wasm_m9_input_deliver(40) >>> 0) !== CADR_STATUS_OK) {
+      return null;
+    }
+    const observation = m9InputCoreState(e);
+    if (observation === null || observation.ingressOrdinal !== ordinal ||
+        observation.inputSequence !== state.inputSequence + wireRecords.length + 1) return null;
+    wireRecords.push(record.slice());
+    coreObservations.push(observation.bytes.slice());
+  }
+  return Object.freeze({ wireSchema: "CDRINP1", recordsDelivered: entries.length,
+    firstIngressOrdinal: entries.length === 0 ? state.ingressOrdinal : state.ingressOrdinal + 1n,
+    lastIngressOrdinal: ordinal, inputSequence: state.inputSequence + entries.length,
+    wireRecords: Object.freeze(wireRecords.map(bytes => bytes.buffer)),
+    coreObservations: Object.freeze(coreObservations.map(bytes => bytes.buffer)) });
+}
+
+function consumeM9InputEntries(entries) {
+  const keyboardCount = entries.filter(entry => entry.source === "keyboard").length;
+  const pointerCount = entries.filter(entry => entry.source === "pointer").length;
+  if (keyboardCount !== 0) m8KeyboardProtocol.controller.drain(keyboardCount);
+  if (pointerCount !== 0) m9PointerProtocol.controller.drain(pointerCount);
+}
+
+/* M8 and M9 accept only physical edges which have crossed CDRINP1 into a
+ * running M9 IOB profile.  This preserves native device ordering and rejects
+ * an input before controller mutation when the guest cannot accept it. */
+function v6InputSubhandlerResult(e, request) {
+  if (!isM8M9ProtocolVersion(protocolVersion)) return null;
+  const ingressOperation = ["keyboard-down", "keyboard-up", "keyboard-focus-lost",
+    "pointer-motion", "pointer-down", "pointer-up", "pointer-neutralize"].includes(request.op);
+  const preflight = ingressOperation ? m9InputPreflight(e, request) : null;
+  if (preflight !== null && preflight.status !== CADR_STATUS_OK) {
+    return Object.freeze({ id: request.id, op: request.op, status: preflight.status,
+      reason: preflight.reason });
+  }
+  /* M8/M9 keep their frozen v6 codec and controller contract.  V7 only wraps
+     that exact request shape in the composed worker; the outer response is
+     re-versioned by `response` after this result is stripped. */
+  const inputRequest = protocolVersion === CADR_M12_PROTOCOL_VERSION ?
+    Object.freeze({ ...request, version: CADR_M8_M9_PROTOCOL_VERSION }) : request;
+  const sharedDeactivation = inputRequest.op === "keyboard-focus-lost" ||
+    inputRequest.op === "pointer-neutralize";
+  const keyboard = sharedDeactivation ? null : (m8KeyboardProtocol?.handle(inputRequest) ?? null);
+  const result = sharedDeactivation ? prepareCadrM8M9SharedDeactivation({
+    pointerProtocol: m9PointerProtocol, request: inputRequest }) :
+    (keyboard ?? (m9PointerProtocol?.handle(inputRequest) ?? null));
+  if (result === null || preflight === null || result.status !== CADR_STATUS_OK) return result;
+  const entries = m9InputEntries(result);
+  if (entries.length === 0) return result;
+  const delivery = m9InputDeliver(e, preflight.state, entries);
+  let deactivation = null;
+  commitCadrM8M9CoreDelivery({ delivery,
+    failClosed() {
+      m8KeyboardProtocol = null;
+      m9PointerProtocol = null;
+      workerLifecycle = CADR_WORKER_FAILED;
+    },
+    commit() {
+      consumeM9InputEntries(entries);
+      deactivation = sharedDeactivation ? commitCadrM8M9SharedDeactivation({
+        keyboardProtocol: m8KeyboardProtocol }) : null;
+    } });
+  return Object.freeze({ ...result, delivery, ...(deactivation === null ? {} : { deactivation }) });
+}
+
+function sendV6InputSubhandlerResult(result) {
+  const { id, op, status, type: _type, version: _version, ok: _ok, ...extra } = result;
+  response(id, op, status, extra);
+}
+
+function m12OutputBytes(e, byteCount) {
+  const pointer = e.cadr_wasm_output_pointer() >>> 0;
+  if (pointer === 0 || pointer + byteCount > e.memory.buffer.byteLength) return null;
+  return new Uint8Array(e.memory.buffer, pointer, byteCount);
+}
+
+function m12DebugStateResult(e) {
+  const bytes = m12OutputBytes(e, 24);
+  if (bytes === null) return null;
+  const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+  return { generation: view.getBigUint64(0, true), clockSlot: view.getBigUint64(8, true),
+    microPc: view.getUint32(16, true), rawLc: view.getUint32(20, true) };
+}
+
+function m12StopResult(e) {
+  const bytes = m12OutputBytes(e, 136);
+  return bytes === null ? null : { stop: bytes.slice() };
+}
+
+function m12InspectorReadResult(e) {
+  const bytes = m12OutputBytes(e, 24);
+  if (bytes === null) return null;
+  const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+  return { generation: view.getBigUint64(0, true), arrayKind: view.getUint32(8, true),
+    index: view.getUint32(12, true), value: view.getUint32(16, true) };
+}
+
+function m11OutputBytes(e, byteCount) {
+  const pointer = e.cadr_wasm_output_pointer() >>> 0;
+  if (pointer === 0 || pointer + byteCount > e.memory.buffer.byteLength) return null;
+  return new Uint8Array(e.memory.buffer, pointer, byteCount);
+}
+
+function invokeM11Wasm(e, operation) {
+  if (operation.op === "audio-state") {
+    const bytes = m11OutputBytes(e, 40);
+    if (bytes === null) return { status: CADR_STATUS_NOT_READY };
+    const status = e.cadr_wasm_m11_audio_state() >>> 0;
+    if (status !== CADR_STATUS_OK) return { status };
+    const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+    if (new TextDecoder().decode(bytes.subarray(0, 8)) !== "CDRM11A1" ||
+        view.getUint32(8, true) !== 1 || view.getUint32(12, true) !== 40) {
+      return { status: CADR_STATUS_INVALID_ARGUMENT };
+    }
+    return { status, state: Object.freeze({ generation: view.getBigUint64(16, true),
+      queuedFrames: view.getBigUint64(24, true), packetCount: view.getUint32(32, true),
+      rendererProfile: view.getUint32(36, true) }) };
+  }
+  if (operation.op === "audio-peek") {
+    const bytes = m11OutputBytes(e, 88);
+    if (bytes === null) return { status: CADR_STATUS_NOT_READY };
+    const status = e.cadr_wasm_m11_audio_peek() >>> 0;
+    if (status !== CADR_STATUS_OK) return { status };
+    const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+    return { status, event: bytes.slice(0, 64).buffer, generation: view.getBigUint64(64, true),
+      sequence: view.getBigUint64(72, true), frameOffset: view.getUint32(80, true),
+      framesRemaining: view.getUint32(84, true) };
+  }
+  if (operation.op === "audio-render" || operation.op === "audio-ack") {
+    const generation = split64(operation.generation); const sequence = split64(operation.sequence);
+    if (generation === null || sequence === null) return { status: CADR_STATUS_INVALID_ARGUMENT };
+    if (operation.op === "audio-ack") {
+      return { status: e.cadr_wasm_m11_audio_ack(generation[0], generation[1], sequence[0],
+        sequence[1], operation.frameOffset, operation.frames) >>> 0 };
+    }
+    const status = e.cadr_wasm_m11_audio_render(generation[0], generation[1], sequence[0],
+      sequence[1], operation.frameOffset, operation.requestedFrames) >>> 0;
+    const meta = status === CADR_STATUS_OK ? metadata(e) : null;
+    if (status !== CADR_STATUS_OK || meta === null || meta[0] === 0n || meta[0] > 512n ||
+        meta[1] !== meta[0] * 2n) return { status: status === CADR_STATUS_OK ? CADR_STATUS_NOT_READY : status };
+    const bytes = m11OutputBytes(e, Number(meta[1]));
+    return bytes === null ? { status: CADR_STATUS_NOT_READY } :
+      { status, frames: Number(meta[0]), pcmS16Le: bytes.slice().buffer };
+  }
+  if (operation.op === "audio-snapshot-size") {
+    const status = e.cadr_wasm_m11_audio_snapshot_size() >>> 0;
+    const meta = status === CADR_STATUS_OK ? metadata(e) : null;
+    return meta === null ? { status: status === CADR_STATUS_OK ? CADR_STATUS_NOT_READY : status } :
+      { status, byteCount: meta[0] };
+  }
+  if (operation.op === "audio-snapshot-save") {
+    const pointer = e.cadr_wasm_input_reserve(4284) >>> 0;
+    if (pointer === 0 || pointer + 4284 > e.memory.buffer.byteLength) return { status: CADR_STATUS_NOT_READY };
+    const status = e.cadr_wasm_m11_audio_snapshot_save() >>> 0;
+    const meta = status === CADR_STATUS_OK ? metadata(e) : null;
+    if (status !== CADR_STATUS_OK || meta === null || meta[0] === 0n || meta[0] > 4284n) {
+      return { status: status === CADR_STATUS_OK ? CADR_STATUS_NOT_READY : status };
+    }
+    return { status, snapshot: new Uint8Array(e.memory.buffer, pointer, Number(meta[0])).slice().buffer };
+  }
+  if (operation.op === "audio-snapshot-restore") {
+    if (operation.snapshot.byteLength === 0 || copyInput(e, operation.snapshot) === 0) {
+      return { status: CADR_STATUS_INVALID_ARGUMENT };
+    }
+    return { status: e.cadr_wasm_m11_audio_snapshot_restore(operation.snapshot.byteLength) >>> 0 };
+  }
+  return { status: CADR_STATUS_INVALID_ARGUMENT };
+}
+
+/* The v7 branch receives validated scalar requests from CadrM12ProtocolSubhandler.
+ * It never opens the core's process-local direct-array lease, moves media, or
+ * accepts a generic scheduler substitute for debugger execution. */
+function invokeM12Wasm(e, operation) {
+  if (operation.op === "debug-inspect-read") {
+    if (m12OutputBytes(e, 24) === null) return { status: CADR_STATUS_NOT_READY };
+    const status = e.cadr_wasm_m12_inspect_read(operation.arrayKind, operation.index) >>> 0;
+    if (status !== CADR_M12_STATUS_OK) return { status };
+    const result = m12InspectorReadResult(e);
+    return result === null ? { status: CADR_STATUS_NOT_READY } : { status, result };
+  }
+  if (operation.op === "debug-breakpoint-set") {
+    const value = split64(operation.breakpoint.value);
+    if (value === null) return { status: CADR_STATUS_INVALID_ARGUMENT };
+    return { status: e.cadr_wasm_m12_breakpoint_set(operation.slot,
+      operation.breakpoint.kind, value[0], value[1]) >>> 0 };
+  }
+  if (operation.op === "debug-breakpoint-clear") {
+    return { status: e.cadr_wasm_m12_breakpoint_clear(operation.slot) >>> 0 };
+  }
+  if (operation.op === "debug-resume-one-boundary") {
+    return { status: e.cadr_wasm_m12_resume_one_boundary() >>> 0 };
+  }
+  if (operation.op === "debug-trace-filter") {
+    const first = split64(operation.filter.firstClockSlot);
+    const last = split64(operation.filter.lastClockSlot);
+    if (first === null || last === null) return { status: CADR_STATUS_INVALID_ARGUMENT };
+    return { status: e.cadr_wasm_m12_trace_filter(operation.filter.flags,
+      operation.filter.microPc, first[0], first[1], last[0], last[1]) >>> 0 };
+  }
+  if (operation.op === "debug-micro-step" || operation.op === "debug-macro-step") {
+    /* The export writes either a closed state record for success or a closed
+     * CDRDBGSTOP1 record for a debugger terminal result. */
+    if (m12OutputBytes(e, 136) === null) return { status: CADR_STATUS_NOT_READY };
+    const status = (operation.op === "debug-micro-step" ?
+      e.cadr_wasm_m12_micro_step() : e.cadr_wasm_m12_macro_step()) >>> 0;
+    if (status === CADR_M12_STATUS_OK) {
+      const result = m12DebugStateResult(e);
+      return result === null ? { status: CADR_STATUS_NOT_READY } : { status, result };
+    }
+    if (status === CADR_M12_STATUS_DEBUG_STOP || status === CADR_M12_STATUS_LIMIT_REACHED) {
+      const result = m12StopResult(e);
+      return result === null ? { status: CADR_STATUS_NOT_READY } : { status, result };
+    }
+    return { status };
+  }
+  if (operation.op === "debug-stop-record") {
+    if (m12OutputBytes(e, 136) === null) return { status: CADR_STATUS_NOT_READY };
+    const status = e.cadr_wasm_m12_stop_record() >>> 0;
+    if (status !== CADR_M12_STATUS_OK) return { status };
+    const result = m12StopResult(e);
+    return result === null ? { status: CADR_STATUS_NOT_READY } : { status, result };
+  }
+  if (operation.op === "debug-config-snapshot-save") {
+    const pointer = e.cadr_wasm_input_reserve(CADR_M12_CONFIG_SNAPSHOT_BYTES) >>> 0;
+    if (pointer === 0 || pointer + CADR_M12_CONFIG_SNAPSHOT_BYTES > e.memory.buffer.byteLength) {
+      return { status: CADR_STATUS_NOT_READY };
+    }
+    const status = e.cadr_wasm_m12_config_snapshot_save() >>> 0;
+    if (status !== CADR_STATUS_OK) return { status };
+    return { status, result: { snapshot: new Uint8Array(e.memory.buffer, pointer,
+      CADR_M12_CONFIG_SNAPSHOT_BYTES).slice().buffer } };
+  }
+  if (operation.op === "debug-config-snapshot-restore") {
+    if (operation.snapshot.byteLength !== CADR_M12_CONFIG_SNAPSHOT_BYTES ||
+        copyInput(e, operation.snapshot) === 0) {
+      return { status: CADR_STATUS_INVALID_ARGUMENT };
+    }
+    return { status: e.cadr_wasm_m12_config_snapshot_restore(
+      CADR_M12_CONFIG_SNAPSHOT_BYTES) >>> 0 };
+  }
+  return { status: CADR_STATUS_INVALID_ARGUMENT };
+}
+
+function v7M12SubhandlerResult(request) {
+  if (protocolVersion !== CADR_M12_PROTOCOL_VERSION || m12DebuggerProtocol === null) return null;
+  return m12DebuggerProtocol.handle(request);
+}
+
+function v7M11SubhandlerResult(request) {
+  if (protocolVersion !== CADR_M12_PROTOCOL_VERSION || m11AudioProtocol === null) return null;
+  return m11AudioProtocol.handle(request);
+}
+
+function sendV7M12SubhandlerResult(result) {
+  const { id, op, status, type: _type, version: _version, ok: _ok, ...extra } = result;
+  response(id, op, status, extra);
 }
 
 function closeWorkerSoon() {
@@ -775,6 +1133,14 @@ async function handle(request) {
     m6DevidModule = request.m6DiskEvidencePolicy === true &&
       typeof instance.exports.cadr_wasm_m6_disk_evidence_summary === "function" &&
       typeof instance.exports.cadr_wasm_run_until_event_m6 === "function";
+    m8KeyboardProtocol = new CadrM8KeyboardProtocolSubhandler();
+    m9PointerProtocol = new CadrM9PointerProtocolSubhandler();
+    m11AudioProtocol = protocolVersion === CADR_M12_PROTOCOL_VERSION ?
+      new CadrM11AudioProtocolSubhandler({ invoke: operation =>
+        invokeM11Wasm(instance.exports, operation) }) : null;
+    m12DebuggerProtocol = protocolVersion === CADR_M12_PROTOCOL_VERSION ?
+      new CadrM12ProtocolSubhandler({ invoke: operation =>
+        invokeM12Wasm(instance.exports, operation) }) : null;
     mediaBusy = false;
     mediaDirty = false;
     mediaSnapshotBlocked = false;
@@ -810,14 +1176,49 @@ async function handle(request) {
     response(id, op, CADR_STATUS_INVALID_ARGUMENT);
     return;
   }
-  if (protocolVersion !== CADR_M7_PROTOCOL_VERSION &&
+  if (!isM7ProtocolVersion(protocolVersion) &&
       CADR_M7_ONLY_OPERATIONS.has(op)) {
+    response(id, op, CADR_STATUS_INVALID_ARGUMENT);
+    return;
+  }
+  if (!isM8M9ProtocolVersion(protocolVersion) &&
+      CADR_M8_M9_ONLY_OPERATIONS.has(op)) {
+    response(id, op, CADR_STATUS_INVALID_ARGUMENT);
+    return;
+  }
+  if (protocolVersion !== CADR_M12_PROTOCOL_VERSION && CADR_M11_ONLY_OPERATIONS.has(op)) {
     response(id, op, CADR_STATUS_INVALID_ARGUMENT);
     return;
   }
 
   const e = exportsOrStatus(id, op);
   if (e === null) return;
+  if (isM8M9ProtocolVersion(protocolVersion) && op === "input-state") {
+    if (Object.keys(request).some(key => !["version", "id", "op"].includes(key))) {
+      response(id, op, CADR_STATUS_INVALID_ARGUMENT);
+      return;
+    }
+    const state = m9InputCoreState(e);
+    if (state === null) {
+      response(id, op, CADR_STATUS_NOT_READY);
+    } else {
+      response(id, op, CADR_STATUS_OK, { wireSchema: "CDRIOB91", observation: state.bytes.buffer },
+        [state.bytes.buffer]);
+    }
+    return;
+  }
+  const v6Input = v6InputSubhandlerResult(e, request);
+  if (v6Input !== null) {
+    sendV6InputSubhandlerResult(v6Input);
+    return;
+  }
+  /* M9 device ingress is deliberately absent from the M5 snapshot ABI.
+     Reject rather than make a snapshot that cannot restore input ordering. */
+  if (isM8M9ProtocolVersion(protocolVersion) && ["snapshot-size", "snapshot-save", "snapshot-restore",
+    "snapshot-restore-import"].includes(op)) {
+    response(id, op, CADR_STATUS_NOT_READY);
+    return;
+  }
   if (m6DevidModule && ["snapshot-size", "snapshot-save", "snapshot-restore",
     "snapshot-restore-import"].includes(op)) {
     response(id, op, CADR_STATUS_NOT_READY);
@@ -827,6 +1228,16 @@ async function handle(request) {
       op !== "scheduler-state" && op !== "post-terminal-diagnostic" &&
       op !== "m6-disk-evidence-summary") {
     response(id, op, CADR_STATUS_NOT_READY, { lifecycle: workerLifecycle });
+    return;
+  }
+  const v7M12 = v7M12SubhandlerResult(request);
+  const v7M11 = v7M11SubhandlerResult(request);
+  if (v7M11 !== null) {
+    sendV7M12SubhandlerResult(v7M11);
+    return;
+  }
+  if (v7M12 !== null) {
+    sendV7M12SubhandlerResult(v7M12);
     return;
   }
   if (isM5ProtocolVersion(protocolVersion) &&
@@ -1815,7 +2226,8 @@ async function receive(event) {
   if (!isRecord(request) ||
       ![CADR_M3_PROTOCOL_VERSION, CADR_M4_PROTOCOL_VERSION,
         CADR_M5_PROTOCOL_VERSION, CADR_M6_PROTOCOL_VERSION,
-        CADR_M7_PROTOCOL_VERSION]
+        CADR_M7_PROTOCOL_VERSION, CADR_M8_M9_PROTOCOL_VERSION,
+        CADR_M12_PROTOCOL_VERSION]
         .includes(request.version) ||
       (isM5ProtocolVersion(request.version) && request.op === "instantiate" &&
        (!(request.module instanceof WebAssembly.Module) ||
@@ -1848,12 +2260,32 @@ async function receive(event) {
          entry => entry.name === "cadr_wasm_m6_disk_evidence_summary") ||
         !WebAssembly.Module.exports(request.module).some(
          entry => entry.name === "cadr_wasm_run_until_event_m6"))) ||
-      (request.version === CADR_M7_PROTOCOL_VERSION &&
+      (isM7ProtocolVersion(request.version) &&
        request.op === "instantiate" &&
        (!WebAssembly.Module.exports(request.module).some(
          entry => entry.name === "cadr_wasm_display_update") ||
         !WebAssembly.Module.exports(request.module).some(
           entry => entry.name === "cadr_wasm_display_full"))) ||
+      (isM8M9ProtocolVersion(request.version) &&
+       request.op === "instantiate" &&
+       (!WebAssembly.Module.exports(request.module).some(
+         entry => entry.name === "cadr_wasm_m9_input_deliver") ||
+        !WebAssembly.Module.exports(request.module).some(
+          entry => entry.name === "cadr_wasm_m9_input_state"))) ||
+      (request.version === CADR_M12_PROTOCOL_VERSION &&
+       request.op === "instantiate" &&
+       (!(request.module instanceof WebAssembly.Module) ||
+        !["cadr_wasm_m12_debug_state", "cadr_wasm_m12_inspect_read", "cadr_wasm_m12_breakpoint_set",
+          "cadr_wasm_m12_breakpoint_clear", "cadr_wasm_m12_resume_one_boundary",
+          "cadr_wasm_m12_micro_step", "cadr_wasm_m12_macro_step",
+          "cadr_wasm_m12_stop_record", "cadr_wasm_m12_trace_filter",
+          "cadr_wasm_m12_config_snapshot_save", "cadr_wasm_m12_config_snapshot_restore",
+          "cadr_wasm_m9_input_deliver", "cadr_wasm_m9_input_state",
+          "cadr_wasm_m11_audio_state", "cadr_wasm_m11_audio_peek",
+          "cadr_wasm_m11_audio_render", "cadr_wasm_m11_audio_ack",
+          "cadr_wasm_m11_audio_snapshot_size", "cadr_wasm_m11_audio_snapshot_save",
+          "cadr_wasm_m11_audio_snapshot_restore"].every(name =>
+          WebAssembly.Module.exports(request.module).some(entry => entry.name === name)))) ||
       (protocolVersion !== null && request.version !== protocolVersion) ||
       !validId(request.id) || typeof request.op !== "string") {
     error(isRecord(request) && validId(request.id) ? request.id : null,

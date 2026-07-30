@@ -3,19 +3,19 @@ type: Reimplementation Specification
 title: CADR audio, beeper, and Votrax reimplementation specification
 description: A Phase 1, source-bounded contract for deterministic CADR beeper and Votrax event delivery, without a hardware or PCM-emulation claim.
 tags: [mit-cadr, audio, votrax, reimplementation, cadr-web, preservation]
-timestamp: 2026-07-29T20:11:00-04:00
+timestamp: 2026-07-30T22:20:00-04:00
 ---
 
 # CADR audio, beeper, and Votrax reimplementation specification
 
 ## Status and reconstruction claim
 
-This is the Phase 1 contract for `C-M11`: deterministic, synthetic audio-event
-production and delivery for the selected CADR-WEB System 303 profile. A conforming
-Phase 1 implementation can preserve a bounded, ordered beeper/Votrax event stream,
-its generation boundary, and a cumulative witness without contacting an audio
-device. [`cadr_audio_model.c`](../../cadr-web/core/cadr_audio_model.c) is a pure C
-reference model and its test is synthetic.
+This is the Phase 1 contract for `C-M11`: deterministic audio-event production,
+queue transport, and clean-room PCM rendering for the selected CADR-WEB System 303
+profile. The M11 build owns one model per machine, maps IOB address `0764110` to a
+post-slot beeper event, and exposes an isolated v7 worker subhandler in the narrow
+M12 Wasm profile. It has synthetic C, Node, O0/O2 Wasm-export, and Worklet-queue
+tests; no CADR, LM-3, System 303, or audio-device runtime has been opened.
 
 It claims:
 
@@ -31,9 +31,10 @@ It does not claim:
   hardware timing;
 - PCM, pixel, timing, perceptual, browser, or AudioWorklet identity;
 - a System 303 or System 46 runtime observation; or
-- that M11, ABI 1.6, worker protocol v6, or CDRSNAP1 minor 3 is implemented in
-  the shared CADR core. They are specified integration targets, not claims about
-  the current core.
+- historical device, PCM, or browser identity;
+- generic `CDRSNAP1` inclusion of the audio queue: it restores a fresh M11 model;
+- a preserved-system or hardware observation of the selected M8/M11 order; or
+- a preserved System 303 runtime observation.
 
 `MUST`, `MUST NOT`, `SHOULD`, and `MAY` are normative in the contract sections.
 The model is deliberately independent of the shared core until an integration gate
@@ -49,6 +50,7 @@ the files are present in the repository.
 | `303-SRC` | Public System 303 source | The Votrax demo's explicit serial-stream arguments and its byte/sentinel producer | A physical Votrax waveform or the loaded System 303 image's behavior |
 | `S46-SRC` | Public System 46 source snapshot | The separately preserved Votrax source and the pinned serial-stream defaults: 300 baud, seven data bits, even parity, and one stop bit | The behavior of a particular System 46 load band |
 | `USIM-SRC` | Pinned public `usim` source | Current SDL3 software's use of an 8 kHz signed-16 sine-oriented backend and `%BEEP` inputs | CADR hardware behavior or cross-platform PCM equality |
+| `USIM-WITNESS-PREP` | Disposable, content-pinned public-usim source closure | The exact M11 source anchors, patch, and compile-only executable identity can be reproduced without copying media or launching a machine | An observed beep, any PCM output, or CADR behavior |
 | `INF-M11` | Clean-room inference | The event queue, canonical record, witness, and failure rules needed for deterministic browser transport | Their use by the historical CADR |
 | `TEST-M11` | Synthetic C test | The listed reference-model transitions and byte layouts | A preserved-system or hardware runtime result |
 | `TODO-RUNTIME-M11` | Oracle obligation | Nothing yet | Any observed historical claim |
@@ -88,35 +90,48 @@ CADR hardware specification. [Pinned `sdl3-audio.c`](https://tumbleweed.nu/r/usi
 and [the IOB dispatch](https://tumbleweed.nu/r/usim/file?ci=330d8248ec2e12af071e287920e681600f75df9ffd854aada5f8a64c9adad64d&name=iob.c&ln=204-219)
 were verified on 2026-07-29.
 
+A second local source check used repository worktree revision
+`f6d3212c03e563b54b19082a97080eb697d6b060` and content hashes for
+`usim/iob.c`, `usim/sdl3-audio.c`, and `usim/Makefile.usim`. The disposable
+[`M11 witness preparer`](../../scripts/cadr-m11-native-audio-oracle.py) copies
+only source-form inputs, applies a two-file exact patch in an ignored closure,
+and records scalar half-wavelength, full-wavelength, duration, and PCM-block
+metadata only if a separately authorized native run supplies a new output path.
+The 2026-07-29 closure and SDL3 compile succeeded; it was not run. This is
+`USIM-WITNESS-PREP`, not a sound, timing, or CADR runtime observation.
+
 ### Conformance levels
 
 | Level | Includes | Reserved |
 | --- | --- | --- |
 | `M11-L0` | Synthetic event construction, ordering, queue operations, witness, and explicit failures | Shared-core integration and wire transport |
-| `M11-L1` | `M11-L0` plus `CDRAUD1`, ABI 1.6/protocol v6, and CDRSNAP1 minor-3 reader/writer integration | PCM samples and browser behavior |
-| `M11-L2` | `M11-L1` plus deterministic, independently reviewed sine PCM | AudioWorklet, actual device, and hardware comparison |
+| `M11-L1` | `M11-L0` plus selected IOB core mapping, pointer-free `CDRAUDS1` queue-state transport, composed M8/M9/M11 protocol-v7 operations, and M12 direct-Wasm `CDRM12S1` adoption | Protocol-v7 M9 continuation and preserved-runtime ordering evidence |
+| `M11-L2` | `M11-L1` plus deterministic fixed-table signed-16 PCM and a bounded AudioWorklet queue | Actual device behavior and hardware comparison |
 | `M11-L3` | `M11-L2` plus browser pause/worklet/oracle campaigns | Votrax or SC-01 acoustic identity |
 
-Only `M11-L0` is represented by the Phase 1 pure C model. The implementation does
-not claim an exact historical source interface: the source’s Lisp stream API,
-devices, phoneme tables, and load behavior remain outside this C semantic boundary.
+`M11-L0` through the isolated portions of `M11-L2` are implemented and tested.
+This does not claim an exact historical source interface: the source’s Lisp stream
+API, devices, phoneme tables, load behavior, and preserved-runtime comparison remain
+outside this C semantic boundary.
 
 ## Architecture and ownership boundaries
 
 ```text
-guest IOB or selected serial producer
-    -> C-M11 semantic event model
-        -> CDRAUD1 transport / future worker protocol v6
-            -> CDRPCM1 renderer / future AudioWorklet
+selected M11 IOB producer
+    -> machine-owned C-M11 semantic event model
+        -> `CDRAUDS1` semantic sidecar / isolated protocol-v7 subhandler
+            -> deterministic signed-16 PCM / bounded AudioWorklet queue
                 -> optional host audio device
 ```
 
 - The guest-facing producer owns a source event and supplies only selected,
   already-decoded scalar inputs.
 - The M11 model owns queue order, generation, acknowledgement state, and witness.
-- A future worker owns transport publication and pause/resume coordination; it MUST
-  NOT invent or reorder guest events.
-- A future renderer owns PCM bytes. It MUST NOT alter the event witness.
+- The isolated worker subhandler owns transport publication and pause/resume
+  coordination; it MUST NOT invent or reorder guest events.
+- The deterministic renderer owns PCM bytes. It MUST NOT alter the event witness;
+  its fixed table is a clean-room approximation of the selected public software
+  profile, not an SDL3, CADR, or hardware implementation.
 - A host audio device is not an emulator authority and has no role in guest time.
 
 The C model has one serialized owner. Each API call is an atomic model transition:
@@ -388,9 +403,13 @@ pumps one or more pending-job packets into newly available capacity. The
 acknowledgement plus pump is atomic: an internal validation failure rolls back the
 entire operation.
 
-`render_pcm_s16le` validates a current cursor, reports zero written, and returns
-`NOT_READY`. This is intentional and test-covered. It must not call `sin`, link
-host `libm`, fabricate silent PCM as conforming sine output, or acknowledge frames.
+`render_pcm_s16le` validates a current cursor and renders only a beeper selected
+for `USIM-SDL3-SINE-330D8248-CANONICAL-v1`. It uses a fixed signed 32-phase table
+and integer phase accumulation at 8 kHz; it neither calls `sin` nor links host
+`libm`. The result is deterministic clean-room PCM, not bit-identical SDL3 output,
+CADR analog behavior, or a host-device observation. It never acknowledges frames.
+`NO-AUDIO`, UART, a stale cursor, and an invalid renderer input report the documented
+failure without fabricating silent PCM.
 
 ## Transfer and snapshot representations
 
@@ -431,85 +450,52 @@ nonzero reserved value, an unknown flag, a zero identity/epoch, unequal accepted
 `next_sequence`, an inconsistent head/next/count relationship, an invalid event, a
 sequence/order/head-witness/final-witness mismatch, or a total/count mismatch.
 
-### `CDRPCM1` render record
+### `CDRAUDS1` semantic-state sidecar
 
-`CDRPCM1` is reserved for `M11-L2`; Phase 1 produces none. If a later reviewed
-renderer implements it, its fixed 64-byte header is:
-
-| Offset | Field |
-| ---: | --- |
-| 0 | magic `"CDRPCM1\\0"` (8 bytes) |
-| 8 | `version:u16le` = 1, `header_bytes:u16le` = 64 |
-| 12 | `flags:u32le` = 0 |
-| 16 | `generation:u64le` |
-| 24 | `sequence:u64le` |
-| 32 | `frame_offset:u32le`, `frame_count:u32le` |
-| 40 | `sample_rate:u32le` = 8000 |
-| 44 | `channels:u16le` = 1, `encoding:u16le` = 1 (`s16le`) |
-| 48 | `total_bytes:u64le` = `64 + 2 * frame_count` |
-| 56 | `reserved0:u64le` = 0 |
-
-The payload, if and only if the renderer gate closes, is exactly `frame_count`
-signed 16-bit little-endian mono samples. A `CDRPCM1` reader MUST reject samples for
-an unavailable `NOT_READY` renderer rather than treating empty or host-generated
-bytes as a valid sine result.
-
-### CDRSNAP1 minor 3 `AUDIO` chunk
-
-CDRSNAP1 minor 3 is a future integration profile. It adds required type `11`
-`AUDIO`, distinct from the existing host-request `AUDIO` descriptor. Its payload is
-192 fixed bytes followed by logical head-to-tail canonical events:
+`CDRAUDS1` is the implemented pointer-free semantic queue sidecar. It is distinct
+from `CDRAUD1` live transport and is not a `CDRSNAP1` chunk. The first 16 bytes are
+the magic `"CDRAUDS1"`, `version:u32le = 1`, and `total_bytes:u32le`. The remaining
+172-byte header, followed by logical head-to-tail canonical events, is:
 
 | Offset | Field |
 | ---: | --- |
-| 0 | `renderer_profile:u32le` |
-| 4 | `flags:u32le`: bit 0 `slot_open`, bit 1 `pending_active`; all other bits zero |
-| 8 | `generation:u64le` |
-| 16 | `next_sequence:u64le` |
-| 24 | `last_post_slot:u64le` |
-| 32 | `active_post_slot:u64le` |
-| 40 | `queued_frames:u64le` |
-| 48 | `witness[32]` |
-| 80 | `H_before_logical_head[32]` |
-| 112 | `queue_packet_count:u32le`, `head_frame_offset:u32le` |
-| 120 | `last_intra_slot:u32le`, `have_last:u32le` |
-| 128 | `pending_half_wavelength_us:u32le`, `pending_duration_us:u32le` |
-| 136 | `reserved0:u32le` = 0, `canonical_event_bytes:u32le` = 64 |
-| 144 | `pending_total_frames:u64le` |
-| 152 | `pending_next_frame:u64le` |
-| 160 | `pending_post_slot:u64le` |
-| 168 | `event_bytes:u64le` = `64 * queue_packet_count` |
-| 176 | `header_bytes:u32le` = 192, `reserved1:u32le` = 0 |
-| 184 | `head_sequence:u64le` |
+| 16 | `generation:u64le`, then `head_sequence:u64le`, `next_sequence:u64le` |
+| 40 | `last_post_slot:u64le`, `active_post_slot:u64le`, `queued_frames:u64le` |
+| 64 | `pending_total_frames:u64le`, `pending_next_frame:u64le`, `pending_post_slot:u64le` |
+| 88 | `queue_packet_count:u32le`, `head_frame_offset:u32le`, `last_intra_slot:u32le`, `have_last:u32le` |
+| 104 | `slot_open:u32le`, `renderer_profile:u32le`, `pending_active:u32le`, `pending_half_wavelength_us:u32le`, `pending_duration_us:u32le` |
+| 124 | `witness[32]`, then `H_before_logical_head[32]` |
+| 188 | `64 * queue_packet_count` canonical event bytes |
 
-No authority identity, consumer epoch, or accepted-sequence high-water appears in
-this payload. `head_sequence` and `next_sequence` are explicitly untrusted semantic
-claims. The reader reconstructs the logical queue with native head index zero, and
-`adopt_semantic_state` validates all events, ordering, pending state, head/next/count
-relation, head witness, final witness, and equality of `next_sequence` with the
-destination authority before publishing. It then increments that authority's epoch.
-There is no valid minor-3 restore that
-silently drops a pending continuation, changes its active-slot boundary, reuses a
-pre-restore acknowledgement, or forgets the acknowledged witness prefix.
-Existing minor 0--2 behavior is unchanged: a minor-3 required AUDIO chunk is not
-accepted by an earlier reader, and an older snapshot does not invent audio state.
+No cursor, authority identity, native address, or consumer-epoch capability appears
+in this payload. Import accepts only an empty live destination, validates the whole
+record before publication, retains a fresh local authority, and starts a fresh
+consumer epoch; all pre-import cursors are stale. The generic core `CDRSNAP1` path
+does not include this sidecar and restores a fresh empty M11 model. A caller that
+needs audio continuation MUST save and restore `CDRAUDS1` separately and MUST NOT
+claim that a generic snapshot carried its pending continuation or acknowledgement
+state. In the M12 direct-Wasm profile, `CDRM12S1` composes an unchanged
+`CDRSNAP1` followed by `CDRAUDS1` and `CDRM12C1`; it stages the audio adoption
+before publishing the replacement machine. Bare `CDRSNAP1` still restores an
+empty audio model, and lower profiles remain byte-for-byte unchanged.
 
-## Future worker, pause, and rights contract
+## Worker, pause, and rights contract
 
-Protocol v6 is an ABI 1.6 integration target. It must use the event queue as the
-authority for delivery. When paused, the worker MAY continue guest scheduling only
-if it can retain all resulting semantic events; it MUST NOT dequeue, acknowledge,
-or mutate the witness merely because the browser output is paused. A pause that
-would fill the queue must surface the same deterministic pre-next-slot backpressure
-as any other consumer delay.
+The narrow M12 Wasm profile includes the isolated v7 M11 operations `audio-state`,
+`audio-peek`, `audio-render`, `audio-ack`, and `audio-snapshot-{size,save,restore}`.
+The Wasm adapter retains the native cursor and transfers only scalar identity plus
+PCM or `CDRAUDS1` bytes; it never transfers an authority token or pointer. The same
+v7 build also exports the existing M8/M9 `CDRINP1` ingress surface. A strict native
+composition test accepts `CDRINP1` at a ready boundary before the same boundary's
+IOB `BEEP` produces its M11 post-slot event; those two streams intentionally retain
+distinct sequence domains.
 
-A future AudioWorklet receives only validated `CDRPCM1` records for the current
-generation and consumer session. It returns acknowledgements containing generation,
-consumer epoch, sequence, and frame offset. The worker performs the model
-acknowledgement after validation; stale, duplicate, post-reset, or pre-restore
-worklet replies have no effect. Worklet clock time,
-device latency, underruns, and user mute state are output observations, not guest
-time or ordering evidence.
+The AudioWorklet accepts only bounded signed-16 PCM supplied by the Wasm bridge. It
+converts samples to Float32 output and reports an acknowledgement only after a whole
+posted packet has reached an output block. The main-thread bridge acknowledges the
+core only after that report. A generation clear removes queued stale PCM. Worklet
+clock time, device latency, underruns, and mute state are output observations, not
+guest-time or ordering evidence.
 
 No SC-01 or SC-01A behavior is enabled by this specification. An optional device
 profile is gated on all of: an exact public source commit, a separately licensed and
@@ -526,21 +512,53 @@ a later one.
 | Gate | Required evidence | Current Phase 1 disposition |
 | --- | --- | --- |
 | `C-M11-01-MODEL` | Strict C test proves 64-byte LE events, canonical validation, order, external-authority rollback resistance, head-sequence/head-witness/final-witness integrity, resumable 64x512 queueing, atomic backpressure, partial ack, reset/restore stale ack, UART profiles, and `NOT_READY` rendering | Passes locally for the standalone model |
-| `C-M11-02-CORE` | ABI 1.6 core integration and an additive protocol-v6 worker test with no M6/M7/M10 regression | Not implemented |
-| `C-M11-03-SNAPSHOT` | CDRSNAP1 minor-3 writer/reader round trip, malformed-chunk rejection, and stale-ack-after-restore test | Not implemented |
-| `C-M11-04-PCM` | Independently reviewed deterministic sine implementation and fixed `CDRPCM1` fixtures; no host `libm` drift | Not implemented; renderer is explicitly `NOT_READY` |
-| `C-M11-05-WORKLET` | Browser AudioWorklet pause/resume, generation, partial-ack, and bounded-backpressure campaign | Not implemented |
-| `C-M11-06-ORACLE` | Non-destructive, source-bound preserved-system or hardware comparison for each historical claim retained | Not run |
+| `C-M11-02-CORE` | M11 core mapping for `0764110`, post-slot enqueue, and composed M8/M9/M11 v7 test with no M6/M7/M10 regression | Passes: the native composition test fixes `CDRINP1`-before-post-slot-`BEEP` order; a runtime comparison remains open |
+| `C-M11-03-SNAPSHOT` | Pointer-free `CDRAUDS1` round trip, malformed-sidecar rejection, fresh local authority, stale-cursor-after-adoption, and composed M12 rollback/publication tests | Passes. `CDRSNAP1` remains frozen; M12 carries the sidecar in `CDRM12S1`, while protocol-v7 generic restore remains blocked on M9 continuation. |
+| `C-M11-04-PCM` | Deterministic fixed-table signed-16 render fixtures with no host `libm` drift | Passes as a clean-room renderer; SDL3/device identity is not claimed |
+| `C-M11-05-WORKLET` | AudioWorklet queue generation clear, whole-packet acknowledgement, and bounded-backpressure test | Passes in Node queue tests; browser lifecycle campaign remains open |
+| `C-M11-06-ORACLE` | Non-destructive, source-bound preserved-system or hardware comparison for each historical claim retained | Source closure and compile-only witness pass; no runtime capture has run |
 
 Focused Phase 1 test command:
 
 ```sh
-cc -std=c11 -Wall -Wextra -Werror -Wpedantic -Wconversion -Wshadow \
-  -Wstrict-prototypes -Wmissing-prototypes -Wformat=2 -Icadr-web/core \
-  -o build/test_cadr_m11_audio_model \
-  cadr-web/tests/test_cadr_m11_audio_model.c cadr-web/core/cadr_audio_model.c && \
-  ./build/test_cadr_m11_audio_model
+make -C cadr-web m11-unit
+python3 scripts/cadr-m11-native-audio-oracle.py prepare
+python3 scripts/cadr-m11-native-audio-oracle.py build
 ```
+
+The latter two commands create/compile a disposable ignored source closure only;
+they do not start `usim` and do not close `C-M11-06-ORACLE`.
+
+After the separately running M6 benchmark has released the private-runtime slot,
+the following is the exact native-capture form. It is deliberately not run by this
+change. Replace only the bracketed private-runtime path and the date/session fields;
+the configuration and disk must be current-owner regular non-symlink files inside a
+0700 private runtime, and the output directory must be a new empty 0700 directory
+under `build/cadr-oracle/`.
+
+```sh
+python3 scripts/cadr-m11-native-audio-oracle.py native-capture \
+  --prepared build/cadr-oracle/m11-audio-witness-campaign-20260729-v2 \
+  --config <private-runtime>/usim.ini \
+  --private-runtime <private-runtime> \
+  --private-disk <private-runtime>/disk-sys-303-0.img \
+  --output build/cadr-oracle/m11-runtime-YYYYMMDD \
+  --session-id m11-YYYYMMDD-1 --execute
+```
+
+The command requires explicit `--execute`, copies the pinned public executable into
+a fresh child of its output directory, clears locale/timezone ambient state, and
+rejects a changed private disk or an empty/non-real witness. A successful capture
+records hashes and byte counts for the copied witness, configuration, disk before
+and after, executable, source closure and patch, stdout/stderr logs, toolchain,
+ordered actions, and clean process exit; it stores none of the disk or PCM bytes.
+`CDRM11USIM1` schema version 2 records a SHA-256 of each canonical
+`"CDRM11E1" || half-wavelength:u32le || wavelength:u32le || duration:u32le`
+beep event and a SHA-256 of each little-endian signed-16 PCM block. Those hashes
+make a later controlled capture comparable without redistributing audio samples.
+It does not materialize a private runtime itself; the repository's separate
+private-runtime preparation policy remains the prerequisite. A refused or invalid
+capture exits nonzero.
 
 | Test ID | Gate | Synthetic setup and pass condition |
 | --- | --- | --- |
@@ -558,13 +576,17 @@ cc -std=c11 -Wall -Wextra -Werror -Wpedantic -Wconversion -Wshadow \
 | `M11-T12` | `C-M11-01-MODEL` | A detached authority copy fails at another address and when replayed back into the retired original address because its allocator lease is inactive |
 | `M11-T13` | `C-M11-01-MODEL` | Legitimate reuse of the identical authority address with equal provenance, epoch, and event leaves the old cursor stale by incarnation; allocation of `UINT64_MAX-1` and subsequent exhaustion are atomic |
 | `M11-T14` | `C-M11-01-MODEL` | After exact owner detach, authority retirement, and freeing both heap objects, alias ack/reset/session/destroy reject without dereferencing the stale authority address under ASan/UBSan |
-| `M11-T15` | `C-M11-04-PCM` prerequisite | The reserved SDL3-sine renderer returns `NOT_READY` and writes zero frames |
+| `M11-T15` | `C-M11-04-PCM` | The fixed-table SDL3-comparison profile has exact signed-16 fixture samples and `NO-AUDIO` still returns `NOT_READY` with zero frames |
+| `M11-T16` | `C-M11-02-CORE` | A real M11 core machine maps IOB `0764110` to the selected duration/half-wavelength inputs, preserves the first slot event, and rejects a second same-slot beeper request |
+| `M11-T17` | `C-M11-03-SNAPSHOT` | `CDRAUDS1` round trips valid semantic state, rejects malformed bytes atomically, and leaves pre-import cursors stale after fresh-authority adoption |
+| `M11-T18` | `C-M11-05-WORKLET` | The Worklet queue emits Float32 converted from supplied PCM, acknowledges only a fully rendered packet, bounds frames, and clears stale generations |
+| `M11-T19` | `C-M11-02-CORE` | The cumulative ABI 1.10 composed M12 profile accepts M8 `CDRINP1` before an M11 `BEEP` at the ready boundary, retains independent input/audio sequence domains, and exposes both surfaces through v7 without widening v6 |
 
 ## Runtime closure probes and known unknowns
 
 | Obligation | Safe setup and discriminating action | Claim closed |
 | --- | --- | --- |
-| `TODO-RUNTIME-M11-01` | Run a disposable System 303 session through the CADR Xvfb harness, issue a known `%BEEP`, and retain source/load-band/run provenance without publishing raw audio | Whether the selected beeper trigger/arguments match the exercised runtime path |
+| `TODO-RUNTIME-M11-01` | Run the already prepared M11 public-usim witness with a unique output path, then run a disposable System 303 session through the CADR Xvfb harness and issue a known `%BEEP`; retain source/load-band/run provenance without publishing raw audio | Whether the selected beeper trigger/arguments match the exercised runtime path |
 | `TODO-RUNTIME-M11-02` | Use an isolated serial observation fixture for System 303 Votrax and capture the emitted bytes plus the source-side utterance termination boundary | Stream configuration, byte ordering, and confirmation that the `-1` terminator is not transmitted for that exact artifact |
 | `TODO-RUNTIME-M11-03` | Repeat the isolated probe for one pinned System 46 artifact | Whether that loaded artifact exhibits the source-default 300/7E1 profile |
 | `TODO-RUNTIME-M11-04` | Compare a reviewed fixed-point or table-driven renderer against an independently implemented oracle on synthetic beeps | Eligibility for `C-M11-04-PCM` |
@@ -581,6 +603,7 @@ recordings remain out of the tracked documentation.
 | --- | --- | --- |
 | System 303 source | `sys` Fossil `4df393c68d7f083ce42d5c377039d26043cc18a9031ace28258dc97f4137eb91`; Votrax source hash observed locally: `a56933ee5038508d612165685bcf0768cff548dc6fd5d09f75bc7995a3f4ec31` | Public source; only small original descriptions are used here |
 | `usim` comparison source | Fossil `330d8248ec2e12af071e287920e681600f75df9ffd854aada5f8a64c9adad64d`; selected source-map policy is [tracked](../../cadr-web/core/usim-port/source-map.json) | Public BSD-derived source; no guest media is imported |
+| Prepared public-usim witness | [preparer](../../scripts/cadr-m11-native-audio-oracle.py), [exact patch](../../cadr-web/oracle/patches/0006-m11-audio-witness.patch), and [inert witness](../../cadr-web/oracle/native/cadr_m11_audio_witness.c) | The ignored 2026-07-29 closure binds its input and executable hashes; it was compiled but never run |
 | System 46 comparison source | [commit `8e978d7`](https://github.com/mietek/mit-cadr-system-software/tree/8e978d7d1704096a63edd4386a3b8326a2e584af/src) | Public snapshot; source defaults are 300/7E1, loaded-artifact behavior remains untested |
 | Phase 1 model | [`cadr_audio_model.h`](../../cadr-web/core/cadr_audio_model.h), [`cadr_audio_model.c`](../../cadr-web/core/cadr_audio_model.c), and [synthetic test](../../cadr-web/tests/test_cadr_m11_audio_model.c) | New clean-room implementation; no private media, waveform, or ROM |
 
