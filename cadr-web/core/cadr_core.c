@@ -8,9 +8,6 @@
 #include "usim-port/cadr_bus_device.h"
 #include "usim-port/cadr_processor_memory.h"
 #include "cadr_m3_native_observer.h"
-#if defined(CADR_M6_DEVID_WASM)
-#include "cadr_m6_disk_evidence.h"
-#endif
 
 #include <stdint.h>
 #include <stddef.h>
@@ -681,9 +678,6 @@ cadr_status cadr_machine_create(const cadr_machine_config *config,
     machine->state.lifecycle = CADR_MACHINE_COLD;
     machine->state.events.generation = UINT64_C(1);
     machine->state.events.next_request_id = UINT64_C(1);
-#if defined(CADR_M6_DEVID_WASM)
-    cadr_m6_disk_evidence_cold_power_on(&machine->state.m6_disk_evidence);
-#endif
     cadr_processor_memory_set_main_memory_pages(&machine->state, 8192U);
     /*
      * CDRSTATE2 is an M2-derived cache.  Keep a newly created M1 machine
@@ -2436,11 +2430,6 @@ cadr_status cadr_machine_snapshot_size(cadr_machine *machine,
     cadr_status status;
     if (out_byte_count == NULL) return CADR_STATUS_INVALID_ARGUMENT;
     *out_byte_count = 0U;
-#if defined(CADR_M6_DEVID_WASM)
-    (void)machine;
-    (void)request;
-    return CADR_STATUS_NOT_READY;
-#endif
     if (machine == NULL) return CADR_STATUS_INVALID_ARGUMENT;
     status = cadr_snapshot_request_validate(request);
     if (status != CADR_STATUS_OK) return status;
@@ -2465,13 +2454,6 @@ cadr_status cadr_machine_snapshot_save(cadr_machine *machine,
     cadr_status status;
     if (out_written == NULL) return CADR_STATUS_INVALID_ARGUMENT;
     *out_written = 0U;
-#if defined(CADR_M6_DEVID_WASM)
-    (void)machine;
-    (void)request;
-    (void)bytes;
-    (void)capacity;
-    return CADR_STATUS_NOT_READY;
-#endif
     if (machine == NULL || bytes == NULL) return CADR_STATUS_INVALID_ARGUMENT;
     status = cadr_snapshot_request_validate(request);
     if (status != CADR_STATUS_OK) return status;
@@ -2532,12 +2514,6 @@ cadr_status cadr_machine_snapshot_restore(
     cadr_status status;
     if (out_machine == NULL) return CADR_STATUS_INVALID_ARGUMENT;
     *out_machine = NULL;
-#if defined(CADR_M6_DEVID_WASM)
-    (void)request;
-    (void)bytes;
-    (void)byte_count;
-    return CADR_STATUS_NOT_READY;
-#endif
     if (bytes == NULL) return CADR_STATUS_INVALID_ARGUMENT;
     status = cadr_snapshot_request_validate(request);
     if (status != CADR_STATUS_OK) return status;

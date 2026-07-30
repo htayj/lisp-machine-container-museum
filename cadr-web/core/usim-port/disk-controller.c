@@ -4,9 +4,6 @@
 #include "cadr_m3_native_observer.h"
 #include "cadr_disk_evidence.h"
 #include "cadr_m4_media.h"
-#if defined(CADR_M6_DEVID_WASM)
-#include "cadr_m6_disk_evidence.h"
-#endif
 
 #include <string.h>
 
@@ -70,27 +67,6 @@ static void cadr_disk_evidence(cadr_machine_state *state, uint32_t kind,
     tuple.bus_irq = state->bus.interrupt_status;
     tuple.operation = state->events.outstanding_operation;
     tuple.completion_queued = state->events.completion_queued;
-#if defined(CADR_M6_DEVID_WASM)
-    {
-        cadr_status status;
-        const uint64_t post_slot = state->clock_slots_completed +
-            (state->in_host_completion == 0U ? UINT64_C(1) : UINT64_C(0));
-        status = cadr_m6_disk_evidence_produce_final_event(
-            &state->m6_disk_evidence, &state->disk_evidence, post_slot, &tuple,
-            kind, flags, first, second, value, detail,
-            state->events.outstanding_operation,
-            state->events.request_descriptor,
-            state->events.request_descriptor_byte_count,
-            state->events.request_payload,
-            state->events.request_payload_byte_count, bytes, byte_count);
-        if (status != CADR_STATUS_OK) {
-            state->devices.disk.status |= CADR_DISK_STATUS_FAULT;
-            state->devices.disk.transfer_active = 0U;
-            state->events.persistent_status = CADR_STATUS_GUEST_FAULT;
-            state->lifecycle = CADR_MACHINE_GUEST_FAULTED;
-        }
-    }
-#else
     cadr_disk_evidence_observe(
         &state->disk_evidence,
         state->clock_slots_completed +
@@ -117,22 +93,16 @@ static void cadr_disk_evidence(cadr_machine_state *state, uint32_t kind,
                          CADR_SHA256_BYTES);
         }
     }
-#endif
 }
 
 static void cadr_disk_evidence_write_page(cadr_machine_state *state)
 {
-#if defined(CADR_M6_DEVID_WASM)
-    /* The M6 candidate receives its final write-page hash before append. */
-    (void)state;
-#else
     cadr_disk_evidence_event *event;
     if (state->disk_evidence.count == 0U) return;
     event = &state->disk_evidence.events[state->disk_evidence.count - 1U];
     cadr_m4_media_sha256(state->events.request_payload,
                          state->events.request_payload_byte_count,
                          event->page_sha256);
-#endif
 }
 
 static void cadr_disk_set_active(cadr_machine_state *state)
@@ -336,11 +306,7 @@ cadr_status cadr_disk_apply_block_write_completion(cadr_machine_state *state,
     if (state == NULL || (byte_count != 0U && bytes == NULL)) {
         return CADR_STATUS_INVALID_ARGUMENT;
     }
-#if defined(CADR_M6_DEVID_WASM)
-    if (cadr_m6_disk_evidence_limit_exceeded(&state->m6_disk_evidence)) return CADR_STATUS_GUEST_FAULT;
-#else
     if (state->disk_evidence.overflowed != 0U) return CADR_STATUS_GUEST_FAULT;
-#endif
     disk = &state->devices.disk;
     if (disk->transfer_active == 0U) return CADR_STATUS_OK;
     cadr_disk_evidence(state, CADR_DISK_EVIDENCE_DELIVERY, 1U,
@@ -408,11 +374,7 @@ cadr_status cadr_disk_apply_block_read_completion(cadr_machine_state *state,
     if (state == NULL || (byte_count != 0U && bytes == NULL)) {
         return CADR_STATUS_INVALID_ARGUMENT;
     }
-#if defined(CADR_M6_DEVID_WASM)
-    if (cadr_m6_disk_evidence_limit_exceeded(&state->m6_disk_evidence)) return CADR_STATUS_GUEST_FAULT;
-#else
     if (state->disk_evidence.overflowed != 0U) return CADR_STATUS_GUEST_FAULT;
-#endif
     disk = &state->devices.disk;
     if (disk->transfer_active == 0U) return CADR_STATUS_OK;
     cadr_disk_evidence(state, CADR_DISK_EVIDENCE_DELIVERY, 0U,
@@ -479,11 +441,7 @@ cadr_status cadr_disk_apply_block_read_completion(cadr_machine_state *state,
 cadr_status cadr_disk_continue(cadr_machine_state *state)
 {
     if (state == NULL) return CADR_STATUS_INVALID_ARGUMENT;
-#if defined(CADR_M6_DEVID_WASM)
-    if (cadr_m6_disk_evidence_limit_exceeded(&state->m6_disk_evidence)) return CADR_STATUS_GUEST_FAULT;
-#else
     if (state->disk_evidence.overflowed != 0U) return CADR_STATUS_GUEST_FAULT;
-#endif
     if (state->devices.disk.transfer_active == 0U) return CADR_STATUS_OK;
     return cadr_disk_issue_current_ccw(state);
 }
@@ -495,11 +453,7 @@ cadr_status cadr_disk_read(cadr_machine_state *state, uint32_t offset,
     if (state == NULL || out_value == NULL || offset > 3U) {
         return CADR_STATUS_INVALID_ARGUMENT;
     }
-#if defined(CADR_M6_DEVID_WASM)
-    if (cadr_m6_disk_evidence_limit_exceeded(&state->m6_disk_evidence)) return CADR_STATUS_GUEST_FAULT;
-#else
     if (state->disk_evidence.overflowed != 0U) return CADR_STATUS_GUEST_FAULT;
-#endif
     disk = &state->devices.disk;
     if (disk->reset_condition != 0U) {
         *out_value = 0U;
@@ -522,11 +476,7 @@ cadr_status cadr_disk_write(cadr_machine_state *state, uint32_t offset,
     cadr_disk_state *disk;
     cadr_status status = CADR_STATUS_OK;
     if (state == NULL || offset > 3U) return CADR_STATUS_INVALID_ARGUMENT;
-#if defined(CADR_M6_DEVID_WASM)
-    if (cadr_m6_disk_evidence_limit_exceeded(&state->m6_disk_evidence)) return CADR_STATUS_GUEST_FAULT;
-#else
     if (state->disk_evidence.overflowed != 0U) return CADR_STATUS_GUEST_FAULT;
-#endif
     disk = &state->devices.disk;
     switch (offset) {
     case 0U:
@@ -617,10 +567,6 @@ cadr_status cadr_disk_write(cadr_machine_state *state, uint32_t offset,
     }
     cadr_disk_evidence(state, CADR_DISK_EVIDENCE_REGISTER_WRITE, 0U, offset, 0U,
                        value, disk->status, NULL, 0U);
-#if defined(CADR_M6_DEVID_WASM)
-    if (cadr_m6_disk_evidence_limit_exceeded(&state->m6_disk_evidence)) return CADR_STATUS_GUEST_FAULT;
-#else
     if (state->disk_evidence.overflowed != 0U) return CADR_STATUS_GUEST_FAULT;
-#endif
     cadr_m3_native_observer_disk(state,"register","write",offset,value,0U); return status;
 }
