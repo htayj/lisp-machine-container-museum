@@ -1,14 +1,14 @@
 # Curated MIT CADR runtime screenshots
 
-This directory contains twenty-two reviewed runtime captures selected from thirteen
-provenance-bearing System 303 sessions—twenty-one exact full framebuffers and one
+This directory contains twenty-three reviewed runtime captures selected from fourteen
+provenance-bearing System 303 sessions—twenty-two exact full framebuffers and one
 documented crop that retains a complete application window—plus ten runtime
 animations captured from coherent interactions. They are runtime observations, not
 manual illustrations and not claims about every CADR, application, or debugger release.
 
 ## Rights status
 
-These twenty-two PNGs are included for the museum's criticism, comment, scholarship, and
+These twenty-three PNGs are included for the museum's criticism, comment, scholarship, and
 research under the fair-use limitation in
 [17 U.S.C. § 107](https://www.copyright.gov/title17/92chap1.html#107). This is an
 asset- and use-specific conclusion, not a statement that every screenshot of every
@@ -24,7 +24,7 @@ not automatically outside copyright merely because a researcher captured it. The
 publication basis here is the limited documentary use assessed below.
 
 The present use is narrowly documentary: each image appears beside analysis of the
-exact application or recovery state it proves; the set contains twenty-two low-resolution still
+exact application or recovery state it proves; the set contains twenty-three low-resolution still
 frames from a much larger interactive system; the images cannot substitute for the
 software, load band, source, fonts, or manuals; and no market for licensing these
 System 303 observations was identified. The Ninth Circuit held the use of a handful of actual
@@ -630,6 +630,27 @@ The Doctor and QIX captures support [DOCTOR](../../mit-cadr/doctor.md) and the
 The source-injected Supdup and Telnet shells support the
 [network terminal dossier](../../network-terminal-applications.md) and
 [D10 reimplementation specification](../../network-terminal-applications-reimplementation-specification.md).
+
+### Native beeper witness session
+
+| Item | Recorded value |
+| --- | --- |
+| Curated image | `beep-native-audio-witness.png`; exact 768-by-963 framebuffer; 3,222 bytes; PNG SHA-256 `87f7bd58092aa56e027c253fdde743116ed0fa9d71e84da5ceca122c13a0d9d1`; decoded-pixel SHA-256 `faac798a06334c94986fbd98ef6f19515fcb730cdf3da8bc50a4b5f85e58ca5e` |
+| Documentary claim | A real System 303 Lisp Listener accepted `(SI:%BEEP 500. 100000.)` and returned `NIL`; the separate native witness simultaneously retained the source-defined beeper jobs and PCM blocks. The image does not depict or redistribute audio. |
+| Session | `m11-audio-cm11-v3`, generation 1; 2026-07-30 03:53:41–03:56:05 EDT; load band `System 303-0` |
+| Ordered input | Answer the boot date/time question `N`; wait for and capture `Lisp Listener 1`; type exactly `(SI:%BEEP 500. 100000.)`; wait for the native witness and the Listener's `NIL`; capture the resulting screen |
+| Source and emulator | System check-in `4df393c68d7f083ce42d5c377039d26043cc18a9031ace28258dc97f4137eb91`; private System tree SHA-256 `21f5215de973aa6ccbddb817f2d64edd95ee1014c3028a9b0711ea7c741b807e`; public `usim` revision `330d8248ec2e12af071e287920e681600f75df9ffd854aada5f8a64c9adad64d`; `usim_sha256_at_start` and `usim_sha256_at_exec` both `8b181ceb3207c8356659ffccf52ead64bebf659820a0022a73b1f236cbe3dcea` |
+| Machine artifacts | `promh.mcr` `2c667f99f014a7130a55b255d31df02588d9396beace78abfe9325269e4ff3e6`; `promh.sym` `e9e3dd6a541511dd9541ae96b99dae19cb185d8b79fa09959f21fa52224f233d`; `ucadr.sym` `9071decf16fa8f11d7970c4662db0d6e95600fe43ec86ac41c77b37dbd7caa2a` |
+| Disk and run | Public base and private start/end SHA-256 `bb16e46ad81decfe1efe691d36b6aa4ce3fd4ffb82474365de3520989d397cb5`; run record 10,502 bytes, SHA-256 `8733942b1b655d7bf5039bf7b067110fd8f698d280aa9e447f30c2b2d47ecb53` |
+| Raw sidecar | Ignored `0004-trigger-complete.json`; SHA-256 `62924121486f3d39749da2c14136c191b2a9017f73fdb3d98f1dda296afe1483`; execution-time `usim` identity is joined from `run.json`, not claimed from this sidecar |
+| Shutdown | Clean: `forced_stop=false`, `state_may_be_incomplete=false`, `usim` and Xvfb exit status 0, public and private base disks unchanged |
+| Copyright basis | Capture-specific U.S. fair use for criticism, scholarship, research, and technical verification. It contains only the functional Listener invocation/result needed to establish the source/runtime relationship, cannot substitute for the interactive system or source, and is excluded from repository-wide licensing. |
+
+This limited image passed the same four-factor review described above. Its
+purpose is evidentiary, the amount is one functional full-screen state needed to
+retain the Listener and who-line context, and it contains no Help/manual prose,
+artwork, private data, or third-party media. MIT and the named contributors do
+not endorse this museum.
 
 The same core-environment captures support [the Lisp Listener](../../mit-cadr/lisp-listener.md),
 the [D01 Listener specification](../../lisp-listeners-reimplementation-specification.md),

@@ -516,7 +516,7 @@ a later one.
 | `C-M11-03-SNAPSHOT` | Pointer-free `CDRAUDS1` round trip, malformed-sidecar rejection, fresh local authority, stale-cursor-after-adoption, and composed M12 rollback/publication tests | Passes. `CDRSNAP1` remains frozen; M12 carries the sidecar in `CDRM12S1`, while protocol-v7 generic restore remains blocked on M9 continuation. |
 | `C-M11-04-PCM` | Deterministic fixed-table signed-16 render fixtures with no host `libm` drift | Passes as a clean-room renderer; SDL3/device identity is not claimed |
 | `C-M11-05-WORKLET` | AudioWorklet queue generation clear, whole-packet acknowledgement, and bounded-backpressure test | Passes in Node queue tests; browser lifecycle campaign remains open |
-| `C-M11-06-ORACLE` | Non-destructive, source-bound preserved-system or hardware comparison for each historical claim retained | Source closure and compile-only witness pass; no runtime capture has run |
+| `C-M11-06-ORACLE` | Non-destructive, source-bound preserved-system or hardware comparison for each historical claim retained | The System 303 `%BEEP` path now has a source-bound runtime witness; Votrax and System 46 remain open |
 
 Focused Phase 1 test command:
 
@@ -529,9 +529,8 @@ python3 scripts/cadr-m11-native-audio-oracle.py build
 The latter two commands create/compile a disposable ignored source closure only;
 they do not start `usim` and do not close `C-M11-06-ORACLE`.
 
-After the separately running M6 benchmark has released the private-runtime slot,
-the following is the exact native-capture form. It is deliberately not run by this
-change. Replace only the bracketed private-runtime path and the date/session fields;
+The following is the exact standalone native-capture form. Replace only the
+bracketed private-runtime path and the date/session fields;
 the configuration and disk must be current-owner regular non-symlink files inside a
 0700 private runtime, and the output directory must be a new empty 0700 directory
 under `build/cadr-oracle/`.
@@ -560,6 +559,49 @@ It does not materialize a private runtime itself; the repository's separate
 private-runtime preparation policy remains the prerequisite. A refused or invalid
 capture exits nonzero.
 
+### System 303 runtime beeper observation
+
+Runtime observation, 2026-07-30: the isolated Xvfb harness booted a fresh
+System 303 session, visibly reached `Lisp Listener 1`, evaluated exactly
+`(SI:%BEEP 500. 100000.)`, and returned `NIL`.
+
+![System 303 Lisp Listener after the native beeper witness completed](../assets/mit-cadr-screenshots/beep-native-audio-witness.png)
+
+The image is the reviewed exact 768-by-963 runtime framebuffer. It establishes
+the invoked form, Listener return, and surrounding System 303 context; it does
+not depict or redistribute the sound samples. Its portable provenance and
+capture-specific fair-use conclusion are in the
+[curated screenshot catalog](../assets/mit-cadr-screenshots/index.md#native-beeper-witness-session).
+
+The native witness contains 399 strict alternating records: one header,
+199 `beep-job` records, and 199 corresponding `pcm-block` records. Every job
+precedes its PCM block, uses a 500-microsecond half wavelength and
+1,000-microsecond wavelength, and reports a 1,058-microsecond per-call duration.
+Every PCM block contains 9 frames, 18 bytes, at 8,000 Hz. The complete stopped
+witness is 71,375 bytes with SHA-256
+`017d26bc3fa0b86cb0e477a2a6def04d71363f70298bf48ef9a6e39b0fed4b25`.
+The trigger ledger's earlier 27,218-byte observation-time prefix has SHA-256
+`daba28043df2454bb8518ed5dd580644eeccc55a3938584051bbe3518e89d61f`;
+a prefix rehash against the complete stream matched exactly.
+The distinction matters because the guest continued repeated beeper calls
+after the first complete pair until the form returned.
+
+The session used System check-in
+`4df393c68d7f083ce42d5c377039d26043cc18a9031ace28258dc97f4137eb91`,
+load band `System 303-0`, and identical start/execution `usim` SHA-256
+`8b181ceb3207c8356659ffccf52ead64bebf659820a0022a73b1f236cbe3dcea`.
+The prepared executable and runtime configuration SHA-256 values were
+`8b181ceb3207c8356659ffccf52ead64bebf659820a0022a73b1f236cbe3dcea`
+and `c7572f6354263598af7949cd1e95d5fa905f6e45c55da8995bc02bc74b479faf`;
+authenticated Xvfb had MIT-SHM disabled and live-verified absent. Shutdown was clean (`forced_stop=false`,
+`state_may_be_incomplete=false`, both processes exit 0), no children remained,
+and public and private base-disk SHA-256 stayed
+`bb16e46ad81decfe1efe691d36b6aa4ce3fd4ffb82474365de3520989d397cb5`.
+
+This closes the selected System 303 `%BEEP` trigger and native ordering portion
+of `C-M11-06-ORACLE`. It does not yet establish Votrax bytes, System 46 loaded
+behavior, browser AudioWorklet equivalence, or full `C-M11`.
+
 | Test ID | Gate | Synthetic setup and pass condition |
 | --- | --- | --- |
 | `M11-T01` | `C-M11-01-MODEL` | A beeper event encodes exact LE fields; validation rejects reserved/flag/duration/offset/frame-count boundary mutations |
@@ -586,13 +628,14 @@ capture exits nonzero.
 
 | Obligation | Safe setup and discriminating action | Claim closed |
 | --- | --- | --- |
-| `TODO-RUNTIME-M11-01` | Run the already prepared M11 public-usim witness with a unique output path, then run a disposable System 303 session through the CADR Xvfb harness and issue a known `%BEEP`; retain source/load-band/run provenance without publishing raw audio | Whether the selected beeper trigger/arguments match the exercised runtime path |
+| `TODO-RUNTIME-M11-01` | **Closed 2026-07-30:** isolated System 303 Xvfb session evaluated `(SI:%BEEP 500. 100000.)`; retained 199 ordered job/PCM pairs, reviewed screenshot, exact source/load-band/run provenance, and clean shutdown | Selected beeper trigger and native ordering established; browser equivalence remains a separate gate |
 | `TODO-RUNTIME-M11-02` | Use an isolated serial observation fixture for System 303 Votrax and capture the emitted bytes plus the source-side utterance termination boundary | Stream configuration, byte ordering, and confirmation that the `-1` terminator is not transmitted for that exact artifact |
 | `TODO-RUNTIME-M11-03` | Repeat the isolated probe for one pinned System 46 artifact | Whether that loaded artifact exhibits the source-default 300/7E1 profile |
 | `TODO-RUNTIME-M11-04` | Compare a reviewed fixed-point or table-driven renderer against an independently implemented oracle on synthetic beeps | Eligibility for `C-M11-04-PCM` |
 
-No screenshot is appropriate for this Phase 1 invisible queue claim. Any future CADR
-runtime observation must use the repository's computer-use harness and retain the
+The reviewed Listener screenshot above is appropriate only for the now-completed
+runtime invocation claim; the queue and waveform claims remain hash/record evidence.
+Any future CADR runtime observation must use the repository's computer-use harness and retain the
 session, artifact identities, ordered input, hashes, and termination status under
 the documented policy. Raw sound captures, voice data, and unreviewed browser
 recordings remain out of the tracked documentation.
@@ -603,8 +646,8 @@ recordings remain out of the tracked documentation.
 | --- | --- | --- |
 | System 303 source | `sys` Fossil `4df393c68d7f083ce42d5c377039d26043cc18a9031ace28258dc97f4137eb91`; Votrax source hash observed locally: `a56933ee5038508d612165685bcf0768cff548dc6fd5d09f75bc7995a3f4ec31` | Public source; only small original descriptions are used here |
 | `usim` comparison source | Fossil `330d8248ec2e12af071e287920e681600f75df9ffd854aada5f8a64c9adad64d`; selected source-map policy is [tracked](../../cadr-web/core/usim-port/source-map.json) | Public BSD-derived source; no guest media is imported |
-| Prepared public-usim witness | [preparer](../../scripts/cadr-m11-native-audio-oracle.py), [exact patch](../../cadr-web/oracle/patches/0006-m11-audio-witness.patch), and [inert witness](../../cadr-web/oracle/native/cadr_m11_audio_witness.c) | The ignored 2026-07-29 closure binds its input and executable hashes; it was compiled but never run |
+| Prepared public-usim witness | [preparer](../../scripts/cadr-m11-native-audio-oracle.py), [exact patch](../../cadr-web/oracle/patches/0006-m11-audio-witness.patch), and [inert witness](../../cadr-web/oracle/native/cadr_m11_audio_witness.c) | The ignored closure binds its input/executable hashes; the 2026-07-30 System 303 harness campaign executed it and retained only evidence hashes in tracked prose |
 | System 46 comparison source | [commit `8e978d7`](https://github.com/mietek/mit-cadr-system-software/tree/8e978d7d1704096a63edd4386a3b8326a2e584af/src) | Public snapshot; source defaults are 300/7E1, loaded-artifact behavior remains untested |
 | Phase 1 model | [`cadr_audio_model.h`](../../cadr-web/core/cadr_audio_model.h), [`cadr_audio_model.c`](../../cadr-web/core/cadr_audio_model.c), and [synthetic test](../../cadr-web/tests/test_cadr_m11_audio_model.c) | New clean-room implementation; no private media, waveform, or ROM |
 
-Last verified: 2026-07-29.
+Last verified: 2026-07-30.
