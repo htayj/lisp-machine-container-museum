@@ -116,6 +116,24 @@ function rebuildM9WasmPair() {
     stderr_sha256: sha256(result.stderr) });
 }
 
+export function resolveNativePythonExecutable() {
+  /* Node locates a command before applying `options.env`, while CPython derives
+   * sys.executable after startup.  Launching the bare `python3` command with
+   * the scrubbed native-runtime environment therefore gives CPython an empty
+   * executable name on this host.  Resolve once under the caller's controlled
+   * PATH, then execute that exact absolute interpreter under the scrubbed
+   * environment so the oracle can bind its own interpreter identity. */
+  const result = spawnSync("python3", ["-c", "import os, sys; print(os.path.realpath(sys.executable))"], {
+    cwd: ROOT, encoding: "utf8", env: { LANG: "C", LC_ALL: "C", TZ: "UTC", PATH: process.env.PATH ?? "" },
+  });
+  const executable = result.stdout.trim();
+  if (result.error !== undefined || result.signal !== null || result.status !== 0 ||
+      !executable.startsWith("/")) {
+    fail(`cannot resolve an exact Python interpreter for native capture: ${(result.stderr ?? "").slice(-1000)}`);
+  }
+  return executable;
+}
+
 async function assertPrivateDirectory(path, label) {
   const info = await lstat(path);
   if (!info.isDirectory() || info.isSymbolicLink() || info.uid !== process.getuid() ||
@@ -499,12 +517,27 @@ function parseNativeWitness(bytes, rows) {
 
 export async function runNativeCapture({ prepared, nativeConfig, output, sessionId, diskId, inputScript, campaign }) {
   const args = [NATIVE_ORACLE, "native-capture", "--prepared", prepared, "--config", nativeConfig, "--output", output, "--session-id", sessionId, "--private-disk-instance-id", diskId, "--input-script", inputScript, "--campaign", campaign, "--execute"];
+  const nativePythonExecutable = resolveNativePythonExecutable();
+  const nativePythonBefore = await toolIdentity(nativePythonExecutable, "native-capture Python executable");
   return new Promise((resolveRun, rejectRun) => {
-    const child = spawn("python3", args, { cwd: ROOT, env: { LANG: "C", LC_ALL: "C", TZ: "UTC" }, stdio: ["ignore", "pipe", "pipe"] }); const stdout = []; const stderr = [];
+    const child = spawn(nativePythonExecutable, args, { cwd: ROOT, env: { LANG: "C", LC_ALL: "C", TZ: "UTC" }, stdio: ["ignore", "pipe", "pipe"] }); const stdout = []; const stderr = [];
     child.stdout.on("data", chunk => stdout.push(chunk)); child.stderr.on("data", chunk => stderr.push(chunk)); child.once("error", rejectRun);
-    child.once("close", (code, signal) => { const text = Buffer.concat(stdout).toString("utf8").trim(); let response = null; try { response = JSON.parse(text); } catch { /* reported below */ }
-      if (code !== 0 || response?.status !== "captured") rejectRun(new Error(`native M8/M9 capture failed (code=${code}, signal=${signal ?? "none"}): ${response?.error ?? Buffer.concat(stderr).toString("utf8").slice(-2000)}`));
-      else resolveRun(Object.freeze({ response, oracle_process: Object.freeze({ returncode: code, signal: signal ?? null }) }));
+    child.once("close", async (code, signal) => { try {
+      const text = Buffer.concat(stdout).toString("utf8").trim(); let response = null; try { response = JSON.parse(text); } catch { /* reported below */ }
+      const nativePythonAfter = await toolIdentity(nativePythonExecutable, "native-capture Python executable after exit");
+      if (nativePythonAfter.bytes !== nativePythonBefore.bytes || nativePythonAfter.sha256 !== nativePythonBefore.sha256) {
+        throw new Error("native M8/M9 capture Python executable changed during child execution");
+      }
+      if (code !== 0 || response?.status !== "captured") {
+        rejectRun(new Error(`native M8/M9 capture failed (code=${code}, signal=${signal ?? "none"}): ${response?.error ?? Buffer.concat(stderr).toString("utf8").slice(-2000)}`));
+        return;
+      }
+      const reportedPython = response?.metadata?.runtime_provenance?.python;
+      if (reportedPython?.bytes !== nativePythonBefore.bytes || reportedPython?.sha256 !== nativePythonBefore.sha256) {
+        throw new Error("native M8/M9 capture Python provenance differs from the pre-spawn executable");
+      }
+      resolveRun(Object.freeze({ response, oracle_process: Object.freeze({ returncode: code, signal: signal ?? null }) }));
+    } catch (error) { rejectRun(error); }
     });
   });
 }

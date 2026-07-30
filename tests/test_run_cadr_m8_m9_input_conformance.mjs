@@ -3,7 +3,11 @@ import { spawnSync } from "node:child_process";
 import { readFile } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { deriveCadrM8M9DeactivationProducer, quiesceKeyboardInput } from "../scripts/run-cadr-m8-m9-input-conformance.mjs";
+import {
+  deriveCadrM8M9DeactivationProducer,
+  quiesceKeyboardInput,
+  resolveNativePythonExecutable,
+} from "../scripts/run-cadr-m8-m9-input-conformance.mjs";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const script = resolve(root, "scripts/run-cadr-m8-m9-input-conformance.mjs");
@@ -25,6 +29,21 @@ for (const needle of ["native-capture", "CDRM8N1", "CDRINP1", "CDRIOB91",
   assert.ok(source.includes(needle), `runner omits ${needle}`);
 }
 assert.ok(source.indexOf("expected-input.cdrinp1") !== source.indexOf("observed-input.cdrinp1"));
+
+const nativePython = resolveNativePythonExecutable();
+assert.match(nativePython, /^\//, "native capture binds an absolute Python executable before environment scrubbing");
+const scrubbedPython = spawnSync(nativePython, ["-c",
+  "import os, pathlib, sys; print(int(bool(sys.executable) and pathlib.Path(sys.executable).is_file()))"], {
+  cwd: root, encoding: "utf8", env: { LANG: "C", LC_ALL: "C", TZ: "UTC" },
+});
+assert.equal(scrubbedPython.status, 0, scrubbedPython.stderr);
+assert.equal(scrubbedPython.stdout.trim(), "1",
+  "the exact interpreter remains self-identifying when the native child has no PATH");
+assert.match(source, /spawn\(nativePythonExecutable, args/, "native capture must not launch bare python3 after scrubbing PATH");
+assert.match(source, /nativePythonAfter\.sha256 !== nativePythonBefore\.sha256/,
+  "native capture re-hashes its exact Python executable after child exit");
+assert.match(source, /reportedPython\?\.sha256 !== nativePythonBefore\.sha256/,
+  "native capture rejects an oracle Python provenance that differs from the pre-spawn executable");
 
 const deactivation = deriveCadrM8M9DeactivationProducer({ coreState: {
   csr: 0x14, scancode: 0x18000, mouseX: 44, mouseY: 54, inputSequence: 208,
