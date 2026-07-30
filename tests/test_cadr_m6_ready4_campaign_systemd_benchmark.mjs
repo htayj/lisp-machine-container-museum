@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { execFileSync, spawnSync } from "node:child_process";
-import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { chmod, lstat, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, resolve } from "node:path";
 import { Worker } from "node:worker_threads";
@@ -9,7 +9,7 @@ import { createM4BlockRangeService } from
   "../cadr-web/wasm/cadr-m4-block-service.mjs";
 import { runExactCanaryLoop } from
   "../scripts/run-cadr-m6-devid-o2-canary-stage.mjs";
-import { attestBenchmarkCandidate } from
+import { attestBenchmarkCandidate, removeM6BenchmarkSourceStage } from
   "../scripts/collect-cadr-m6-ready4-benchmark.mjs";
 import { canonicalJson, sha256Hex } from "../scripts/cadr-m6-ready4-evidence.mjs";
 import { ready4SourceClosure, stageM6ExecutableClosure,
@@ -37,6 +37,19 @@ assert.throws(() => checkedProjectedSeconds(43201), /86400/);
 assert.equal(ready4ObservationSeconds(3600), 7500,
   "observation deadline is runtime cap plus a bounded five-percent margin");
 assert.throws(() => parseBenchmarkArguments([]), /inert without --execute/);
+{
+  const parent = await mkdtemp(resolve(tmpdir(), "m6-protected-stage-"));
+  const source = resolve(parent, "source");
+  const identities = resolve(source, ".m6-build-identities");
+  await mkdir(identities, { recursive: true, mode: 0o700 });
+  await writeFile(resolve(identities, "O0.json"), "immutable\n", {
+    mode: 0o400,
+  });
+  await chmod(identities, 0o500);
+  await removeM6BenchmarkSourceStage(parent, identities);
+  await assert.rejects(() => lstat(parent), error => error?.code === "ENOENT",
+    "protected identity directories are made removable after unit collection");
+}
 {
   const repository = await mkdtemp(resolve(tmpdir(), "m6-closure-repo-"));
   const stage = resolve(repository, "stage-outside-repository");

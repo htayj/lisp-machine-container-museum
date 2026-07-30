@@ -101,6 +101,22 @@ async function requireAbsent(path, label) {
   throw new Error(`${label} remains present`);
 }
 
+/*
+ * Identity files are deliberately immutable while transient units can see the
+ * shared source stage.  Restore only the containing directory's owner-write
+ * bit after every unit has been collected, then remove the complete stage.
+ * The file mode itself does not need to change for unlink(2).
+ */
+export async function removeM6BenchmarkSourceStage(sourceParent, identityRoot) {
+  try {
+    await chmod(identityRoot, 0o700);
+  } catch (error) {
+    if (error?.code !== "ENOENT") throw error;
+  }
+  await rm(sourceParent, { recursive: true });
+  await requireAbsent(sourceParent, "benchmark source stage");
+}
+
 async function cleanupUnit(unit) {
   await capture("systemctl", ["--user", "stop", unit]);
   await capture("systemctl", ["--user", "reset-failed", unit]);
@@ -362,12 +378,18 @@ async function outer(options) {
       "scripts/collect-cadr-m6-ready4-benchmark.mjs"),
     nonceRoot });
   const pending = [];
-  for (const candidate of CANDIDATES) {
-    const identity = candidate === "fast-o2" ? identities.O2 : identities.O0;
-    pending.push(await collectOne(options, candidate, identity, sourceStage));
+  try {
+    for (const candidate of CANDIDATES) {
+      const identity = candidate === "fast-o2" ? identities.O2 : identities.O0;
+      pending.push(await collectOne(options, candidate, identity, sourceStage));
+    }
+  } finally {
+    /*
+     * This also runs after a candidate failure.  A failed campaign must not
+     * leave the commit-extracted executable closure or its private nonces.
+     */
+    await removeM6BenchmarkSourceStage(sourceParent, identityRoot);
   }
-  await rm(sourceParent, { recursive: true });
-  await requireAbsent(sourceParent, "benchmark source stage");
   const receipts = [];
   for (let index = 0; index < CANDIDATES.length; index += 1) {
     const receipt = validateBenchmarkRun(Object.freeze({
