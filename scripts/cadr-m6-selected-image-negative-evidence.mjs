@@ -15,7 +15,7 @@ export const M6_SELECTED_IMAGE_NEGATIVE_CONTRACT =
 export const M6_SELECTED_IMAGE_NEGATIVE_RUN_SCHEMA =
   "cadr-m6-selected-image-negative-run-v1";
 export const M6_SELECTED_IMAGE_NEGATIVE_SUPERVISED_SCHEMA =
-  "cadr-m6-selected-image-negative-supervised-v1";
+  "cadr-m6-selected-image-negative-supervised-v3";
 export const M6_SELECTED_IMAGE_NEGATIVE_FAILURE_SCHEMA =
   "cadr-m6-selected-image-negative-failure-v1";
 export const M6_SELECTED_IMAGE_NEGATIVE_TARGET =
@@ -26,9 +26,11 @@ export const M6_SELECTED_IMAGE_NEGATIVE_REQUIRED_ENVIRONMENT = Object.freeze({
   LANG: "C", LC_ALL: "C", TZ: "UTC", UMASK: "0077",
 });
 export const M6_SELECTED_IMAGE_STATIC_LAUNCHER_SCHEMA =
-  "cadr-m6-selected-image-guix-authority-v1";
+  "cadr-m6-selected-image-guix-authority-v2";
 export const M6_SELECTED_IMAGE_STATIC_LAUNCHER_SOURCE =
   "scripts/cadr-m6-selected-image-static-launcher.c";
+export const M6_SELECTED_IMAGE_PEER_CONNECT_SOURCE =
+  "scripts/cadr-m6-systemd-peer-connect.c";
 export const M6_SELECTED_IMAGE_PINNED_NODE = Object.freeze({
   path: "/gnu/store/ja8lzccpgxrr5s3f00kq4i3b83d1l8lp-node-22.14.0/bin/node",
   derivation: "/gnu/store/3dmpza190pjx2qyg8xq801glyxcb4fi9-node-22.14.0.drv",
@@ -54,6 +56,11 @@ export const M6_SELECTED_IMAGE_AUTHORITY_DERIVATION =
 export const M6_SELECTED_IMAGE_AUTHORITY_FILES = Object.freeze([
   Object.freeze({ relative_path: "bin/cadr-m6-selected-image-static-launcher",
     mode: "0555", role: "launcher" }),
+  Object.freeze({ relative_path: "bin/cadr-m6-systemd-peer-connect",
+    mode: "0555", role: "peer-connector" }),
+  Object.freeze({ relative_path:
+    "share/cadr-m6-selected-image-authority/scripts/cadr-m6-systemd-peer-connect.c",
+    mode: "0444", role: "peer-connector-source" }),
   Object.freeze({ relative_path:
     "share/cadr-m6-selected-image-authority/scripts/run-cadr-m6-selected-image-negative.mjs",
     mode: "0444", role: "entry" }),
@@ -98,6 +105,9 @@ export const M6_SELECTED_IMAGE_STATIC_LAUNCHER_IDENTITY = Object.freeze({
   elf: Object.freeze({ class: "ELF64", endian: "little",
     machine: "x86-64", pt_interp: false, pt_dynamic: false,
     dt_needed: Object.freeze([]) }),
+  connector_elf: Object.freeze({ class: "ELF64", endian: "little",
+    machine: "x86-64", pt_interp: false, pt_dynamic: false,
+    dt_needed: Object.freeze([]) }),
 });
 const CHUNK_BYTES = 1024 * 1024;
 const XOR_MASK = 0x01;
@@ -110,7 +120,7 @@ function exactKeys(value, keys, label) {
 }
 
 export function validateSelectedImageStaticLauncherBuildIdentity(value) {
-  exactKeys(value, ["derivation", "elf", "files", "guix", "guix_arguments",
+  exactKeys(value, ["connector_elf", "derivation", "elf", "files", "guix", "guix_arguments",
     "guix_environment", "kind",
     "node", "output_path", "schema", "source_closure_sha256", "toolchain"],
   "selected-image Guix authority");
@@ -130,6 +140,8 @@ export function validateSelectedImageStaticLauncherBuildIdentity(value) {
         canonicalJson(M6_SELECTED_IMAGE_PINNED_TOOLCHAIN) ||
       canonicalJson(value.elf) !== canonicalJson(
         M6_SELECTED_IMAGE_STATIC_LAUNCHER_IDENTITY.elf) ||
+      canonicalJson(value.connector_elf) !== canonicalJson(
+        M6_SELECTED_IMAGE_STATIC_LAUNCHER_IDENTITY.connector_elf) ||
       !Array.isArray(value.files) ||
       value.files.length !== M6_SELECTED_IMAGE_AUTHORITY_FILES.length) {
     throw new TypeError("selected-image Guix authority is not the exact reviewed profile");
@@ -509,8 +521,183 @@ function validateSystemdClientIdentity(value, label, expectedPath) {
       Object.freeze({ ...entry }))) });
 }
 
+function validateControlFilesystemIdentity(value, label, expected) {
+  exactKeys(value, ["dev", "gid", "ino", "kind", "mode", "path", "uid"],
+    label);
+  if (value.path !== expected.path || value.kind !== expected.kind ||
+      value.uid !== expected.uid ||
+      !/^(?:0|[1-9][0-9]*)$/.test(value.dev ?? "") ||
+      !/^(?:0|[1-9][0-9]*)$/.test(value.gid ?? "") ||
+      !/^[1-9][0-9]*$/.test(value.ino ?? "") ||
+      !/^0[0-7]{3}$/.test(value.mode ?? "") ||
+      (expected.mode !== undefined && value.mode !== expected.mode)) {
+    throw new TypeError(`${label} identity is invalid`);
+  }
+  return Object.freeze({ ...value });
+}
+
+function validateSystemdControlEndpoint(value, environment) {
+  exactKeys(value, ["ancestry", "bus_socket", "peer", "runtime_directory", "uid"],
+    "selected-image systemd control endpoint");
+  const match = /^\/run\/user\/([1-9][0-9]*)$/.exec(
+    environment.XDG_RUNTIME_DIR ?? "");
+  if (match === null || value.uid !== match[1] ||
+      environment.DBUS_SESSION_BUS_ADDRESS !== "unix:fd=3" ||
+      !Array.isArray(value.ancestry) || value.ancestry.length !== 3) {
+    throw new TypeError("selected-image systemd control endpoint differs");
+  }
+  const expectedAncestors = ["/", "/run", "/run/user"];
+  const ancestry = value.ancestry.map((ancestor, index) => {
+    exactKeys(ancestor, ["dev", "gid", "ino", "mode", "path", "uid"],
+      `selected-image systemd control ancestor ${index}`);
+    if (ancestor.uid !== "0" || ancestor.path !== expectedAncestors[index] ||
+        !/^(?:0|[1-9][0-9]*)$/.test(ancestor.dev ?? "") ||
+        !/^(?:0|[1-9][0-9]*)$/.test(ancestor.gid ?? "") ||
+        !/^[1-9][0-9]*$/.test(ancestor.ino ?? "") ||
+        !/^0[0-7]{3}$/.test(ancestor.mode ?? "") ||
+        (Number.parseInt(ancestor.mode, 8) & 0o022) !== 0) {
+      throw new TypeError(
+        "selected-image systemd control ancestry is invalid");
+    }
+    return Object.freeze({ ...ancestor });
+  });
+  if (value.peer?.uid !== value.uid ||
+      value.peer?.pidfd_profile !== "so-peerpidfd-v1") {
+    throw new TypeError("selected-image systemd control peer differs");
+  }
+  const { pidfd_profile: _profile, ...peerProcess } = value.peer;
+  const peer = Object.freeze({ ...validateRootSelectedProcess(peerProcess),
+    pidfd_profile: value.peer.pidfd_profile });
+  return Object.freeze({ uid: value.uid, ancestry: Object.freeze(ancestry),
+    peer,
+    runtime_directory: validateControlFilesystemIdentity(
+      value.runtime_directory, "selected-image systemd runtime directory",
+      { path: `/run/user/${value.uid}`, kind: "directory", uid: value.uid,
+        mode: "0700" }),
+    bus_socket: validateControlFilesystemIdentity(value.bus_socket,
+      "selected-image systemd AF_UNIX bus",
+      { path: `/run/user/${value.uid}/bus`, kind: "socket", uid: value.uid,
+        mode: "0666" }),
+  });
+}
+
+function validateRootBusEndpoint(value) {
+  exactKeys(value, ["ancestry", "socket"], "selected-image root bus endpoint");
+  if (!Array.isArray(value.ancestry) || value.ancestry.length !== 3) {
+    throw new TypeError("selected-image root bus ancestry differs");
+  }
+  const expectedPaths = ["/", "/run", "/run/dbus"];
+  const ancestry = value.ancestry.map((entry, index) => {
+    exactKeys(entry, ["dev", "gid", "ino", "mode", "path", "uid"],
+      `selected-image root bus ancestor ${index}`);
+    if (entry.path !== expectedPaths[index] || entry.uid !== "0" ||
+        entry.gid !== "0" || !/^(?:0|[1-9][0-9]*)$/.test(entry.dev ?? "") ||
+        !/^[1-9][0-9]*$/.test(entry.ino ?? "") ||
+        !/^0[0-7]{3}$/.test(entry.mode ?? "") ||
+        (Number.parseInt(entry.mode, 8) & 0o022) !== 0) {
+      throw new TypeError("selected-image root bus ancestry is untrusted");
+    }
+    return Object.freeze({ ...entry });
+  });
+  const socket = validateControlFilesystemIdentity(value.socket,
+      "selected-image root system bus socket",
+      { path: "/run/dbus/system_bus_socket", kind: "socket", uid: "0",
+        mode: "0666" });
+  if (socket.gid !== "0") {
+    throw new TypeError("selected-image root system bus socket is not root-owned");
+  }
+  return Object.freeze({ ancestry: Object.freeze(ancestry), socket });
+}
+
+function validateRootSelectedProcess(value) {
+  exactKeys(value, ["argv", "boot_id", "cgroup", "comm", "gid", "pid",
+    "ppid", "proc", "start_time", "uid"],
+  "selected-image root-selected process");
+  if (!/^[1-9][0-9]*$/.test(value.uid ?? "") ||
+      !/^(?:0|[1-9][0-9]*)$/.test(value.gid ?? "") ||
+      !/^[1-9][0-9]*$/.test(value.pid ?? "") || BigInt(value.pid) > 4294967295n ||
+      value.ppid !== "1" ||
+      !/^[1-9][0-9]*$/.test(value.start_time ?? "") ||
+      !/^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/.test(
+        value.boot_id ?? "") || value.comm !== "systemd") {
+    throw new TypeError("selected-image root-selected process profile differs");
+  }
+  exactKeys(value.proc, ["dev", "gid", "ino", "mode", "path", "uid"],
+    "selected-image root-selected proc directory");
+  if (value.proc.path !== `/proc/${value.pid}` || value.proc.uid !== value.uid ||
+      value.proc.gid !== value.gid || value.proc.mode !== "0555" ||
+      !/^(?:0|[1-9][0-9]*)$/.test(value.proc.dev ?? "") ||
+      !/^[1-9][0-9]*$/.test(value.proc.ino ?? "")) {
+    throw new TypeError("selected-image root-selected proc identity differs");
+  }
+  exactKeys(value.argv, ["byte_count", "count", "sha256"],
+    "selected-image root-selected NUL argv");
+  if (!/^[1-9][0-9]*$/.test(value.argv.byte_count ?? "") ||
+      value.argv.count !== "2" || !/^[0-9a-f]{64}$/.test(value.argv.sha256 ?? "")) {
+    throw new TypeError("selected-image root-selected argv identity differs");
+  }
+  exactKeys(value.cgroup, ["byte_count", "sha256", "value"],
+    "selected-image root-selected cgroup");
+  const expectedCgroup =
+    `0::/user.slice/user-${value.uid}.slice/user@${value.uid}.service/init.scope\n`;
+  if (value.cgroup.value !== expectedCgroup ||
+      value.cgroup.byte_count !== String(Buffer.byteLength(expectedCgroup)) ||
+      value.cgroup.sha256 !== sha256Hex(Buffer.from(expectedCgroup))) {
+    throw new TypeError("selected-image root-selected cgroup identity differs");
+  }
+  return Object.freeze({ ...value, argv: Object.freeze({ ...value.argv }),
+    cgroup: Object.freeze({ ...value.cgroup }), proc: Object.freeze({ ...value.proc }) });
+}
+
+function validateRootAnchor(value) {
+  exactKeys(value, ["busctl", "endpoint", "environment", "main_pid_query",
+    "process"], "selected-image root system-bus anchor");
+  exactKeys(value.environment, ["DBUS_SYSTEM_BUS_ADDRESS", "LANG", "LC_ALL",
+    "SYSTEMD_COLORS", "SYSTEMD_PAGER", "TZ"],
+  "selected-image root system-bus environment");
+  if (value.environment.DBUS_SYSTEM_BUS_ADDRESS !==
+        "unix:path=/run/dbus/system_bus_socket" ||
+      value.environment.LANG !== "C" || value.environment.LC_ALL !== "C" ||
+      value.environment.SYSTEMD_COLORS !== "0" ||
+      value.environment.SYSTEMD_PAGER !== "" || value.environment.TZ !== "UTC") {
+    throw new TypeError("selected-image root system-bus environment is not closed");
+  }
+  const process = validateRootSelectedProcess(value.process);
+  const expectedQuery = ["--system", "--no-pager", "--json=short",
+    "get-property", "org.freedesktop.systemd1",
+    `/org/freedesktop/systemd1/unit/user_40${process.uid}_2eservice`,
+    "org.freedesktop.systemd1.Service", "MainPID"];
+  if (canonicalJson(value.main_pid_query) !== canonicalJson(expectedQuery)) {
+    throw new TypeError("selected-image root MainPID query differs");
+  }
+  return Object.freeze({ busctl: validateSystemdClientIdentity(value.busctl,
+    "selected-image busctl", "/usr/bin/busctl"),
+  endpoint: validateRootBusEndpoint(value.endpoint),
+  environment: Object.freeze({ ...value.environment }),
+  main_pid_query: Object.freeze([...value.main_pid_query]), process });
+}
+
+function validateSystemdPeerConnector(value) {
+  exactKeys(value, ["byte_count", "dev", "gid", "ino", "mode", "path",
+    "real_path", "sha256", "source_sha256", "uid"],
+  "selected-image systemd peer connector");
+  if (!/^\/gnu\/store\/[0-9a-df-np-sv-z]{32}-cadr-m6-selected-image-authority\/bin\/cadr-m6-systemd-peer-connect$/.test(
+    value.path ?? "") || value.real_path !== value.path || value.mode !== "0555" ||
+      !/^[1-9][0-9]*$/.test(value.byte_count ?? "") ||
+      !/^(?:0|[1-9][0-9]*)$/.test(value.dev ?? "") ||
+      !/^(?:0|[1-9][0-9]*)$/.test(value.gid ?? "") ||
+      !/^[1-9][0-9]*$/.test(value.ino ?? "") ||
+      !/^(?:0|[1-9][0-9]*)$/.test(value.uid ?? "") ||
+      !/^[0-9a-f]{64}$/.test(value.sha256 ?? "") ||
+      !/^[0-9a-f]{64}$/.test(value.source_sha256 ?? "")) {
+    throw new TypeError("selected-image systemd peer connector differs");
+  }
+  return Object.freeze({ ...value });
+}
+
 function validateSystemdClients(value) {
-  exactKeys(value, ["environment", "systemctl", "systemd_run"],
+  exactKeys(value, ["control_connector", "control_endpoint", "environment", "systemctl",
+    "root_anchor", "systemd_run"],
     "selected-image systemd clients");
   exactKeys(value.environment, ["DBUS_SESSION_BUS_ADDRESS", "LANG", "LC_ALL",
     "SYSTEMD_COLORS", "SYSTEMD_PAGER", "TZ", "XDG_RUNTIME_DIR"],
@@ -519,12 +706,22 @@ function validateSystemdClients(value) {
       value.environment.SYSTEMD_COLORS !== "0" ||
       value.environment.SYSTEMD_PAGER !== "" || value.environment.TZ !== "UTC" ||
       !/^\/run\/user\/[1-9][0-9]*$/.test(value.environment.XDG_RUNTIME_DIR ?? "") ||
-      value.environment.DBUS_SESSION_BUS_ADDRESS !==
-        `unix:path=${value.environment.XDG_RUNTIME_DIR}/bus`) {
+      value.environment.DBUS_SESSION_BUS_ADDRESS !== "unix:fd=3") {
     throw new TypeError("selected-image systemd control environment is not closed");
   }
+  const controlEndpoint = validateSystemdControlEndpoint(
+    value.control_endpoint, value.environment);
+  const rootAnchor = validateRootAnchor(value.root_anchor);
+  const { pidfd_profile: _pidfdProfile, ...controlPeerProcess } =
+    controlEndpoint.peer;
+  if (canonicalJson(controlPeerProcess) !== canonicalJson(rootAnchor.process)) {
+    throw new TypeError("selected-image user-bus peer differs from root MainPID anchor");
+  }
   return Object.freeze({
+    control_connector: validateSystemdPeerConnector(value.control_connector),
+    control_endpoint: controlEndpoint,
     environment: Object.freeze({ ...value.environment }),
+    root_anchor: rootAnchor,
     systemd_run: validateSystemdClientIdentity(value.systemd_run,
       "selected-image systemd-run", "/usr/bin/systemd-run"),
     systemctl: validateSystemdClientIdentity(value.systemctl,
@@ -572,6 +769,18 @@ export function validateSelectedImageNegativeSupervised(value) {
       "selected-image launcher is not bound to the run source closure");
   }
   const systemdClients = validateSystemdClients(value.systemd_clients);
+  const connector = launcher.files.find(entry => entry.role === "peer-connector");
+  const connectorSource = launcher.files.find(entry =>
+    entry.role === "peer-connector-source");
+  if (systemdClients.control_connector.path !==
+        `${launcher.output_path}/${connector.relative_path}` ||
+      systemdClients.control_connector.byte_count !== connector.byte_count ||
+      systemdClients.control_connector.sha256 !== connector.sha256 ||
+      systemdClients.control_connector.mode !== connector.mode ||
+      systemdClients.control_connector.source_sha256 !== connectorSource.sha256) {
+    throw new TypeError(
+      "selected-image systemd peer connector is not bound to the authority build");
+  }
   if (value.systemd_clients_source_binding_sha256 !==
       selectedImageSystemdClientsSourceBinding(run, systemdClients)) {
     throw new TypeError(

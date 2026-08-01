@@ -81,6 +81,7 @@ M4_WASM_O2 := build/cadr-web-m4-O2.wasm
 M5_WASM_O0 := build/cadr-web-m5-O0.wasm
 M6_DEVID_WASM_O0 := build/cadr-web-m6-devid-O0.wasm
 M6_DEVID_WASM_O2 := build/cadr-web-m6-devid-O2.wasm
+M6_RELEASE_NODE := /gnu/store/ja8lzccpgxrr5s3f00kq4i3b83d1l8lp-node-22.14.0/bin/node
 M7_WASM_O0 := build/cadr-web-m7-O0.wasm
 M7_WASM_O2 := build/cadr-web-m7-O2.wasm
 M7_DEVID_WASM_O0 := build/cadr-web-m7-devid-O0.wasm
@@ -90,7 +91,7 @@ M9_WASM_O2 := build/cadr-web-m9-O2.wasm
 M12_WASM_O0 := build/cadr-web-m12-O0.wasm
 M12_WASM_O2 := build/cadr-web-m12-O2.wasm
 
-.PHONY: all test clean audit forbidden-symbols exported-symbols mutable-globals dependency-audit header-audit mutant-audit python-cross-parse m3-wasm m3-browser m3-differential m3-conformance m3-snapshot-cross-target m4-unit m4-browser m4-differential m4-media-compare m5-unit m6-devid-wasm m6-diagnostic-receipt-unit m7-unit m7-native-source-pin m7-native-source-unit m10-unit m11-unit m12-unit
+.PHONY: all test clean audit forbidden-symbols exported-symbols mutable-globals dependency-audit header-audit mutant-audit python-cross-parse m3-wasm m3-browser m3-differential m3-conformance m3-snapshot-cross-target m4-unit m4-browser m4-differential m4-media-compare m5-unit m6-release-validation m6-devid-wasm m6-diagnostic-receipt-unit m7-unit m7-native-source-pin m7-native-source-unit m10-unit m11-unit m12-unit
 
 all: $(LIBRARY) $(HOST_BINARY) $(M2_HOST_BINARY) $(M3_HOST_BINARY) $(M3_SNAPSHOT_HOST_BINARY)
 
@@ -350,7 +351,10 @@ m5-unit: build/test_cadr_m5_scheduler $(M5_WASM_O0)
 	guix shell node -- node ../tests/test_cadr_m5_visibility_adapter.mjs
 	guix shell node -- node ../tests/test_cadr_m5_wasm_exports.mjs
 
-m6-devid-wasm: build/test_cadr_m2_public build/test_cadr_m6_disk_evidence build/test_cadr_m6_disk_evidence_differential build/cadr_m6_tail_fixture build/test_cadr_m6_fast_run $(M5_WASM_O0) $(M6_DEVID_WASM_O0) $(M6_DEVID_WASM_O2)
+m6-release-validation: ../tests/test_cadr_m6_systemd_peer_connector_live.mjs
+	CADR_M6_SYSTEMD_PEER_CONNECTOR_LIVE=1 CADR_M6_RELEASE_VALIDATION=1 $(M6_RELEASE_NODE) ../tests/test_cadr_m6_systemd_peer_connector_live.mjs
+
+m6-devid-wasm: m6-release-validation build/test_cadr_m2_public build/test_cadr_m6_disk_evidence build/test_cadr_m6_disk_evidence_differential build/cadr_m6_tail_fixture build/test_cadr_m6_fast_run $(M5_WASM_O0) $(M6_DEVID_WASM_O0) $(M6_DEVID_WASM_O2)
 	./build/test_cadr_m6_disk_evidence
 	./build/test_cadr_m6_disk_evidence_differential
 	./build/test_cadr_m6_fast_run

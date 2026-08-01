@@ -83,11 +83,31 @@ function selectedImageNegativeReceipt() {
     wasm_build_attempted: false, guest_execution_attempted: false,
   };
   const systemdClients = {
+    control_connector: {
+      byte_count: "2", dev: "1", gid: "0", ino: "6", mode: "0555",
+      path: "/gnu/store/00000000000000000000000000000000-cadr-m6-selected-image-authority/bin/cadr-m6-systemd-peer-connect",
+      real_path: "/gnu/store/00000000000000000000000000000000-cadr-m6-selected-image-authority/bin/cadr-m6-systemd-peer-connect",
+      sha256: "2".padStart(64, "0"),
+      source_sha256: "3".padStart(64, "0"), uid: "0",
+    },
+    control_endpoint: {
+      uid: "1000", ancestry: [
+        { dev: "1", gid: "0", ino: "10", mode: "0755", path: "/", uid: "0" },
+        { dev: "1", gid: "0", ino: "11", mode: "0755", path: "/run", uid: "0" },
+        { dev: "1", gid: "0", ino: "12", mode: "0755", path: "/run/user", uid: "0" },
+      ],
+      runtime_directory: { dev: "2", gid: "1001", ino: "1",
+        kind: "directory", mode: "0700", path: "/run/user/1000", uid: "1000" },
+      bus_socket: { dev: "2", gid: "1001", ino: "2", kind: "socket",
+        mode: "0666", path: "/run/user/1000/bus", uid: "1000" },
+      peer: rootSelectedProcess(),
+    },
     environment: {
-      DBUS_SESSION_BUS_ADDRESS: "unix:path=/run/user/1000/bus",
+      DBUS_SESSION_BUS_ADDRESS: "unix:fd=3",
       LANG: "C", LC_ALL: "C", SYSTEMD_COLORS: "0", SYSTEMD_PAGER: "",
       TZ: "UTC", XDG_RUNTIME_DIR: "/run/user/1000",
     },
+    root_anchor: rootAnchor(),
     systemd_run: { ancestry: [
       { dev: "1", gid: "0", ino: "1", path: "/", uid: "0", mode: "0755" },
       { dev: "1", gid: "0", ino: "2", path: "/usr", uid: "0", mode: "0755" },
@@ -105,7 +125,7 @@ function selectedImageNegativeReceipt() {
     ...M6_SELECTED_IMAGE_STATIC_LAUNCHER_IDENTITY,
     source_closure_sha256: run.source_closure_sha256,
   };
-  return { schema: "cadr-m6-selected-image-negative-supervised-v1",
+  return { schema: "cadr-m6-selected-image-negative-supervised-v3",
     outcome: "selected-image-negative-supervised", run,
     launcher,
     launcher_source_binding_sha256:
@@ -116,6 +136,39 @@ function selectedImageNegativeReceipt() {
     accounting_sha256: HEX(16), policy_sha256: HEX(17),
     transient_unit_absent: true, source_stage_removed: true,
     private_root_removed: true };
+}
+
+function rootSelectedProcess(pidfd = true) {
+  const cgroup = "0::/user.slice/user-1000.slice/user@1000.service/init.scope\n";
+  return { argv: { byte_count: "32", count: "2", sha256: HEX(20) },
+    boot_id: "00000000-0000-4000-8000-000000000000",
+    cgroup: { byte_count: String(Buffer.byteLength(cgroup)),
+      sha256: sha256Hex(Buffer.from(cgroup)), value: cgroup },
+    comm: "systemd", gid: "1001", pid: "123", ppid: "1",
+    proc: { dev: "24", gid: "1001", ino: "123", mode: "0555",
+      path: "/proc/123", uid: "1000" }, start_time: "456", uid: "1000",
+    ...(pidfd ? { pidfd_profile: "so-peerpidfd-v1" } : {}) };
+}
+
+function rootAnchor() {
+  const processIdentity = rootSelectedProcess(false);
+  return { busctl: { ancestry: [
+    { dev: "1", gid: "0", ino: "1", path: "/", uid: "0", mode: "0555" },
+    { dev: "1", gid: "0", ino: "2", path: "/usr", uid: "0", mode: "0755" },
+    { dev: "1", gid: "0", ino: "3", path: "/usr/bin", uid: "0", mode: "0755" },
+  ], byte_count: "1", dev: "1", gid: "0", ino: "7", mode: "0755",
+  path: "/usr/bin/busctl", real_path: "/usr/bin/busctl", sha256: HEX(21), uid: "0" },
+  endpoint: { ancestry: [
+    { dev: "1", gid: "0", ino: "10", mode: "0555", path: "/", uid: "0" },
+    { dev: "1", gid: "0", ino: "11", mode: "0755", path: "/run", uid: "0" },
+    { dev: "1", gid: "0", ino: "12", mode: "0755", path: "/run/dbus", uid: "0" },
+  ], socket: { dev: "2", gid: "0", ino: "13", kind: "socket", mode: "0666",
+    path: "/run/dbus/system_bus_socket", uid: "0" } },
+  environment: { DBUS_SYSTEM_BUS_ADDRESS: "unix:path=/run/dbus/system_bus_socket",
+    LANG: "C", LC_ALL: "C", SYSTEMD_COLORS: "0", SYSTEMD_PAGER: "", TZ: "UTC" },
+  main_pid_query: ["--system", "--no-pager", "--json=short", "get-property",
+    "org.freedesktop.systemd1", "/org/freedesktop/systemd1/unit/user_401000_2eservice",
+    "org.freedesktop.systemd1.Service", "MainPID"], process: processIdentity };
 }
 
 const directory = await mkdtemp(resolve(tmpdir(), "cadr-m6-ready4-aggregate-"));

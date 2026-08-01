@@ -1,9 +1,11 @@
 ;;; Immutable execution authority for the CADR M6 selected-image negative gate.
 ;;; The supervisor evaluates this file with retained descriptor paths in the
-;;; five M6_AUTHORITY_* variables below; mutable workspace paths are rejected.
+;;; six M6_AUTHORITY_* variables below; mutable workspace paths are rejected.
 
 (use-modules (guix gexp)
+             (gnu packages base)
              (gnu packages commencement)
+             (gnu packages linux)
              (gnu packages node))
 
 (define (source-file environment relative)
@@ -16,6 +18,9 @@
 (define launcher-source
   (source-file "M6_AUTHORITY_LAUNCHER_SOURCE"
                "scripts/cadr-m6-selected-image-static-launcher.c"))
+(define peer-connect-source
+  (source-file "M6_AUTHORITY_PEER_CONNECT_SOURCE"
+               "scripts/cadr-m6-systemd-peer-connect.c"))
 (define child-source
   (source-file "M6_AUTHORITY_CHILD_SOURCE"
                "scripts/run-cadr-m6-selected-image-negative.mjs"))
@@ -42,8 +47,12 @@
               (oracle (string-append share "/cadr-web/oracle"))
               (launcher (string-append
                          bin "/cadr-m6-selected-image-static-launcher"))
+              (peer-connect (string-append
+                             bin "/cadr-m6-systemd-peer-connect"))
               (node (string-append #$node "/bin/node"))
-              (gcc (string-append #$gcc-toolchain "/bin/gcc")))
+              (gcc (string-append #$gcc-toolchain "/bin/gcc"))
+              (linux-headers (string-append #$linux-libre-headers "/include"))
+              (glibc-static (string-append #$glibc:static "/lib")))
          (setenv "PATH" (string-append #$gcc-toolchain "/bin"))
          (setenv "LANG" "C")
          (setenv "LC_ALL" "C")
@@ -54,6 +63,8 @@
          (copy-file #$child-source
                     (string-append scripts
                                    "/run-cadr-m6-selected-image-negative.mjs"))
+         (copy-file #$peer-connect-source
+                    (string-append scripts "/cadr-m6-systemd-peer-connect.c"))
          (copy-file #$selected-evidence
                     (string-append scripts
                                    "/cadr-m6-selected-image-negative-evidence.mjs"))
@@ -74,11 +85,22 @@
                            (string-append "-DM6_NODE_PATH=\"" node "\"")
                            "-o" launcher #$launcher-source))
            (error "static launcher compilation failed"))
+         (unless (zero?
+                  (system* gcc
+                           "-std=c11" "-static" "-Os" "-Wall" "-Wextra"
+                           "-isystem" linux-headers
+                           "-B" glibc-static "-L" glibc-static
+                           "-Werror" "-Wl,-z,noexecstack"
+                           "-Wl,--build-id=none"
+                           "-o" peer-connect #$peer-connect-source))
+           (error "systemd peer connector compilation failed"))
          (chmod launcher #o555)
+         (chmod peer-connect #o555)
          (for-each (lambda (path) (chmod path #o444))
                    (list
                     (string-append scripts
                                    "/run-cadr-m6-selected-image-negative.mjs")
+                    (string-append scripts "/cadr-m6-systemd-peer-connect.c")
                     (string-append scripts
                                    "/cadr-m6-selected-image-negative-evidence.mjs")
                     (string-append scripts "/cadr-m6-ready4-evidence.mjs")

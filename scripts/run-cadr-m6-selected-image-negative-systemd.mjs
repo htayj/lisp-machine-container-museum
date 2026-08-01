@@ -22,6 +22,7 @@ import { readCanonicalSelectedImageRelease,
   M6_SELECTED_IMAGE_PINNED_GUIX,
   M6_SELECTED_IMAGE_PINNED_NODE,
   M6_SELECTED_IMAGE_PINNED_TOOLCHAIN,
+  M6_SELECTED_IMAGE_PEER_CONNECT_SOURCE,
   M6_SELECTED_IMAGE_STATIC_LAUNCHER_SCHEMA,
   pinSelectedImageNegativeReceipt,
   readSelectedImageNegativeRun, selectedImageNegativeFailure,
@@ -42,11 +43,19 @@ const RELEASE_RELATIVE = "cadr-web/oracle/cadr-m6-release-record.json";
 const UNIT_PREFIX = "cadr-m6-selected-image-negative-";
 const RUNTIME_SECONDS = 600;
 const SYSTEMD_CLIENT_PATHS = Object.freeze({
+  busctl: "/usr/bin/busctl",
   systemdRun: "/usr/bin/systemd-run",
   systemctl: "/usr/bin/systemctl",
 });
+const SYSTEM_BUS_PATH = "/run/dbus/system_bus_socket";
+const SYSTEM_BUS_ENVIRONMENT = Object.freeze({
+  DBUS_SYSTEM_BUS_ADDRESS: `unix:path=${SYSTEM_BUS_PATH}`,
+  LANG: "C", LC_ALL: "C", SYSTEMD_COLORS: "0", SYSTEMD_PAGER: "", TZ: "UTC",
+});
 const SYSTEMD_CONTROL_ENVIRONMENT = Object.freeze({
-  DBUS_SESSION_BUS_ADDRESS: `unix:path=/run/user/${process.getuid()}/bus`,
+  // The selected control clients inherit a preconnected AF_UNIX stream at
+  // fd 3.  They therefore never resolve the mutable bus pathname themselves.
+  DBUS_SESSION_BUS_ADDRESS: "unix:fd=3",
   LANG: "C",
   LC_ALL: "C",
   SYSTEMD_COLORS: "0",
@@ -57,6 +66,7 @@ const SYSTEMD_CONTROL_ENVIRONMENT = Object.freeze({
 const EXECUTED_STAGED_FILES = Object.freeze([
   M6_SELECTED_IMAGE_AUTHORITY_DERIVATION,
   "scripts/cadr-m6-selected-image-static-launcher.c",
+  "scripts/cadr-m6-systemd-peer-connect.c",
   "scripts/run-cadr-m6-selected-image-negative.mjs",
   "scripts/cadr-m6-selected-image-negative-evidence.mjs",
   "scripts/cadr-m6-ready4-evidence.mjs",
@@ -119,8 +129,34 @@ export function parseSelectedImageNegativeSystemdArguments(argv) {
 
 function capture(command, args, options = {}) {
   return new Promise(resolveRun => {
-    const child = spawn(command, args, {
-      stdio: ["ignore", "pipe", "pipe"], ...options,
+    const { controlPeerConnector = null, controlPeer = null,
+      ...childOptions } = options;
+    if ((controlPeerConnector === null) !== (controlPeer === null)) {
+      resolveRun({ code: null, signal: null, failure: new TypeError(
+        "selected-image systemd control peer binding is incomplete"),
+      stdout: Buffer.alloc(0), stderr: Buffer.alloc(0) });
+      return;
+    }
+    const boundCommand = controlPeerConnector === null ? command :
+      controlPeerConnector.descriptorPath;
+    const boundArgs = controlPeerConnector === null ? args : [
+      "--socket", controlPeerConnector.busPath,
+      "--peer-uid", controlPeer.uid,
+      "--peer-gid", controlPeer.gid,
+      "--peer-pid", controlPeer.pid,
+      "--peer-ppid", controlPeer.ppid,
+      "--peer-start-time", controlPeer.start_time,
+      "--boot-id", controlPeer.boot_id,
+      "--peer-comm", controlPeer.comm,
+      "--peer-argv-byte-count", controlPeer.argv.byte_count,
+      "--peer-argv-count", controlPeer.argv.count,
+      "--peer-argv-sha256", controlPeer.argv.sha256,
+      "--peer-cgroup-byte-count", controlPeer.cgroup.byte_count,
+      "--peer-cgroup-sha256", controlPeer.cgroup.sha256,
+      "--", command, ...args,
+    ];
+    const child = spawn(boundCommand, boundArgs, {
+      stdio: ["ignore", "pipe", "pipe"], ...childOptions,
     });
     const stdout = []; const stderr = [];
     child.stdout.on("data", value => stdout.push(value));
@@ -160,6 +196,313 @@ async function systemdClientAncestors(path) {
     cursor = dirname(cursor);
   }
   return Object.freeze(ancestors.reverse());
+}
+
+function filesystemIdentity(path, metadata, kind) {
+  return Object.freeze({ dev: String(metadata.dev), gid: String(metadata.gid),
+    ino: String(metadata.ino), kind, mode: portableMode(metadata), path,
+    uid: String(metadata.uid) });
+}
+
+async function systemBusEndpointIdentity() {
+  const metadata = await lstat(SYSTEM_BUS_PATH, { bigint: true });
+  if (!metadata.isSocket() || metadata.isSymbolicLink() || metadata.uid !== 0n ||
+      metadata.gid !== 0n || (metadata.mode & 0o777n) !== 0o666n) {
+    throw new TypeError("selected-image root system bus socket is untrusted");
+  }
+  return Object.freeze({
+    ancestry: await systemdClientAncestors(SYSTEM_BUS_PATH),
+    socket: filesystemIdentity(SYSTEM_BUS_PATH, metadata, "socket"),
+  });
+}
+
+async function verifySystemBusEndpoint(identity) {
+  const current = await systemBusEndpointIdentity();
+  if (canonicalJson(current) !== canonicalJson(identity)) {
+    throw new TypeError("selected-image root system bus identity changed");
+  }
+  return current;
+}
+
+async function pinSystemBusEndpointAuthority(watchFactory) {
+  const authority = { closed: new Set(), failure: null,
+    intentionalClose: false, watchers: [] };
+  try {
+    configureEndpointWatcher(authority, watchFactory(dirname(SYSTEM_BUS_PATH),
+      { persistent: false }, (_event, filename) => {
+        const name = filename === null ? null : filename.toString();
+        if (name === null || name === basename(SYSTEM_BUS_PATH)) {
+          endpointWatchFailure(authority, name === null ?
+            "root bus directory event filename unavailable" :
+            "root system bus entry mutation");
+        }
+      }), "root-bus-directory");
+    configureEndpointWatcher(authority, watchFactory(SYSTEM_BUS_PATH,
+      { persistent: false }, event => endpointWatchFailure(authority,
+        `root system bus ${String(event)} mutation`)), "root-bus-socket");
+    authority.identity = await systemBusEndpointIdentity();
+    if (authority.failure !== null) throw authority.failure;
+    return authority;
+  } catch (error) {
+    await closeSystemBusEndpointAuthority(authority, { allowFailed: true })
+      .catch(() => undefined);
+    throw error;
+  }
+}
+
+async function verifySystemBusEndpointAuthority(authority) {
+  await synchronizeSystemdControlEndpointWatch();
+  if (authority?.failure !== null && authority?.failure !== undefined) {
+    throw authority.failure;
+  }
+  if (authority?.intentionalClose === true || authority?.closed?.size !== 0) {
+    throw new Error("selected-image root system bus watch is not active");
+  }
+  return verifySystemBusEndpoint(authority.identity);
+}
+
+async function closeSystemBusEndpointAuthority(authority,
+  { allowFailed = false } = {}) {
+  if (!allowFailed) await verifySystemBusEndpointAuthority(authority);
+  authority.intentionalClose = true;
+  const closed = authority.watchers.map(({ role, watcher }) =>
+    new Promise(resolveClose => {
+      if (authority.closed.has(role)) resolveClose();
+      else watcher.once("close", resolveClose);
+      watcher.close();
+    }));
+  await Promise.all(closed);
+  if (!allowFailed) {
+    if (authority.failure !== null) throw authority.failure;
+    await verifySystemBusEndpoint(authority.identity);
+  }
+}
+
+export function parseSelectedImageRootMainPID(text) {
+  const match = /^\{"type":"u","data":([1-9][0-9]*)\}\n$/.exec(text ?? "");
+  if (match === null || !Number.isSafeInteger(Number(match[1])) ||
+      BigInt(match[1]) > 4294967295n) {
+    throw new TypeError("selected-image root MainPID reply is not exact typed uint32 JSON");
+  }
+  return match[1];
+}
+
+function rootMainPIDArguments(uid = process.getuid()) {
+  if (!Number.isSafeInteger(uid) || uid <= 0) {
+    throw new TypeError("selected-image root MainPID UID is invalid");
+  }
+  return Object.freeze(["--system", "--no-pager", "--json=short",
+    "get-property", "org.freedesktop.systemd1",
+    `/org/freedesktop/systemd1/unit/user_40${uid}_2eservice`,
+    "org.freedesktop.systemd1.Service", "MainPID"]);
+}
+
+async function processIdentity(pidText) {
+  if (!/^[1-9][0-9]*$/.test(pidText ?? "")) {
+    throw new TypeError("selected-image root-selected process PID is invalid");
+  }
+  const pid = Number(pidText);
+  if (!Number.isSafeInteger(pid)) {
+    throw new TypeError("selected-image root-selected process PID is too large");
+  }
+  const procPath = `/proc/${pidText}`;
+  const proc = await lstat(procPath, { bigint: true });
+  const statBytes = await readFile(`${procPath}/stat`);
+  const statText = statBytes.toString("utf8");
+  const close = statText.lastIndexOf(")");
+  if (close <= 0 || statText[close + 1] !== " " || !statText.endsWith("\n")) {
+    throw new TypeError("selected-image root-selected process stat is malformed");
+  }
+  const fields = statText.slice(close + 2, -1).split(" ");
+  const ppid = fields[1]; const startTime = fields[19];
+  if (!/^[1-9][0-9]*$/.test(ppid ?? "") ||
+      !/^[1-9][0-9]*$/.test(startTime ?? "")) {
+    throw new TypeError("selected-image root-selected process stat identity differs");
+  }
+  const bootBytes = await readFile("/proc/sys/kernel/random/boot_id");
+  const bootMatch = /^([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})\n$/.exec(
+    bootBytes.toString("ascii"));
+  const commBytes = await readFile(`${procPath}/comm`);
+  if (bootMatch === null || commBytes.length < 2 ||
+      commBytes.at(-1) !== 0x0a || commBytes.subarray(0, -1).includes(0x0a) ||
+      commBytes.includes(0x00)) {
+    throw new TypeError("selected-image root-selected boot or comm identity is malformed");
+  }
+  const argv = await readFile(`${procPath}/cmdline`);
+  const cgroup = await readFile(`${procPath}/cgroup`);
+  if (argv.length === 0 || argv.at(-1) !== 0 || cgroup.length === 0 ||
+      cgroup.at(-1) !== 0x0a) {
+    throw new TypeError("selected-image root-selected argv or cgroup is malformed");
+  }
+  const argvCount = argv.reduce((count, byte) => count + (byte === 0 ? 1 : 0), 0);
+  if (argvCount === 0) {
+    throw new TypeError("selected-image root-selected argv is empty");
+  }
+  const after = await lstat(procPath, { bigint: true });
+  if (!proc.isDirectory() || !sameBigintIdentity(proc, after) ||
+      proc.uid !== BigInt(process.getuid())) {
+    throw new TypeError("selected-image root-selected process identity changed");
+  }
+  return Object.freeze({ boot_id: bootMatch[1],
+    cgroup: Object.freeze({ byte_count: String(cgroup.length),
+      sha256: sha256Hex(cgroup), value: cgroup.toString("utf8") }),
+    comm: commBytes.subarray(0, -1).toString("utf8"),
+    gid: String(proc.gid), pid: pidText, ppid, start_time: startTime,
+    uid: String(proc.uid), proc: Object.freeze({ dev: String(proc.dev),
+      gid: String(proc.gid), ino: String(proc.ino), mode: portableMode(proc),
+      path: procPath, uid: String(proc.uid) }),
+    argv: Object.freeze({ byte_count: String(argv.length),
+      count: String(argvCount), sha256: sha256Hex(argv) }) });
+}
+
+function validateRootSelectedProcessProfile(identity) {
+  const uid = String(process.getuid());
+  const expectedCgroup =
+    `0::/user.slice/user-${uid}.slice/user@${uid}.service/init.scope\n`;
+  if (identity?.uid !== uid || identity?.comm !== "systemd" ||
+      identity?.ppid !== "1" || identity?.argv?.count !== "2" ||
+      identity?.cgroup?.value !== expectedCgroup ||
+      identity.cgroup.byte_count !== String(Buffer.byteLength(expectedCgroup)) ||
+      identity.cgroup.sha256 !== sha256Hex(Buffer.from(expectedCgroup))) {
+    throw new TypeError("selected-image root MainPID process profile differs");
+  }
+  return identity;
+}
+
+async function verifyProcessIdentity(identity) {
+  const current = await processIdentity(identity.pid);
+  if (canonicalJson(current) !== canonicalJson(identity)) {
+    throw new TypeError("selected-image root-selected user manager process drifted");
+  }
+  return current;
+}
+
+async function systemdControlEndpointIdentity() {
+  const uid = process.getuid();
+  if (!Number.isSafeInteger(uid) || uid <= 0) {
+    throw new TypeError("selected-image systemd control UID is invalid");
+  }
+  const runtimePath = `/run/user/${uid}`;
+  const busPath = `${runtimePath}/bus`;
+  if (SYSTEMD_CONTROL_ENVIRONMENT.XDG_RUNTIME_DIR !== runtimePath ||
+      SYSTEMD_CONTROL_ENVIRONMENT.DBUS_SESSION_BUS_ADDRESS !== "unix:fd=3") {
+    throw new TypeError("selected-image systemd control environment path differs");
+  }
+  const ancestry = await systemdClientAncestors(runtimePath);
+  const runtime = await lstat(runtimePath, { bigint: true });
+  const bus = await lstat(busPath, { bigint: true });
+  if (!runtime.isDirectory() || runtime.isSymbolicLink() ||
+      runtime.uid !== BigInt(uid) || (runtime.mode & 0o777n) !== 0o700n ||
+      !bus.isSocket() || bus.isSymbolicLink() || bus.uid !== BigInt(uid) ||
+      (bus.mode & 0o777n) !== 0o666n) {
+    throw new TypeError(
+      "selected-image systemd runtime directory or AF_UNIX bus is untrusted");
+  }
+  return Object.freeze({ ancestry,
+    bus_socket: filesystemIdentity(busPath, bus, "socket"),
+    runtime_directory: filesystemIdentity(runtimePath, runtime, "directory"),
+    uid: String(uid) });
+}
+
+async function verifySystemdControlEndpoint(identity) {
+  const current = await systemdControlEndpointIdentity();
+  if (canonicalJson(current) !== canonicalJson(identity)) {
+    throw new TypeError(
+      "selected-image systemd runtime directory or AF_UNIX bus identity changed");
+  }
+  return current;
+}
+
+function endpointWatchFailure(authority, reason) {
+  authority.failure ??= new Error(
+    `selected-image systemd endpoint watch failed: ${reason}`);
+}
+
+function configureEndpointWatcher(authority, watcher, role) {
+  watcher.on("error", error => endpointWatchFailure(authority,
+    `${role} error ${String(error?.message ?? error)}`));
+  watcher.on("close", () => {
+    authority.closed.add(role);
+    if (!authority.intentionalClose) {
+      endpointWatchFailure(authority, `${role} closed unexpectedly`);
+    }
+  });
+  authority.watchers.push(Object.freeze({ role, watcher }));
+  return watcher;
+}
+
+async function pinSystemdControlEndpointAuthority(watchFactory) {
+  const uid = process.getuid();
+  const runtimePath = `/run/user/${uid}`;
+  const busPath = `${runtimePath}/bus`;
+  const authority = {
+    closed: new Set(), failure: null, intentionalClose: false, watchers: [],
+  };
+  try {
+    configureEndpointWatcher(authority, watchFactory(runtimePath,
+      { persistent: false }, (_event, filename) => {
+        const name = filename === null ? null : filename.toString();
+        if (name === null || name === "bus") {
+          // Node's fs.watch does not expose Linux IN_Q_OVERFLOW as a
+          // separately decoded event.  A missing filename is therefore not
+          // claimed to be a decoded overflow; it is an equally fatal loss of
+          // event attribution for the watched bus directory.
+          endpointWatchFailure(authority,
+            name === null ? "runtime directory event filename unavailable" :
+              "runtime directory bus-entry mutation");
+        }
+      }), "runtime-directory");
+    configureEndpointWatcher(authority, watchFactory(busPath,
+      { persistent: false }, event => endpointWatchFailure(authority,
+        `bus socket ${String(event)} mutation`)), "bus-socket");
+    const identity = await systemdControlEndpointIdentity();
+    if (authority.failure !== null) throw authority.failure;
+    authority.identity = identity;
+    return authority;
+  } catch (error) {
+    await closeSystemdControlEndpointAuthority(authority,
+      { allowFailed: true }).catch(() => undefined);
+    throw error;
+  }
+}
+
+async function synchronizeSystemdControlEndpointWatch() {
+  // A child-process completion and an fs.watch callback can become runnable in
+  // either order.  Cross a complete check -> timers -> poll -> check sequence
+  // before accepting the command result, so callbacks already queued through
+  // libuv cannot remain behind the child completion that we just observed.
+  await new Promise(resolveImmediate => setImmediate(resolveImmediate));
+  await new Promise(resolveTimer => setTimeout(resolveTimer, 0));
+  await new Promise(resolveImmediate => setImmediate(resolveImmediate));
+}
+
+async function verifySystemdControlEndpointAuthority(authority) {
+  await synchronizeSystemdControlEndpointWatch();
+  if (authority?.failure !== null && authority?.failure !== undefined) {
+    throw authority.failure;
+  }
+  if (authority?.intentionalClose === true ||
+      authority?.closed?.size !== 0) {
+    throw new Error("selected-image systemd endpoint watch is not active");
+  }
+  return verifySystemdControlEndpoint(authority.identity);
+}
+
+async function closeSystemdControlEndpointAuthority(authority,
+  { allowFailed = false } = {}) {
+  if (!allowFailed) await verifySystemdControlEndpointAuthority(authority);
+  authority.intentionalClose = true;
+  const closed = authority.watchers.map(({ role, watcher }) =>
+    new Promise(resolveClose => {
+      if (authority.closed.has(role)) resolveClose();
+      else watcher.once("close", resolveClose);
+      watcher.close();
+    }));
+  await Promise.all(closed);
+  if (!allowFailed) {
+    if (authority.failure !== null) throw authority.failure;
+    await verifySystemdControlEndpoint(authority.identity);
+  }
 }
 
 async function pinSystemdClient(path, label) {
@@ -202,26 +545,224 @@ async function pinSystemdClient(path, label) {
   }
 }
 
+function parseSystemdPeerProbe(text) {
+  if (text !== "pidfd_profile=so-peerpidfd-v1\n") {
+    throw new TypeError("selected-image systemd peer pidfd profile is malformed");
+  }
+  return "so-peerpidfd-v1";
+}
+
+function peerConnectorArguments(socketPath, peer) {
+  return ["--socket", socketPath, "--peer-uid", peer.uid,
+    "--peer-gid", peer.gid, "--peer-pid", peer.pid,
+    "--peer-ppid", peer.ppid, "--peer-start-time", peer.start_time,
+    "--boot-id", peer.boot_id, "--peer-comm", peer.comm,
+    "--peer-argv-byte-count", peer.argv.byte_count,
+    "--peer-argv-count", peer.argv.count,
+    "--peer-argv-sha256", peer.argv.sha256,
+    "--peer-cgroup-byte-count", peer.cgroup.byte_count,
+    "--peer-cgroup-sha256", peer.cgroup.sha256];
+}
+
+async function pinSystemdPeerConnector(input, endpoint) {
+  if (input === null || typeof input !== "object" ||
+      typeof input.path !== "string" || !input.path.startsWith("/") ||
+      input.expected === null || typeof input.expected !== "object" ||
+      input.source === null || typeof input.source !== "object" ||
+      typeof endpoint?.bus_socket?.path !== "string") {
+    throw new TypeError("selected-image systemd peer connector bus path is invalid");
+  }
+  const { path, expected, source } = input;
+  if (expected.role !== "peer-connector" || expected.mode !== "0555" ||
+      !/^[1-9][0-9]*$/.test(expected.byte_count ?? "") ||
+      !/^[0-9a-f]{64}$/.test(expected.sha256 ?? "") ||
+      source.role !== "peer-connector-source" ||
+      !/^[0-9a-f]{64}$/.test(source.sha256 ?? "")) {
+    throw new TypeError("selected-image systemd peer connector authority is invalid");
+  }
+  let handle = null;
+  try {
+    await trustedGuixAncestry(path);
+    const binary = await readStableRegular(path,
+      "selected-image systemd peer connector", true);
+    if (String(binary.bytes.byteLength) !== expected.byte_count ||
+        sha256Hex(binary.bytes) !== expected.sha256) {
+      throw new TypeError("selected-image systemd peer connector differs from authority build");
+    }
+    handle = await open(path, constants.O_RDONLY | constants.O_NOFOLLOW);
+    const retained = await handle.stat({ bigint: true });
+    if (!retained.isFile() || !sameBigintIdentity(retained, binary.metadata)) {
+      throw new TypeError("selected-image systemd peer connector changed while retained");
+    }
+    return Object.freeze({ descriptorPath: `/proc/${process.pid}/fd/${handle.fd}`,
+      handle,
+      identity: Object.freeze({ byte_count: String(binary.bytes.byteLength),
+        dev: String(retained.dev), gid: String(retained.gid), ino: String(retained.ino),
+        mode: portableMode(retained), path, real_path: path,
+        sha256: sha256Hex(binary.bytes), source_sha256: source.sha256,
+        uid: String(retained.uid) }),
+      busPath: endpoint.bus_socket.path, retained: Object.freeze(retained) });
+  } catch (error) {
+    await handle?.close().catch(() => undefined);
+    throw error;
+  }
+}
+
+async function verifySystemdPeerConnector(connector) {
+  if (connector?.testSeam === true) return connector;
+  const descriptor = await connector?.handle?.stat({ bigint: true });
+  if (!sameBigintIdentity(descriptor, connector?.retained)) {
+    throw new TypeError("selected-image retained systemd peer connector identity changed");
+  }
+  const bytes = await readHandleAtZero(connector.handle, descriptor.size,
+    "selected-image retained systemd peer connector");
+  if (String(bytes.byteLength) !== connector.identity.byte_count ||
+      sha256Hex(bytes) !== connector.identity.sha256) {
+    throw new TypeError("selected-image retained systemd peer connector bytes changed");
+  }
+  await trustedGuixAncestry(connector.identity.path);
+  const current = await readStableRegular(connector.identity.path,
+    "selected-image installed systemd peer connector", true);
+  if (!sameBigintIdentity(current.metadata, connector.retained) ||
+      sha256Hex(current.bytes) !== connector.identity.sha256) {
+    throw new TypeError("selected-image installed systemd peer connector changed");
+  }
+}
+
+async function closeSystemdPeerConnector(connector) {
+  if (connector?.testSeam === true) return;
+  await connector?.handle?.close();
+}
+
+async function pinSystemdControlPeer(connector, endpoint, authority, peer,
+  rootAnchor, rootCaptureFn) {
+  if (connector.busPath !== endpoint.bus_socket.path) {
+    throw new TypeError("selected-image systemd peer connector bus path changed");
+  }
+  await verifyRootAnchor(rootAnchor, rootCaptureFn);
+  await verifySystemdControlEndpointAuthority(authority);
+  const result = await capture(connector.descriptorPath,
+    [...peerConnectorArguments(connector.busPath, peer), "--probe"],
+    { cwd: "/", env: SYSTEMD_CONTROL_ENVIRONMENT });
+  await verifySystemdPeerConnector(connector);
+  await verifySystemdControlEndpointAuthority(authority);
+  await verifyRootAnchor(rootAnchor, rootCaptureFn);
+  if (result.code !== 0 || result.signal !== null || result.failure !== null) {
+    if (result.code === 124) {
+      throw new TypeError(
+        "selected-image systemd SO_PEERPIDFD profile is unavailable");
+    }
+    throw new TypeError("selected-image systemd SO_PEERCRED probe failed");
+  }
+  return Object.freeze({ ...peer,
+    pidfd_profile: parseSystemdPeerProbe(result.stdout.toString("utf8")) });
+}
+
 export async function pinSelectedImageSystemdClients(paths =
-  SYSTEMD_CLIENT_PATHS) {
+  SYSTEMD_CLIENT_PATHS, { captureFn = capture, watchFactory = watch,
+    peerConnector = null, rootCaptureFn = capture,
+    rootProcessFn = processIdentity } = {}) {
   if (paths === null || typeof paths !== "object" ||
       Object.keys(paths).sort().join("\0") !==
         Object.keys(SYSTEMD_CLIENT_PATHS).sort().join("\0")) {
     throw new TypeError("selected-image systemd client paths are incomplete");
   }
   const systemdRun = await pinSystemdClient(paths.systemdRun, "systemd-run");
+  let systemctl = null; let busctl = null; let rootEndpointAuthority = null;
+  let rootAnchor = null;
+  let controlEndpointAuthority = null;
+  let controlPeerConnector = null;
   try {
-    const systemctl = await pinSystemdClient(paths.systemctl, "systemctl");
-    return Object.freeze({
+    systemctl = await pinSystemdClient(paths.systemctl, "systemctl");
+    busctl = await pinSystemdClient(paths.busctl, "busctl");
+    if (peerConnector === null || typeof peerConnector !== "object") {
+      throw new TypeError("selected-image systemd peer connector authority is required");
+    }
+    if (peerConnector.testSeam === true && captureFn === capture) {
+      throw new TypeError("selected-image systemd test connector cannot execute production clients");
+    }
+    rootEndpointAuthority = await pinSystemBusEndpointAuthority(watchFactory);
+    rootAnchor = await selectRootAnchor(busctl, rootEndpointAuthority,
+      rootCaptureFn, rootProcessFn);
+    controlEndpointAuthority =
+      await pinSystemdControlEndpointAuthority(watchFactory);
+    if (peerConnector.testSeam === true) {
+      const peer = rootAnchor.process;
+      if (peer === null || typeof peer !== "object" ||
+          peer.uid !== controlEndpointAuthority.identity.uid ||
+          !/^[1-9][0-9]*$/.test(peer.pid ?? "") ||
+          !/^[1-9][0-9]*$/.test(peer.start_time ?? "") ||
+          !/^(?:0|[1-9][0-9]*)$/.test(peer.gid ?? "")) {
+        throw new TypeError("selected-image systemd test peer is invalid");
+      }
+      controlPeerConnector = Object.freeze({ testSeam: true,
+        identity: peerConnector.identity });
+    } else {
+      controlPeerConnector = await pinSystemdPeerConnector(peerConnector,
+        controlEndpointAuthority.identity);
+    }
+    const peer = controlPeerConnector.testSeam ?
+      Object.freeze({ ...rootAnchor.process,
+        pidfd_profile: "so-peerpidfd-v1" }) :
+      await pinSystemdControlPeer(controlPeerConnector,
+        controlEndpointAuthority.identity, controlEndpointAuthority,
+        rootAnchor.process, rootAnchor, rootCaptureFn);
+    const controlEndpoint = Object.freeze({
+      ...controlEndpointAuthority.identity, peer,
+    });
+    const clients = Object.freeze({
+      controlEndpoint,
+      controlEndpointAuthority,
+      controlPeerConnector,
+      controlPeer: peer,
+      rootAnchor,
+      rootCaptureFn,
       identity: Object.freeze({
+        control_connector: controlPeerConnector.identity,
+        control_endpoint: controlEndpoint,
         environment: SYSTEMD_CONTROL_ENVIRONMENT,
+        root_anchor: rootAnchor.identity,
         systemd_run: systemdRun.identity,
         systemctl: systemctl.identity,
       }),
       systemdRun, systemctl,
     });
+    const preflight = await captureSystemdClient(clients, "systemctl",
+      ["--user", "--no-pager", "show", "--property=Version"], captureFn);
+    if (preflight.code !== 0 || preflight.signal !== null ||
+        preflight.failure !== null) {
+      throw new TypeError(
+        "selected-image systemd read-only connectivity preflight failed");
+    }
+    const version = parseExactSelectedImageSystemdShow(
+      preflight.stdout.toString("utf8"), ["Version"],
+      "control-connectivity");
+    if (!/^[A-Za-z0-9][A-Za-z0-9.+:~_-]{0,127}$/.test(version.Version)) {
+      throw new TypeError(
+        "selected-image systemd connectivity version is malformed");
+    }
+    return clients;
   } catch (error) {
-    await systemdRun.handle.close();
+    const cleanupFailures = [];
+    if (controlEndpointAuthority !== null) {
+      await closeSystemdControlEndpointAuthority(controlEndpointAuthority,
+        { allowFailed: true }).catch(failure => cleanupFailures.push(failure));
+    }
+    if (rootEndpointAuthority !== null) {
+      await closeSystemBusEndpointAuthority(rootEndpointAuthority,
+        { allowFailed: true }).catch(failure => cleanupFailures.push(failure));
+    }
+    if (controlPeerConnector !== null) {
+      await closeSystemdPeerConnector(controlPeerConnector)
+        .catch(failure => cleanupFailures.push(failure));
+    }
+    await systemdRun.handle.close().catch(failure => cleanupFailures.push(failure));
+    await systemctl?.handle?.close().catch(failure => cleanupFailures.push(failure));
+    await busctl?.handle?.close().catch(failure => cleanupFailures.push(failure));
+    if (cleanupFailures.length > 0) {
+      throw new AggregateError([error, ...cleanupFailures],
+        "selected-image systemd client pinning and cleanup both failed");
+    }
     throw error;
   }
 }
@@ -251,6 +792,67 @@ async function verifySystemdClient(client, label) {
   }
 }
 
+async function captureRootBusClient(rootAnchor, captureFn = capture) {
+  await verifySystemdClient(rootAnchor.busctl, "busctl");
+  await verifySystemBusEndpointAuthority(rootAnchor.endpointAuthority);
+  let result; let commandFailure = null; let validationFailure = null;
+  try {
+    try {
+      result = await captureFn(rootAnchor.busctl.descriptorPath,
+        rootAnchor.queryArguments, { cwd: "/", env: SYSTEM_BUS_ENVIRONMENT });
+    } catch (error) {
+      commandFailure = error instanceof Error ? error : new Error(String(error));
+    }
+  } finally {
+    try {
+      await verifySystemdClient(rootAnchor.busctl, "busctl");
+      await verifySystemBusEndpointAuthority(rootAnchor.endpointAuthority);
+    } catch (error) {
+      validationFailure = error instanceof Error ? error : new Error(String(error));
+    }
+  }
+  if (commandFailure !== null && validationFailure !== null) {
+    throw new AggregateError([commandFailure, validationFailure],
+      "selected-image root query and post-validation both failed");
+  }
+  if (commandFailure !== null) throw commandFailure;
+  if (validationFailure !== null) throw validationFailure;
+  if (result.code !== 0 || result.signal !== null || result.failure !== null) {
+    throw new TypeError("selected-image root MainPID query failed");
+  }
+  return parseSelectedImageRootMainPID(result.stdout.toString("utf8"));
+}
+
+async function selectRootAnchor(busctl, endpointAuthority, captureFn,
+  processFn = processIdentity) {
+  const rootAnchor = { busctl, endpointAuthority,
+    processFn, queryArguments: rootMainPIDArguments() };
+  const pid = await captureRootBusClient(rootAnchor, captureFn);
+  const processIdentityValue = validateRootSelectedProcessProfile(
+    await processFn(pid));
+  if (processIdentityValue.uid !== String(process.getuid())) {
+    throw new TypeError("selected-image root MainPID selected another UID");
+  }
+  return Object.freeze({ ...rootAnchor, process: processIdentityValue,
+    identity: Object.freeze({ busctl: busctl.identity,
+      environment: SYSTEM_BUS_ENVIRONMENT,
+      endpoint: endpointAuthority.identity,
+      main_pid_query: rootAnchor.queryArguments,
+      process: processIdentityValue }) });
+}
+
+async function verifyRootAnchor(rootAnchor, captureFn = capture) {
+  const pid = await captureRootBusClient(rootAnchor, captureFn);
+  if (pid !== rootAnchor.process.pid) {
+    throw new TypeError("selected-image root MainPID changed");
+  }
+  const current = await rootAnchor.processFn(rootAnchor.process.pid);
+  if (canonicalJson(current) !== canonicalJson(rootAnchor.process)) {
+    throw new TypeError("selected-image root MainPID process identity changed");
+  }
+  return rootAnchor.identity;
+}
+
 function dispatchedSystemdFailure(error) {
   const failure = error instanceof Error && Object.isExtensible(error) ? error :
     new Error(String(error?.message ?? error), { cause: error });
@@ -261,6 +863,10 @@ function dispatchedSystemdFailure(error) {
 }
 
 export async function verifySelectedImageSystemdClients(clients) {
+  await verifyRootAnchor(clients?.rootAnchor, clients?.rootCaptureFn);
+  await verifySystemdControlEndpointAuthority(
+    clients?.controlEndpointAuthority);
+  await verifySystemdPeerConnector(clients?.controlPeerConnector);
   await verifySystemdClient(clients?.systemdRun, "systemd-run");
   await verifySystemdClient(clients?.systemctl, "systemctl");
   return clients.identity;
@@ -268,11 +874,37 @@ export async function verifySelectedImageSystemdClients(clients) {
 
 export async function closeSelectedImageSystemdClients(clients) {
   const failures = [];
+  try { await verifyRootAnchor(clients?.rootAnchor, clients?.rootCaptureFn); }
+  catch (error) { failures.push(error); }
+  try {
+    await closeSystemdControlEndpointAuthority(
+      clients?.controlEndpointAuthority);
+  } catch (error) {
+    failures.push(error);
+    await closeSystemdControlEndpointAuthority(
+      clients?.controlEndpointAuthority, { allowFailed: true })
+      .catch(closeError => failures.push(closeError));
+  }
+  try { await closeSystemdPeerConnector(clients?.controlPeerConnector); }
+  catch (error) { failures.push(error); }
   for (const client of [clients?.systemdRun, clients?.systemctl]) {
     try { await client?.handle?.close(); }
     catch (error) { failures.push(error); }
   }
-  if (failures.length > 0) throw failures[0];
+  try {
+    await closeSystemBusEndpointAuthority(clients?.rootAnchor?.endpointAuthority);
+  } catch (error) {
+    failures.push(error);
+    await closeSystemBusEndpointAuthority(
+      clients?.rootAnchor?.endpointAuthority, { allowFailed: true })
+      .catch(closeError => failures.push(closeError));
+  }
+  try { await clients?.rootAnchor?.busctl?.handle?.close(); }
+  catch (error) { failures.push(error); }
+  if (failures.length > 0) {
+    throw new AggregateError(failures,
+      "selected-image systemd client cleanup failed");
+  }
 }
 
 async function captureSystemdClient(clients, name, args,
@@ -280,14 +912,27 @@ async function captureSystemdClient(clients, name, args,
   const client = clients[name];
   const label = name === "systemdRun" ? "systemd-run" : "systemctl";
   await verifySystemdClient(client, label);
+  await verifyRootAnchor(clients.rootAnchor, clients.rootCaptureFn);
+  await verifySystemdControlEndpointAuthority(
+    clients.controlEndpointAuthority);
   let result; let commandFailure = null;
   let validationFailure = null;
   try {
     try {
-      result = await captureFn(client.descriptorPath, args, {
+      const options = {
         cwd: "/",
         env: SYSTEMD_CONTROL_ENVIRONMENT,
-      });
+      };
+      // The injected capture seam only checks command construction.  The
+      // production path invokes the retained SO_PEERCRED connector, which
+      // creates one fresh stream and installs it exactly at fd 3 before the
+      // pinned systemd client starts.
+      if (captureFn === capture) {
+        await verifySystemdPeerConnector(clients.controlPeerConnector);
+        options.controlPeerConnector = clients.controlPeerConnector;
+        options.controlPeer = clients.controlPeer;
+      }
+      result = await captureFn(client.descriptorPath, args, options);
     } catch (error) {
       commandFailure = error instanceof Error ? error :
         new Error(String(error));
@@ -295,6 +940,9 @@ async function captureSystemdClient(clients, name, args,
   } finally {
     try {
       await verifySystemdClient(client, label);
+      await verifySystemdControlEndpointAuthority(
+        clients.controlEndpointAuthority);
+      await verifyRootAnchor(clients.rootAnchor, clients.rootCaptureFn);
     } catch (error) {
       validationFailure = error instanceof Error ? error :
         new Error(String(error));
@@ -524,6 +1172,9 @@ const WAIT_PROPERTIES = Object.freeze([
 const RECOVERY_PROPERTIES = Object.freeze([
   "LoadState", "Transient", "FragmentPath", "Type", "ExecStart",
 ]);
+const ABSENT_RECOVERY_PROPERTIES = Object.freeze([
+  "LoadState", "Transient", "FragmentPath", "Type",
+]);
 const ABSENCE_PROPERTIES = Object.freeze(["LoadState"]);
 const ACCOUNTING_PROPERTIES = Object.freeze([
   "Result", "ExecMainCode", "ExecMainStatus", "MemoryPeak", "CPUUsageNSec",
@@ -587,10 +1238,18 @@ export async function startSelectedImageNegativeUnit(command,
   }
   if (shown.code === 0 && shown.signal === null && shown.failure === null) {
     try {
-      const state = parseExactSelectedImageSystemdShow(
-        shown.stdout.toString("utf8"), RECOVERY_PROPERTIES,
-        "ambiguous-recovery");
-      if (state.LoadState === "not-found") {
+      const text = shown.stdout.toString("utf8");
+      let state;
+      try {
+        state = parseExactSelectedImageSystemdShow(text, RECOVERY_PROPERTIES,
+          "ambiguous-recovery");
+      } catch (loadedParseError) {
+        const absent = parseExactSelectedImageSystemdShow(text,
+          ABSENT_RECOVERY_PROPERTIES, "ambiguous-absence");
+        if (absent.LoadState !== "not-found" || absent.Transient !== "no" ||
+            absent.FragmentPath !== "" || absent.Type !== "") {
+          throw loadedParseError;
+        }
         if (dispatchFailure !== null) {
           dispatchFailure.absenceProved = true;
           throw dispatchFailure;
@@ -755,6 +1414,9 @@ function exactLauncherBuildIdentity(identity) {
 }
 
 function authoritySourcePath(entry) {
+  if (entry.role === "peer-connector-source") {
+    return M6_SELECTED_IMAGE_PEER_CONNECT_SOURCE;
+  }
   if (entry.role === "entry") return DIRECT_RELATIVE;
   if (entry.role === "release-record") return RELEASE_RELATIVE;
   if (entry.relative_path.endsWith("/cadr-m6-selected-image-negative-evidence.mjs")) {
@@ -888,6 +1550,8 @@ export async function buildSelectedImageGuixAuthority(sourceAuthority,
     ...M6_SELECTED_IMAGE_GUIX_ENVIRONMENT,
     M6_AUTHORITY_LAUNCHER_SOURCE: retainedAuthorityInput(sourceAuthority,
       "scripts/cadr-m6-selected-image-static-launcher.c"),
+    M6_AUTHORITY_PEER_CONNECT_SOURCE: retainedAuthorityInput(sourceAuthority,
+      M6_SELECTED_IMAGE_PEER_CONNECT_SOURCE),
     M6_AUTHORITY_CHILD_SOURCE: retainedAuthorityInput(sourceAuthority,
       DIRECT_RELATIVE),
     M6_AUTHORITY_SELECTED_EVIDENCE: retainedAuthorityInput(sourceAuthority,
@@ -978,8 +1642,11 @@ export async function buildSelectedImageGuixAuthority(sourceAuthority,
       sha256: sha256Hex(opened.bytes) }));
   }
   const launcher = files.find(entry => entry.role === "launcher");
+  const connector = files.find(entry => entry.role === "peer-connector");
   const launcherBytes = await readFile(resolve(outputPath,
     launcher.relative_path));
+  const connectorBytes = await readFile(resolve(outputPath,
+    connector.relative_path));
   const references = await capturePinnedGuix(guix,
     ["gc", "--references", outputPath],
   { cwd: "/", env: M6_SELECTED_IMAGE_GUIX_ENVIRONMENT }, captureFn);
@@ -1003,13 +1670,87 @@ export async function buildSelectedImageGuixAuthority(sourceAuthority,
     toolchain: M6_SELECTED_IMAGE_PINNED_TOOLCHAIN,
     files: Object.freeze(files),
     elf: parseStaticLauncherElf(launcherBytes),
+    connector_elf: parseStaticLauncherElf(connectorBytes),
   }));
   } finally {
     await guix.handle.close();
   }
 }
 
-async function verifyGuixAuthority(identity) {
+export async function buildSelectedImagePeerConnectorTestAuthority({
+  derivation, source,
+}, { captureFn = capture } = {}) {
+  if (typeof derivation !== "string" || typeof source !== "string") {
+    throw new TypeError("connector test authority needs retained descriptor inputs");
+  }
+  const sourceBytes = await readRetainedDescriptor(source,
+    "selected-image connector test source");
+  const guix = await pinGuixClient();
+  try {
+    const environment = Object.freeze({ ...M6_SELECTED_IMAGE_GUIX_ENVIRONMENT,
+      M6_PEER_CONNECT_TEST_SOURCE: source });
+    const built = await capturePinnedGuix(guix,
+      ["build", "-f", derivation, "--no-grafts"],
+      { cwd: "/", env: environment }, captureFn);
+    if (built.code !== 0 || built.signal !== null || built.failure !== null) {
+      throw new TypeError("connector test Guix authority build failed");
+    }
+    const outputs = built.stdout.toString("utf8").trim().split("\n")
+      .filter(Boolean);
+    if (outputs.length !== 1 ||
+        !/^\/gnu\/store\/[0-9a-df-np-sv-z]{32}-cadr-m6-systemd-peer-connect-test-authority$/
+          .test(outputs[0])) {
+      throw new TypeError("connector test Guix output identity differs");
+    }
+    const outputPath = outputs[0];
+    await trustedGuixAncestry(outputPath, true);
+    const programPath = resolve(outputPath, "bin/cadr-m6-systemd-peer-connect-test");
+    const copiedSourcePath = resolve(outputPath,
+      "share/cadr-m6-systemd-peer-connect.c");
+    const program = await readStableRegular(programPath,
+      "connector test Guix binary", true);
+    const copiedSource = await readStableRegular(copiedSourcePath,
+      "connector test Guix source", false);
+    if (!copiedSource.bytes.equals(sourceBytes) ||
+        portableMode(program.metadata) !== "0555" ||
+        portableMode(copiedSource.metadata) !== "0444") {
+      throw new TypeError("connector test Guix source or modes differ");
+    }
+    const derivationResult = await capturePinnedGuix(guix,
+      ["build", "-f", derivation, "--no-grafts", "--derivations"],
+      { cwd: "/", env: environment }, captureFn);
+    const derivations = derivationResult.stdout.toString("utf8").trim()
+      .split("\n").filter(Boolean);
+    if (derivationResult.code !== 0 || derivationResult.signal !== null ||
+        derivationResult.failure !== null || derivations.length !== 1 ||
+        !/^\/gnu\/store\/[0-9a-df-np-sv-z]{32}-cadr-m6-systemd-peer-connect-test-authority\.drv$/
+          .test(derivations[0])) {
+      throw new TypeError("connector test Guix derivation identity differs");
+    }
+    const references = await capturePinnedGuix(guix,
+      ["gc", "--references", derivations[0]],
+      { cwd: "/", env: M6_SELECTED_IMAGE_GUIX_ENVIRONMENT }, captureFn);
+    const referenceSet = new Set(references.stdout.toString("utf8").trim()
+      .split("\n").filter(Boolean));
+    if (references.code !== 0 || references.signal !== null ||
+        references.failure !== null ||
+        !referenceSet.has(M6_SELECTED_IMAGE_PINNED_TOOLCHAIN.derivation)) {
+      throw new TypeError("connector test derivation lacks reviewed compiler");
+    }
+    return Object.freeze({ derivation: derivations[0],
+      output_path: outputPath,
+      source: Object.freeze({ byte_count: String(sourceBytes.byteLength),
+        sha256: sha256Hex(sourceBytes) }),
+      binary: Object.freeze({ byte_count: String(program.bytes.byteLength),
+        elf: parseStaticLauncherElf(program.bytes), path: programPath,
+        sha256: sha256Hex(program.bytes) }),
+      toolchain: M6_SELECTED_IMAGE_PINNED_TOOLCHAIN });
+  } finally {
+    await guix.handle.close();
+  }
+}
+
+export async function verifyGuixAuthority(identity) {
   const authority = exactLauncherBuildIdentity(identity);
   await trustedGuixAncestry(authority.output_path, true);
   await trustedGuixAncestry(authority.node.path);
@@ -1217,6 +1958,7 @@ export function selectedImagePinnedFile(token, relativePath) {
 const AUTHORITY_INPUT_PATHS = Object.freeze({
   derivation: M6_SELECTED_IMAGE_AUTHORITY_DERIVATION,
   launcherSource: "scripts/cadr-m6-selected-image-static-launcher.c",
+  peerConnectorSource: M6_SELECTED_IMAGE_PEER_CONNECT_SOURCE,
   childSource: DIRECT_RELATIVE,
   selectedEvidence: "scripts/cadr-m6-selected-image-negative-evidence.mjs",
   ready4Evidence: "scripts/cadr-m6-ready4-evidence.mjs",
@@ -1402,8 +2144,6 @@ export async function executeSelectedImageNegativeSystemd(options,
   let stagedPin = null; let retainedLauncherIdentity = null;
   let preserveStage = false;
   try {
-    systemdClients = await pinSystemdClients();
-    systemdClientIdentity = await verifySystemdClients(systemdClients);
     stage = await stageSource();
     stagedPin = await pinStaged(stage.sourceRoot);
     const descriptorSourceRoot = pinnedSourceRoot(stagedPin);
@@ -1421,6 +2161,10 @@ export async function executeSelectedImageNegativeSystemd(options,
     const authorityRoot = retainedLauncherIdentity.output_path;
     const launcherFile = retainedLauncherIdentity.files.find(entry =>
       entry.role === "launcher");
+    const connectorFile = retainedLauncherIdentity.files.find(entry =>
+      entry.role === "peer-connector");
+    const connectorSourceFile = retainedLauncherIdentity.files.find(entry =>
+      entry.role === "peer-connector-source");
     const childFile = retainedLauncherIdentity.files.find(entry =>
       entry.role === "entry");
     const releaseFile = retainedLauncherIdentity.files.find(entry =>
@@ -1428,6 +2172,14 @@ export async function executeSelectedImageNegativeSystemd(options,
     const child = resolve(authorityRoot, childFile.relative_path);
     const releasePath = resolve(authorityRoot, releaseFile.relative_path);
     const launcher = resolve(authorityRoot, launcherFile.relative_path);
+    const connector = Object.freeze({
+      path: resolve(authorityRoot, connectorFile.relative_path),
+      expected: connectorFile, source: connectorSourceFile,
+    });
+    systemdClients = await pinSystemdClients(undefined, {
+      peerConnector: connector,
+    });
+    systemdClientIdentity = await verifySystemdClients(systemdClients);
     const command = selectedImageNegativeSystemdCommand([
       child, "--execute", "--systemd-child", "--artifact-root", options.artifactRoot,
       "--release-record", releasePath, "--source-commit", stage.sourceClosure.source_commit,
@@ -1502,29 +2254,31 @@ export async function executeSelectedImageNegativeSystemd(options,
     if (productionExecution) EXECUTED_SUPERVISED_RECEIPTS.add(receipt);
     return receipt;
   } catch (error) {
-    let cleanupError = null;
+    const cleanupFailures = [];
     if (unit !== null) {
       try {
         await stopUnit(unit, systemdClients); unitAbsent = true; unit = null;
       }
-      catch (failure) { cleanupError = failure; }
+      catch (failure) { cleanupFailures.push(failure); preserveStage = true; }
     }
-    if (systemdClients !== null && (unitAbsent || unit === null)) {
+    if (systemdClients !== null) {
       try {
         await closeSystemdClients(systemdClients); systemdClients = null;
-      } catch (failure) { cleanupError ??= failure; }
+      } catch (failure) { cleanupFailures.push(failure); }
     }
-    if (!preserveStage && stagedPin !== null && (unitAbsent || unit === null)) {
+    if (stagedPin !== null) {
       try { await closePinned(stagedPin); stagedPin = null; }
-      catch (failure) { cleanupError ??= failure; }
+      catch (failure) { cleanupFailures.push(failure); }
     }
     if (!preserveStage && stage !== null && (unitAbsent || unit === null)) {
       try { await removeStage(stage.root); stage = null; }
-      catch (failure) { cleanupError ??= failure; }
+      catch (failure) { cleanupFailures.push(failure); }
     }
-    const authoritative = cleanupError ?? error;
+    const authoritative = cleanupFailures.length === 0 ? error :
+      new AggregateError([error, ...cleanupFailures],
+        "selected-image systemd operation and cleanup failed");
     await publish(`${options.output}.failure.json`,
-      selectedImageNegativeFailure(cleanupError === null ?
+      selectedImageNegativeFailure(cleanupFailures.length === 0 ?
         "selected-image-negative-systemd-failed" :
         "selected-image-negative-systemd-cleanup-failed",
       sha256Hex(Buffer.from(String(authoritative?.message ?? authoritative)))))

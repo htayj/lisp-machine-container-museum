@@ -26,6 +26,7 @@ import { parseSelectedImageNegativeSystemdArguments,
   closePinnedSelectedImageStagedExecutionClosure,
   executeSelectedImageNegativeSystemd,
   buildSelectedImageGuixAuthority,
+  parseSelectedImageRootMainPID,
   parseStaticLauncherElf,
   parseExactSelectedImageSystemdShow,
   parseSelectedImageNegativeDurationUSec,
@@ -60,12 +61,81 @@ const EXPECTED = Object.freeze({
 const supervisedUnit = `cadr-m6-selected-image-negative-${"34".repeat(16)}.service`;
 const exactEnvironment = selectedImageNegativeEffectiveEnvironment(supervisedUnit);
 const systemdControlEnvironment = Object.freeze({
-  DBUS_SESSION_BUS_ADDRESS: `unix:path=/run/user/${process.getuid()}/bus`,
+  DBUS_SESSION_BUS_ADDRESS: "unix:fd=3",
   LANG: "C", LC_ALL: "C", SYSTEMD_COLORS: "0", SYSTEMD_PAGER: "",
   TZ: "UTC", XDG_RUNTIME_DIR: `/run/user/${process.getuid()}`,
 });
+const systemBusEnvironment = Object.freeze({
+  DBUS_SYSTEM_BUS_ADDRESS: "unix:path=/run/dbus/system_bus_socket",
+  LANG: "C", LC_ALL: "C", SYSTEMD_COLORS: "0", SYSTEMD_PAGER: "", TZ: "UTC",
+});
+const syntheticCgroup =
+  `0::/user.slice/user-${process.getuid()}.slice/user@${process.getuid()}.service/init.scope\n`;
+const syntheticRootProcess = Object.freeze({
+  argv: Object.freeze({ byte_count: "32", count: "2",
+    sha256: "73".repeat(32) }),
+  boot_id: "00000000-0000-4000-8000-000000000000",
+  cgroup: Object.freeze({ byte_count: String(Buffer.byteLength(syntheticCgroup)),
+    sha256: sha256(Buffer.from(syntheticCgroup)), value: syntheticCgroup }),
+  comm: "systemd", gid: "1001", pid: "123", ppid: "1",
+  proc: Object.freeze({ dev: "24", gid: "1001", ino: "123", mode: "0555",
+    path: "/proc/123", uid: String(process.getuid()) }),
+  start_time: "456", uid: String(process.getuid()),
+});
+const syntheticControlEndpoint = Object.freeze({
+  uid: String(process.getuid()),
+  ancestry: Object.freeze([
+    Object.freeze({ dev: "1", gid: "0", ino: "10", mode: "0755",
+      path: "/", uid: "0" }),
+    Object.freeze({ dev: "1", gid: "0", ino: "11", mode: "0755",
+      path: "/run", uid: "0" }),
+    Object.freeze({ dev: "1", gid: "0", ino: "12", mode: "0755",
+      path: "/run/user", uid: "0" }),
+  ]),
+  runtime_directory: Object.freeze({ dev: "2", gid: "1001", ino: "1",
+    kind: "directory", mode: "0700", path: `/run/user/${process.getuid()}`,
+    uid: String(process.getuid()) }),
+  bus_socket: Object.freeze({ dev: "2", gid: "1001", ino: "2",
+    kind: "socket", mode: "0666",
+    path: `/run/user/${process.getuid()}/bus`,
+    uid: String(process.getuid()) }),
+  peer: Object.freeze({ ...syntheticRootProcess,
+    pidfd_profile: "so-peerpidfd-v1" }),
+});
+const systemClientAncestry = Object.freeze([
+  Object.freeze({ dev: "1", gid: "0", ino: "1", path: "/", uid: "0", mode: "0555" }),
+  Object.freeze({ dev: "1", gid: "0", ino: "2", path: "/usr", uid: "0", mode: "0755" }),
+  Object.freeze({ dev: "1", gid: "0", ino: "3", path: "/usr/bin", uid: "0", mode: "0755" }),
+]);
+const syntheticBusctlIdentity = Object.freeze({ ancestry: systemClientAncestry,
+  byte_count: "1", dev: "1", gid: "0", ino: "7", mode: "0755",
+  path: "/usr/bin/busctl", real_path: "/usr/bin/busctl",
+  sha256: "70".repeat(32), uid: "0" });
+const syntheticRootAnchor = Object.freeze({
+  busctl: syntheticBusctlIdentity,
+  endpoint: Object.freeze({ ancestry: Object.freeze([
+    Object.freeze({ dev: "1", gid: "0", ino: "10", mode: "0555", path: "/", uid: "0" }),
+    Object.freeze({ dev: "1", gid: "0", ino: "11", mode: "0755", path: "/run", uid: "0" }),
+    Object.freeze({ dev: "1", gid: "0", ino: "12", mode: "0755", path: "/run/dbus", uid: "0" }),
+  ]), socket: Object.freeze({ dev: "2", gid: "0", ino: "13", kind: "socket",
+    mode: "0666", path: "/run/dbus/system_bus_socket", uid: "0" }) }),
+  environment: systemBusEnvironment,
+  main_pid_query: Object.freeze(["--system", "--no-pager", "--json=short",
+    "get-property", "org.freedesktop.systemd1",
+    `/org/freedesktop/systemd1/unit/user_40${process.getuid()}_2eservice`,
+    "org.freedesktop.systemd1.Service", "MainPID"]),
+  process: syntheticRootProcess,
+});
 const syntheticSystemdClientIdentity = Object.freeze({
+  control_connector: Object.freeze({ byte_count: "2", dev: "1", gid: "0",
+    ino: "6", mode: "0555",
+    path: "/gnu/store/00000000000000000000000000000000-cadr-m6-selected-image-authority/bin/cadr-m6-systemd-peer-connect",
+    real_path: "/gnu/store/00000000000000000000000000000000-cadr-m6-selected-image-authority/bin/cadr-m6-systemd-peer-connect",
+    sha256: "2".padStart(64, "0"),
+    source_sha256: "3".padStart(64, "0"), uid: "0" }),
+  control_endpoint: syntheticControlEndpoint,
   environment: systemdControlEnvironment,
+  root_anchor: syntheticRootAnchor,
   systemd_run: Object.freeze({ ancestry: Object.freeze([
     Object.freeze({ dev: "1", gid: "0", ino: "1", path: "/", uid: "0", mode: "0755" }),
     Object.freeze({ dev: "1", gid: "0", ino: "2", path: "/usr", uid: "0", mode: "0755" }),
@@ -84,6 +154,15 @@ const syntheticSystemdClientIdentity = Object.freeze({
 const syntheticSystemdClients = Object.freeze({
   identity: syntheticSystemdClientIdentity,
 });
+const testSystemdPeerConnector = Object.freeze({ testSeam: true,
+  identity: syntheticSystemdClientIdentity.control_connector });
+const testSystemdClients = (options = {}) => pinSelectedImageSystemdClients(
+  undefined, { captureFn: async () => ({ code: 0, signal: null, failure: null,
+    stdout: Buffer.from("Version=261.1-1-arch\n"), stderr: Buffer.alloc(0) }),
+  peerConnector: testSystemdPeerConnector,
+  rootCaptureFn: async () => ({ code: 0, signal: null, failure: null,
+    stdout: Buffer.from('{"type":"u","data":123}\n'), stderr: Buffer.alloc(0) }),
+  rootProcessFn: async () => syntheticRootProcess, ...options });
 const releaseFor = disk => Buffer.from(canonicalJson({ artifacts: [
   { kind: 3, byte_count: String(disk.byteLength), sha256: sha256(disk) },
 ] }));
@@ -225,7 +304,7 @@ try {
     ...M6_SELECTED_IMAGE_STATIC_LAUNCHER_IDENTITY,
     source_closure_sha256: sourceClosure,
   });
-  const supervised = { schema: "cadr-m6-selected-image-negative-supervised-v1",
+  const supervised = { schema: "cadr-m6-selected-image-negative-supervised-v3",
     outcome: "selected-image-negative-supervised", run: direct,
     launcher: supervisedLauncher,
     launcher_source_binding_sha256:
@@ -239,6 +318,14 @@ try {
     private_root_removed: true };
   assert.equal(validateSelectedImageNegativeSupervised(supervised).run.source_commit,
     sourceCommit);
+  for (const schema of ["cadr-m6-selected-image-negative-supervised-v1",
+    "cadr-m6-selected-image-negative-supervised-v2"]) {
+    const legacySupervised = structuredClone(supervised);
+    legacySupervised.schema = schema;
+    assert.throws(() => validateSelectedImageNegativeSupervised(
+      legacySupervised), /completed supervision/,
+    `${schema} receipts cannot replay into root-anchored v3 authority`);
+  }
   assert.throws(() => pinExecutedSelectedImageNegativeReceipt(supervised),
     /not minted/, "synthetic canonical JSON cannot mint the READY4 capability");
   const selfReportedLauncher = structuredClone(supervised);
@@ -261,6 +348,96 @@ try {
   assert.throws(() => validateSelectedImageNegativeSupervised(
     ambientSystemdEnvironment), /unknown fields/,
   "the supervised receipt rejects ambient control-process environment");
+  for (const mutate of [
+    receipt => {
+      receipt.systemd_clients.environment.XDG_RUNTIME_DIR =
+        "/run/user/9999";
+    },
+    receipt => {
+      receipt.systemd_clients.environment.DBUS_SESSION_BUS_ADDRESS =
+        "unix:path=/tmp/hostile-bus";
+    },
+    receipt => {
+      receipt.systemd_clients.control_endpoint.runtime_directory.mode =
+        "0755";
+    },
+    receipt => {
+      receipt.systemd_clients.control_endpoint.bus_socket.path =
+        "/run/user/1000/alternate";
+    },
+    receipt => {
+      receipt.systemd_clients.control_endpoint.bus_socket.mode = "0600";
+    },
+    receipt => {
+      receipt.systemd_clients.control_endpoint.ancestry[2].path =
+        "/tmp/user";
+    },
+  ]) {
+    const changed = structuredClone(supervised);
+    mutate(changed);
+    assert.throws(() => validateSelectedImageNegativeSupervised(changed),
+      /control|runtime|AF_UNIX|systemd clients/,
+    "alternate runtime directories, bus endpoints, modes, and ancestry cannot enter durable evidence");
+  }
+  const endpointIdentityMutations = [
+    endpoint => { endpoint.uid = "9999"; },
+    endpoint => { endpoint.ancestry.pop(); },
+    endpoint => { endpoint.ancestry.reverse(); },
+    ...["dev", "gid", "ino", "mode", "path", "uid"].map(field =>
+      endpoint => {
+        endpoint.ancestry[1][field] = field === "path" ? "/tmp" :
+          field === "mode" ? "0777" : "x";
+      }),
+    ...["dev", "gid", "ino", "kind", "mode", "path", "uid"].map(field =>
+      endpoint => {
+        endpoint.runtime_directory[field] =
+          field === "kind" ? "socket" :
+            field === "mode" ? "0755" :
+              field === "path" ? "/run/user/9999" : "x";
+      }),
+    ...["dev", "gid", "ino", "kind", "mode", "path", "uid"].map(field =>
+      endpoint => {
+        endpoint.bus_socket[field] =
+          field === "kind" ? "file" :
+            field === "mode" ? "0600" :
+              field === "path" ? "/run/user/1000/not-bus" : "x";
+      }),
+    ...["uid", "pid", "start_time"].map(field => endpoint => {
+      endpoint.peer[field] = field === "uid" ? "9999" : "x";
+    }),
+  ];
+  for (const mutate of endpointIdentityMutations) {
+    const changed = structuredClone(supervised);
+    mutate(changed.systemd_clients.control_endpoint);
+    assert.throws(() => validateSelectedImageNegativeSupervised(changed),
+      /control|runtime|AF_UNIX|ancestor|root-selected process/,
+    "every durable endpoint identity and ancestry field is fail-closed");
+  }
+  {
+    const changed = structuredClone(supervised);
+    changed.systemd_clients.control_endpoint.peer.ppid = "2";
+    changed.systemd_clients.root_anchor.process.ppid = "2";
+    changed.systemd_clients_source_binding_sha256 =
+      selectedImageSystemdClientsSourceBinding(direct,
+        changed.systemd_clients);
+    assert.throws(() => validateSelectedImageNegativeSupervised(changed),
+      /process profile/,
+    "mirrored PPID forgery with a recomputed public binding cannot replace PID 1 ancestry");
+  }
+  for (const mutate of [
+    processIdentity => {
+      processIdentity.boot_id = "11111111-1111-4111-8111-111111111111";
+    },
+    processIdentity => { processIdentity.comm = "not-systemd"; },
+    processIdentity => { processIdentity.argv.sha256 = "ff".repeat(32); },
+    processIdentity => { processIdentity.cgroup.sha256 = "ff".repeat(32); },
+  ]) {
+    const changed = structuredClone(supervised);
+    mutate(changed.systemd_clients.root_anchor.process);
+    assert.throws(() => validateSelectedImageNegativeSupervised(changed),
+      /peer differs|process|bound|binding|cgroup/,
+    "boot, comm, argv, and cgroup mutations cannot enter durable authority");
+  }
   const mismatchedLauncher = structuredClone(supervised);
   mismatchedLauncher.launcher.source_closure_sha256 = "ef".repeat(32);
   mismatchedLauncher.launcher_source_binding_sha256 =
@@ -359,7 +536,8 @@ async function stagedJavaScriptFixture(prefix) {
     "cadr-m6-selected-image-negative-evidence.mjs",
     "cadr-m6-ready4-evidence.mjs",
     "cadr-m6-selected-image-authority.scm",
-    "cadr-m6-selected-image-static-launcher.c"]) {
+    "cadr-m6-selected-image-static-launcher.c",
+    "cadr-m6-systemd-peer-connect.c"]) {
     await writeFile(resolve(root, "scripts", name), `// ${name}\n`,
       { mode: 0o400 });
   }
@@ -540,10 +718,164 @@ assert.deepEqual(command.args.slice(launcherIndex + 1, launcherIndex + 4),
 assert.equal(command.args.some(value => value.startsWith("--setenv=")), false,
   "no inherited systemd environment assignment is relied upon");
 {
+  let preflight = null;
+  let rootQueries = 0;
+  const clients = await testSystemdClients({
+    rootCaptureFn: async () => {
+      rootQueries += 1;
+      return { code: 0, signal: null, failure: null,
+        stdout: Buffer.from('{"type":"u","data":123}\n'),
+        stderr: Buffer.alloc(0) };
+    },
+    captureFn: async (program, args, options) => {
+      preflight = { program, args, options };
+      return { code: 0, signal: null, failure: null,
+        stdout: Buffer.from("Version=261.1-1-arch\n"),
+        stderr: Buffer.alloc(0) };
+    },
+  });
+  try {
+    assert.match(preflight.program,
+      new RegExp(`^/proc/${process.pid}/fd/[0-9]+$`));
+    assert.deepEqual(preflight.args,
+      ["--user", "--no-pager", "show", "--property=Version"]);
+    assert.deepEqual(preflight.options.env, systemdControlEnvironment);
+    assert.equal(Object.hasOwn(command.effectiveEnvironment,
+      "XDG_RUNTIME_DIR"), false);
+    assert.equal(Object.hasOwn(command.effectiveEnvironment,
+      "DBUS_SESSION_BUS_ADDRESS"), false,
+    "control-client routing variables never enter the six-variable child environment");
+    assert.equal(rootQueries, 3,
+      "root selection and the before/after control-command queries all execute");
+  } finally {
+    await closeSelectedImageSystemdClients(clients);
+  }
+  assert.equal(rootQueries, 4,
+    "client cleanup performs the final root MainPID query");
+}
+{
+  let rootQueries = 0;
+  await assert.rejects(() => testSystemdClients({
+    rootCaptureFn: async () => ({ code: 0, signal: null, failure: null,
+      stdout: Buffer.from(
+        `{"type":"u","data":${rootQueries++ === 0 ? 123 : 124}}\n`),
+      stderr: Buffer.alloc(0) }),
+  }), /root MainPID changed/,
+  "a user-manager restart between root selection and user-bus use fails closed");
+
+  let processReads = 0;
+  await assert.rejects(() => testSystemdClients({
+    rootProcessFn: async () => processReads++ === 0 ? syntheticRootProcess :
+      Object.freeze({ ...syntheticRootProcess, comm: "substituted" }),
+  }), /process identity changed/,
+  "proc metadata drift after the root reply fails before a control command");
+
+  await assert.rejects(() => testSystemdClients({
+    rootProcessFn: async () => Object.freeze({ ...syntheticRootProcess,
+      uid: String(process.getuid() + 1) }),
+  }), /process profile differs/,
+  "a prepositioned listener not owned by the root-selected user is rejected");
+}
+{
+  class FakeEndpointWatcher extends EventEmitter {
+    constructor(path, callback) {
+      super(); this.path = path; this.callback = callback; this.closed = false;
+    }
+    close() {
+      if (!this.closed) {
+        this.closed = true;
+        this.emit("close");
+      }
+    }
+  }
+  const cases = [
+    { label: "root-system-bus unlink-move-create ABA", trigger: watchers => {
+      watchers[0].callback("rename", "system_bus_socket");
+      watchers[0].callback("rename", "system_bus_socket");
+    } },
+    { label: "root-system-bus attribute change", trigger: watchers =>
+      watchers[1].callback("change", "system_bus_socket") },
+    { label: "unlink-move-create ABA", trigger: watchers => {
+      watchers[2].callback("rename", "bus");
+      watchers[2].callback("rename", "bus");
+    } },
+    { label: "bus attribute change", trigger: watchers =>
+      watchers[3].callback("change", "bus") },
+    { label: "unavailable event filename", trigger: watchers =>
+      watchers[2].callback("rename", null) },
+    { label: "reported watcher resource exhaustion", trigger: watchers =>
+      watchers[2].emit("error", Object.assign(
+        new Error("inotify watch resource exhausted"), { code: "ENOSPC" })) },
+    { label: "bus watcher error", trigger: watchers =>
+      watchers[3].emit("error", new Error("bus watch error")) },
+    { label: "unexpected watcher close", trigger: watchers =>
+      watchers[3].close() },
+    { label: "deferred unlink-move-create ABA", trigger: watchers =>
+      setImmediate(() => {
+        watchers[2].callback("rename", "bus");
+        watchers[2].callback("rename", "bus");
+      }) },
+  ];
+  for (const testCase of cases) {
+    const watchers = [];
+    const watchFactory = (path, _options, callback) => {
+      const watcher = new FakeEndpointWatcher(path, callback);
+      watchers.push(watcher);
+      return watcher;
+    };
+    await assert.rejects(() => testSystemdClients({
+      watchFactory,
+      captureFn: async () => {
+        testCase.trigger(watchers);
+        return { code: 0, signal: null, failure: null,
+          stdout: Buffer.from("Version=261.1-1-arch\n"),
+          stderr: Buffer.alloc(0) };
+      },
+    }), /endpoint watch|mutation|closed|unavailable|exhausted|error/,
+    `${testCase.label} fails the authority during its read-only preflight`);
+    assert.equal(watchers.length, 4,
+      "root-system and user-control endpoint ancestries are both watched");
+    assert.equal(watchers.every(watcher => watcher.closed), true,
+      "failed preflight closes every endpoint watcher");
+  }
+  const deferredWatchers = [];
+  const deferredClients = await testSystemdClients({
+    watchFactory: (path, _options, callback) => {
+      const watcher = new FakeEndpointWatcher(path, callback);
+      deferredWatchers.push(watcher);
+      return watcher;
+    },
+    captureFn: async () => ({ code: 0, signal: null, failure: null,
+      stdout: Buffer.from("Version=261.1-1-arch\n"),
+      stderr: Buffer.alloc(0) }),
+  });
+  try {
+    await assert.rejects(() => startSelectedImageNegativeUnit(command, {
+      clients: deferredClients,
+      captureFn: async () => {
+        setImmediate(() => {
+          deferredWatchers[2].callback("rename", "bus");
+          deferredWatchers[2].callback("rename", "bus");
+        });
+        return { code: 0, signal: null, failure: null,
+          stdout: Buffer.alloc(0), stderr: Buffer.alloc(0) };
+      },
+    }), error => error?.preserveStage === true &&
+      /endpoint watch|mutation/.test(
+        String(error?.cause?.message ?? error?.message)),
+    "a deferred endpoint ABA is delivered before a successful command result can be accepted");
+  } finally {
+    await closeSelectedImageSystemdClients(deferredClients)
+      .catch(() => undefined);
+  }
+  assert.equal(deferredWatchers.every(watcher => watcher.closed), true);
+}
+{
   const buildRoot = await mkdtemp(resolve(tmpdir(), "cadr-m6-guix-authority-"));
   for (const relative of [
     "scripts/cadr-m6-selected-image-authority.scm",
     "scripts/cadr-m6-selected-image-static-launcher.c",
+    "scripts/cadr-m6-systemd-peer-connect.c",
     "scripts/run-cadr-m6-selected-image-negative.mjs",
     "scripts/cadr-m6-selected-image-negative-evidence.mjs",
     "scripts/cadr-m6-ready4-evidence.mjs",
@@ -559,6 +891,8 @@ assert.equal(command.args.some(value => value.startsWith("--setenv=")), false,
       "scripts/cadr-m6-selected-image-authority.scm"),
     launcherSource: resolve(buildRoot,
       "scripts/cadr-m6-selected-image-static-launcher.c"),
+    peerConnectorSource: resolve(buildRoot,
+      "scripts/cadr-m6-systemd-peer-connect.c"),
     childSource: resolve(buildRoot,
       "scripts/run-cadr-m6-selected-image-negative.mjs"),
     selectedEvidence: resolve(buildRoot,
@@ -765,7 +1099,7 @@ function syntheticAuthority(stage) {
           stdout: Buffer.alloc(0), stderr: Buffer.alloc(0) };
       }
       return { code: 0, signal: null, failure: null,
-        stdout: Buffer.from("LoadState=not-found\nTransient=no\nFragmentPath=\nType=\nExecStart=\n"),
+        stdout: Buffer.from("LoadState=not-found\nTransient=no\nFragmentPath=\nType=\n"),
         stderr: Buffer.alloc(0) };
     },
   }), /refused/);
@@ -801,6 +1135,10 @@ for (const ambiguous of [
 }
 
 for (const shown of [
+  "LoadState=not-found\nTransient=no\nFragmentPath=\nType=\nExecStart=\n",
+  "LoadState=not-found\nTransient=yes\nFragmentPath=\nType=\n",
+  `LoadState=not-found\nTransient=no\nFragmentPath=${command.fragmentPath}\nType=\n`,
+  "LoadState=not-found\nTransient=no\nFragmentPath=\n",
   "LoadState=loaded\nTransient=yes\nType=exec\nFragmentPath=\nExecStart={ path=/unrelated ; argv[]=/unrelated ; ignore_errors=no ; start_time=[n/a] ; stop_time=[n/a] ; pid=0 ; code=(null) ; status=0/0 }\n",
   ["LoadState=loaded", "Transient=yes", "Type=exec",
     `FragmentPath=/attacker/systemd/transient/${command.unit}`,
@@ -885,15 +1223,28 @@ for (const shown of [
 }
 
 {
+  assert.equal(parseSelectedImageRootMainPID(
+    '{"type":"u","data":123}\n'), "123");
+  for (const hostile of [
+    '{"type":"t","data":123}\n', '{"data":123,"type":"u"}\n',
+    '{"type":"u","data":0}\n', '{"type":"u","data":123}',
+    '{"type":"u","data":123,"data":124}\n',
+    '{"type":"u","data":"123"}\n', '{"type":"u","data":4294967296}\n',
+  ]) assert.throws(() => parseSelectedImageRootMainPID(hostile), /MainPID reply/,
+  "root MainPID parsing accepts only the exact typed positive-u32 reply");
+}
+
+{
   const hostileDirectory = await mkdtemp(resolve(tmpdir(),
     "cadr-m6-hostile-systemd-path-"));
   const hostileRun = resolve(hostileDirectory, "systemd-run");
   await writeFile(hostileRun, "#!/bin/sh\nexit 0\n", { mode: 0o755 });
   await assert.rejects(() => pinSelectedImageSystemdClients({
     systemdRun: hostileRun, systemctl: "/usr/bin/systemctl",
+    busctl: "/usr/bin/busctl",
   }), /root-owned|system binary/,
   "a caller-owned altered systemd client cannot become authority");
-  const clients = await pinSelectedImageSystemdClients();
+  const clients = await testSystemdClients();
   try {
     assert.deepEqual(await verifySelectedImageSystemdClients(clients),
       clients.identity);
@@ -947,7 +1298,7 @@ for (const shown of [
     () => { throw new Error("synchronous client failure"); },
     async () => { throw new Error("rejected client failure"); },
   ]) {
-    const clients = await pinSelectedImageSystemdClients();
+    const clients = await testSystemdClients();
     try {
       let calls = 0;
       await assert.rejects(() => startSelectedImageNegativeUnit(command, {
@@ -956,7 +1307,7 @@ for (const shown of [
           if (calls++ === 0) return captureFn(...args);
           return { code: 0, signal: null, failure: null,
             stdout: Buffer.from(
-              "LoadState=not-found\nTransient=no\nFragmentPath=\nType=\nExecStart=\n"),
+              "LoadState=not-found\nTransient=no\nFragmentPath=\nType=\n"),
             stderr: Buffer.alloc(0) };
         },
       }), /client failure/);
@@ -967,7 +1318,7 @@ for (const shown of [
       await closeSelectedImageSystemdClients(clients);
     }
   }
-  const clients = await pinSelectedImageSystemdClients();
+  const clients = await testSystemdClients();
   try {
     let calls = 0;
     await assert.rejects(() => startSelectedImageNegativeUnit(command, {
@@ -988,7 +1339,7 @@ for (const shown of [
   } finally {
     await closeSelectedImageSystemdClients(clients).catch(() => undefined);
   }
-  const recoverable = await pinSelectedImageSystemdClients();
+  const recoverable = await testSystemdClients();
   try {
     let calls = 0;
     const recovered = await startSelectedImageNegativeUnit(command, {
@@ -1016,7 +1367,7 @@ for (const shown of [
 }
 
 {
-  const clients = await pinSelectedImageSystemdClients();
+  const clients = await testSystemdClients();
   try {
     const calls = [];
     await stopAndRemoveSelectedImageNegativeUnit(command.unit, clients, {
@@ -1089,6 +1440,10 @@ for (const shown of [
     verifyPinned: async () => undefined,
     pinnedAuthority: () => Object.freeze({}),
     buildAuthority: async () => syntheticAuthority(stage),
+    pinSystemdClients: async () => testSystemdClients(),
+    verifySystemdClients: async clients =>
+      verifySelectedImageSystemdClients(clients),
+    closeSystemdClients: async clients => closeSelectedImageSystemdClients(clients),
     startUnit: async (commandValue, { clients }) =>
       startSelectedImageNegativeUnit(commandValue, {
         clients,
@@ -1106,10 +1461,11 @@ for (const shown of [
   }), /could not be recovered/);
   assert.equal(dispatchCalls, 2,
     "successful dispatch followed by failed post-check attempts exact recovery");
-  assert.equal(closed, false);
+  assert.equal(closed, true,
+    "parent-only staged descriptors are released even when unit ownership is ambiguous");
   assert.equal(removed, false);
   assert.equal((await lstat(lifecycleRoot)).isDirectory(), true,
-    "an unowned ambiguous unit prevents stage and descriptor cleanup");
+    "an unowned ambiguous unit preserves the stage pathname while releasing descriptors");
   await rm(lifecycleRoot, { recursive: true, force: true });
   await rm(`${output}.failure.json`, { force: true });
 }
@@ -1151,6 +1507,9 @@ for (const shown of [
     validateClosure: async () => stage.sourceClosure,
     pinnedAuthority: () => Object.freeze({}),
     buildAuthority: async () => syntheticAuthority(stage),
+    pinSystemdClients: async () => syntheticSystemdClients,
+    verifySystemdClients: async () => syntheticSystemdClientIdentity,
+    closeSystemdClients: async () => undefined,
     verifyPinned: async () => { pinChecks += 1; },
     closePinned: async () => { pinClosed += 1; },
     startUnit: async commandValue => {
@@ -1219,7 +1578,8 @@ for (const shown of [
       ".m6-authority/static-execve-env6"),
     identity: M6_SELECTED_IMAGE_STATIC_LAUNCHER_IDENTITY }),
   });
-  let started = null; let removed = false;
+  let started = null; let removed = false; let systemdClosed = false;
+  let pinClosed = false; let stopAttempts = 0;
   await assert.rejects(() => executeSelectedImageNegativeSystemd({
     artifactRoot: "/synthetic/artifacts", output,
   }, {
@@ -1230,8 +1590,11 @@ for (const shown of [
     validateClosure: async () => stage.sourceClosure,
     pinnedAuthority: () => Object.freeze({}),
     buildAuthority: async () => syntheticAuthority(stage),
+    pinSystemdClients: async () => syntheticSystemdClients,
+    verifySystemdClients: async () => syntheticSystemdClientIdentity,
+    closeSystemdClients: async () => { systemdClosed = true; },
     verifyPinned: async () => undefined,
-    closePinned: async () => undefined,
+    closePinned: async () => { pinClosed = true; },
     startUnit: async commandValue => {
       started = commandValue; return commandValue.unit;
     },
@@ -1246,19 +1609,30 @@ for (const shown of [
     readRun: async () => ({ value: syntheticSelectedRun(stage, release,
       selected, started.effectiveEnvironment) }),
     verifyLauncher: async () => undefined,
-    stopUnit: async () => undefined,
+    stopUnit: async () => {
+      stopAttempts += 1; throw new Error(`synthetic stop failure ${stopAttempts}`);
+    },
     removeStage: async value => {
       removed = true; await rm(value, { recursive: true });
     },
-  }), error => error?.code === "EEXIST",
-  "an occupied success receipt fails after cleanup without dereferencing null stage");
-  assert.equal(removed, true);
-  await assert.rejects(lstat(lifecycleRoot), error => error?.code === "ENOENT");
+  }), error => error instanceof AggregateError && error.errors.length === 2 &&
+    /synthetic stop failure 1/.test(error.errors[0].message) &&
+    /synthetic stop failure 2/.test(error.errors[1].message),
+  "stop failure is retained with the retry failure while cleanup continues");
+  assert.equal(stopAttempts, 2);
+  assert.equal(systemdClosed, true,
+    "systemd client descriptors and endpoint watchers close after stop failure");
+  assert.equal(pinClosed, true,
+    "parent-only staged descriptors close after stop failure");
+  assert.equal(removed, false);
+  assert.equal((await lstat(lifecycleRoot)).isDirectory(), true,
+    "the stage pathname and unit state remain available after stop failure");
   assert.equal(await readFile(output, "utf8"), "occupied",
     "success publication remains no-replace");
   const failure = JSON.parse(await readFile(`${output}.failure.json`, "utf8"));
-  assert.equal(failure.reason, "selected-image-negative-systemd-failed");
+  assert.equal(failure.reason, "selected-image-negative-systemd-cleanup-failed");
   await rm(output); await rm(`${output}.failure.json`);
+  await rm(lifecycleRoot, { recursive: true, force: true });
 }
 
 {
@@ -1275,6 +1649,27 @@ for (const script of ["scripts/run-cadr-m6-selected-image-negative.mjs",
   const executable = source.replace(/\/\*[\s\S]*?\*\//g, "").replace(/\/\/.*$/gm, "");
   assert.doesNotMatch(executable, /node:worker_threads|new\s+Worker|WebAssembly\s*\.|cadr-worker|cadr-m6-headless-boot|make\s*\(/,
     `${script} has no worker, Wasm-build, or guest execution capability`);
+}
+
+{
+  const makefile = await readFile(resolve(process.cwd(), "cadr-web/Makefile"),
+    "utf8");
+  assert.match(makefile,
+    /^m6-release-validation: \.\.\/tests\/test_cadr_m6_systemd_peer_connector_live\.mjs$/m,
+  "the live connector release validation is an explicit tracked target");
+  assert.match(makefile,
+    /^m6-devid-wasm: m6-release-validation\b/m,
+  "the actual M6/CW parent gate cannot bypass live connector validation");
+  assert.match(makefile,
+    /^M6_RELEASE_NODE := \/gnu\/store\/ja8lzccpgxrr5s3f00kq4i3b83d1l8lp-node-22\.14\.0\/bin\/node$/m,
+  "the release target pins its reviewed Node identity");
+  assert.match(makefile,
+    /CADR_M6_SYSTEMD_PEER_CONNECTOR_LIVE=1 CADR_M6_RELEASE_VALIDATION=1 \$\(M6_RELEASE_NODE\) \.\.\/tests\/test_cadr_m6_systemd_peer_connector_live\.mjs/,
+  "the release target uses both mandatory flags and the reviewed Node identity");
+  const live = await readFile(resolve(process.cwd(),
+    "tests/test_cadr_m6_systemd_peer_connector_live.mjs"), "utf8");
+  assert.doesNotMatch(live, /process\.env\.(?:PATH|HOME)|"\/usr\/bin\/env"|\["cc"/,
+  "the live release test has no ambient PATH, HOME, Guix, or compiler lookup");
 }
 
 console.log("cadr M6 selected-image negative gate tests passed");
