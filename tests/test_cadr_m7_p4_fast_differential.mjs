@@ -95,8 +95,8 @@ const runnerSource = await readFile(new URL(
 const authorityRootSource = await readFile(new URL(
   "../scripts/cadr-m7-p4-authority-root.mjs", import.meta.url), "utf8");
 const M7_DEVID_DIAGNOSTIC_O2 = Object.freeze({
-  sha256: "b5b087a421498ef2870ac4bbc26c238ccd6d0b94d5717f1db659412f468b694b",
-  bytes: 122206,
+  sha256: "fd8f10188c3c7f45d93083869be42798e7c3bc91d331d908f36d0b42300604a0",
+  bytes: 122268,
 });
 assert.match(authorityRootSource, new RegExp(
   `const M7_P4_FIXED_MODULE_SHA256 =\\s*"${M7_DEVID_DIAGNOSTIC_O2.sha256}";`));

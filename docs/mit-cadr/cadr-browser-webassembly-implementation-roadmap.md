@@ -3,7 +3,7 @@ type: Implementation Roadmap
 title: MIT CADR System 303 browser and WebAssembly implementation roadmap
 description: A milestone-complete plan for porting the pinned System 303 CADR emulator to a deterministic, locally persistent, browser-hosted WebAssembly machine.
 tags: [mit-cadr, lm-3, system-303, webassembly, browser, emulator, roadmap]
-timestamp: 2026-08-02T01:30:03-04:00
+timestamp: 2026-08-02T02:51:04-04:00
 ---
 
 # MIT CADR System 303 browser and WebAssembly implementation roadmap
@@ -825,6 +825,24 @@ defines CSR bit 5 as Keyboard Ready. The narrowly selected compatibility repair
 therefore admits only that M7 physical **read** through the pre-existing bus/IOB
 route. It does not admit an IOB range or a write, keeps the M3 prefix fail-closed,
 and does not close either M7 runtime prong.
+
+Subsequent source-grounded failure observation, 2026-08-02: the clean authority
+session `m7-p4-d9c4a33528164d79859a2a920d6cf411` retained a complete native Form-C
+frame, then terminated the portable M7-DEVID run at boundary `1364498` and
+microinstruction `1271773`. Its canonical M6 failure record has SHA-256
+`46ad5bfddf8a48d3e1acd5df002ab8d7f984d31dbf6cc3831026c2ce2b91926e`;
+the diagnostic wire record has SHA-256
+`01b09b9982e5027ead1890d5186cf820d1d9e791f9c4d67d530cda90987ab966`
+and reports a site-4 write of `0xffffffff` to physical word `017051765`.
+The pinned `usim` `uvmem.c` source explicitly uses that address as its TV-remap
+example; its bus adaptor maps the complete `017000000..017077777` 32K-word range
+to the monochrome TV backing store. The portable lower bus and TV model already
+implement the same range and canonical state update. M7 therefore admits exactly
+that source-defined range, for reads and writes, through the normal bus route;
+adjacent Xbus space and the pre-M7 profile remain fail-closed. The native transcript
+does not serialize every bus transaction, so this classification is a pinned-source
+conclusion rather than a claim that the same-boundary native write was captured.
+This repair still does not close either M7 runtime prong.
 
 ### M8 — Implement complete keyboard input
 

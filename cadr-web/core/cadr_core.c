@@ -675,6 +675,15 @@ static cadr_status cadr_guarded_bus_read(cadr_machine_state *state,
     }
 #if defined(CADR_M7_CORE)
     /*
+     * The CADR maps its complete 32K-word monochrome TV backing store into
+     * Xbus physical words 017000000..017077777.  M7 owns display execution;
+     * retain M3's narrower prefix and do not admit adjacent Xbus devices.
+     */
+    if (paddr >= UINT32_C(017000000) &&
+        paddr <= UINT32_C(017077777)) {
+        return cadr_bus_read32(state, paddr, value);
+    }
+    /*
      * CDRM7U1's boot PROM reads this exact physical word to decide whether
      * the keyboard has selected a cold or warm boot.  The normal bus route
      * maps it to IOB CSR (Unibus 0764112), which is already modeled by
@@ -716,6 +725,14 @@ static cadr_status cadr_guarded_bus_write(cadr_machine_state *state,
     if (paddr >= UINT32_C(017377774) && paddr <= UINT32_C(017377777)) {
         return cadr_bus_write32(state, paddr, value);
     }
+#if defined(CADR_M7_CORE)
+    /* See the matching read route above.  Use the normal bus path so the TV
+     * state root and physical-transaction observer retain their contracts. */
+    if (paddr >= UINT32_C(017000000) &&
+        paddr <= UINT32_C(017077777)) {
+        return cadr_bus_write32(state, paddr, value);
+    }
+#endif
     if (paddr == UINT32_C(017377400)) {
         cadr_bus_set_xbus_nxm(state);
         cadr_m3_native_observer_bus(state, "write", paddr, value, 0U);

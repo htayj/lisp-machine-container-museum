@@ -82,6 +82,15 @@ int main(void)
         return 1;
     }
     state->events.unexpected_bus_operation = 0U;
+    /* M7's TV backing-store route must not widen the M3 profile. */
+    if (cadr_m3_test_guarded_bus_write(state, UINT32_C(017051765),
+                                       UINT32_MAX) !=
+            CADR_STATUS_UNIMPLEMENTED_DEVICE ||
+        state->events.unexpected_bus_operation != 1U) {
+        free(state);
+        return 1;
+    }
+    state->events.unexpected_bus_operation = 0U;
     value = UINT32_MAX;
     if (cadr_m3_test_guarded_bus_read(state, UINT32_C(017377404), &value) !=
             CADR_STATUS_UNIMPLEMENTED_DEVICE ||
