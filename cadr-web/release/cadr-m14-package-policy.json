@@ -1,10 +1,11 @@
 {
-  "schema": "cadr-m14-package-policy-v1",
+  "schema": "cadr-m14-package-policy-v2",
   "profile": "CADR-WEB-303/CW4-MUSEUM",
   "status": "scaffold-only",
-  "offline": true,
+  "closedInventoryStatus": "closed-static-inventory",
+  "offlineRuntimeStatus": "not-evaluated",
   "canonicalJson": "UTF-8, sorted object keys, no insignificant whitespace, LF",
-  "logicalEpoch": 0,
+  "logicalEpoch": 1,
   "entries": [
     {"url": "/", "output": "index.html", "source": "cadr-web/browser/cadr-m13-shell.html", "mediaType": "text/html", "rightsId": "tracked-mit-cadr-reconstruction"},
     {"url": "/cadr-shell.mjs", "output": "cadr-shell.mjs", "source": "cadr-web/browser/cadr-m13-artifact-shell.mjs", "mediaType": "text/javascript", "rightsId": "tracked-mit-cadr-reconstruction"},

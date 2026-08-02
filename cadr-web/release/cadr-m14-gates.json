@@ -1,11 +1,38 @@
 {
-  "schema": "cadr-m14-conformance-gates-v1",
+  "schema": "cadr-m14-evidence-qualified-gates-v2",
   "releaseClaim": "none",
+  "evidenceAuthority": {
+    "receiptAdmission": "not-implemented-no-receipts-accepted",
+    "manualStatus": "cannot-advance",
+    "freeFormEvidence": "cannot-advance"
+  },
   "gates": [
-    {"id": "CW0", "status": "not-evaluated", "evidence": []},
-    {"id": "CW1", "status": "not-evaluated", "evidence": []},
-    {"id": "CW2", "status": "not-evaluated", "evidence": []},
-    {"id": "CW3", "status": "not-evaluated", "evidence": []},
-    {"id": "CW4", "status": "not-evaluated", "evidence": []}
+    {"id": "CW0", "state": "not-evaluated", "requiredDoD": ["CW4-DOD-02"]},
+    {"id": "CW1", "state": "not-evaluated", "requiredDoD": ["CW4-DOD-01", "CW4-DOD-02"]},
+    {"id": "CW2", "state": "not-evaluated", "requiredDoD": ["CW4-DOD-03", "CW4-DOD-04", "CW4-DOD-06"]},
+    {"id": "CW3", "state": "not-evaluated", "requiredDoD": ["CW4-DOD-05", "CW4-DOD-06"]},
+    {"id": "CW4", "state": "not-evaluated", "requiredDoD": ["CW4-DOD-07", "CW4-DOD-08", "CW4-DOD-09", "CW4-DOD-10"]}
+  ],
+  "unresolvedMilestoneBlockers": [
+    {"milestone": "M6", "state": "unresolved", "blocks": ["CW4-DOD-01", "CW4-DOD-02"], "blockers": ["three isolated browser-worker boots have not reached the selected Listener-ready semantic marker", "the final M6 evidence must bind the joined M8-M13 source closure rather than reuse an earlier benchmark"]},
+    {"milestone": "M7", "state": "unresolved", "blocks": ["CW4-DOD-01", "CW4-DOD-02", "CW4-DOD-04"], "blockers": ["a real System 303 native framebuffer checkpoint has not been paired with portable Wasm at the same guest boundary", "ordinary-fit and user-gesture fullscreen presentation have not been observed in a supported browser"]},
+    {"milestone": "M8", "state": "unresolved", "blocks": ["CW4-DOD-03"], "blockers": ["the all-100 browser/core key trace and source-mapped native X11 subset have not been recorded and compared", "live shifted-key modifier chords still require an ordered campaign"]},
+    {"milestone": "M9", "state": "unresolved", "blocks": ["CW4-DOD-03", "CW4-DOD-04", "CW4-DOD-06"], "blockers": ["the matched native and browser Listener/editor/window workflow has not retained equivalent input, framebuffer, and Lisp evidence", "the required native authority and X11 campaign remain unexecuted"]},
+    {"milestone": "M10", "state": "unresolved", "blocks": ["CW4-DOD-05", "CW4-DOD-06"], "blockers": ["the existing process-loss result uses a synthetic guest endpoint rather than a running selected CADR machine", "guest-generated changed writes and normative export/restore remain unjoined to the final profile"]},
+    {"milestone": "M11", "state": "unresolved", "blocks": ["CW4-DOD-10"], "blockers": ["selected-Wasm browser playback, pause/device-loss behavior, and a guest-generated browser audio workflow remain unobserved", "physical-device and Votrax behavior remain selectable rather than closed"]},
+    {"milestone": "M12", "state": "unresolved", "blocks": ["CW4-DOD-06", "CW4-DOD-10"], "blockers": ["the selected load-band macro trace and M9 protocol-v7 continuation remain open", "the debugger has not completed its preserved-runtime boundary oracle"]},
+    {"milestone": "M13", "state": "unresolved", "blocks": ["CW4-DOD-06", "CW4-DOD-07"], "blockers": ["the complete malformed-input, crash, accessibility, and resource-failure campaign remains open", "runtime network behavior and CSP enforcement have not been evaluated for the final package"]}
+  ],
+  "cw4DefinitionOfDone": [
+    {"id": "CW4-DOD-01", "clause": "the selected System 303 profile boots reproducibly in a browser worker", "blockingMilestones": ["M6", "M7"]},
+    {"id": "CW4-DOD-02", "clause": "native and WASM processor/device traces pass the declared differential suites", "blockingMilestones": ["M6", "M7"]},
+    {"id": "CW4-DOD-03", "clause": "every CADR key and pointer operation is reachable", "blockingMilestones": ["M8", "M9"]},
+    {"id": "CW4-DOD-04", "clause": "the logical framebuffer is pixel-identical at selected checkpoints", "blockingMilestones": ["M7", "M9"]},
+    {"id": "CW4-DOD-05", "clause": "private disk state is crash-consistent, exportable, and tied to an immutable base", "blockingMilestones": ["M10"]},
+    {"id": "CW4-DOD-06", "clause": "pause, reset, failure, and worker termination cannot be mistaken for saved state", "blockingMilestones": ["M9", "M10", "M12", "M13"]},
+    {"id": "CW4-DOD-07", "clause": "the default build performs no network traffic", "blockingMilestones": ["M13", "M14"]},
+    {"id": "CW4-DOD-08", "clause": "all bundled artifacts have established distribution provenance", "blockingMilestones": ["M14"]},
+    {"id": "CW4-DOD-09", "clause": "the build and conformance report are reproducible", "blockingMilestones": ["M14"]},
+    {"id": "CW4-DOD-10", "clause": "remaining physical-device or timing gaps are named optional profiles", "blockingMilestones": ["M11", "M12", "M14"]}
   ]
 }

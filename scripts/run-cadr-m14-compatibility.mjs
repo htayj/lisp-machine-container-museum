@@ -37,6 +37,13 @@ function nonemptyString(value, label) {
   if (typeof value !== "string" || value.length === 0) fail(`${label} must be a nonempty string`);
   return value;
 }
+function validateEvidenceAuthority(value, label) {
+  exactKeys(value, ["receiptAdmission", "manualStatus", "freeFormEvidence"], label);
+  if (value.receiptAdmission !== "not-implemented-no-receipts-accepted" ||
+      value.manualStatus !== "cannot-advance" || value.freeFormEvidence !== "cannot-advance") {
+    fail(`${label} permits unqualified evidence`);
+  }
+}
 function canonicalAbsolute(value, label) {
   nonemptyString(value, label);
   if (!isAbsolute(value) || value !== resolve(value) || value.includes("//") || value.includes("/./") ||
@@ -111,9 +118,12 @@ function parseCanonicalJson(bytes, label) {
 async function matrixPolicy() {
   await repoFile(MATRIX_PATH, "browser matrix policy");
   const matrix = JSON.parse((await readFile(MATRIX_PATH)).toString("utf8"));
-  exactKeys(matrix, ["schema", "evidenceStatus", "registeredAdapters", "required", "checks"],
+  exactKeys(matrix, ["schema", "evidenceStatus", "evidenceAuthority", "closedInventoryStatus", "offlineRuntimeStatus",
+    "registeredAdapters", "required", "checks"],
     "browser matrix policy");
-  if (matrix.schema !== "cadr-m14-browser-matrix-v1" || matrix.evidenceStatus !== "not-evaluated" ||
+  validateEvidenceAuthority(matrix.evidenceAuthority, "browser matrix policy evidence authority");
+  if (matrix.schema !== "cadr-m14-browser-matrix-v2" || matrix.evidenceStatus !== "not-evaluated" ||
+      matrix.closedInventoryStatus !== "closed-static-inventory" || matrix.offlineRuntimeStatus !== "not-evaluated" ||
       !Array.isArray(matrix.registeredAdapters) || matrix.registeredAdapters.length !== 0 ||
       !Array.isArray(matrix.required) || matrix.required.length !== 3) {
     fail("browser matrix policy is not the bounded unevaluated scaffold");
@@ -158,8 +168,9 @@ async function parsePlan(planPath, outputPath, packagePath) {
     "package manifest", "file");
   const logicalBytes = await readFile(packageManifest);
   const logical = parseCanonicalJson(logicalBytes, "package manifest");
-  if (logical.schema !== "cadr-m14-logical-build-manifest-v1" || logical.status !== "scaffold-only" ||
-      logical.offline !== true || logical.releaseClaim !== "none") fail("package manifest is nonconforming");
+  if (logical.schema !== "cadr-m14-logical-build-manifest-v2" || logical.status !== "scaffold-only" ||
+      logical.closedInventoryStatus !== "closed-static-inventory" || logical.offlineRuntimeStatus !== "not-evaluated" ||
+      logical.releaseClaim !== "none") fail("package manifest is nonconforming");
   const executable = await realpath(process.execPath);
   await fileNonSymlink(executable, "collector runtime executable");
   const executableSha256 = hash(await readFile(executable));
@@ -234,7 +245,8 @@ const argv = process.argv.slice(2);
 if (argv.length === 0) {
   process.stdout.write(`${canonical({ schema: "cadr-m14-compatibility-plan-v2", outcome: "blocked",
     runtimeExecutionPerformed: false, reason: "explicit---execute-required", requiredEngines: ENGINES,
-    browserMatrixEvidenceStatus: "not-evaluated" })}\n`); process.exitCode = 2;
+    browserMatrixEvidenceStatus: "not-evaluated", closedInventoryStatus: "closed-static-inventory",
+    offlineRuntimeStatus: "not-evaluated" })}\n`); process.exitCode = 2;
 } else {
   if (argv.length !== 7 || argv[0] !== "--execute" || argv[1] !== "--plan" ||
       argv[3] !== "--package" || argv[5] !== "--output") {
@@ -254,6 +266,7 @@ if (argv.length === 0) {
   const report = { schema: "cadr-m14-untrusted-adapter-attestations-v2", releaseClaim: "none",
     browserMatrixEvidenceStatus: "not-evaluated", disposition:
       "untrusted-attestations-only-no-registered-pinned-real-browser-adapters",
+    closedInventoryStatus: "closed-static-inventory", offlineRuntimeStatus: "not-evaluated",
     planSha256: hash(prepared.planBytes), logicalManifestSha256,
     sandboxRuntimeDenial: "bubblewrap-unshare-net",
     collector: { path: "scripts/run-cadr-m14-compatibility.mjs", sha256: hash(collectorBytes) },
@@ -261,5 +274,6 @@ if (argv.length === 0) {
     attestations: attestations.sort((a, b) => a.engine.localeCompare(b.engine)) };
   await writeFile(outputPath, `${canonical(report)}\n`, { flag: "wx", mode: 0o600 });
   process.stdout.write(`${canonical({ outcome: "untrusted-attestations-recorded", releaseClaim: "none",
-    browserMatrixEvidenceStatus: "not-evaluated", output: relative(ROOT, outputPath) })}\n`);
+    browserMatrixEvidenceStatus: "not-evaluated", closedInventoryStatus: "closed-static-inventory",
+    offlineRuntimeStatus: "not-evaluated", output: relative(ROOT, outputPath) })}\n`);
 }

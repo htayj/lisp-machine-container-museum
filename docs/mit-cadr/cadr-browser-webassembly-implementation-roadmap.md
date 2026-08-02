@@ -25,8 +25,9 @@ directly. The selected machine profile is:
 The planned first public profile, `CADR-WEB-303`, boots the selected public system,
 accepts the complete CADR keyboard and pointer vocabulary, displays the native
 framebuffer at integral scale, persists a private copy-on-write disk, and can export
-and re-import that private state. It starts offline and does not require a server
-after its application assets have loaded.
+and re-import that private state. Its intended default starts without a network
+dependency after its application assets have loaded; the runtime no-network claim
+remains an M13/M14 gate, not current scaffold evidence.
 
 The roadmap is complete for that profile. Hardware-cycle identity, physical tape,
 PROM programming, external CADR debuggee control, and unrestricted historical
@@ -1304,15 +1305,16 @@ Deliverables:
 - release conformance report for `CW0`–`CW4`;
 - generated artifacts carrying their exact source/license provenance.
 
-Exit gate `CW4-MUSEUM`: a clean checkout can build the same logical WASM artifact,
+Exit gate `CW4-MUSEUM`: two independent clean source extractions can build the same logical WASM artifact,
 load only policy-permitted inputs, pass all conformance gates, and complete the
 guided smoke workflow without a network.
 
 Scaffolding status, 2026-07-30: the tracked
 [M14 release note](cadr-web-reproducible-museum-release-scaffolding.md) and
 `cadr-web/release/` policies define a deterministic logical manifest, complete
-source map, closed no-network package, three-engine evidence matrix, rights
-inventory, and deterministic guide/report generators. The scaffold omits the
+direct-input source map, closed static inventory, three-engine evidence matrix, rights
+inventory, and deterministic guide/report generators. Runtime no-network behavior is
+`not-evaluated`. The scaffold omits the
 final Wasm/worklet and leaves CW0–CW4 and all browser rows `not-evaluated`. It
 is not a CW4 claim.
 

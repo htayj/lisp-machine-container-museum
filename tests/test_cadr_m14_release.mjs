@@ -1,7 +1,8 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
-import { lstat, mkdir, readFile, readdir, realpath, rm, symlink, writeFile } from "node:fs/promises";
-import { resolve, relative } from "node:path";
+import { chmod, cp, lstat, mkdir, mkdtemp, readFile, readdir, realpath, rm, symlink, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { dirname, resolve, relative } from "node:path";
 import { spawnSync } from "node:child_process";
 import {
   assertM14ConfinedRepoFile,
@@ -24,6 +25,99 @@ const canonicalFile = value => Buffer.from(`${canonical(value)}\n`);
 const sha256 = bytes => createHash("sha256").update(bytes).digest("hex");
 const reject = async (promise, expression) => assert.rejects(promise, expression);
 
+const run = (command, args, cwd, extraEnv = {}) => {
+  const result = spawnSync(command, args, { cwd, encoding: "utf8", env: { ...process.env, ...extraEnv } });
+  assert.equal(result.status, 0, `${command} ${args.join(" ")}\n${result.stderr}`);
+  return result;
+};
+async function cleanExtraction() {
+  const target = await mkdtemp(resolve(tmpdir(), "cadr-m14-clean-extraction-"));
+  const listed = run("git", ["ls-files", "-z"], repo).stdout.split("\0").filter(Boolean);
+  for (const path of listed) {
+    const destination = resolve(target, path);
+    await mkdir(dirname(destination), { recursive: true });
+    await cp(resolve(repo, path), destination, { verbatimSymlinks: true });
+  }
+  run("git", ["init", "--quiet"], target);
+  run("git", ["add", "--all"], target);
+  run("git", ["-c", "user.name=M14 test", "-c", "user.email=m14-test@example.invalid",
+    "-c", "commit.gpgSign=false", "commit", "--quiet", "--no-gpg-sign", "-m", "clean M14 test extraction"], target,
+  { GIT_AUTHOR_DATE: "2026-08-02T12:00:00+0000", GIT_COMMITTER_DATE: "2026-08-02T12:00:00+0000" });
+  return target;
+}
+if (process.env.CADR_M14_CLEAN_EXTRACTION !== "1") {
+  const firstExtraction = await cleanExtraction();
+  const secondExtraction = await cleanExtraction();
+  const ignoredExtraction = await cleanExtraction();
+  const symlinkExtraction = await cleanExtraction();
+  const executableExtraction = await cleanExtraction();
+  const shimDirectory = await mkdtemp(resolve(tmpdir(), "cadr-m14-path-shim-"));
+  try {
+    await writeFile(resolve(shimDirectory, "git"), "#!/bin/sh\nexit 91\n");
+    await chmod(resolve(shimDirectory, "git"), 0o755);
+    run("node", ["scripts/build-cadr-m14-release.mjs", "--output", "build/cadr-m14/independent"],
+      firstExtraction, { PATH: `${shimDirectory}:${process.env.PATH ?? ""}` });
+    run("node", ["scripts/build-cadr-m14-release.mjs", "--output", "build/cadr-m14/independent"],
+      secondExtraction);
+    assert.deepEqual(
+      await readFile(resolve(firstExtraction, "build/cadr-m14/independent/logical-build-manifest.json")),
+      await readFile(resolve(secondExtraction, "build/cadr-m14/independent/logical-build-manifest.json")),
+      "two independent clean source extractions must produce the same logical manifest",
+    );
+    assert.deepEqual(
+      await readFile(resolve(firstExtraction, "build/cadr-m14/independent.cdrm14")),
+      await readFile(resolve(secondExtraction, "build/cadr-m14/independent.cdrm14")),
+      "two independent clean source extractions must produce the same deterministic archive",
+    );
+    for (const extraction of [firstExtraction, secondExtraction]) {
+      run("node", ["tests/test_cadr_m14_release.mjs"], extraction, { CADR_M14_CLEAN_EXTRACTION: "1" });
+    }
+    const ignoredPolicyPath = resolve(ignoredExtraction, "cadr-web/release/cadr-m14-package-policy.json");
+    const ignoredPolicy = JSON.parse(await readFile(ignoredPolicyPath, "utf8"));
+    ignoredPolicy.entries[0].source = "ignored/substituted-input.html";
+    await writeFile(ignoredPolicyPath, `${JSON.stringify(ignoredPolicy, null, 2)}\n`);
+    run("git", ["add", "cadr-web/release/cadr-m14-package-policy.json"], ignoredExtraction);
+    run("git", ["-c", "user.name=M14 test", "-c", "user.email=m14-test@example.invalid",
+      "-c", "commit.gpgSign=false", "commit", "--quiet", "--no-gpg-sign", "-m", "ignored input attack"],
+    ignoredExtraction, { GIT_AUTHOR_DATE: "2026-08-02T12:01:00+0000", GIT_COMMITTER_DATE: "2026-08-02T12:01:00+0000" });
+    await writeFile(resolve(ignoredExtraction, ".git/info/exclude"), "ignored/\n", { flag: "a" });
+    await mkdir(resolve(ignoredExtraction, "ignored"), { recursive: true });
+    await writeFile(resolve(ignoredExtraction, "ignored/substituted-input.html"), "<!doctype html>\n");
+    const ignoredResult = spawnSync("node", ["scripts/build-cadr-m14-release.mjs", "--output",
+      "build/cadr-m14/ignored-substitution"], { cwd: ignoredExtraction, encoding: "utf8" });
+    assert.notEqual(ignoredResult.status, 0, "ignored untracked substituted input must reject");
+    assert.match(ignoredResult.stderr, /does not have exactly one HEAD tree entry/);
+    const symlinkSource = resolve(symlinkExtraction, "cadr-web/browser/cadr-m13-shell.css");
+    await rm(symlinkSource);
+    await symlink("substituted-target", symlinkSource);
+    run("git", ["add", "cadr-web/browser/cadr-m13-shell.css"], symlinkExtraction);
+    run("git", ["-c", "user.name=M14 test", "-c", "user.email=m14-test@example.invalid",
+      "-c", "commit.gpgSign=false", "commit", "--quiet", "--no-gpg-sign", "-m", "tracked symlink attack"],
+    symlinkExtraction, { GIT_AUTHOR_DATE: "2026-08-02T12:02:00+0000", GIT_COMMITTER_DATE: "2026-08-02T12:02:00+0000" });
+    await rm(symlinkSource);
+    await writeFile(symlinkSource, "substituted-target");
+    const symlinkResult = spawnSync("node", ["scripts/build-cadr-m14-release.mjs", "--output",
+      "build/cadr-m14/tracked-symlink-substitution"], { cwd: symlinkExtraction, encoding: "utf8" });
+    assert.notEqual(symlinkResult.status, 0, "tracked symlink replaced by its blob bytes must reject");
+    assert.match(symlinkResult.stderr, /HEAD tree entry is not a permitted regular blob mode/);
+    const executableSource = resolve(executableExtraction, "cadr-web/browser/cadr-m13-shell.css");
+    await chmod(executableSource, 0o755);
+    const executableResult = spawnSync("node", ["scripts/build-cadr-m14-release.mjs", "--output",
+      "build/cadr-m14/executable-mode-divergence"], { cwd: executableExtraction, encoding: "utf8" });
+    assert.notEqual(executableResult.status, 0, "current executable-mode divergence must reject");
+    assert.match(executableResult.stderr, /executable bits differ from HEAD mode 100644/);
+  } finally {
+    await rm(firstExtraction, { recursive: true, force: true });
+    await rm(secondExtraction, { recursive: true, force: true });
+    await rm(ignoredExtraction, { recursive: true, force: true });
+    await rm(symlinkExtraction, { recursive: true, force: true });
+    await rm(executableExtraction, { recursive: true, force: true });
+    await rm(shimDirectory, { recursive: true, force: true });
+  }
+  console.log("cadr M14 independent clean-extraction release tests passed");
+  process.exit(0);
+}
+
 const [policy, rights, matrixPolicy, gates] = await Promise.all([
   readFile(resolve(repo, "cadr-web/release/cadr-m14-package-policy.json"), "utf8").then(JSON.parse),
   readFile(resolve(repo, "cadr-web/release/cadr-m14-rights-policy.json"), "utf8").then(JSON.parse),
@@ -32,6 +126,28 @@ const [policy, rights, matrixPolicy, gates] = await Promise.all([
 ]);
 validateM14PolicyDocuments(policy, rights, matrixPolicy, gates);
 assert.deepEqual(matrixPolicy.registeredAdapters, []);
+for (const forge of [
+  value => { value.gates[0].state = "closed"; },
+  value => { value.gates[0].evidence = ["manual pass"]; },
+  value => { value.evidenceAuthority.manualStatus = "can-advance"; },
+  value => { value.unresolvedMilestoneBlockers.pop(); },
+  value => { value.cw4DefinitionOfDone[9].id = "CW4-DOD-11"; },
+  value => { value.cw4DefinitionOfDone[6].clause = "the default build has no traffic"; },
+  value => { value.gates[4].requiredDoD.pop(); },
+  value => { value.unresolvedMilestoneBlockers[7].blocks = ["CW4-DOD-07"]; },
+  value => { value.cw4DefinitionOfDone[6].blockingMilestones = ["M14"]; },
+]) {
+  const forged = structuredClone(gates); forge(forged);
+  assert.throws(() => validateM14PolicyDocuments(policy, rights, matrixPolicy, forged),
+    /unevaluated|missing|extra|permits|incomplete|malformed|differ|disagree/);
+}
+for (const forge of [
+  value => { value.evidenceAuthority.freeFormEvidence = "can-advance"; },
+  value => { value.registeredAdapters = [{ id: "manual-browser" }]; },
+]) {
+  const forged = structuredClone(matrixPolicy); forge(forged);
+  assert.throws(() => validateM14PolicyDocuments(policy, rights, forged, gates));
+}
 for (const mutate of [
   value => { value.entries[0].source = "/etc/passwd"; },
   value => { value.entries[0].source = "cadr-web/../outside"; },
@@ -74,6 +190,13 @@ try {
 
 try {
   await mkdir(root, { recursive: true });
+  const directInputPath = resolve(repo, "cadr-web/profiles/cadr-web-303.json");
+  const directInputBytes = await readFile(directInputPath);
+  try {
+    await writeFile(directInputPath, Buffer.concat([directInputBytes, Buffer.from("\n")]));
+    await reject(buildCadrM14(resolve(root, `dirty-direct-input-${process.pid}`)),
+      /differs byte-for-byte from its HEAD blob/);
+  } finally { await writeFile(directInputPath, directInputBytes); }
   const firstBuild = await buildCadrM14(first); const secondBuild = await buildCadrM14(second);
   await buildCadrM14(schemaFixture);
   const a = await readFile(resolve(first, "logical-build-manifest.json"));
@@ -88,17 +211,24 @@ try {
   await reject(verifyCadrM14Archive(firstBuild.archive.path, first), /payload hash differs|payload differs/);
   const manifest = JSON.parse(a);
   assert.equal(manifest.releaseClaim, "none");
-  assert.equal(manifest.offline, true);
+  assert.equal(manifest.closedInventoryStatus, "closed-static-inventory");
+  assert.equal(manifest.offlineRuntimeStatus, "not-evaluated");
   assert.ok(manifest.unresolvedComponents.includes("cadr.wasm"));
-  assert.equal(manifest.sourceControl.closureStatus,
-    manifest.sourceControl.status.length === 0 ? "clean" : "dirty");
-  assert.match(manifest.sourceControl.revision, /^(?:[0-9a-f]{40}|unavailable)$/u);
-  assert.match(manifest.sourceControl.tree, /^(?:[0-9a-f]{40}|unavailable)$/u);
-  assert.match(manifest.sourceControl.releaseEvidenceEligibility,
-    /^(?:not-eligible-requires-clean-committed-closure|eligible-for-later-evidence-binding)$/u);
-  assert.ok(manifest.sourceControl.entries.some(entry =>
+  assert.match(manifest.buildProvenance.git.revision, /^[0-9a-f]{40}$/u);
+  assert.match(manifest.buildProvenance.git.tree, /^[0-9a-f]{40}$/u);
+  assert.match(manifest.buildProvenance.git.version, /^git version /u);
+  assert.match(manifest.buildProvenance.git.executableSha256, /^[0-9a-f]{64}$/u);
+  assert.equal(manifest.buildProvenance.git.executableSha256,
+    sha256(await readFile(await realpath("/usr/bin/git"))),
+    "Git provenance must bind the fixed absolute executable, not PATH");
+  assert.equal(manifest.buildProvenance.node.runtime, "node");
+  assert.match(manifest.buildProvenance.node.version, /^v\d+/u);
+  assert.match(manifest.buildProvenance.node.executableSha256, /^[0-9a-f]{64}$/u);
+  assert.ok(manifest.buildProvenance.directInputs.some(entry =>
     entry.path === "scripts/build-cadr-m14-release.mjs"));
-  assert.deepEqual(manifest.sourceControl.entries.map(entry => entry.path), [
+  assert.ok(manifest.buildProvenance.directInputs.every(entry => /^[0-9a-f]{40}$/u.test(entry.gitBlob)));
+  assert.ok(manifest.buildProvenance.directInputs.every(entry => ["100644", "100755"].includes(entry.gitMode)));
+  assert.deepEqual(manifest.buildProvenance.directInputs.map(entry => entry.path), [
     "cadr-web/browser/cadr-m13-artifact-shell.mjs",
     "cadr-web/browser/cadr-m13-artifact-worker.mjs",
     "cadr-web/browser/cadr-m13-shell.css",
@@ -110,12 +240,17 @@ try {
     "cadr-web/release/cadr-m14-package-policy.json",
     "cadr-web/release/cadr-m14-rights-policy.json",
     "scripts/build-cadr-m14-release.mjs",
-  ], "package identity must close over every byte-generating source and policy");
+  ], "build provenance must close over every direct byte-generating source and policy");
   const sourceMap = JSON.parse(await readFile(resolve(first, "source-map.json")));
   assert.deepEqual(sourceMap.mappings.map(mapping => mapping.output).sort(),
     [...manifest.files.map(file => file.path), "logical-build-manifest.json"].sort());
-  assert.ok(sourceMap.mappings.filter(mapping => mapping.transform.startsWith("deterministic-"))
-    .every(mapping => mapping.generator?.path === "scripts/build-cadr-m14-release.mjs"));
+  assert.deepEqual(sourceMap.provenance, manifest.buildProvenance);
+  assert.equal(sourceMap.provenance.generator.path, "scripts/build-cadr-m14-release.mjs");
+  for (const rootName of ["source-map.json", "logical-build-manifest.json"]) {
+    const root = sourceMap.mappings.find(mapping => mapping.output === rootName);
+    assert.deepEqual(root.sources, manifest.buildProvenance.directInputs,
+      `${rootName} must list every direct input`);
+  }
   for (const file of [...manifest.files.map(item => item.path), "logical-build-manifest.json"]) {
     assert.equal((await lstat(resolve(first, file))).mode & 0o777, 0o644);
   }
@@ -123,11 +258,13 @@ try {
   assert.ok(rightsOutput.forbiddenBundleClasses.some(value => value.includes("Symbolics or Open Genera")));
   assert.deepEqual(rightsOutput.assignments.map(item => item.path).sort(),
     [...manifest.files.map(item => item.path), "logical-build-manifest.json"].sort());
-  assert.match(await readFile(resolve(first, "USER-GUIDE.md"), "utf8"), /self-contained under its closed inventory/);
+  assert.match(await readFile(resolve(first, "USER-GUIDE.md"), "utf8"), /Runtime\noffline behavior is \*\*not evaluated\*\*/);
   assert.match(await readFile(resolve(first, "CONFORMANCE-REPORT.md"), "utf8"), /Release claim: \*\*none\*\*/);
+  assert.match(await readFile(resolve(first, "CONFORMANCE-REPORT.md"), "utf8"), /no receipt, manual status, or free-form evidence/);
   const generatedMatrix = JSON.parse(await readFile(resolve(first, "browser-compatibility-matrix.json")));
   assert.equal(generatedMatrix.evidenceStatus, "not-evaluated");
-  assert.equal(generatedMatrix.browserRuntimeStatus, "open");
+  assert.equal(generatedMatrix.closedInventoryStatus, "closed-static-inventory");
+  assert.equal(generatedMatrix.offlineRuntimeStatus, "not-evaluated");
   const mutateGeneratedJson = async (name, mutate, encoding = canonicalFile,
     expected = /missing, extra|canonical|private or machine absolute|canonical relative/) => {
     const path = resolve(schemaFixture, name); const original = await readFile(path);
@@ -139,12 +276,40 @@ try {
   await mutateGeneratedJson("logical-build-manifest.json", value => {
     value.privatePath = "/home/tay/private-vlod";
   });
+  await mutateGeneratedJson("logical-build-manifest.json", value => {
+    value.buildProvenance.directInputs[0].gitMode = "120000";
+  }, canonicalFile, /gitMode is invalid/);
+  await mutateGeneratedJson("logical-build-manifest.json", value => {
+    delete value.buildProvenance.directInputs[0].gitMode;
+  });
   await mutateGeneratedJson("rights-provenance.json", value => {
     value.records[0].privatePath = "/home/tay/private-rights";
   });
   await mutateGeneratedJson("source-map.json", value => {
     value.mappings[0].sources[0].path = "/home/tay/private-source";
   });
+  await mutateGeneratedJson("source-map.json", value => {
+    value.mappings[0].sources[0].gitMode = "160000";
+  }, canonicalFile, /gitMode is invalid/);
+  {
+    const sourceMapPath = resolve(schemaFixture, "source-map.json");
+    const manifestPath = resolve(schemaFixture, "logical-build-manifest.json");
+    const originalSourceMap = await readFile(sourceMapPath);
+    const originalManifest = await readFile(manifestPath);
+    try {
+      const alteredSourceMap = JSON.parse(originalSourceMap);
+      alteredSourceMap.mappings.find(mapping => mapping.output === "source-map.json").sources.pop();
+      const alteredSourceMapBytes = canonicalFile(alteredSourceMap);
+      await writeFile(sourceMapPath, alteredSourceMapBytes);
+      const alteredManifest = JSON.parse(originalManifest);
+      alteredManifest.sourceMapSha256 = sha256(alteredSourceMapBytes);
+      await writeFile(manifestPath, canonicalFile(alteredManifest));
+      await reject(verifyCadrM14(schemaFixture), /does not list every direct input/);
+    } finally {
+      await writeFile(sourceMapPath, originalSourceMap);
+      await writeFile(manifestPath, originalManifest);
+    }
+  }
   await mutateGeneratedJson("browser-compatibility-matrix.json", value => {
     value.required[0].privatePath = "/home/tay/private-browser";
   });
@@ -253,4 +418,4 @@ process.stdout.write(c({schema:"cadr-m14-untrusted-adapter-attestation-v2",adapt
   await rm(matrixPackage, { recursive: true, force: true });
   await rm(`${matrixPackage}.cdrm14`, { force: true });
 }
-console.log("cadr M14 deterministic offline release scaffold tests passed");
+console.log("cadr M14 deterministic static-inventory release scaffold tests passed");

@@ -132,9 +132,10 @@ the public LM-3 software and the `usim` emulator.
 - [CADR browser and WebAssembly implementation roadmap](cadr-browser-webassembly-implementation-roadmap.md)
   sequences the pinned `usim` port through deterministic execution, boot, display,
   complete input, private storage, release, networking, and optional translation.
-- [CADR-WEB reproducible offline museum release scaffolding](cadr-web-reproducible-museum-release-scaffolding.md)
-  defines M14's closed logical manifest, offline inventory, source map, browser
-  matrix, rights ledger, generated guide/report, and explicit nonclaim of CW4.
+- [CADR-WEB reproducible museum release evidence scaffolding](cadr-web-reproducible-museum-release-scaffolding.md)
+  defines M14's closed static inventory, direct-input provenance, browser matrix,
+  rights ledger, generated guide/report, and explicit nonclaim of runtime-offline
+  behavior or CW4.
 - [CADR-WEB-303 ABI1.3 boot-media controller specification](cadr-boot-media-controller-reimplementation-specification.md)
   defines the selected disk registers, CCWs, asynchronous range service, volatile
   block-1 overlay, controller/media evidence, failures, and M4 conformance gate.

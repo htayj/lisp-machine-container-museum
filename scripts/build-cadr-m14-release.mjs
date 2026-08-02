@@ -7,7 +7,7 @@
  */
 import { createHash } from "node:crypto";
 import { execFile } from "node:child_process";
-import { chmod, cp, lstat, mkdir, readFile, readdir, writeFile } from "node:fs/promises";
+import { chmod, lstat, mkdir, readFile, readdir, realpath, writeFile } from "node:fs/promises";
 import { basename, dirname, isAbsolute, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
@@ -15,6 +15,7 @@ import { promisify } from "node:util";
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const OUTPUT_ROOT = resolve(ROOT, "build/cadr-m14");
 const GENERATED_RIGHTS_ID = "generated-release-metadata";
+const TRUSTED_GIT = "/usr/bin/git";
 const GENERATED = new Set(["logical-build-manifest.json", "source-map.json",
   "rights-provenance.json", "browser-compatibility-matrix.json",
   "USER-GUIDE.md", "CONFORMANCE-REPORT.md"]);
@@ -37,6 +38,35 @@ const NAMED_DEFAULT_EXTERNAL_PRIMITIVES = [
   /\bRTCPeerConnection\b/u, /\bWebTransport\b/u,
 ];
 const exec = promisify(execFile);
+const DOD = [
+  ["CW4-DOD-01", "the selected System 303 profile boots reproducibly in a browser worker", ["M6", "M7"]],
+  ["CW4-DOD-02", "native and WASM processor/device traces pass the declared differential suites", ["M6", "M7"]],
+  ["CW4-DOD-03", "every CADR key and pointer operation is reachable", ["M8", "M9"]],
+  ["CW4-DOD-04", "the logical framebuffer is pixel-identical at selected checkpoints", ["M7", "M9"]],
+  ["CW4-DOD-05", "private disk state is crash-consistent, exportable, and tied to an immutable base", ["M10"]],
+  ["CW4-DOD-06", "pause, reset, failure, and worker termination cannot be mistaken for saved state", ["M9", "M10", "M12", "M13"]],
+  ["CW4-DOD-07", "the default build performs no network traffic", ["M13", "M14"]],
+  ["CW4-DOD-08", "all bundled artifacts have established distribution provenance", ["M14"]],
+  ["CW4-DOD-09", "the build and conformance report are reproducible", ["M14"]],
+  ["CW4-DOD-10", "remaining physical-device or timing gaps are named optional profiles", ["M11", "M12", "M14"]],
+];
+const REQUIRED_DOD = [
+  ["CW4-DOD-02"],
+  ["CW4-DOD-01", "CW4-DOD-02"],
+  ["CW4-DOD-03", "CW4-DOD-04", "CW4-DOD-06"],
+  ["CW4-DOD-05", "CW4-DOD-06"],
+  ["CW4-DOD-07", "CW4-DOD-08", "CW4-DOD-09", "CW4-DOD-10"],
+];
+const MILESTONE_BLOCKS = new Map([
+  ["M6", ["CW4-DOD-01", "CW4-DOD-02"]],
+  ["M7", ["CW4-DOD-01", "CW4-DOD-02", "CW4-DOD-04"]],
+  ["M8", ["CW4-DOD-03"]],
+  ["M9", ["CW4-DOD-03", "CW4-DOD-04", "CW4-DOD-06"]],
+  ["M10", ["CW4-DOD-05", "CW4-DOD-06"]],
+  ["M11", ["CW4-DOD-10"]],
+  ["M12", ["CW4-DOD-06", "CW4-DOD-10"]],
+  ["M13", ["CW4-DOD-06", "CW4-DOD-07"]],
+]);
 
 function fail(message) { throw new TypeError(`C-M14: ${message}`); }
 function hash(bytes) { return createHash("sha256").update(bytes).digest("hex"); }
@@ -163,6 +193,13 @@ async function json(path, schema, canonicalBytes = false) {
   if (value?.schema !== schema) fail(`${relative(ROOT, path)} has wrong schema`);
   return { value, bytes };
 }
+function jsonBytes(bytes, label, schema, canonicalBytes = false) {
+  let value;
+  try { value = canonicalBytes ? canonicalJsonLine(bytes, label) : JSON.parse(bytes.toString("utf8")); }
+  catch (error) { if (error?.message?.startsWith("C-M14:")) throw error; fail(`${label} is not JSON`); }
+  if (value?.schema !== schema) fail(`${label} has wrong schema`);
+  return { value, bytes };
+}
 function outputArgument(argv) {
   if (argv.length === 0) return resolve(OUTPUT_ROOT, "release");
   if (argv.length !== 2 || argv[0] !== "--output") fail("only --output <direct-child> is accepted");
@@ -178,27 +215,69 @@ async function writeCanonical(path, value) {
   await chmod(path, 0o644);
   return { byteCount: bytes.byteLength, sha256: hash(bytes) };
 }
-async function sourceControlClosure(paths) {
+async function buildProvenance(paths, generatorPath) {
   const rels = [...new Set(paths.map(path => relative(ROOT, path)))].sort();
-  let revision = "unavailable"; let tree = "unavailable"; let status = "";
+  const env = { LANG: "C", LC_ALL: "C" };
+  let revision; let tree; let gitVersion; let gitExecutable;
   try {
-    revision = (await exec("git", ["rev-parse", "HEAD"], { cwd: ROOT,
-      env: { LANG: "C", LC_ALL: "C", PATH: process.env.PATH ?? "" } })).stdout.trim();
-    tree = (await exec("git", ["rev-parse", "HEAD^{tree}"], { cwd: ROOT,
-      env: { LANG: "C", LC_ALL: "C", PATH: process.env.PATH ?? "" } })).stdout.trim();
-    status = (await exec("git", ["status", "--porcelain=v1", "--untracked-files=all", "--", ...rels], {
-      cwd: ROOT, env: { LANG: "C", LC_ALL: "C", PATH: process.env.PATH ?? "" },
-    })).stdout;
-  } catch { /* explicit unavailable state remains part of the logical identity */ }
-  const entries = [];
-  for (const path of paths.sort()) {
-    const bytes = await readFile(path);
-    entries.push({ path: relative(ROOT, path), byteCount: bytes.byteLength, sha256: hash(bytes) });
+    gitExecutable = await realpath(TRUSTED_GIT);
+    await regularNonSymlink(gitExecutable, "trusted Git executable");
+    revision = (await exec(gitExecutable, ["rev-parse", "HEAD"], { cwd: ROOT, env })).stdout.trim();
+    tree = (await exec(gitExecutable, ["rev-parse", `${revision}^{tree}`], { cwd: ROOT, env })).stdout.trim();
+    gitVersion = (await exec(gitExecutable, ["--version"], { cwd: ROOT, env })).stdout.trim();
+  } catch { fail("M14 requires a readable Git source extraction"); }
+  if (!/^[0-9a-f]{40}$/u.test(revision) || !/^[0-9a-f]{40}$/u.test(tree)) {
+    fail("M14 requires an exact committed Git source identity");
   }
-  const closureStatus = status.length === 0 ? "clean" : "dirty";
-  return { revision, tree, closureStatus, statusSha256: hash(Buffer.from(status)), status, entries,
-    releaseEvidenceEligibility: revision === "unavailable" || tree === "unavailable" || closureStatus !== "clean" ?
-      "not-eligible-requires-clean-committed-closure" : "eligible-for-later-evidence-binding" };
+  const directInputs = []; const captures = new Map();
+  for (const rel of rels) {
+    const path = resolve(ROOT, rel);
+    const currentInfo = await regularNonSymlink(path, `direct input ${rel}`);
+    let gitMode; let gitBlob; let bytes;
+    try {
+      const listing = (await exec(gitExecutable,
+        ["ls-tree", "-z", "--full-tree", revision, "--", rel],
+        { cwd: ROOT, env, encoding: "buffer" })).stdout;
+      const records = listing.subarray(0, Math.max(0, listing.byteLength - 1)).toString("utf8").split("\0");
+      if (listing.byteLength === 0 || listing[listing.byteLength - 1] !== 0 || records.length !== 1) {
+        fail(`direct input ${rel} does not have exactly one HEAD tree entry`);
+      }
+      const tab = records[0].indexOf("\t");
+      const header = records[0].slice(0, tab).split(" ");
+      const listedPath = records[0].slice(tab + 1);
+      if (tab < 0 || header.length !== 3 || listedPath !== rel) {
+        fail(`direct input ${rel} does not have exactly one HEAD tree entry`);
+      }
+      [gitMode, , gitBlob] = header;
+      if (!(["100644", "100755"].includes(gitMode)) || header[1] !== "blob" ||
+          !/^[0-9a-f]{40}$/u.test(gitBlob)) {
+        fail(`direct input ${rel} HEAD tree entry is not a permitted regular blob mode`);
+      }
+      bytes = (await exec(gitExecutable, ["cat-file", "blob", gitBlob],
+        { cwd: ROOT, env, encoding: "buffer", maxBuffer: 32 * 1024 * 1024 })).stdout;
+    } catch (error) {
+      if (error?.message?.startsWith("C-M14:")) throw error;
+      fail(`direct input ${rel} is not a tracked HEAD blob`);
+    }
+    const executableBits = currentInfo.mode & 0o111;
+    if ((gitMode === "100644" && executableBits !== 0) ||
+        (gitMode === "100755" && executableBits !== 0o111)) {
+      fail(`direct input ${rel} executable bits differ from HEAD mode ${gitMode}`);
+    }
+    const current = await readFile(path);
+    if (!current.equals(bytes)) fail(`direct input ${rel} differs byte-for-byte from its HEAD blob`);
+    captures.set(rel, bytes);
+    directInputs.push({ path: rel, byteCount: bytes.byteLength, sha256: hash(bytes), gitBlob, gitMode });
+  }
+  const generator = directInputs.find(entry => entry.path === relative(ROOT, generatorPath));
+  if (generator === undefined) fail("release generator identity is absent from direct inputs");
+  const executable = await realpath(process.execPath);
+  await regularNonSymlink(executable, "Node runtime executable");
+  return { provenance: { git: { revision, tree, version: publicText(gitVersion, "Git version"),
+      executableSha256: hash(await readFile(gitExecutable)) },
+    node: { runtime: "node", version: publicText(process.version, "Node version"),
+      executableSha256: hash(await readFile(executable)) },
+    generator, directInputs }, captures };
 }
 async function deterministicArchive(output) {
   const archivePath = `${output}.cdrm14`;
@@ -264,7 +343,7 @@ export async function verifyCadrM14Archive(archivePath, output) {
   return { files: seen.size, sha256: hash(archive) };
 }
 function userGuide(policy) {
-  return `# CADR-WEB-303 offline museum package user guide
+  return `# CADR-WEB-303 museum package user guide
 
 This scaffold is not a runnable CW4 release. It contains a policy shell,
 profile metadata, and generated release documents, but deliberately omits the
@@ -286,33 +365,51 @@ runnable release, pause or reset must not be presented as a save. Only a
 positively acknowledged durable commit may be described as saved, and exported
 state must remain bound to its immutable base/profile identities.
 
-## Offline operation
+## Static inventory and runtime-network boundary
 
 The closed inventory contains ${policy.entries.length} copied resources and
 ${policy.generated.length} generated documents. The verifier finds no named
-default external primitive from its bounded static scanner and the package is
-self-contained under its closed inventory. This is not a proof that a browser has
-no network capability: CSP enforcement and runtime browser behavior remain open.
-Missing resources are fatal and must not be fetched.
+default external primitive from its bounded static scanner. Its
+closed-inventory status applies only to those declared package bytes. Runtime
+offline behavior is **not evaluated**: this scaffold does not prove that a
+browser issues no network traffic or enforces CSP. Missing declared resources
+are fatal and must not be fetched.
 `;
 }
 function conformanceReport(gates, matrix) {
   const rows = gates.gates.map(gate =>
-    `| ${gate.id} | ${gate.status} | ${gate.evidence.length === 0 ? "none supplied" : gate.evidence.join(", ")} |`).join("\n");
+    `| ${gate.id} | ${gate.state} | ${gate.requiredDoD.join(", ")} |`).join("\n");
+  const blockers = gates.unresolvedMilestoneBlockers.map(record =>
+    `| ${record.milestone} | ${record.state} | ${record.blocks.join(", ")} | ${record.blockers.join("; ")} |`).join("\n");
+  const done = gates.cw4DefinitionOfDone.map(record =>
+    `| ${record.id} | ${record.clause} | ${record.blockingMilestones.join(", ")} |`).join("\n");
   return `# CADR-WEB-303 release conformance report
 
 Release claim: **none**. This deterministic scaffold does not close CW4.
+The policy accepts no receipt, manual status, or free-form evidence as gate
+advancement; a future evidence-qualified schema must define the receipt verifier.
 
-| Gate | Status | Evidence |
+| Gate | State | Required CW4 definition-of-done clauses |
 | --- | --- | --- |
 ${rows}
 
-Browser matrix status: **${matrix.evidenceStatus}**. Required engines:
-${matrix.required.map(item => `- ${item.id} (${item.engine}), network ${item.networkMode}, adapter ${item.adapter ?? "not configured"}`).join("\n")}
+| Milestone blocker | State | Blocks | Unresolved blocker |
+| --- | --- | --- | --- |
+${blockers}
+
+| CW4 definition-of-done clause | Requirement | Blocking milestones |
+| --- | --- | --- |
+${done}
+
+Browser matrix status: **${matrix.evidenceStatus}**; static inventory:
+**${matrix.closedInventoryStatus}**; runtime offline behavior:
+**${matrix.offlineRuntimeStatus}**. Required engines:
+${matrix.required.map(item => `- ${item.id} (${item.engine}), network test disposition ${item.networkMode}, adapter ${item.adapter ?? "not configured"}`).join("\n")}
 
 CW4 may be claimed only after every required gate and browser row has validated
-evidence from registered, pinned browser adapters and a clean offline smoke workflow.
-Static packaging and untrusted adapter attestations are insufficient.
+evidence from registered, pinned browser adapters and an evidence-qualified
+runtime no-network workflow. Static packaging and untrusted adapter attestations
+are insufficient.
 `;
 }
 function stringArray(value, label) {
@@ -320,11 +417,12 @@ function stringArray(value, label) {
   for (const [index, item] of value.entries()) publicText(item, `${label}[${index}]`);
 }
 export function validateM14PolicyDocuments(policy, rights, matrix, gates) {
-  exactKeys(policy, ["schema", "profile", "status", "offline", "canonicalJson", "logicalEpoch",
+  exactKeys(policy, ["schema", "profile", "status", "closedInventoryStatus", "offlineRuntimeStatus", "canonicalJson", "logicalEpoch",
     "entries", "generated", "excludedPrivateInputs", "unresolvedComponents"], "package policy");
-  if (policy.schema !== "cadr-m14-package-policy-v1" || policy.status !== "scaffold-only" ||
-      policy.offline !== true || policy.profile !== "CADR-WEB-303/CW4-MUSEUM" ||
-      !Number.isSafeInteger(policy.logicalEpoch) || policy.logicalEpoch !== 0) {
+  if (policy.schema !== "cadr-m14-package-policy-v2" || policy.status !== "scaffold-only" ||
+      policy.closedInventoryStatus !== "closed-static-inventory" || policy.offlineRuntimeStatus !== "not-evaluated" ||
+      policy.profile !== "CADR-WEB-303/CW4-MUSEUM" || !Number.isSafeInteger(policy.logicalEpoch) ||
+      policy.logicalEpoch !== 1) {
     fail("package policy is not the closed scaffold profile");
   }
   if (policy.canonicalJson !== "UTF-8, sorted object keys, no insignificant whitespace, LF") {
@@ -363,9 +461,12 @@ export function validateM14PolicyDocuments(policy, rights, matrix, gates) {
       policy.entries.some(entry => !rightsIds.has(entry.rightsId))) {
     fail("rights policy omits a package rights record");
   }
-  exactKeys(matrix, ["schema", "evidenceStatus", "registeredAdapters", "required", "checks"],
+  exactKeys(matrix, ["schema", "evidenceStatus", "evidenceAuthority", "closedInventoryStatus", "offlineRuntimeStatus",
+    "registeredAdapters", "required", "checks"],
     "browser matrix");
-  if (matrix.schema !== "cadr-m14-browser-matrix-v1" || matrix.evidenceStatus !== "not-evaluated" ||
+  validateEvidenceAuthority(matrix.evidenceAuthority, "browser matrix evidence authority");
+  if (matrix.schema !== "cadr-m14-browser-matrix-v2" || matrix.evidenceStatus !== "not-evaluated" ||
+      matrix.closedInventoryStatus !== "closed-static-inventory" || matrix.offlineRuntimeStatus !== "not-evaluated" ||
       !Array.isArray(matrix.registeredAdapters) || matrix.registeredAdapters.length !== 0 ||
       !Array.isArray(matrix.required) || matrix.required.length !== 3) {
     fail("browser matrix must remain an unevaluated scaffold without registered adapters");
@@ -382,15 +483,56 @@ export function validateM14PolicyDocuments(policy, rights, matrix, gates) {
   if (new Set(matrix.required.map(row => row.engine)).size !== matrixEngines.length) {
     fail("browser matrix must contain exactly one row per required engine");
   }
-  exactKeys(gates, ["schema", "releaseClaim", "gates"], "conformance gates");
-  if (gates.schema !== "cadr-m14-conformance-gates-v1" || gates.releaseClaim !== "none" ||
-      !Array.isArray(gates.gates) || gates.gates.length !== 5) fail("conformance gates are malformed");
+  exactKeys(gates, ["schema", "releaseClaim", "evidenceAuthority", "gates", "unresolvedMilestoneBlockers",
+    "cw4DefinitionOfDone"], "conformance gates");
+  validateEvidenceAuthority(gates.evidenceAuthority, "conformance-gate evidence authority");
+  if (gates.schema !== "cadr-m14-evidence-qualified-gates-v2" || gates.releaseClaim !== "none" ||
+      !Array.isArray(gates.gates) || gates.gates.length !== 5 ||
+      !Array.isArray(gates.unresolvedMilestoneBlockers) || gates.unresolvedMilestoneBlockers.length !== 8 ||
+      !Array.isArray(gates.cw4DefinitionOfDone) || gates.cw4DefinitionOfDone.length !== 10) {
+    fail("conformance gates are malformed");
+  }
+  const doneIds = gates.cw4DefinitionOfDone.map(record => record?.id);
+  const expectedDoneIds = DOD.map(record => record[0]);
+  if (doneIds.join("\u0000") !== expectedDoneIds.join("\u0000")) fail("CW4 definition-of-done clauses are incomplete");
+  const knownDone = new Set(doneIds); const knownMilestones = new Set(["M6", "M7", "M8", "M9", "M10", "M11", "M12", "M13", "M14"]);
+  for (const [index, record] of gates.cw4DefinitionOfDone.entries()) {
+    exactKeys(record, ["id", "clause", "blockingMilestones"], `CW4 definition-of-done clause ${index}`);
+    publicText(record.clause, `CW4 definition-of-done clause ${index} clause`);
+    if (record.clause !== DOD[index][1] ||
+        canonical(record.blockingMilestones) !== canonical(DOD[index][2]) ||
+        record.blockingMilestones.some(value => !knownMilestones.has(value))) {
+      fail("CW4 definition-of-done clause text or exact blockers differ");
+    }
+  }
   for (const [index, gate] of gates.gates.entries()) {
-    exactKeys(gate, ["id", "status", "evidence"], `conformance gate ${index}`);
-    if (gate.id !== `CW${index}` || gate.status !== "not-evaluated" ||
-        !Array.isArray(gate.evidence) || gate.evidence.length !== 0) {
+    exactKeys(gate, ["id", "state", "requiredDoD"], `conformance gate ${index}`);
+    if (gate.id !== `CW${index}` || gate.state !== "not-evaluated" || !Array.isArray(gate.requiredDoD) ||
+        canonical(gate.requiredDoD) !== canonical(REQUIRED_DOD[index]) ||
+        gate.requiredDoD.some(value => !knownDone.has(value))) {
       fail("conformance gates must remain unevaluated for the scaffold");
     }
+  }
+  const milestones = gates.unresolvedMilestoneBlockers.map(record => record?.milestone);
+  const expectedMilestones = ["M6", "M7", "M8", "M9", "M10", "M11", "M12", "M13"];
+  if (milestones.join("\u0000") !== expectedMilestones.join("\u0000")) fail("M6-M13 blockers are incomplete");
+  for (const [index, record] of gates.unresolvedMilestoneBlockers.entries()) {
+    exactKeys(record, ["milestone", "state", "blocks", "blockers"], `milestone blocker ${index}`);
+    if (record.state !== "unresolved" || !Array.isArray(record.blocks) ||
+        canonical(record.blocks) !== canonical(MILESTONE_BLOCKS.get(record.milestone)) ||
+        record.blocks.some(value => !knownDone.has(value)) || !Array.isArray(record.blockers) ||
+        record.blockers.length === 0) fail("milestone blocker is malformed");
+    stringArray(record.blockers, `milestone blocker ${index} blockers`);
+    const inverse = gates.cw4DefinitionOfDone.filter(done =>
+      done.blockingMilestones.includes(record.milestone)).map(done => done.id);
+    if (canonical(inverse) !== canonical(record.blocks)) fail("milestone and definition-of-done blocker mappings disagree");
+  }
+}
+function validateEvidenceAuthority(value, label) {
+  exactKeys(value, ["receiptAdmission", "manualStatus", "freeFormEvidence"], label);
+  if (value.receiptAdmission !== "not-implemented-no-receipts-accepted" ||
+      value.manualStatus !== "cannot-advance" || value.freeFormEvidence !== "cannot-advance") {
+    fail(`${label} permits unqualified evidence`);
   }
 }
 function publicStringArray(value, label) {
@@ -409,31 +551,41 @@ function validateManifestFile(file, index) {
   }
   sha256Text(file.sha256, `logical manifest file ${index} sha256`);
 }
-function validateSourceControl(value) {
-  exactKeys(value, ["revision", "tree", "closureStatus", "statusSha256", "status", "entries",
-    "releaseEvidenceEligibility"], "logical manifest sourceControl");
-  for (const key of ["revision", "tree"]) {
-    if (value[key] !== "unavailable" && !/^[0-9a-f]{40}$/u.test(value[key])) {
-      fail(`logical manifest sourceControl ${key} is invalid`);
-    }
+function validateProvenanceInput(value, label) {
+  exactKeys(value, ["path", "byteCount", "sha256", "gitBlob", "gitMode"], label);
+  relativeComponents(value.path, `${label} path`);
+  if (!Number.isSafeInteger(value.byteCount) || value.byteCount < 0) fail(`${label} byteCount is invalid`);
+  sha256Text(value.sha256, `${label} sha256`);
+  if (!/^[0-9a-f]{40}$/u.test(value.gitBlob)) fail(`${label} gitBlob is invalid`);
+  if (!(["100644", "100755"].includes(value.gitMode))) fail(`${label} gitMode is invalid`);
+}
+function validateBuildProvenance(value) {
+  exactKeys(value, ["git", "node", "generator", "directInputs"], "build provenance");
+  exactKeys(value.git, ["revision", "tree", "version", "executableSha256"], "build provenance Git");
+  if (!/^[0-9a-f]{40}$/u.test(value.git.revision) || !/^[0-9a-f]{40}$/u.test(value.git.tree)) {
+    fail("build provenance Git revision or tree is invalid");
   }
-  if (!(["clean", "dirty"].includes(value.closureStatus)) ||
-      !(["not-eligible-requires-clean-committed-closure", "eligible-for-later-evidence-binding"]
-        .includes(value.releaseEvidenceEligibility))) {
-    fail("logical manifest sourceControl disposition is invalid");
+  publicText(value.git.version, "build provenance Git version");
+  sha256Text(value.git.executableSha256, "build provenance Git executableSha256");
+  exactKeys(value.node, ["runtime", "version", "executableSha256"], "build provenance Node");
+  if (value.node.runtime !== "node") fail("build provenance runtime is not Node");
+  publicText(value.node.version, "build provenance Node version");
+  sha256Text(value.node.executableSha256, "build provenance Node executableSha256");
+  validateProvenanceInput(value.generator, "build provenance generator");
+  if (!Array.isArray(value.directInputs) || value.directInputs.length === 0) {
+    fail("build provenance direct inputs are absent");
   }
-  sha256Text(value.statusSha256, "logical manifest sourceControl statusSha256");
-  publicText(value.status, "logical manifest sourceControl status", true);
-  if (!Array.isArray(value.entries) || value.entries.length === 0) fail("logical manifest sourceControl entries are absent");
-  const entries = new Set();
-  for (const [index, entry] of value.entries.entries()) {
-    exactKeys(entry, ["path", "byteCount", "sha256"], `logical manifest sourceControl entry ${index}`);
-    relativeComponents(entry.path, `logical manifest sourceControl entry ${index} path`);
-    if (entries.has(entry.path) || !Number.isSafeInteger(entry.byteCount) || entry.byteCount < 0) {
-      fail("logical manifest sourceControl entry is duplicate or malformed");
-    }
-    entries.add(entry.path); sha256Text(entry.sha256, `logical manifest sourceControl entry ${index} sha256`);
+  const inputs = new Map();
+  for (const [index, input] of value.directInputs.entries()) {
+    validateProvenanceInput(input, `build provenance direct input ${index}`);
+    if (inputs.has(input.path)) fail("build provenance direct input is duplicate");
+    inputs.set(input.path, input);
   }
+  const generator = inputs.get(value.generator.path);
+  if (generator === undefined || canonical(generator) !== canonical(value.generator)) {
+    fail("build provenance generator is not one complete direct input");
+  }
+  return inputs;
 }
 function validateRightsProvenance(value) {
   exactKeys(value, ["schema", "releaseClaim", "policySha256", "records", "forbiddenBundleClasses", "assignments"],
@@ -464,47 +616,54 @@ function validateRightsProvenance(value) {
   }
   return { records, assignments };
 }
-function validateSourceMapSource(value, label, byteCopy) {
-  exactKeys(value, byteCopy ? ["path", "byteCount", "sha256"] : ["path", "sha256"], label);
-  relativeComponents(value.path, `${label} path`);
-  if (byteCopy && (!Number.isSafeInteger(value.byteCount) || value.byteCount < 0)) {
-    fail(`${label} byteCount is invalid`);
-  }
-  sha256Text(value.sha256, `${label} sha256`);
-}
 function validateSourceMap(value) {
-  exactKeys(value, ["schema", "policy", "rule", "mappings"], "source map");
-  if (value.schema !== "cadr-m14-source-map-v1" || !Array.isArray(value.mappings)) fail("source map is malformed");
-  exactKeys(value.policy, ["path", "sha256"], "source map policy");
-  relativeComponents(value.policy.path, "source map policy path");
-  sha256Text(value.policy.sha256, "source map policy sha256");
+  exactKeys(value, ["schema", "provenance", "rule", "mappings"], "source map");
+  if (value.schema !== "cadr-m14-source-map-v2" || !Array.isArray(value.mappings)) fail("source map is malformed");
+  const directInputs = validateBuildProvenance(value.provenance);
   publicText(value.rule, "source map rule");
-  const outputs = new Set();
-  const generatorTransforms = new Set(["deterministic-generator-v1", "canonical-source-map-root-v1",
-    "canonical-logical-manifest-root-v1"]);
+  const outputs = new Set(); const mappingSources = new Map();
+  const generatorTransforms = new Set(["deterministic-generator-v2", "canonical-source-map-root-v2",
+    "canonical-logical-manifest-root-v2"]);
   for (const [index, mapping] of value.mappings.entries()) {
     if (mapping === null || typeof mapping !== "object" || Array.isArray(mapping)) fail(`source map mapping ${index} is malformed`);
     const byteCopy = mapping.transform === "byte-for-byte-copy";
     const generated = generatorTransforms.has(mapping.transform);
-    exactKeys(mapping, generated ? ["output", "sources", "transform", "generator"] :
-      byteCopy ? ["output", "sources", "transform"] : [], `source map mapping ${index}`);
+    exactKeys(mapping, (generated || byteCopy) ? ["output", "sources", "transform"] : [], `source map mapping ${index}`);
     if (!byteCopy && !generated) fail(`source map mapping ${index} transform is unknown`);
     relativeComponents(mapping.output, `source map mapping ${index} output`);
-    if (outputs.has(mapping.output) || !Array.isArray(mapping.sources) || mapping.sources.length !== 1) {
-      fail("source map mapping is duplicate or does not have one source");
+    if (outputs.has(mapping.output) || !Array.isArray(mapping.sources) || mapping.sources.length === 0) {
+      fail("source map mapping is duplicate or has no sources");
     }
     outputs.add(mapping.output);
-    validateSourceMapSource(mapping.sources[0], `source map mapping ${index} source`, byteCopy);
-    if (generated) validateSourceMapSource(mapping.generator, `source map mapping ${index} generator`, true);
+    const sources = new Set();
+    for (const [sourceIndex, source] of mapping.sources.entries()) {
+      validateProvenanceInput(source, `source map mapping ${index} source ${sourceIndex}`);
+      const direct = directInputs.get(source.path);
+      if (sources.has(source.path) || direct === undefined || canonical(direct) !== canonical(source)) {
+        fail("source map mapping source is duplicate or not an exact direct input");
+      }
+      sources.add(source.path);
+    }
+    if (byteCopy && mapping.sources.length !== 1) fail("byte copy source map mapping must have one source");
+    mappingSources.set(mapping.output, sources);
   }
-  return outputs;
+  const directInputPaths = new Set(directInputs.keys());
+  for (const root of ["source-map.json", "logical-build-manifest.json"]) {
+    const sources = mappingSources.get(root);
+    if (sources === undefined || sources.size !== directInputPaths.size ||
+        [...directInputPaths].some(path => !sources.has(path))) {
+      fail(`source map root ${root} does not list every direct input`);
+    }
+  }
+  return { outputs, directInputs };
 }
 function validateGeneratedBrowserMatrix(value) {
-  exactKeys(value, ["schema", "evidenceStatus", "registeredAdapters", "required", "checks", "policySha256",
-    "packageEvidenceStatus", "adapterAttestationStatus", "browserRuntimeStatus"], "generated browser matrix");
-  if (value.schema !== "cadr-m14-browser-matrix-v1" || value.evidenceStatus !== "not-evaluated" ||
-      value.packageEvidenceStatus !== "not-evaluated" || value.adapterAttestationStatus !== "none-recorded" ||
-      value.browserRuntimeStatus !== "open" || !Array.isArray(value.registeredAdapters) ||
+  exactKeys(value, ["schema", "evidenceStatus", "evidenceAuthority", "closedInventoryStatus", "offlineRuntimeStatus",
+    "registeredAdapters", "required", "checks", "policySha256", "adapterAttestationStatus"], "generated browser matrix");
+  validateEvidenceAuthority(value.evidenceAuthority, "generated browser matrix evidence authority");
+  if (value.schema !== "cadr-m14-browser-matrix-v2" || value.evidenceStatus !== "not-evaluated" ||
+      value.closedInventoryStatus !== "closed-static-inventory" || value.offlineRuntimeStatus !== "not-evaluated" ||
+      value.adapterAttestationStatus !== "none-recorded" || !Array.isArray(value.registeredAdapters) ||
       value.registeredAdapters.length !== 0 || !Array.isArray(value.required) || value.required.length !== 3) {
     fail("generated browser matrix overclaims or is malformed");
   }
@@ -523,19 +682,19 @@ function validateGeneratedBrowserMatrix(value) {
   if (engines.size !== 3) fail("generated browser matrix lacks an engine");
 }
 export function validateM14GeneratedJson(manifest, rights, sourceMap, browserMatrix) {
-  exactKeys(manifest, ["schema", "profile", "status", "releaseClaim", "logicalEpoch", "offline",
-    "fileModePolicy", "sourceControl", "sourcePolicySha256", "sourceMapSha256", "unresolvedComponents",
+  exactKeys(manifest, ["schema", "profile", "status", "releaseClaim", "logicalEpoch", "closedInventoryStatus",
+    "offlineRuntimeStatus", "fileModePolicy", "buildProvenance", "sourceMapSha256", "unresolvedComponents",
     "excludedPrivateInputs", "files"], "logical manifest");
-  if (manifest.schema !== "cadr-m14-logical-build-manifest-v1" ||
+  if (manifest.schema !== "cadr-m14-logical-build-manifest-v2" ||
       manifest.profile !== "CADR-WEB-303/CW4-MUSEUM" || manifest.status !== "scaffold-only" ||
-      manifest.releaseClaim !== "none" || manifest.logicalEpoch !== 0 || manifest.offline !== true ||
+      manifest.releaseClaim !== "none" || manifest.logicalEpoch !== 1 ||
+      manifest.closedInventoryStatus !== "closed-static-inventory" || manifest.offlineRuntimeStatus !== "not-evaluated" ||
       manifest.fileModePolicy !== "directories 0755; regular files 0644; no executable or symbolic-link package entries" ||
       !Array.isArray(manifest.files)) fail("logical manifest overclaims or is malformed");
-  sha256Text(manifest.sourcePolicySha256, "logical manifest sourcePolicySha256");
   sha256Text(manifest.sourceMapSha256, "logical manifest sourceMapSha256");
   publicStringArray(manifest.unresolvedComponents, "logical manifest unresolvedComponents");
   publicStringArray(manifest.excludedPrivateInputs, "logical manifest excludedPrivateInputs");
-  validateSourceControl(manifest.sourceControl);
+  const manifestDirectInputs = validateBuildProvenance(manifest.buildProvenance);
   const files = new Set();
   for (const [index, file] of manifest.files.entries()) {
     validateManifestFile(file, index);
@@ -543,9 +702,15 @@ export function validateM14GeneratedJson(manifest, rights, sourceMap, browserMat
     files.add(file.path);
   }
   const rightsValidation = validateRightsProvenance(rights);
-  const sourceMapOutputs = validateSourceMap(sourceMap);
+  const sourceMapValidation = validateSourceMap(sourceMap);
+  if (canonical(manifest.buildProvenance) !== canonical(sourceMap.provenance) ||
+      manifestDirectInputs.size !== sourceMapValidation.directInputs.size ||
+      [...manifestDirectInputs].some(([path, input]) => canonical(input) !== canonical(sourceMapValidation.directInputs.get(path)))) {
+    fail("logical manifest and source map provenance differ");
+  }
   validateGeneratedBrowserMatrix(browserMatrix);
-  return { files, rightsValidation, sourceMapOutputs };
+  return { files, rightsValidation, sourceMapOutputs: sourceMapValidation.outputs,
+    directInputs: sourceMapValidation.directInputs };
 }
 async function treeFiles(root, prefix = "") {
   const result = [];
@@ -568,14 +733,14 @@ export async function buildCadrM14(output) {
     repoFile("cadr-web/release/cadr-m14-gates.json", "conformance gates"),
     repoFile("scripts/build-cadr-m14-release.mjs", "release generator"),
   ]);
-  const [policyRecord, rightsRecord, matrixRecord, gatesRecord] = await Promise.all([
-    json(policyPath, "cadr-m14-package-policy-v1"),
+  let [policyRecord, rightsRecord, matrixRecord, gatesRecord] = await Promise.all([
+    json(policyPath, "cadr-m14-package-policy-v2"),
     json(rightsPath, "cadr-m14-rights-policy-v1"),
-    json(matrixPath, "cadr-m14-browser-matrix-v1"),
-    json(gatesPath, "cadr-m14-conformance-gates-v1"),
+    json(matrixPath, "cadr-m14-browser-matrix-v2"),
+    json(gatesPath, "cadr-m14-evidence-qualified-gates-v2"),
   ]);
-  const policy = policyRecord.value; const rights = rightsRecord.value;
-  const matrix = matrixRecord.value; const gates = gatesRecord.value;
+  let policy = policyRecord.value; let rights = rightsRecord.value;
+  let matrix = matrixRecord.value; let gates = gatesRecord.value;
   validateM14PolicyDocuments(policy, rights, matrix, gates);
   await outputDirectory(output, "output", false);
   if (await lstat(`${output}.cdrm14`).then(() => true, error =>
@@ -585,27 +750,44 @@ export async function buildCadrM14(output) {
   const sourcePaths = await Promise.all(policy.entries.map(entry =>
     repoFile(entry.source, `package source ${entry.source}`)));
   const closurePaths = [policyPath, rightsPath, matrixPath, gatesPath, generatorPath, ...sourcePaths];
-  const sourceControl = await sourceControlClosure(closurePaths);
-  const generatorIdentity = sourceControl.entries.find(entry =>
-    entry.path === relative(ROOT, generatorPath));
-  if (generatorIdentity === undefined) fail("release generator identity is absent from source closure");
+  const captured = await buildProvenance(closurePaths, generatorPath);
+  const provenance = captured.provenance;
+  const capturedRecord = (path, schema) => jsonBytes(captured.captures.get(relative(ROOT, path)),
+    relative(ROOT, path), schema);
+  policyRecord = capturedRecord(policyPath, "cadr-m14-package-policy-v2");
+  rightsRecord = capturedRecord(rightsPath, "cadr-m14-rights-policy-v1");
+  matrixRecord = capturedRecord(matrixPath, "cadr-m14-browser-matrix-v2");
+  gatesRecord = capturedRecord(gatesPath, "cadr-m14-evidence-qualified-gates-v2");
+  policy = policyRecord.value; rights = rightsRecord.value;
+  matrix = matrixRecord.value; gates = gatesRecord.value;
+  validateM14PolicyDocuments(policy, rights, matrix, gates);
+  if (canonical(policy.entries.map(entry => entry.source).sort()) !==
+      canonical(sourcePaths.map(path => relative(ROOT, path)).sort())) {
+    fail("captured package policy source closure differs from discovered closure");
+  }
+  const directInput = path => {
+    const input = provenance.directInputs.find(entry => entry.path === relative(ROOT, path));
+    if (input === undefined) fail("source map direct input is absent from build provenance");
+    return input;
+  };
+  const directInputsFor = paths => paths.map(directInput).sort((a, b) => a.path.localeCompare(b.path));
   const outputs = new Set(); const urls = new Set(); const sourceMap = []; const files = [];
   for (const entry of policy.entries) {
     if (outputs.has(entry.output) || urls.has(entry.url)) fail("package entry is duplicate");
     outputs.add(entry.output); urls.add(entry.url);
-    const source = await repoFile(entry.source, `package source ${entry.source}`);
-    const bytes = await readFile(source);
+    const bytes = captured.captures.get(entry.source);
+    if (bytes === undefined) fail(`captured package source ${entry.source} is absent`);
     assertNoNamedDefaultExternalPrimitive(bytes, entry.source);
     const components = relativeComponents(entry.output, `package output ${entry.output}`);
     if (components.length > 1) await ensureConfinedDirectory(output,
       components.slice(0, -1).join("/"), `package output ${entry.output}`);
     const destination = resolve(output, ...components);
-    await cp(source, destination, { force: false, errorOnExist: true });
+    await writeFile(destination, bytes, { flag: "wx", mode: 0o644 });
     await chmod(destination, 0o644);
     files.push({ url: entry.url, path: entry.output, mediaType: entry.mediaType,
       mode: "0644", byteCount: bytes.byteLength, sha256: hash(bytes), rightsId: entry.rightsId });
-    sourceMap.push({ output: entry.output, sources: [{ path: entry.source,
-      byteCount: bytes.byteLength, sha256: hash(bytes) }], transform: "byte-for-byte-copy" });
+    sourceMap.push({ output: entry.output, sources: [directInput(resolve(ROOT, entry.source))],
+      transform: "byte-for-byte-copy" });
   }
   const rightsOutput = { schema: "cadr-m14-rights-provenance-v1",
     releaseClaim: "none", policySha256: hash(rightsRecord.bytes),
@@ -615,8 +797,7 @@ export async function buildCadrM14(output) {
       ...policy.generated.map(path => ({ path, rightsId: GENERATED_RIGHTS_ID })),
     ].sort((a, b) => a.path.localeCompare(b.path)) };
   const compatibility = { ...matrix, policySha256: hash(matrixRecord.bytes),
-    packageEvidenceStatus: "not-evaluated", adapterAttestationStatus: "none-recorded",
-    browserRuntimeStatus: "open" };
+    adapterAttestationStatus: "none-recorded" };
   const generatedContent = new Map([
     ["rights-provenance.json", Buffer.from(`${canonical(rightsOutput)}\n`)],
     ["browser-compatibility-matrix.json", Buffer.from(`${canonical(compatibility)}\n`)],
@@ -627,29 +808,28 @@ export async function buildCadrM14(output) {
     await writeFile(resolve(output, name), bytes, { flag: "wx" });
     await chmod(resolve(output, name), 0o644);
     sourceMap.push({ output: name, sources: name.startsWith("rights") ?
-      [{ path: relative(ROOT, rightsPath), sha256: hash(rightsRecord.bytes) }] :
-      name.startsWith("browser") ? [{ path: relative(ROOT, matrixPath), sha256: hash(matrixRecord.bytes) }] :
-      name.startsWith("USER") ? [{ path: relative(ROOT, policyPath), sha256: hash(policyRecord.bytes) }] :
-      [{ path: relative(ROOT, gatesPath), sha256: hash(gatesRecord.bytes) }],
-      transform: "deterministic-generator-v1", generator: generatorIdentity });
+      directInputsFor([rightsPath, policyPath, generatorPath, ...sourcePaths]) :
+      name.startsWith("browser") ? directInputsFor([matrixPath, generatorPath]) :
+      name.startsWith("USER") ? directInputsFor([policyPath, generatorPath]) :
+      directInputsFor([gatesPath, matrixPath, generatorPath]),
+      transform: "deterministic-generator-v2" });
   }
   sourceMap.push({ output: "source-map.json",
-    sources: [{ path: relative(ROOT, policyPath), sha256: hash(policyRecord.bytes) }],
-    transform: "canonical-source-map-root-v1", generator: generatorIdentity });
+    sources: provenance.directInputs,
+    transform: "canonical-source-map-root-v2" });
   sourceMap.push({ output: "logical-build-manifest.json",
-    sources: [{ path: relative(ROOT, policyPath), sha256: hash(policyRecord.bytes) }],
-    transform: "canonical-logical-manifest-root-v1", generator: generatorIdentity });
-  const sourceMapValue = { schema: "cadr-m14-source-map-v1",
-    policy: { path: relative(ROOT, policyPath), sha256: hash(policyRecord.bytes) },
-    rule: "Every package file, including both canonical roots, has one mapping to tracked policy/source identities; output identities live in the logical manifest and no absolute paths or source text are embedded.",
+    sources: provenance.directInputs,
+    transform: "canonical-logical-manifest-root-v2" });
+  const sourceMapValue = { schema: "cadr-m14-source-map-v2", provenance,
+    rule: "Every package file, including both canonical roots, maps to exact tracked HEAD blobs captured before output. The provenance binds the committed Git tree, Git and Node versions and executable hashes, and generator identity; no absolute paths or source text are embedded.",
     mappings: sourceMap.sort((a, b) => a.output.localeCompare(b.output)) };
   const sourceMapReceipt = await writeCanonical(resolve(output, "source-map.json"), sourceMapValue);
-  const manifest = { schema: "cadr-m14-logical-build-manifest-v1",
+  const manifest = { schema: "cadr-m14-logical-build-manifest-v2",
     profile: policy.profile, status: "scaffold-only", releaseClaim: "none",
-    logicalEpoch: policy.logicalEpoch, offline: true,
+    logicalEpoch: policy.logicalEpoch, closedInventoryStatus: policy.closedInventoryStatus,
+    offlineRuntimeStatus: policy.offlineRuntimeStatus,
     fileModePolicy: "directories 0755; regular files 0644; no executable or symbolic-link package entries",
-    sourceControl,
-    sourcePolicySha256: hash(policyRecord.bytes),
+    buildProvenance: provenance,
     sourceMapSha256: sourceMapReceipt.sha256,
     unresolvedComponents: policy.unresolvedComponents,
     excludedPrivateInputs: policy.excludedPrivateInputs,
@@ -669,13 +849,13 @@ export async function buildCadrM14(output) {
 export async function verifyCadrM14(output) {
   const packageRoot = await outputDirectory(output, "package output", true);
   const manifestRecord = await json(resolve(packageRoot, "logical-build-manifest.json"),
-    "cadr-m14-logical-build-manifest-v1", true);
+    "cadr-m14-logical-build-manifest-v2", true);
   const rightsRecord = await json(resolve(packageRoot, "rights-provenance.json"),
     "cadr-m14-rights-provenance-v1", true);
   const sourceMapRecord = await json(resolve(packageRoot, "source-map.json"),
-    "cadr-m14-source-map-v1", true);
+    "cadr-m14-source-map-v2", true);
   const browserMatrixRecord = await json(resolve(packageRoot, "browser-compatibility-matrix.json"),
-    "cadr-m14-browser-matrix-v1", true);
+    "cadr-m14-browser-matrix-v2", true);
   const manifest = manifestRecord.value; const rights = rightsRecord.value;
   const sourceMap = sourceMapRecord.value; const browserMatrix = browserMatrixRecord.value;
   const generated = validateM14GeneratedJson(manifest, rights, sourceMap, browserMatrix);

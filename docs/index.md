@@ -58,9 +58,10 @@ machine-readable metadata layer while retaining ordinary Markdown as the source.
   gives the complete `usim`-centered path from deterministic headless execution
   through display, input, crash-consistent private disks, offline museum release,
   and optional networking or translation.
-- [CADR-WEB reproducible offline museum release scaffolding](mit-cadr/cadr-web-reproducible-museum-release-scaffolding.md)
-  records M14's deterministic package, provenance, rights, compatibility, and
-  conformance-report boundary without claiming CW4.
+- [CADR-WEB reproducible museum release evidence scaffolding](mit-cadr/cadr-web-reproducible-museum-release-scaffolding.md)
+  records M14's deterministic static inventory, direct-input provenance, rights,
+  evidence-qualified compatibility boundary, and conformance-report nonclaim of
+  runtime-offline behavior or CW4.
 - [CADR-WEB-303 ABI1.1 deterministic tracing and snapshot specification](mit-cadr/cadr-deterministic-tracing-and-snapshot-reimplementation-specification.md)
   defines the new portable-core CDRGTRC1/CDRSNAP1 trace and continuation boundary.
 - [CADR-WEB-303 ABI1.2 headless WebAssembly core specification](mit-cadr/cadr-webassembly-headless-core-reimplementation-specification.md)

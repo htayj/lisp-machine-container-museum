@@ -1,6 +1,13 @@
 {
-  "schema": "cadr-m14-browser-matrix-v1",
+  "schema": "cadr-m14-browser-matrix-v2",
   "evidenceStatus": "not-evaluated",
+  "evidenceAuthority": {
+    "receiptAdmission": "not-implemented-no-receipts-accepted",
+    "manualStatus": "cannot-advance",
+    "freeFormEvidence": "cannot-advance"
+  },
+  "closedInventoryStatus": "closed-static-inventory",
+  "offlineRuntimeStatus": "not-evaluated",
   "registeredAdapters": [],
   "required": [
     {"id": "chromium-current", "engine": "Blink", "adapter": null, "networkMode": "denied"},
