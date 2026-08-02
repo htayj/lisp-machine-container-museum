@@ -13,12 +13,13 @@ import {
 } from "./cadr-m13-shell.mjs";
 import { createCadrM10Controller, createCadrM10WorkerDiskBridge } from "./cadr-m10-controller.mjs";
 import { createCadrM10IndexedDbBackend } from "./cadr-m10-indexeddb.mjs";
-import { CADR_M10_BASE_SHA256 } from "../wasm/cadr-m10-persistence.mjs";
+import { CADR_M10_BASE_SHA256, cadrM10Sha256 } from "../wasm/cadr-m10-persistence.mjs";
+import { parseCdrM10W1, serializeCdrM10W1 } from "../wasm/cadr-m10-wrapper.mjs";
 
 const BASE_BYTES = 269562880;
 const BASE_BLOCKS = 263245;
 const BASE_SHA256 = "bb16e46ad81decfe1efe691d36b6aa4ce3fd4ffb82474365de3520989d397cb5";
-const SELECTED_WASM_SHA256 = "42e1e7d37ac1b1cc3dabf5b22a38bc81702c1b1f45b6da8bf31f0ddb249a40e0";
+const SELECTED_WASM_SHA256 = "62062a742c34aea8e0f7e49d48b19adefe4dd715795869557e1a085cbebb6396";
 const status = document.querySelector("#cadr-m13-selected-media-m10-status");
 const text = new TextEncoder();
 
@@ -33,6 +34,13 @@ const wasmUrl = new URL("../build/cadr-web-m12-O2.wasm", import.meta.url);
 const SELECTED_WASM_ROLE = "cadr-web-m12-o2-wasm";
 const PROFILE_ID_MAGIC = text.encode("CADR-M13-SELECTED-PROFILE-v1\0");
 const ARTIFACT_SET_ID_MAGIC = text.encode("CADR-M13-SELECTED-ARTIFACT-SET-v1\0");
+const TEST_ADAPTER_PROFILE = "M13-E27-CDRM10W1-DISPATCH-ADAPTER-v1";
+const SNAP_PROFILE = Uint8Array.from(
+  "1b8d63db98acd46e40adf99a8a3ceb5e0558d4ac027cb2cb4a439665b14b5d2a"
+    .match(/../g), value => Number.parseInt(value, 16));
+const SNAP_ARTIFACTS = Uint8Array.from(
+  "e96e6ff903c23ccea707ece0e9a872a8a77771a6663e3b919eaba21e22f2f941"
+    .match(/../g), value => Number.parseInt(value, 16));
 
 function same(left, right) {
   return left.byteLength === right.byteLength && left.every((value, index) => value === right[index]);
@@ -64,6 +72,42 @@ function concatenate(parts) {
   const output = new Uint8Array(total); let offset = 0;
   for (const part of parts) { output.set(part, offset); offset += part.byteLength; }
   return output;
+}
+
+async function syntheticCdrM10W1(binding) {
+  const directoryOffset = 264; const directoryBytes = 10 * 64;
+  const payloadOffset = directoryOffset + directoryBytes;
+  const raw = new Uint8Array(payloadOffset + 32); const rawView = new DataView(raw.buffer);
+  raw.set(text.encode("CDRSNAP1"), 0);
+  rawView.setUint16(8, 1, true); rawView.setUint16(10, 2, true);
+  rawView.setUint32(12, 264, true); rawView.setUint32(20, 10, true);
+  rawView.setUint32(24, 64, true); rawView.setBigUint64(32, BigInt(raw.byteLength), true);
+  rawView.setBigUint64(40, 264n, true); rawView.setBigUint64(48, BigInt(directoryBytes), true);
+  rawView.setBigUint64(56, BigInt(payloadOffset), true); rawView.setUint32(64, 1, true);
+  rawView.setBigUint64(88, 7n, true); raw.set(SNAP_PROFILE, 104); raw.set(SNAP_ARTIFACTS, 136);
+  const emptyHash = await cadrM10Sha256(new Uint8Array());
+  for (let index = 0; index < 10; index += 1) {
+    const offset = directoryOffset + index * 64;
+    rawView.setUint32(offset, index + 1, true); rawView.setUint32(offset + 4, 1, true);
+    rawView.setBigUint64(offset + 8, BigInt(payloadOffset), true);
+    raw.set(emptyHash, offset + 32);
+  }
+  raw.set(await cadrM10Sha256(raw.subarray(directoryOffset, payloadOffset)), 232);
+  raw.set(await cadrM10Sha256(raw.subarray(0, raw.byteLength - 32)), raw.byteLength - 32);
+  const inner = new Uint8Array(104 + raw.byteLength); const innerView = new DataView(inner.buffer);
+  inner.set(text.encode("CDRM5WK1"), 0); innerView.setUint32(8, 3, true);
+  innerView.setBigUint64(16, BigInt(raw.byteLength), true); inner.set(raw, 104);
+  const digestInput = new Uint8Array(72 + raw.byteLength);
+  digestInput.set(inner.subarray(0, 72)); digestInput.set(raw, 72);
+  inner.set(await cadrM10Sha256(digestInput), 72);
+  const semanticValidator = async () => true;
+  return serializeCdrM10W1({ diskUuid: binding.diskUuid,
+    snapshotUuid: Uint8Array.from({ length: 16 }, (_, index) => index + 1),
+    durableGeneration: 7n, headSeq: 8n,
+    manifestSha256: await cadrM10Sha256(text.encode("E27 synthetic manifest")),
+    rootSha256: await cadrM10Sha256(text.encode("E27 synthetic root")),
+    baseSha256: CADR_M10_BASE_SHA256, profileSha256: binding.profileSha256,
+    inner }, { validateInnerSnapshot: semanticValidator });
 }
 
 /* These internal M10 binding identities are not historical identifiers. They
@@ -131,6 +175,11 @@ async function run() {
   let controller = null;
   let importOpen = false;
   let importNextOffset = 0;
+  let exportState = null;
+  let restoreState = null;
+  let diskInitialized = false;
+  const sessionToken = 1n;
+  let observedHeadSeq = 0n;
   const storage = new CadrM13StorageBoundary({
     async beginBaseImport(value) {
       if (value.role !== "system-303-base" || value.byteCount !== BASE_BYTES ||
@@ -173,8 +222,72 @@ async function run() {
           value.artifactSetSha256 !== hex(binding.artifactSetSha256)) {
         throw new Error("M13 selected M10 reopen differs from its mounted binding");
       }
-      await controller.open({ initialize: true });
-      return Object.freeze({ mounted: "selected-m10-controller" });
+      await controller.open({ initialize: !diskInitialized });
+      diskInitialized = true;
+      return Object.freeze({ mounted: "selected-m10-controller", sessionToken,
+        state: "CLEAN", readOnly: false, generation: 0n, headSeq: observedHeadSeq });
+    },
+    async openExport(value) {
+      if (value.sessionToken !== sessionToken || value.expectedHeadSeq !== observedHeadSeq ||
+          exportState !== null) throw new Error("M13 selected export authority differs");
+      /* E27 test adapter only: this is one CDRM10W1 byte stream, not the
+       * normative pinned-object m10-export record protocol. */
+      const bytes = await syntheticCdrM10W1(binding);
+      exportState = { bytes: new Uint8Array(bytes), offset: 0 };
+      return Object.freeze({ exportId: 1, byteCount: BigInt(bytes.byteLength),
+        sha256: await sha256(bytes) });
+    },
+    async nextExport(value) {
+      if (exportState === null || value.exportId !== 1n || value.maxBytes < 1 ||
+          value.maxBytes > 1048576) throw new Error("M13 selected export cursor differs");
+      const first = exportState.offset;
+      const last = Math.min(exportState.bytes.byteLength, first + value.maxBytes);
+      const bytes = exportState.bytes.slice(first, last).buffer;
+      exportState.offset = last;
+      return Object.freeze({ exportId: 1, offset: BigInt(first), bytes,
+        nextOffset: BigInt(last), eof: last === exportState.bytes.byteLength });
+    },
+    async closeExport(value) {
+      if (exportState === null || value.exportId !== 1n) {
+        throw new Error("M13 selected export close differs");
+      }
+      exportState = null; return Object.freeze({ closed: true });
+    },
+    async beginSnapshotRestore(value) {
+      if (restoreState !== null) throw new Error("M13 selected restore is already active");
+      restoreState = { byteCount: Number(value.byteCount), sha256: value.snapshotSha256,
+        offset: 0, chunks: [] };
+      return Object.freeze({ restoreId: 1, nextOffset: 0n });
+    },
+    async appendSnapshotRestore(value) {
+      if (restoreState === null || value.restoreId !== 1n ||
+          value.offset !== restoreState.offset ||
+          value.chunkSha256 !== await sha256(value.bytes)) {
+        throw new Error("M13 selected restore chunk differs");
+      }
+      const bytes = new Uint8Array(value.bytes).slice();
+      restoreState.chunks.push(bytes); restoreState.offset += bytes.byteLength;
+      return Object.freeze({ restoreId: 1, nextOffset: BigInt(restoreState.offset) });
+    },
+    async finishSnapshotRestore(value) {
+      if (restoreState === null || value.restoreId !== 1n ||
+          restoreState.offset !== restoreState.byteCount) {
+        throw new Error("M13 selected restore length differs");
+      }
+      const candidate = concatenate(restoreState.chunks).buffer;
+      const expected = restoreState.sha256; restoreState = null;
+      if (await sha256(candidate) !== expected) throw new Error("M13 selected restore digest differs");
+      const parsed = await parseCdrM10W1(candidate, {
+        validateInnerSnapshot: async () => true,
+      });
+      return Object.freeze({ roundtrip: true, adopted: false,
+        archiveSha256: parsed.sha256 });
+    },
+    async abortSnapshotRestore(value) {
+      if (restoreState === null || value.restoreId !== 1n) {
+        throw new Error("M13 selected restore abort differs");
+      }
+      restoreState = null; return Object.freeze({ aborted: true });
     },
   });
   const baseBinding = new CadrM13BaseMediaBinding({ storage });
@@ -188,6 +301,12 @@ async function run() {
   });
   const worker = new Worker(new URL("../wasm/cadr-worker.js", import.meta.url), {
     type: "module", name: "cadr-m13-selected-media-m10-probe",
+  });
+  let observedHostCompleteLifecycle = null;
+  worker.addEventListener("message", event => {
+    if (event.data?.op === "host-complete" && event.data?.status === 0) {
+      observedHostCompleteLifecycle = event.data.lifecycle ?? null;
+    }
   });
   const lowerOperations = [];
   const postLower = worker.postMessage.bind(worker);
@@ -295,30 +414,148 @@ async function run() {
       serviced[0].durable !== true || serviced[0].changed !== false) {
       throw new Error("selected M12/M10 host-request composition did not complete one real transaction");
     }
+    if (observedHostCompleteLifecycle !== "RUNNING") {
+      throw new Error("selected worker did not remain RUNNING after host completion");
+    }
     const beforeReopen = await controller.readBlock(1n);
     const selectedBaseBlock1 = new Uint8Array(await selectedBaseRange(1, 1));
     if (!same(beforeReopen, selectedBaseBlock1)) {
       throw new Error("selected M10 no-change write unexpectedly changed block 1");
     }
     controller.close();
-    let reopenReplacements = 0;
-    reopenedController = createCadrM10Controller({ backend, binding,
-      readBasePage: firstBlock => baseBinding.readBlock(Number(firstBlock)),
-      readBaseIdentity: async () => baseBinding.verifiedBaseIdentity(),
-      replaceWorker: async () => { reopenReplacements += 1; },
-    });
-    await reopenedController.open();
-    const afterReopen = await reopenedController.readBlock(1n);
-    if (reopenedController.state !== "CLEAN" || reopenReplacements !== 0 ||
+    const noChangeReopen = await shell.submit(request(shell, nextId++, "m10-reopen", {
+      diskUuid: hex(binding.diskUuid), baseSha256: BASE_SHA256,
+      profileSha256: hex(binding.profileSha256), artifactSetSha256: hex(binding.artifactSetSha256),
+      createIfMissing: true,
+    }));
+    const afterReopen = await controller.readBlock(1n);
+    if (noChangeReopen.status !== 0 || controller.state !== "CLEAN" || replacements !== 0 ||
         !same(beforeReopen, afterReopen)) {
-      throw new Error("selected M10 block-1 readback did not survive a fresh-controller reopen");
+      throw new Error("selected M10 block-1 readback did not survive public reopen");
     }
     const reopenReadback = Object.freeze({
       firstBlock: "1", byteCount: afterReopen.byteLength,
       sha256: await sha256(afterReopen), commitChanged: serviced[0].changed,
       matchesSelectedBase: same(afterReopen, selectedBaseBlock1),
       matchesBeforeClose: same(afterReopen, beforeReopen),
-      controllerState: reopenedController.state, replacementCount: reopenReplacements,
+      controllerState: controller.state, replacementCount: replacements,
+      publicReopenStatus: noChangeReopen.status,
+    });
+
+    /* This write is deliberately synthetic. It does not come from the selected
+     * guest: it probes only the already public-mounted controller's changed-
+     * overlay read/reopen behavior without modifying the base input. The later
+     * public operation names dispatch to a test-only CDRM10W1 roundtrip adapter;
+     * they are not normative export or composite restore implementations. */
+    const syntheticPage = selectedBaseBlock1.slice(); syntheticPage[0] ^= 0xff;
+    const syntheticWrite = await controller.commitWrites([{ lba: 1n, bytes: syntheticPage }]);
+    observedHeadSeq = syntheticWrite.headSeq;
+    const afterSyntheticWrite = await controller.readBlock(1n);
+    if (!syntheticWrite.changed || !same(afterSyntheticWrite, syntheticPage)) {
+      throw new Error("synthetic changed overlay write did not read back");
+    }
+    controller.close();
+    const changedReopen = await shell.submit(request(shell, nextId++, "m10-reopen", {
+      diskUuid: hex(binding.diskUuid), baseSha256: BASE_SHA256,
+      profileSha256: hex(binding.profileSha256), artifactSetSha256: hex(binding.artifactSetSha256),
+      createIfMissing: true,
+    }));
+    const afterChangedReopen = await controller.readBlock(1n);
+    if (changedReopen.status !== 0 || !same(afterChangedReopen, syntheticPage)) {
+      throw new Error("synthetic changed overlay did not survive public reopen");
+    }
+
+    const exportOpen = await shell.submit(request(shell, nextId++, "m10-export-open", {
+      sessionToken, expectedHeadSeq: observedHeadSeq,
+    }));
+    if (exportOpen.status !== 0 || exportOpen.result?.exportId !== 1) {
+      throw new Error("public selected overlay export did not open");
+    }
+    const archiveChunks = []; let exportChunkCount = 0;
+    while (true) {
+      const part = await shell.submit(request(shell, nextId++, "m10-export-next", {
+        exportId: 1n, maxBytes: 1048576,
+      }));
+      if (part.status !== 0) throw new Error(`public selected overlay export chunk failed (${part.status}:${part.reason})`);
+      archiveChunks.push(new Uint8Array(part.result.bytes)); exportChunkCount += 1;
+      if (part.result.eof) break;
+    }
+    const exportClose = await shell.submit(request(shell, nextId++, "m10-export-close", { exportId: 1n }));
+    const archive = concatenate(archiveChunks);
+    if (exportClose.status !== 0 || await sha256(archive) !== exportOpen.result.sha256) {
+      throw new Error("public selected overlay export identity differs");
+    }
+
+    const restoreViaShell = async bytes => {
+      const digest = await sha256(bytes);
+      const begin = await shell.submit(request(shell, nextId++, "snapshot-restore-begin", {
+        byteCount: bytes.byteLength, snapshotSha256: digest,
+      }));
+      if (begin.status !== 0 || begin.result?.restoreId !== 1) return { begin, finish: null };
+      let offset = 0;
+      while (offset < bytes.byteLength) {
+        const chunk = bytes.slice(offset, Math.min(bytes.byteLength, offset + 1048576));
+        const append = await shell.submit(request(shell, nextId++, "snapshot-restore-chunk", {
+          restoreId: 1n, offset, bytes: chunk.buffer,
+          chunkSha256: await sha256(chunk),
+        }));
+        if (append.status !== 0) throw new Error("public selected restore chunk failed");
+        offset += chunk.byteLength;
+      }
+      const finish = await shell.submit(request(shell, nextId++, "snapshot-restore-finish", { restoreId: 1n }));
+      return { begin, finish };
+    };
+
+    const malformedArchive = archive.slice(); malformedArchive[0] ^= 0xff;
+    const malformedRestore = await restoreViaShell(malformedArchive);
+    const afterMalformedRestore = await controller.readBlock(1n);
+    if (malformedRestore.finish?.status !== 7 || controller.state !== "CLEAN" ||
+        !same(afterMalformedRestore, syntheticPage)) {
+      throw new Error("malformed test-adapter roundtrip changed durable overlay state");
+    }
+    const validRestore = await restoreViaShell(archive);
+    const afterRestore = await controller.readBlock(1n);
+    if (validRestore.finish?.status !== 0 || validRestore.finish.result?.roundtrip !== true ||
+        validRestore.finish.result?.adopted !== false || !same(afterRestore, syntheticPage)) {
+      throw new Error("test-adapter CDRM10W1 roundtrip changed or adopted durable state");
+    }
+    controller.close();
+    const restoredReopen = await shell.submit(request(shell, nextId++, "m10-reopen", {
+      diskUuid: hex(binding.diskUuid), baseSha256: BASE_SHA256,
+      profileSha256: hex(binding.profileSha256), artifactSetSha256: hex(binding.artifactSetSha256),
+      createIfMissing: true,
+    }));
+    const finalSyntheticRead = await controller.readBlock(1n);
+    if (restoredReopen.status !== 0 || !same(finalSyntheticRead, syntheticPage)) {
+      throw new Error("synthetic overlay did not survive post-adapter public reopen");
+    }
+    const syntheticChangedPersistence = Object.freeze({
+      origin: "synthetic-controller-write-after-public-mount",
+      lba: "1", writeChanged: syntheticWrite.changed,
+      baseSha256: await sha256(selectedBaseBlock1), changedSha256: await sha256(syntheticPage),
+      immediateReadMatches: same(afterSyntheticWrite, syntheticPage),
+      changedPublicReopenStatus: changedReopen.status,
+      changedReopenMatches: same(afterChangedReopen, syntheticPage),
+      finalPublicReopenStatus: restoredReopen.status,
+      finalReadMatches: same(finalSyntheticRead, syntheticPage),
+    });
+    const testAdapterArchiveRoundtrip = Object.freeze({
+      adapterProfile: TEST_ADAPTER_PROFILE,
+      archiveFormat: "CDRM10W1",
+      publicOperationDispatchOnly: true,
+      normativePinnedObjectExportRecords: false,
+      compositePausedResetRestore: false,
+      workerLifecycleAfterHostComplete: observedHostCompleteLifecycle,
+      dispatchExportOpenStatus: exportOpen.status, exportChunkCount,
+      archiveBytes: archive.byteLength, archiveSha256: await sha256(archive),
+      dispatchExportCloseStatus: exportClose.status,
+      malformedRestoreFinishStatus: malformedRestore.finish.status,
+      malformedRoundtripPreservedOverlay: same(afterMalformedRestore, syntheticPage),
+      validRestoreFinishStatus: validRestore.finish.status,
+      validRoundtrip: validRestore.finish.result.roundtrip,
+      adopted: validRestore.finish.result.adopted,
+      roundtripPreservedOverlay: same(afterRestore, syntheticPage),
+      controllerState: controller.state, replacementCount: replacements,
     });
     return Object.freeze({ bootstrapStatus: bootstrap.status, mountStatus: 0,
       baseImport: Object.freeze({ beginStatus: importBegin.status, chunkCount: importChunks,
@@ -330,8 +567,11 @@ async function run() {
       waitSlice, waitSequence: Object.freeze(lowerOperations.slice(waitSliceIndex, waitSliceIndex + 3)),
       service: Object.freeze({ operation: serviced[0].operation,
         firstBlock: serviced[0].firstBlock.toString(), blockCount: serviced[0].blockCount,
-        durable: serviced[0].durable === true, changed: serviced[0].changed }), controllerState: controller.state,
+        durable: serviced[0].durable === true, changed: serviced[0].changed,
+        workerLifecycleAfterHostComplete: observedHostCompleteLifecycle }), controllerState: controller.state,
       reopenReadback,
+      syntheticChangedPersistence,
+      testAdapterArchiveRoundtrip,
       replacementCount: replacements, baseSha256: BASE_SHA256,
       baseBytes: BASE_BYTES, basePage0: same(await baseBinding.readBlock(0),
         new Uint8Array(await selectedBaseRange(0, 1))),

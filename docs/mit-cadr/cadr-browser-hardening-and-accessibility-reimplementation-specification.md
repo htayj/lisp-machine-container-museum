@@ -2,7 +2,7 @@
 type: concept
 title: CADR-WEB-303 browser hardening and accessibility reimplementation specification
 description: A release-bounded M13 contract for hostile host inputs, resource ceilings, offline execution, worker failure, and accessible controls around an unmodified CADR framebuffer.
-timestamp: 2026-08-02T00:00:00-04:00
+timestamp: 2026-08-02T05:27:51-04:00
 ---
 
 # CADR-WEB-303 browser hardening and accessibility reimplementation specification
@@ -97,13 +97,22 @@ SHA-256 witness for every canonical 1 MiB range, and returns v8 `WORKER_LOST` (2
 terminal) if any lower mutation or subsequent local adoption fails. M10 base reads
 remain conditional on re-reading and matching the complete containing range.
 
-This is source-level contract coverage, exercised with synthetic fixtures through
-the real v8 shell. The selected-media browser program has been changed to use the
-new public sequence, but no post-change selected-media browser run is claimed here.
-The retained E26 selected run belongs to the earlier private seam and establishes
-only its stated no-change block-1 observation. In particular, this change does not
-establish changed-overlay persistence, a public import failure algebra, a complete
-M8--M12 workflow, accessibility, or any final M13 result. `C-M13` remains open.
+E27 now exercises that public sequence in Chromium 150 with the current selected
+M12 O2 module and exact local base/artifacts. It observes all 258 public import
+chunks, public mount, clean public M10 reopen, selected cold/boot/start, and the real
+guest's first block-1 request after 252 bounded slices. That request is base-identical
+and therefore `durable:true,changed:false`; a second public reopen reads the same
+base bytes. A separate, explicitly synthetic post-mount controller write changes
+block 1 and survives immediate read plus two public reopens. After host completion
+the worker remains `RUNNING`; E27 never pauses or resets it. The harness also sends
+the public export/restore operation names to an explicitly test-only adapter that
+streams and parses one real synthetic `CDRM10W1` archive. That proves closed v8
+dispatch plus the existing wrapper serializer/parser roundtrip only. The adapter
+does not emit normative pinned-object export records, does not adopt the archive,
+and does not perform composite paused/reset restore. E27 therefore proves the
+selected binding and narrow synthetic changed-overlay read/reopen behavior, not a
+guest-generated changed write, normative export/restore, full failure/power-loss
+algebra, accessibility, audio, or final `C-M13` conformance.
 
 The deterministic source-admission corpus uses seed `0x6d313346` and 4,096 bounded
 candidates across the v8 envelope, code-length/surrogate, ID/session/version,
@@ -416,7 +425,7 @@ bootstrap and do not invoke the storage service. The selected factory supplies
 `selectedWasmSha256`; bootstrap hashes the supplied bytes and requires both caller
 self-consistency and equality to that separately configured digest before compile or
 worker dispatch. The current public factory pins
-`42e1e7d37ac1b1cc3dabf5b22a38bc81702c1b1f45b6da8bf31f0ddb249a40e0`.
+`62062a742c34aea8e0f7e49d48b19adefe4dd715795869557e1a085cbebb6396`.
 This factory-owned digest is the bootstrap authority; the later derived M10 artifact
 set identity is binding metadata and cannot authorize its own Wasm bytes. The
 shell does not admit a File, Blob, URL, pathname, store key, or caller-owned range
@@ -450,10 +459,12 @@ range revalidations, including the final `(firstBlock=263168, blockCount=77)` ra
 Representative malformed reply, timeout, Worker `error`, and `messageerror` failures
 cover artifact, stream-begin, early/final chunk, and stream-finish stages; the
 existing exhaustive nonzero-status matrix still covers every lower emission ordinal.
-The browser harness now
-uses the public import/mount/reopen order, but it has not produced new selected-input
-runtime evidence. E26's retained range/no-change-write result belongs to the earlier
-private seam and does not prove that this public operation ran.
+The browser harness uses the public import/mount/reopen order. E27 is direct selected
+runtime evidence for that path and for bounded synthetic changed-overlay read/reopen.
+Its public export/restore names reach only the named test adapter and close a
+`CDRM10W1` byte roundtrip, not the normative operations in the table above. E26
+remains the exact earlier private-seam observation and is not silently relabelled as
+public-path evidence.
 
 For the selected public mount profile, `m10-reopen` is `NOT_READY` before
 `base-media-mount` succeeds. The shell then calls its shell-owned `reopenDisk`
@@ -1167,7 +1178,7 @@ and policy-harness facts. Neither report substitutes for the other.
 | --- | --- | --- |
 | `TODO-RUNTIME-M13-01` | Run `M13-F01` through `M13-F04` in the maintained native and Node test matrix | hostile parser/message boundary |
 | `TODO-RUNTIME-M13-02` | Run `M13-F05a/F05b` in each browser named by the M13 build-local report | resource-ceiling and destructive-OOM behavior |
-| `TODO-RUNTIME-M13-03` | Run the tracked public M13 base-media/M10 boot contract with the selected Wasm worker and exact-base controller, then complete the full `M13-F06/F07` power-loss campaign. The retained private v7 artifact-stream witness is not execution evidence for the new public contract. | overlay confinement and recovery |
+| `TODO-RUNTIME-M13-03` | Extend E27 from its real public mount/guest no-change request and synthetic changed-overlay read/reopen to a guest-generated changed write; implement and test pinned-object export plus paused/reset composite restore rather than E27's dispatch adapter; then complete the full `M13-F06/F07` failure and power-loss campaign. | overlay confinement and recovery |
 | `TODO-RUNTIME-M13-04` | Serve the exact M13 build-local artifact under CSP and browser-stack request recording | bounded-bootstrap/no-network and CSP claim |
 | `TODO-RUNTIME-M13-05` | Complete worker-crash injection at every named operation and M10 `IN_DOUBT` reopen/reread path | saved-versus-volatile recovery claim |
 | `TODO-RUNTIME-M13-06` | Complete automated and manual keyboard/screen-reader workflow in each supported browser | accessibility claim |

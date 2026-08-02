@@ -1233,14 +1233,17 @@ checks every lower mutation/read/adoption failure position and terminally discar
 partially mutated worker, while the production binding test covers all 258 retained
 and revalidated range indexes including the final 77-block range. Maximum public ID
 terminalization is common to mount success, precondition rejection, and worker-loss
-failure. The selected browser harness has been rewritten to send
-the public import/mount/reopen sequence, but this source change has not yet been run
-against the private selected inputs. E23 through E26 remain narrower historical
-evidence: they load selected M12 O2 Wasm, exercise synthetic M10 composition and
-dispatch, and record the earlier private selected-media run to its first no-change
-block-1 write and clean reopen. They do not prove current public-path execution,
-changed-overlay persistence, a complete composed M8--M12 workflow, final
-accessibility, or the full F06/F07 failure algebra, so `C-M13` remains open.
+failure. E27 now runs the public import/mount/reopen path in Chromium 150 against the
+current selected M12 O2 module and exact local base/artifacts. The real guest reaches
+its first base-identical block-1 write in 252 bounded slices and public reopen reads
+the same bytes. An explicitly synthetic controller write after that public mount
+then survives immediate read and public reopen. The worker remains `RUNNING` after
+host completion. Public export/restore names are exercised only through an E27 test
+adapter which streams and parses a real synthetic `CDRM10W1`; it emits no normative
+pinned-object records, adopts no snapshot, and performs no paused/reset composite
+restore. All source inputs remain byte-identical. This closes neither a guest-
+generated changed write, normative export/restore, the complete F06/F07 power-loss/
+failure algebra, composed M8--M12 accessibility/audio workflows, nor final `C-M13`.
 
 ### M14 — Reproducible museum release
 
