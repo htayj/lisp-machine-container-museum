@@ -857,6 +857,13 @@ execFileSync("git", ["clone", "--no-local", "--no-checkout", ROOT, authorityChec
 });
 execFileSync("git", ["checkout", "--detach", "HEAD"], { cwd: authorityCheckout,
   stdio: "ignore" });
+const launcherReceiptPath = resolve(authorityCheckout,
+  "scripts/cadr-m7-p4-guix-launcher-receipt.json");
+const sourceHasLauncherReceipt = await stat(launcherReceiptPath).then(
+  () => true, error => {
+    if (error?.code === "ENOENT") return false;
+    throw error;
+  });
 const fsmonitorMarker = resolve(authorityDirectory, "fsmonitor-ran");
 const fsmonitorHelper = resolve(authorityDirectory, "fsmonitor-helper.sh");
 await writeFile(fsmonitorHelper, `#!/bin/sh\n/usr/bin/touch '${fsmonitorMarker}'\nexit 1\n`,
@@ -1469,18 +1476,23 @@ execFileSync("git", ["config", "user.email", "m7-test@example.invalid"],
   { cwd: authorityCheckout });
 execFileSync("git", ["config", "user.signingkey", "3EA36B492D7E76450D2C59267B55A97A62F6D6C0"],
   { cwd: authorityCheckout });
-await writeFile(resolve(authorityCheckout, "signed-non-immediate-descendant.txt"),
-  "must not reuse commit-A receipt\n");
-execFileSync("git", ["add", "signed-non-immediate-descendant.txt"],
-  { cwd: authorityCheckout });
-execFileSync("git", ["commit", "-q", "-S", "-m", "signed non-immediate descendant"],
-  { cwd: authorityCheckout });
-await assert.rejects(openM7P4AuthorityRootForTest({
-  expectedClosure: await open(expectedClosurePath), git: await open("/usr/bin/git"),
-  guix: await open("/usr/local/bin/guix"), gpgv: await open("/usr/bin/gpgv"),
-  keyring: await open(keyringPath), checkout: authorityCheckout,
-}), /exact single immediate parent/,
-"a validly signed non-immediate descendant cannot reuse release B's commit-A receipt");
+if (sourceHasLauncherReceipt) {
+  await writeFile(resolve(authorityCheckout, "signed-non-immediate-descendant.txt"),
+    "must not reuse commit-A receipt\n");
+  execFileSync("git", ["add", "signed-non-immediate-descendant.txt"],
+    { cwd: authorityCheckout });
+  execFileSync("git", ["commit", "-q", "-S", "-m", "signed non-immediate descendant"],
+    { cwd: authorityCheckout });
+  await assert.rejects(openM7P4AuthorityRootForTest({
+    expectedClosure: await open(expectedClosurePath), git: await open("/usr/bin/git"),
+    guix: await open("/usr/local/bin/guix"), gpgv: await open("/usr/bin/gpgv"),
+    keyring: await open(keyringPath), checkout: authorityCheckout,
+  }), /exact single immediate parent/,
+  "a validly signed non-immediate descendant cannot reuse release B's commit-A receipt");
+} else {
+  assert.equal(sourceHasLauncherReceipt, false,
+    "source A intentionally lacks the launcher receipt, so receipt-parent policy is inapplicable");
+}
 await rm(authorityDirectory, { recursive: true, force: true });
 
 {
