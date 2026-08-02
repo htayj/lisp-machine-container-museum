@@ -25,6 +25,9 @@ const GUIX_DAEMON_SOCKET = "/var/guix/daemon-socket/socket";
 const GUIX_STORE = "/gnu/store";
 const M7_P4_GUIX_CHANNEL = "230aa373f315f247852ee07dff34146e9b480aec";
 const M7_P4_LAUNCHER_RELATIVE = "bin/cadr-m7-p4-authority.mjs";
+export const M7_P4_MAX_SOURCE_BLOB_BYTES = 2 * 1024 * 1024;
+export const M7_P4_MAX_SOURCE_BYTES = 32 * 1024 * 1024;
+export const M7_P4_MAX_ARCHIVE_BYTES = 40 * 1024 * 1024;
 export const M7_P4_TRUSTED_LINEAGE_FLOOR =
   "9dbfe42dd66a7e92dc6cc1f59b44d622381fc7d1";
 export const M7_P4_SIGNING_SUBKEY =
@@ -150,17 +153,25 @@ function closedEnvironment(extra = {}) {
     GIT_NO_REPLACE_OBJECTS: "1", ...extra });
 }
 
-async function runDescriptor(fd, args, cwd, extraEnvironment = {}) {
+async function runDescriptor(fd, args, cwd, extraEnvironment = {}, maxStdoutBytes = null) {
   return new Promise((resolveCommand, rejectCommand) => {
     const child = spawn("/proc/self/fd/3", args, {
       cwd, env: closedEnvironment(extraEnvironment),
       stdio: ["ignore", "pipe", "pipe", { fd, readable: true, writable: false }],
     });
-    const out = []; const err = [];
-    child.stdout.on("data", chunk => out.push(chunk));
+    const out = []; const err = []; let stdoutBytes = 0; let terminal = false;
+    child.stdout.on("data", chunk => {
+      stdoutBytes += chunk.byteLength;
+      if (maxStdoutBytes !== null && stdoutBytes > maxStdoutBytes) {
+        terminal = true; child.kill("SIGKILL");
+        rejectCommand(new Error("descriptor-bound command exceeded selected-profile output bound"));
+      } else out.push(chunk);
+    });
     child.stderr.on("data", chunk => err.push(chunk));
-    child.once("error", rejectCommand);
+    child.once("error", error => { if (!terminal) { terminal = true; rejectCommand(error); } });
     child.once("close", code => {
+      if (terminal) return;
+      terminal = true;
       if (code === 0) resolveCommand(Buffer.concat(out));
       else rejectCommand(new Error(`descriptor-bound command failed (${code}): ${
         Buffer.concat(err).toString("utf8").trim()}`));
@@ -267,6 +278,9 @@ async function verifyLineage(git, head) {
 }
 
 function tarFiles(tarBytes) {
+  if (tarBytes.byteLength > M7_P4_MAX_ARCHIVE_BYTES) {
+    fail("Git archive exceeds selected-profile archive bound");
+  }
   const files = []; let offset = 0;
   const field = (header, start, length) => {
     const raw = header.subarray(start, start + length); const end = raw.indexOf(0);
@@ -283,16 +297,72 @@ function tarFiles(tarBytes) {
     const type = header[156]; const start = offset + 512; const end = start + size;
     if (!/^[A-Za-z0-9_./-]+$/.test(path) || path.startsWith("/") ||
         path.split("/").includes("..") || !Number.isSafeInteger(size) || size < 0 ||
-        !Number.isSafeInteger(mode) || end > tarBytes.byteLength) fail("Git archive member is unsafe");
+        !Number.isSafeInteger(mode) || size > M7_P4_MAX_SOURCE_BLOB_BYTES ||
+        end > tarBytes.byteLength) fail("Git archive member is unsafe or oversized");
     if (type === 0 || type === 48) {
       const gitMode = (mode & 0o111) !== 0 ? "100755" : "100644";
       files.push(Object.freeze({ path, mode, gitMode,
         bytes: Buffer.from(tarBytes.subarray(start, end)) }));
     }
-    else if (type !== 53 && type !== 103) fail("Git archive contains a non-regular member");
+    else if (type !== 53 && type !== 103) {
+      fail(`Git archive contains a non-regular member (${String.fromCharCode(type)} ${path})`);
+    }
     offset = start + Math.ceil(size / 512) * 512;
   }
   fail("Git archive lacks a terminal block");
+}
+
+function ustarPathRepresentable(path) {
+  const bytes = Buffer.byteLength(path, "utf8");
+  if (bytes <= 100) return true;
+  for (let index = path.indexOf("/"); index >= 0 && index < path.length - 1;
+    index = path.indexOf("/", index + 1)) {
+    // Git's ustar writer reserves the final prefix byte for NUL: its effective
+    // prefix limit is 154 bytes, as exercised by total-255/total-256 paths.
+    if (Buffer.byteLength(path.slice(0, index), "utf8") <= 154 &&
+        Buffer.byteLength(path.slice(index + 1), "utf8") <= 100) return true;
+  }
+  return false;
+}
+
+/** Test seam for exact Git ustar header-name boundary checks. */
+export function isM7P4UstarHeaderPathRepresentableForTest(path) {
+  return typeof path === "string" && ustarPathRepresentable(path);
+}
+
+export function deriveM7P4SignedArchiveBound(entries) {
+  if (!Array.isArray(entries) || entries.length === 0) fail("signed source inventory is empty");
+  let sourceBytes = 0; const directories = new Set(); const seen = new Set();
+  let rawBytes = 1024 + 1024; // Git global PAX header plus two terminal blocks.
+  for (const entry of entries) {
+    if (entry === null || typeof entry !== "object" ||
+        !/^[A-Za-z0-9_./-]+$/.test(entry.path ?? "") || entry.path.startsWith("/") ||
+        entry.path.split("/").includes("..") || seen.has(entry.path) ||
+        !Number.isSafeInteger(entry.bytes) || entry.bytes < 0 ||
+        entry.bytes > M7_P4_MAX_SOURCE_BLOB_BYTES || !ustarPathRepresentable(entry.path)) {
+      fail("signed source inventory member is unsafe, unsupported, or oversized");
+    }
+    seen.add(entry.path); sourceBytes += entry.bytes;
+    if (!Number.isSafeInteger(sourceBytes) || sourceBytes > M7_P4_MAX_SOURCE_BYTES) {
+      fail("signed source exceeds selected-profile aggregate byte bound");
+    }
+    rawBytes += 512 + Math.ceil(entry.bytes / 512) * 512;
+    const parts = entry.path.split("/");
+    for (let count = 1; count < parts.length; count += 1) {
+      const directory = parts.slice(0, count).join("/");
+      if (!ustarPathRepresentable(`${directory}/`)) {
+        fail("signed source directory requires unsupported PAX");
+      }
+      directories.add(directory);
+    }
+  }
+  rawBytes += directories.size * 512;
+  const archiveBytes = Math.ceil(rawBytes / 10240) * 10240;
+  if (archiveBytes > M7_P4_MAX_ARCHIVE_BYTES) {
+    fail("signed source exceeds selected-profile archive byte bound");
+  }
+  return Object.freeze({ archive_bytes: archiveBytes, source_bytes: sourceBytes,
+    directories: directories.size });
 }
 
 function treeIdentity(files) {
@@ -328,7 +398,10 @@ function treeIdentity(files) {
 /** Canonical signed-archive language shared by production and receipt generation. */
 export function validateM7P4SignedArchive(archive, expectedTree) {
   const bytes = Buffer.from(archive); const files = tarFiles(bytes);
-  if (!/^[0-9a-f]{40}$/.test(expectedTree) || treeIdentity(files) !== expectedTree) {
+  const bound = deriveM7P4SignedArchiveBound(files.map(file =>
+    ({ path: file.path, bytes: file.bytes.byteLength })));
+  if (bytes.byteLength !== bound.archive_bytes || !/^[0-9a-f]{40}$/.test(expectedTree) ||
+      treeIdentity(files) !== expectedTree) {
     fail("Git archive does not reconstruct its declared signed tree");
   }
   return files;
@@ -497,8 +570,9 @@ export async function validateM7P4InstalledLauncherReceiptForTest(value) {
 }
 
 async function selectSignedSnapshot(gitRecord, gpgvRecord, keyringRecord, checkout) {
-  const git = args => runDescriptor(gitRecord.fd,
-    ["--no-replace-objects", "-c", "core.hooksPath=/dev/null", ...args], checkout);
+  const git = (args, maxStdoutBytes = null) => runDescriptor(gitRecord.fd,
+    ["--no-replace-objects", "-c", "core.hooksPath=/dev/null", ...args], checkout,
+    {}, maxStdoutBytes);
   const head = exactOneLine(await git(["rev-parse", "--verify", "HEAD^{commit}"]),
     "root-selected signed HEAD");
   const tree = exactOneLine(await git(["rev-parse", `${head}^{tree}`]),
@@ -519,7 +593,7 @@ async function selectSignedSnapshot(gitRecord, gpgvRecord, keyringRecord, checko
   const signed = parseSignedCommit(commitBytes, head);
   const signature = await verifySignature(gpgvRecord, keyringRecord, signed);
   await verifyLineage(git, head);
-  const archive = await git(["archive", "--format=tar", head]);
+  const archive = await git(["archive", "--format=tar", head], M7_P4_MAX_ARCHIVE_BYTES);
   const files = validateM7P4SignedArchive(archive, tree);
   const inventory = Object.freeze(files.map(file => file.path).sort());
   if (inventory.length === 0 || new Set(inventory).size !== inventory.length) {
@@ -540,7 +614,8 @@ async function selectSignedSnapshot(gitRecord, gpgvRecord, keyringRecord, checko
     await verifyLineage(git, sourceCommit);
     const sourceTree = exactOneLine(await git(["rev-parse", `${sourceCommit}^{tree}`]),
       "commit-A tree");
-    const sourceArchive = await git(["archive", "--format=tar", sourceCommit]);
+    const sourceArchive = await git(["archive", "--format=tar", sourceCommit],
+      M7_P4_MAX_ARCHIVE_BYTES);
     const sourceFiles = validateM7P4SignedArchive(sourceArchive, sourceTree);
     launcherSource = Object.freeze({ commit: sourceCommit, tree: sourceTree,
       archive: Buffer.from(sourceArchive),

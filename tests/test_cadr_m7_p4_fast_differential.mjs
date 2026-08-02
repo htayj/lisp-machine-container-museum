@@ -39,6 +39,8 @@ import {
   validateM7P4FastPreparedIdentity,
 } from "../scripts/run-cadr-m7-p4-fast-differential.mjs";
 import { captureM7P4SignedArchiveForTest, closeM7P4AuthorityRootForTest,
+  deriveM7P4SignedArchiveBound, M7_P4_MAX_ARCHIVE_BYTES, M7_P4_MAX_SOURCE_BLOB_BYTES,
+  M7_P4_MAX_SOURCE_BYTES, isM7P4UstarHeaderPathRepresentableForTest,
   inspectM7P4AuthorityRootForTest,
   openM7P4AuthorityRootForTest, revalidateM7P4GuixEndpointForTest,
   validateM7P4InstalledLauncherReceiptForTest } from
@@ -64,6 +66,53 @@ assert.match(runnerSource, /spawn\("\/proc\/self\/fd\/3"/,
   "Git and Guix execute only through the inherited root-owned descriptor");
 assert.doesNotMatch(runnerSource, /\["ls-tree"/,
   "post-snapshot staging uses only the signed archive inventory and never live Git");
+assert.ok(deriveM7P4SignedArchiveBound([
+  { path: "exact-boundary.bin", bytes: M7_P4_MAX_SOURCE_BLOB_BYTES },
+]).archive_bytes > M7_P4_MAX_SOURCE_BLOB_BYTES,
+"the exact selected-profile blob boundary has a finite derived archive bound");
+assert.throws(() => deriveM7P4SignedArchiveBound([
+  { path: "one-byte-oversize.bin", bytes: M7_P4_MAX_SOURCE_BLOB_BYTES + 1 },
+]), /oversized/,
+"one byte over the selected-profile blob boundary is rejected before archive creation");
+const exactAggregateInventory = Array.from({ length: M7_P4_MAX_SOURCE_BYTES /
+  M7_P4_MAX_SOURCE_BLOB_BYTES }, (_, index) =>
+  ({ path: `aggregate-${index}.bin`, bytes: M7_P4_MAX_SOURCE_BLOB_BYTES }));
+assert.equal(deriveM7P4SignedArchiveBound(exactAggregateInventory).source_bytes,
+  M7_P4_MAX_SOURCE_BYTES,
+"the exact selected-profile aggregate source boundary is accepted");
+assert.throws(() => deriveM7P4SignedArchiveBound([
+  ...exactAggregateInventory, { path: "aggregate-plus-one.bin", bytes: 1 },
+]), /aggregate byte bound/,
+"one byte over the aggregate source boundary is rejected before archive creation");
+assert.doesNotThrow(() => deriveM7P4SignedArchiveBound([
+  { path: `${"d".repeat(99)}/file`, bytes: 1 },
+]), "a 99-byte root directory plus emitted slash remains ustar-representable");
+for (const length of [100, 101]) {
+  assert.throws(() => deriveM7P4SignedArchiveBound([
+    { path: `${"d".repeat(length)}/file`, bytes: 1 },
+  ]), /directory requires unsupported PAX/,
+  `${length}-byte root directory plus emitted slash is rejected before archive creation`);
+}
+const nestedPrefix = `${"p".repeat(54)}/${"q".repeat(99)}`;
+assert.equal(isM7P4UstarHeaderPathRepresentableForTest(
+  `${nestedPrefix}/${"n".repeat(99)}/`), true,
+"nested ustar directory header accepts Git's 154-byte prefix boundary");
+assert.equal(isM7P4UstarHeaderPathRepresentableForTest(
+  `${nestedPrefix}/${"n".repeat(100)}/`), false,
+"nested ustar directory header rejects a slash-terminated 100-byte name");
+assert.equal(isM7P4UstarHeaderPathRepresentableForTest(
+  `${"p".repeat(55)}/${"q".repeat(99)}/${"n".repeat(99)}/`), false,
+"nested ustar directory header rejects Git's 155-byte prefix overflow");
+assert.doesNotThrow(() => deriveM7P4SignedArchiveBound([
+  { path: `p/${"n".repeat(99)}/file`, bytes: 1 },
+]), "nested signed path keeps both slash-terminated directory and child file representable");
+assert.throws(() => deriveM7P4SignedArchiveBound([
+  { path: `p/${"n".repeat(100)}/file`, bytes: 1 },
+]), /directory requires unsupported PAX/,
+"nested signed path isolates directory trailing-slash overflow while child file remains representable");
+assert.doesNotThrow(() => deriveM7P4SignedArchiveBound([
+  { path: `${nestedPrefix}/${"n".repeat(95)}/file`, bytes: 1 },
+]), "nested signed file accepts the exact total-255 prefix-154 and suffix-100 boundary");
 assert.throws(() => execFileSync(process.execPath,
   [resolve(ROOT, "scripts/cadr-m7-p4-authority-root.mjs"), "--serve-inherited"],
   { cwd: ROOT, stdio: "pipe" }), /Command failed/,
@@ -1255,12 +1304,22 @@ await rm(authorityDirectory, { recursive: true, force: true });
     const ustarBoundaryDirectory = resolve(fixture, "boundary");
     await mkdir(ustarBoundaryDirectory);
     await writeFile(resolve(ustarBoundaryDirectory, "b".repeat(100)), "ustar-boundary\n");
+    await writeFile(resolve(ustarBoundaryDirectory, "exact-max-blob.bin"),
+      Buffer.alloc(M7_P4_MAX_SOURCE_BLOB_BYTES, 0x41));
+    const directoryBoundary = resolve(fixture, "d".repeat(99));
+    await mkdir(directoryBoundary); await writeFile(resolve(directoryBoundary, "file"), "dir-99\n");
+    const nestedDirectoryBoundary = resolve(fixture, "p", "n".repeat(99));
+    await mkdir(nestedDirectoryBoundary, { recursive: true });
+    await writeFile(resolve(nestedDirectoryBoundary, "file"), "nested-dir-99\n");
+    const prefixBoundaryDirectory = resolve(fixture, ...nestedPrefix.split("/"), "n".repeat(95));
+    await mkdir(prefixBoundaryDirectory, { recursive: true });
+    await writeFile(resolve(prefixBoundaryDirectory, "file"), "prefix-154-suffix-100\n");
     execFileSync("git", ["init", "-q"], { cwd: fixture });
     execFileSync("git", ["config", "user.name", "M7 test"], { cwd: fixture });
     execFileSync("git", ["config", "user.email", "m7-test@example.invalid"], { cwd: fixture });
     execFileSync("git", ["config", "user.signingkey", "3EA36B492D7E76450D2C59267B55A97A62F6D6C0"],
       { cwd: fixture });
-    execFileSync("git", ["add", "scripts", "boundary"], { cwd: fixture });
+    execFileSync("git", ["add", "."], { cwd: fixture });
     execFileSync("git", ["commit", "-q", "-S", "-m", "synthetic signed commit A"],
       { cwd: fixture });
     await mkdir(fixtureGuixHome);
@@ -1274,7 +1333,8 @@ await rm(authorityDirectory, { recursive: true, force: true });
     const signedTree = execFileSync("git", ["rev-parse", "HEAD^{tree}"],
       { cwd: fixture, encoding: "utf8" }).trim();
     capturedFixture = await captureM7P4SignedArchiveForTest(
-      execFileSync("git", ["archive", "--format=tar", "HEAD"], { cwd: fixture }), signedTree);
+      execFileSync("git", ["archive", "--format=tar", "HEAD"],
+        { cwd: fixture, maxBuffer: M7_P4_MAX_ARCHIVE_BYTES + 1 }), signedTree);
     const capturedDerivation = execFileSync("/usr/local/bin/guix",
       ["time-machine", "--commit=230aa373f315f247852ee07dff34146e9b480aec", "--",
         "build", "--derivations", "-f",
@@ -1290,7 +1350,9 @@ await rm(authorityDirectory, { recursive: true, force: true });
     await writeFile(resolve(scripts, "cadr-m7-p4-authority-root.mjs"),
       "throw new Error('post-sign worktree entrypoint substitution reached');\n");
     await writeFile(fixtureKeyring, execFileSync("gpg", ["--export",
-      "3EA36B492D7E76450D2C59267B55A97A62F6D6C0"]));
+      "3EA36B492D7E76450D2C59267B55A97A62F6D6C0"]), { mode: 0o600 });
+    await chmod(fixtureKeyring, 0o600);
+    assert.equal((await stat(fixtureKeyring)).mode & 0o777, 0o600);
     const generated = JSON.parse(execFileSync(process.execPath,
       [resolve(ROOT, "scripts/generate-cadr-m7-p4-launcher-receipt.mjs"),
         "--source-a", fixture, "--keyring", fixtureKeyring, "--output", receiptPath],
@@ -1364,7 +1426,8 @@ await rm(authorityDirectory, { recursive: true, force: true });
     execFileSync("git", ["add", "scripts", "signed-outside-link"], { cwd: fixture });
     execFileSync("git", ["commit", "-q", "-S", "-m", "signed symlink attack"], { cwd: fixture });
     await writeFile(fixtureKeyring, execFileSync("gpg", ["--export",
-      "3EA36B492D7E76450D2C59267B55A97A62F6D6C0"]));
+      "3EA36B492D7E76450D2C59267B55A97A62F6D6C0"]), { mode: 0o600 });
+    await chmod(fixtureKeyring, 0o600);
     assert.throws(() => execFileSync(process.execPath,
       [resolve(ROOT, "scripts/generate-cadr-m7-p4-launcher-receipt.mjs"),
         "--source-a", fixture, "--keyring", fixtureKeyring, "--output", receiptPath],
@@ -1380,6 +1443,10 @@ await rm(authorityDirectory, { recursive: true, force: true });
 for (const [label, unsafePath] of [
   ["long-basename", `pax/${"l".repeat(101)}`],
   ["long-prefix", `${"p".repeat(80)}/${"q".repeat(80)}/${"r".repeat(80)}/file`],
+  ["root-directory-100", `${"d".repeat(100)}/file`],
+  ["root-directory-101", `${"d".repeat(101)}/file`],
+  ["nested-name-100", `p/${"n".repeat(100)}/file`],
+  ["nested-prefix-155-total-256", `${"p".repeat(55)}/${"q".repeat(99)}/${"n".repeat(95)}/file`],
 ]) {
   const fixture = await mkdtemp(resolve(tmpdir(), `cadr-m7-launcher-pax-${label}-`));
   const fixtureKeyring = `${fixture}.keyring.gpg`; const receiptPath = `${fixture}.receipt.json`;
@@ -1400,17 +1467,58 @@ for (const [label, unsafePath] of [
     execFileSync("git", ["commit", "-q", "-S", "-m", `signed ${label} PAX attack`],
       { cwd: fixture });
     await writeFile(fixtureKeyring, execFileSync("gpg", ["--export",
-      "3EA36B492D7E76450D2C59267B55A97A62F6D6C0"]));
+      "3EA36B492D7E76450D2C59267B55A97A62F6D6C0"]), { mode: 0o600 });
+    await chmod(fixtureKeyring, 0o600);
     assert.throws(() => execFileSync(process.execPath,
       [resolve(ROOT, "scripts/generate-cadr-m7-p4-launcher-receipt.mjs"),
         "--source-a", fixture, "--keyring", fixtureKeyring, "--output", receiptPath],
       { cwd: ROOT, encoding: "utf8", stdio: "pipe" }), error =>
-      /Git archive contains a non-regular member/.test(String(error.stderr)),
+      /signed source (?:inventory member is unsafe, unsupported, or oversized|directory requires unsupported PAX)/.test(
+        String(error.stderr)),
     `${label} PAX archive is rejected by the production parser before Guix build`);
     assert.equal(await readFile(receiptPath).then(() => true, () => false), false);
     assert.equal((await readdir(resolve(receiptPath, ".."))).some(name =>
       name.includes(".receipt.json.") && name.endsWith(".tmp")), false,
     `${label} PAX rejection leaves no receipt temporary`);
+  } finally {
+    await rm(fixture, { recursive: true, force: true });
+    await unlink(fixtureKeyring).catch(() => {}); await unlink(receiptPath).catch(() => {});
+  }
+}
+
+{
+  const fixture = await mkdtemp(resolve(tmpdir(), "cadr-m7-launcher-oversize-test-"));
+  const fixtureKeyring = `${fixture}.keyring.gpg`; const receiptPath = `${fixture}.receipt.json`;
+  try {
+    const scripts = resolve(fixture, "scripts"); await mkdir(scripts);
+    await writeFile(resolve(scripts, "build-cadr-m7-p4-launcher.scm"),
+      await readFile(resolve(ROOT, "scripts/build-cadr-m7-p4-launcher.scm")));
+    await writeFile(resolve(scripts, "cadr-m7-p4-authority-root.mjs"),
+      await readFile(resolve(ROOT, "scripts/cadr-m7-p4-authority-root.mjs")));
+    await writeFile(resolve(fixture, "sparse-ish-zero-blob.bin"),
+      Buffer.alloc(M7_P4_MAX_SOURCE_BLOB_BYTES + 1));
+    execFileSync("git", ["init", "-q"], { cwd: fixture });
+    execFileSync("git", ["config", "user.name", "M7 test"], { cwd: fixture });
+    execFileSync("git", ["config", "user.email", "m7-test@example.invalid"], { cwd: fixture });
+    execFileSync("git", ["config", "user.signingkey", "3EA36B492D7E76450D2C59267B55A97A62F6D6C0"],
+      { cwd: fixture });
+    execFileSync("git", ["add", "."], { cwd: fixture });
+    execFileSync("git", ["commit", "-q", "-S", "-m", "signed one-byte oversize attack"],
+      { cwd: fixture });
+    await writeFile(fixtureKeyring, execFileSync("gpg", ["--export",
+      "3EA36B492D7E76450D2C59267B55A97A62F6D6C0"]), { mode: 0o600 });
+    await chmod(fixtureKeyring, 0o600);
+    assert.throws(() => execFileSync(process.execPath,
+      [resolve(ROOT, "scripts/generate-cadr-m7-p4-launcher-receipt.mjs"),
+        "--source-a", fixture, "--keyring", fixtureKeyring, "--output", receiptPath],
+      { cwd: ROOT, encoding: "utf8", stdio: "pipe" }), error =>
+      /signed source inventory member is unsafe, unsupported, or oversized/.test(
+        String(error.stderr)),
+    "signed sparse-ish blob one byte over profile maximum is rejected before Guix");
+    assert.equal(await readFile(receiptPath).then(() => true, () => false), false);
+    assert.equal((await readdir(resolve(receiptPath, ".."))).some(name =>
+      name.includes(".receipt.json.") && name.endsWith(".tmp")), false,
+    "oversize rejection leaves no receipt temporary");
   } finally {
     await rm(fixture, { recursive: true, force: true });
     await unlink(fixtureKeyring).catch(() => {}); await unlink(receiptPath).catch(() => {});

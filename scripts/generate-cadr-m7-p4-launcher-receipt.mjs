@@ -6,7 +6,9 @@ import { closeSync, fstatSync, mkdtempSync, openSync, readFileSync, rmSync } fro
 import { link, mkdir, open, readFile, unlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
-import { validateM7P4SignedArchive } from "./cadr-m7-p4-authority-root.mjs";
+import { deriveM7P4SignedArchiveBound, M7_P4_MAX_ARCHIVE_BYTES,
+  M7_P4_MAX_SOURCE_BLOB_BYTES,
+  validateM7P4SignedArchive } from "./cadr-m7-p4-authority-root.mjs";
 
 const GUIX = "/usr/local/bin/guix";
 const GIT = "/usr/bin/git";
@@ -164,35 +166,62 @@ const pinnedFds = pinnedFiles.map(([path, expectedHash, expectedBytes]) => {
 process.on("exit", () => { for (const fd of pinnedFds) { try { closeSync(fd); } catch {} } });
 const [gitFd, guixFd, gpgvFd, keyringFd] = pinnedFds;
 const git = args => command("/proc/self/fd/3", args, source, {}, [gitFd]);
-const gitBytes = args => execFileSync("/proc/self/fd/3", args, {
+const gitBytes = (args, maxBuffer = M7_P4_MAX_SOURCE_BLOB_BYTES + 1) =>
+  execFileSync("/proc/self/fd/3", args, {
   cwd: source, env: { HOME: GUIX_HOME, LANG: "C", LC_ALL: "C", TZ: "UTC",
     GIT_CONFIG_NOSYSTEM: "1", GIT_CONFIG_GLOBAL: "/dev/null", GIT_NO_REPLACE_OBJECTS: "1" },
-  stdio: ["ignore", "pipe", "pipe", gitFd],
-});
+    stdio: ["ignore", "pipe", "pipe", gitFd], maxBuffer,
+  });
 const guix = (args, env = {}) => command("/proc/self/fd/3", args, source, env, [guixFd]);
 const commit = git(["--no-replace-objects", "rev-parse", "--verify", "HEAD^{commit}"]);
 const tree = git(["--no-replace-objects", "rev-parse", "HEAD^{tree}"]);
 const commitBytes = gitBytes(["--no-replace-objects", "cat-file", "commit", commit]);
 await verifyPinnedSignature(commitBytes, commit, tree, gpgvFd, keyringFd);
-const records = gitBytes(["--no-replace-objects", "ls-tree", "-r", "-z", "--full-tree", commit])
+const records = gitBytes(["--no-replace-objects", "ls-tree", "-r", "-z", "-l",
+  "--full-tree", commit], M7_P4_MAX_ARCHIVE_BYTES + 1)
   .toString("utf8").split("\0").filter(Boolean);
 const files = []; const seen = new Set();
 for (const record of records) {
-  const match = /^(100644|100755) blob ([0-9a-f]{40})\t(.+)$/.exec(record);
+  const match = /^(100644|100755) blob ([0-9a-f]{40}) +([0-9]+)\t(.+)$/.exec(record);
   if (match === null) fail("signed tree contains a symlink, submodule, or nonregular mode");
-  const [, mode, oid, path] = match;
+  const [, mode, oid, sizeText, path] = match; const declaredBytes = Number(sizeText);
   if (!/^[A-Za-z0-9_./-]+$/.test(path) || path.startsWith("/") ||
-      path.split("/").includes("..") || seen.has(path)) fail("signed tree path is unsafe or duplicate");
+      path.split("/").includes("..") || seen.has(path) || !Number.isSafeInteger(declaredBytes) ||
+      declaredBytes < 0) fail("signed tree path or size is unsafe or duplicate");
   seen.add(path);
-  const bytes = gitBytes(["--no-replace-objects", "cat-file", "blob", oid]);
-  if (gitObjectId("blob", bytes) !== oid) fail("signed blob bytes differ from object identity");
-  files.push(Object.freeze({ path, mode, bytes: Buffer.from(bytes) }));
+  files.push({ path, mode, oid, declaredBytes });
+}
+const archiveBound = deriveM7P4SignedArchiveBound(files.map(file =>
+  ({ path: file.path, bytes: file.declaredBytes })));
+for (const file of files) {
+  let bytes;
+  try {
+    bytes = gitBytes(["--no-replace-objects", "cat-file", "blob", file.oid],
+      file.declaredBytes + 1);
+  } catch (error) {
+    if (error?.code === "ENOBUFS") fail("signed blob exceeded its exact declared byte bound");
+    throw error;
+  }
+  if (bytes.byteLength !== file.declaredBytes || gitObjectId("blob", bytes) !== file.oid) {
+    fail("signed blob bytes differ from declared size or object identity");
+  }
+  file.bytes = Buffer.from(bytes); Object.freeze(file);
 }
 files.sort((left, right) => left.path.localeCompare(right.path));
 if (files.length === 0 || treeIdentity(files) !== tree) {
   fail("reconstructed signed files do not reproduce the commit tree");
 }
-const archive = gitBytes(["--no-replace-objects", "archive", "--format=tar", commit]);
+let archive;
+try {
+  archive = gitBytes(["--no-replace-objects", "archive", "--format=tar", commit],
+    archiveBound.archive_bytes + 1);
+} catch (error) {
+  if (error?.code === "ENOBUFS") fail("signed Git archive exceeded its exact selected-profile bound");
+  throw error;
+}
+if (archive.byteLength !== archiveBound.archive_bytes) {
+  fail("signed Git archive is truncated or differs from its exact selected-profile bound");
+}
 const archiveFiles = validateM7P4SignedArchive(archive, tree)
   .slice().sort((left, right) => left.path.localeCompare(right.path));
 if (archiveFiles.length !== files.length || archiveFiles.some((file, index) =>
