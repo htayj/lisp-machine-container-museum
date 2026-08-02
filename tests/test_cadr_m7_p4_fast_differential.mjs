@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { execFileSync, spawn, spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { chmod, mkdir, mkdtemp, open, readFile, readdir, rm, stat, symlink, unlink, writeFile } from "node:fs/promises";
+import { chmod, mkdir, mkdtemp, open, readFile, readdir, readlink, rm, stat, symlink, unlink, writeFile } from "node:fs/promises";
 import { createConnection, createServer } from "node:net";
 import { resolve } from "node:path";
 import { tmpdir } from "node:os";
@@ -54,8 +54,42 @@ import { canonicalJson } from "../scripts/run-cadr-m6-devid-o2-canary.mjs";
 const ROOT = resolve(new URL("..", import.meta.url).pathname);
 const SLOTS = 1_048_576;
 const C_PREFIX_SPANS = 937;
+const AUTHORITY_FD_CLEANUP_TIMEOUT_MS = 2000;
 const H = value => new Uint8Array(32).fill(value);
 const digest = bytes => new Uint8Array(createHash("sha256").update(bytes).digest());
+
+async function boundedAuthorityCleanup(promise, label) {
+  let timeout = null;
+  try {
+    return await Promise.race([promise, new Promise((_, reject) => {
+      timeout = setTimeout(() => reject(new Error(
+        `M7 authority fd cleanup timed out waiting for ${label}`)),
+      AUTHORITY_FD_CLEANUP_TIMEOUT_MS);
+    })]);
+  } finally {
+    if (timeout !== null) clearTimeout(timeout);
+  }
+}
+
+async function liveSocketOwnersForTest(socketLink) {
+  const owners = [];
+  for (const process of await readdir("/proc", { withFileTypes: true })) {
+    if (!process.isDirectory() || !/^[0-9]+$/.test(process.name)) continue;
+    const directory = `/proc/${process.name}/fd`;
+    let descriptors;
+    try { descriptors = await readdir(directory); } catch { continue; }
+    for (const descriptor of descriptors) {
+      try {
+        if (await readlink(`${directory}/${descriptor}`) === socketLink) {
+          owners.push(`${process.name}/${descriptor}`);
+        }
+      } catch {
+        /* Processes can exit while the /proc scan is in flight. */
+      }
+    }
+  }
+  return owners.sort();
+}
 const runnerSource = await readFile(new URL(
   "../scripts/run-cadr-m7-p4-fast-differential.mjs", import.meta.url), "utf8");
 const authorityRootSource = await readFile(new URL(
@@ -917,7 +951,12 @@ await writeFile(fixedModulePath, canonicalJson({
       stdio: ["ignore", "pipe", "pipe", accepted._handle.fd,
         ...topologyHandles.map(handle => handle.fd)],
     });
+  const childClosed = new Promise((resolveClose, rejectClose) => {
+    child.once("close", (...args) => resolveClose(args)); child.once("error", rejectClose);
+  });
+  const acceptedClosed = new Promise(resolveClose => accepted.once("close", resolveClose));
   accepted.destroy();
+  await boundedAuthorityCleanup(acceptedClosed, "the parent copy of the inherited fd3 peer");
   let response = ""; const responseLines = []; let responseWake = null;
   client.setEncoding("utf8"); client.on("data", chunk => {
     response += chunk;
@@ -926,6 +965,9 @@ await writeFile(fixedModulePath, canonicalJson({
       responseLines.push(JSON.parse(response.slice(0, newline)));
       response = response.slice(newline + 1); responseWake?.(); responseWake = null;
     }
+  });
+  const clientEnded = new Promise((resolveEnd, rejectEnd) => {
+    client.once("end", resolveEnd); client.once("error", rejectEnd);
   });
   const nextResponse = async () => {
     if (responseLines.length === 0) await new Promise(resolveLine => { responseWake = resolveLine; });
@@ -941,16 +983,25 @@ await writeFile(fixedModulePath, canonicalJson({
   const revalidated = await nextResponse();
   assert.equal(revalidated.ok, true);
   assert.equal(revalidated.provenance.schema, "cadr-m7-p4-fixed-revalidation-test-v1");
+  const authoritySocket = await readlink(`/proc/${child.pid}/fd/3`);
+  assert.match(authoritySocket, /^socket:\[\d+\]$/,
+    "the positive authority child owns the expected inherited fd3 socket");
+  assert.deepEqual(await liveSocketOwnersForTest(authoritySocket), [`${child.pid}/3`],
+    "no accessible Guix client or other descendant inherits the authority fd3 endpoint");
   client.write('{"op":"close"}\n');
   const closed = await nextResponse();
-  await new Promise((resolveEnd, rejectEnd) => {
-    client.once("end", resolveEnd); client.once("error", rejectEnd);
-  });
-  const [code] = await new Promise((resolveClose, rejectClose) => {
-    child.once("close", (...args) => resolveClose(args)); child.once("error", rejectClose);
-  });
+  /* Do not rely on allowHalfOpen defaults to return the peer's final EOF.  An
+   * inherited copy in a descendant would otherwise make this test wait forever
+   * after a valid close acknowledgement. */
+  client.end();
+  await boundedAuthorityCleanup(clientEnded, "the reciprocal fd3 EOF");
+  const [code] = await boundedAuthorityCleanup(childClosed, "authority child exit");
   await Promise.all(topologyHandles.map(handle => handle.close()));
-  await new Promise(resolveClose => server.close(resolveClose));
+  assert.deepEqual(await liveSocketOwnersForTest(authoritySocket), [],
+    "no accessible process retains the authority fd3 endpoint after exit");
+  await boundedAuthorityCleanup(new Promise((resolveClose, rejectClose) => {
+    server.close(error => error === undefined ? resolveClose() : rejectClose(error));
+  }), "authority listener cleanup");
   await unlink(socketPath).catch(() => {});
   assert.equal(code, 0, "the positive inherited-fd test-domain server exits after close/EOF");
   assert.deepEqual(closed, { closed: true, ok: true });
