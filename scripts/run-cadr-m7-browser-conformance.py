@@ -40,6 +40,8 @@ WIDTH, HEIGHT, STRIDE_WORDS, ACTIVE_WORDS = 768, 963, 24, 23112
 FRAME_PATH = "portable/frame.cdrdisp1"
 IDENTITY_PATH = "portable/effective-page-identity.json"
 HOST_TRANSCRIPT_PATH = "portable/host-transcript.cdrm6hs1"
+P4_EXECUTION_BUDGET_SCHEMA = "cadr-m7-p4-execution-budget-v1"
+P4_MAX_HOST_TRANSACTIONS = 2048
 IDENTITY_PROFILE = "CADR-WEB-303/ABI1.5/protocol-v5/C-M7-P4-EFFECTIVE-PAGE-IDENTITY-v2"
 IDENTITY_SELECTED_BASE_BYTES = 269_562_880
 IDENTITY_SELECTED_BASE_SHA256 = "bb16e46ad81decfe1efe691d36b6aa4ce3fd4ffb82474365de3520989d397cb5"
@@ -189,6 +191,47 @@ def canonical_u64(value: Any, label: str) -> str:
     if not isinstance(value, str) or not re.fullmatch(r"0|[1-9][0-9]*", value) or int(value) > 0xffffffffffffffff:
         raise BrowserConformanceError(f"{label} must be a canonical u64")
     return value
+
+
+def validate_execution_budget(value: Any, label: str) -> dict[str, Any]:
+    budget = exact_keys(value, ["block_bytes", "disk_block_count", "disk_byte_count",
+                                "extension_policy", "max_host_transactions",
+                                "portable_wall_time_ms", "request_timeout_ms",
+                                "resume_policy", "schema"], label)
+    expected = {"schema": P4_EXECUTION_BUDGET_SCHEMA,
+                "max_host_transactions": P4_MAX_HOST_TRANSACTIONS,
+                "portable_wall_time_ms": 10_800_000,
+                "request_timeout_ms": 120_000,
+                "disk_byte_count": "269562880", "block_bytes": 1024,
+                "disk_block_count": "263245", "extension_policy": "none",
+                "resume_policy": "fresh-session-only"}
+    if budget != expected:
+        raise BrowserConformanceError(f"{label} differs from the fixed P4 budget")
+    return budget
+
+
+def validate_execution_accounting(value: Any, label: str) -> dict[str, Any]:
+    accounting = exact_keys(value, ["completed_host_transactions", "elapsed_monotonic_ms",
+                                    "final_boundary", "host_transcript_sha256",
+                                    "last_completed_request_id", "limit_hit",
+                                    "outstanding_request_id", "transcript_record_count"], label)
+    for field in ("completed_host_transactions", "elapsed_monotonic_ms", "final_boundary",
+                  "last_completed_request_id", "outstanding_request_id",
+                  "transcript_record_count"):
+        canonical_u64(accounting[field], f"{label}.{field}")
+    digest(accounting["host_transcript_sha256"], f"{label}.host_transcript_sha256")
+    if accounting["limit_hit"] not in (None, "host-transactions", "portable-wall-time"):
+        raise BrowserConformanceError(f"{label}.limit_hit is invalid")
+    completed = int(accounting["completed_host_transactions"])
+    if (int(accounting["transcript_record_count"]) != 2 * completed or
+            completed > P4_MAX_HOST_TRANSACTIONS):
+        raise BrowserConformanceError(f"{label} transcript count differs")
+    if (accounting["limit_hit"] == "host-transactions" and
+            (completed != P4_MAX_HOST_TRANSACTIONS or
+             accounting["last_completed_request_id"] != str(P4_MAX_HOST_TRANSACTIONS) or
+             accounting["outstanding_request_id"] != str(P4_MAX_HOST_TRANSACTIONS + 1))):
+        raise BrowserConformanceError(f"{label} host transaction limit is not exact")
+    return accounting
 
 
 def file_identity(value: Any, label: str, expected_path: str | None = None) -> dict[str, Any]:
@@ -360,7 +403,7 @@ def validate_identity_stream(raw: bytes, transcript_raw: bytes,
             stream_count != summary_count or
             not isinstance(stream["acknowledgements"], list) or
             len(stream["acknowledgements"]) != stream_count or
-            not 1 <= stream_count <= 1024):
+            not 1 <= stream_count <= P4_MAX_HOST_TRANSACTIONS):
         raise BrowserConformanceError("P4 identity stream header differs")
     transcript = exact_keys(stream["host_transcript"],
                             ["artifact_set_sha256", "byte_count", "record_count",
@@ -374,9 +417,11 @@ def validate_identity_stream(raw: bytes, transcript_raw: bytes,
     if len(transcript_raw) < 64 or transcript_raw[:8] != b"CDRM6HS1":
         raise BrowserConformanceError("P4 host transcript header differs")
     version, header_bytes, record_bytes, record_count = unpack_from("<IIII", transcript_raw, 8)
-    if (version, header_bytes, record_bytes, record_count) != \
-            (1, 64, 256, transcript_record_count) or len(transcript_raw) != 64 + record_count * 256 or \
-            record_count == 0 or record_count % 2 != 0 or record_count > 2048:
+    if ((version, header_bytes, record_bytes, record_count) !=
+            (1, 64, 256, transcript_record_count) or
+            len(transcript_raw) != 64 + record_count * 256 or
+            record_count == 0 or record_count % 2 != 0 or
+            record_count > P4_MAX_HOST_TRANSACTIONS * 2):
         raise BrowserConformanceError("P4 host transcript framing differs")
     if tagged_hash(transcript["artifact_set_sha256"], "P4 transcript artifact set") != \
             transcript_raw[24:56].hex():
@@ -635,13 +680,19 @@ def validate_identity_stream(raw: bytes, transcript_raw: bytes,
 def validate_p4_manifest(value: dict[str, Any], raw: bytes,
                          session: Path | None = None) -> dict[str, Any]:
     """Validate the complete closed P4 schema and optionally rehash every sidecar."""
-    exact_keys(value, ["artifacts", "comparison", "m6_release_record", "native", "native_inputs",
+    exact_keys(value, ["artifacts", "comparison", "execution_accounting", "execution_budget",
+                       "m6_release_record", "native", "native_inputs",
                        "outcome", "patches", "portable", "prepared", "runtime_execution_performed",
                        "schedule", "schema", "session", "source", "summary", "target"], "P4 manifest")
-    if (value["schema"] != "cadr-m7-frame-conformance-result-v2" or
+    if (value["schema"] != "cadr-m7-frame-conformance-result-v3" or
             value["target"] != P5_TARGET or value["outcome"] != "identical" or
             value["runtime_execution_performed"] is not True):
         raise BrowserConformanceError("P4 manifest is not a successful M7-P4 result")
+    budget = validate_execution_budget(value["execution_budget"], "P4 execution budget")
+    accounting = validate_execution_accounting(value["execution_accounting"],
+                                                 "P4 execution accounting")
+    if accounting["limit_hit"] is not None or accounting["outstanding_request_id"] != "0":
+        raise BrowserConformanceError("successful P4 execution accounting is terminal")
     exact_keys(value["session"], ["id", "mode"], "P4 session")
     if not isinstance(value["session"]["id"], str) or not value["session"]["id"] or value["session"]["mode"] != "0700":
         raise BrowserConformanceError("P4 session identity is not private")
@@ -743,10 +794,16 @@ def validate_p4_manifest(value: dict[str, Any], raw: bytes,
         file_identity(identity, f"P4 native {name}")
     exact_keys(value["portable"], ["cdrdisp_file", "contemporaneous_adapter_observation",
                                     "effective_page_identity", "effective_page_identity_file",
-                                    "framebuffer_checkpoint", "host_transcript_file", "module", "ready_file",
+                                    "execution_accounting", "execution_budget", "framebuffer_checkpoint",
+                                    "host_transcript_file", "module", "ready_file",
                                     "session_evidence", "session_id", "termination",
                                     "witness_file", "worker", "worker_closure",
                                     "worker_log_file"], "P4 portable")
+    if (validate_execution_budget(value["portable"]["execution_budget"],
+                                  "P4 portable execution budget") != budget or
+            validate_execution_accounting(value["portable"]["execution_accounting"],
+                                           "P4 portable execution accounting") != accounting):
+        raise BrowserConformanceError("P4 root and portable execution evidence differ")
     evidence = exact_keys(value["portable"]["session_evidence"],
                           ["ready_session_id", "worker_log_session_id"], "P4 portable session evidence")
     if (not isinstance(value["portable"]["session_id"], str) or not value["portable"]["session_id"] or
@@ -770,7 +827,7 @@ def validate_p4_manifest(value: dict[str, Any], raw: bytes,
             "CADR-WEB-303/ABI1.5/protocol-v5/C-M7-P4-EFFECTIVE-PAGE-IDENTITY-v2" or
             identity["disposition"] != "IDENTITY_ACK_STREAM" or
             not isinstance(identity["count"], int) or isinstance(identity["count"], bool) or
-            not 1 <= identity["count"] <= 1024 or identity["first"] != {
+            not 1 <= identity["count"] <= P4_MAX_HOST_TRANSACTIONS or identity["first"] != {
                 "generation": "1", "request_id": "135", "transaction_id": "135",
                 "first_block": "1299", "boundary": "1366722"}):
         raise BrowserConformanceError("P4 effective-page identity is not the selected stream")
@@ -834,7 +891,8 @@ def validate_p4_manifest(value: dict[str, Any], raw: bytes,
     transcript_file = file_identity(value["portable"]["host_transcript_file"],
                                     "P4 host transcript", HOST_TRANSCRIPT_PATH)
     if (identity_file["sha256"] != identity["collection_sha256"] or
-            transcript_file["sha256"] != identity["host_transcript_sha256"]):
+            transcript_file["sha256"] != identity["host_transcript_sha256"] or
+            transcript_file["sha256"] != accounting["host_transcript_sha256"]):
         raise BrowserConformanceError("P4 identity sidecars differ from their summary")
     exact_keys(value["comparison"], ["file", "m6_witness_sample_sha256", "native_capture_sha256",
                                       "native_raw_words_sha256", "portable_raw_words_sha256",
@@ -883,6 +941,11 @@ def validate_p4_manifest(value: dict[str, Any], raw: bytes,
         validate_identity_stream((session / IDENTITY_PATH).read_bytes(),
                                  (session / HOST_TRANSCRIPT_PATH).read_bytes(),
                                  value["portable"]["effective_page_identity"])
+        transcript_raw = (session / HOST_TRANSCRIPT_PATH).read_bytes()
+        if (len(transcript_raw) < 64 or transcript_raw[:8] != b"CDRM6HS1" or
+                unpack_from("<I", transcript_raw, 20)[0] != int(accounting["transcript_record_count"]) or
+                int(accounting["completed_host_transactions"]) > P4_MAX_HOST_TRANSACTIONS):
+            raise BrowserConformanceError("P4 execution accounting differs from the rehashed transcript")
     return {"manifest": value, "manifest_sha256": sha256(raw), "frame": frame}
 
 

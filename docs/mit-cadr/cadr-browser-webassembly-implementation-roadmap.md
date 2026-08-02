@@ -3,7 +3,7 @@ type: Implementation Roadmap
 title: MIT CADR System 303 browser and WebAssembly implementation roadmap
 description: A milestone-complete plan for porting the pinned System 303 CADR emulator to a deterministic, locally persistent, browser-hosted WebAssembly machine.
 tags: [mit-cadr, lm-3, system-303, webassembly, browser, emulator, roadmap]
-timestamp: 2026-08-02T10:26:15-04:00
+timestamp: 2026-08-02T13:00:48-04:00
 ---
 
 # MIT CADR System 303 browser and WebAssembly implementation roadmap
@@ -918,8 +918,8 @@ Source v2 therefore retains the exact v1 arm and request-135 anchor, then
 streams ordered identity acknowledgements. It requires generation `1`,
 transaction ID equal to request ID, equality to fresh pre-success and
 post-completion target rereads, a global completed-host-request high-water
-including reads, no acknowledgement-member replay, and at most 1,024 total
-host transactions. The exact committed request-1 LBA-1 descriptor-and-payload
+including reads and no acknowledgement-member replay. The exact committed
+request-1 LBA-1 descriptor-and-payload
 replay remains the sole exception even after streaming begins and creates no
 acknowledgement member. Any
 malformation, mismatch, read/fault/completion failure, detach/reset, drift, or
@@ -929,6 +929,51 @@ ordered witnesses and optional adjacent-read provenance. P4 retains private
 0600 canonical stream and transcript sidecars; P5 hashes and validates but
 never serves them. The observed future stream length remains unknown, so a
 fresh campaign is still required and no P4 or P5 gate is closed.
+
+Bounded-control revision, 2026-08-02: the prior signed-source run whose ignored
+session identifier begins `m7-p4-81dfa` exhausted the 1,024-transaction P4
+limit at boundary `1382343`. It reported phase `host-service`, status `9`, last
+completed request `1024`, unserviced request `1025`, next request ID `1026`,
+and 2,048 transcript records. Its retained tail proves only successful reads
+1017 through 1024 of LBAs 188487 through 188494 with host status zero; the old
+failure schema did not retain the complete transcript. It therefore does not
+prove requests 134 through 1016, acknowledgement count or progress, all
+adjacent-read equalities, the highest written LBA, request 1025's descriptor,
+an eventual READY boundary, or a safe cap.
+
+The v3 P4 control fixes its wrapper at 2,048 host transactions while leaving
+ordinary M6 at 1,024. It has no cap override, extension, or resume mechanism;
+request 2049 remains unserviced on exhaustion and a rerun must use a fresh
+session. A 10,800,000ms monotonic deadline starts before staging and
+compilation, bounds each request by `min(120000ms, remaining)`, and actively
+terminates and cleans up on the first terminal result. The fixed budget and
+canonical execution accounting are redundantly bound in root and portable
+success/failure records, expected closure, and P5. Every post-preflight M6
+failure now retains a complete private `CDRM6HS1` sidecar and reparses its
+framing, artifact-set identity, count, digest, tail, and final machine
+accounting. The schemas are `cadr-m7-frame-conformance-result-v3`,
+`cadr-m7-frame-expected-closure-v2`, `cadr-m7-portable-failure-v4`, and
+`cadr-m7-frame-conformance-failure-v3`. This control is ready for a new bounded
+campaign; it is not evidence that 2,048 transactions suffice and closes no P4
+or P5 gate.
+
+The deadline terminal cause is carried independently of exception wrapping,
+including M6-to-M7 failure conversion. Operations that cannot be cancelled are
+joined after deadline loss before a failure receipt is installed; abortable
+work may instead terminate directly. Setup expiry therefore produces closed
+portable/root failure evidence without allowing a staging, read, compile,
+artifact-read, or private-write loser to modify the session afterward. Success
+close is deadline-arbitrated and shares exactly one worker termination attempt
+with failure cleanup, so expiry cannot be reclassified as success after a slow
+close.
+The setup failure receipt preserves nullable identities exactly as obtained and
+records `worker-not-started`; it cannot claim termination for an uncreated
+worker. Runtime failure receipts retain strict complete identities and worker
+termination.
+Python P5 is intentionally success-only: it opens `manifest.json` and rejects
+anything other than the successful P4 schema and `identical` outcome. Failure
+receipts are closed by the JavaScript root/portable failure validator instead;
+they are not a second P5 admission format.
 
 ### M8 — Implement complete keyboard input
 

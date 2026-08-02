@@ -19,6 +19,7 @@ import {
   createM4BlockRangeService,
 } from "./cadr-m4-block-service.mjs";
 import {
+  CADR_M7_EFFECTIVE_PAGE_IDENTITY_MAX_HOST_TRANSACTIONS,
   CADR_M7_EFFECTIVE_PAGE_IDENTITY_MIN_QUIET_BOUNDARY,
   CADR_M7_EFFECTIVE_PAGE_IDENTITY_PROFILE,
   createM7EffectivePageIdentityAcknowledgement,
@@ -76,6 +77,7 @@ export const CADR_M6_FAST_RUN_MAX_SLOTS = 1048576;
 export const CADR_M6_DEFAULT_LAST_TRANSACTIONS = 16;
 export const CADR_M6_HARD_MAX_HOST_TRANSACTIONS = 1024;
 export const CADR_M6_HARD_MAX_REPORT_TRANSACTIONS = 32;
+const M6_FAILURE_HOST_TRANSCRIPTS = new WeakMap();
 
 const STATUS_INVALID_ARGUMENT = 2;
 const STATUS_HOST_FAILURE = 7;
@@ -190,9 +192,15 @@ function validateLimits(config) {
   const batchSlots = config.batchSlots ?? CADR_M6_DEFAULT_BATCH_SLOTS;
   const lastTransactionLimit = config.lastTransactionLimit ??
     Math.min(CADR_M6_DEFAULT_LAST_TRANSACTIONS, maxHostTransactions * 2);
+  const selectedM7 = config.m7EffectivePageIdentityPolicy !== undefined;
+  const maximumHostTransactions = selectedM7 ?
+    CADR_M7_EFFECTIVE_PAGE_IDENTITY_MAX_HOST_TRANSACTIONS :
+    CADR_M6_HARD_MAX_HOST_TRANSACTIONS;
   if (!unsigned64(maxBoundaries) || maxBoundaries === 0n ||
       !Number.isSafeInteger(maxHostTransactions) || maxHostTransactions <= 0 ||
-      maxHostTransactions > CADR_M6_HARD_MAX_HOST_TRANSACTIONS ||
+      maxHostTransactions > maximumHostTransactions ||
+      (selectedM7 && maxHostTransactions !==
+        CADR_M7_EFFECTIVE_PAGE_IDENTITY_MAX_HOST_TRANSACTIONS) ||
       !Number.isSafeInteger(batchSlots) || batchSlots <= 0 ||
       batchSlots > CADR_M6_DEFAULT_BATCH_SLOTS ||
       !Number.isSafeInteger(lastTransactionLimit) ||
@@ -202,6 +210,45 @@ function validateLimits(config) {
     throw new RangeError("invalid bounded M6 limits");
   }
   return { maxBoundaries, maxHostTransactions, batchSlots, lastTransactionLimit };
+}
+
+function hostTransactionLimitReached(completed, limits) {
+  return completed >= limits.maxHostTransactions;
+}
+
+/* Deterministic test seam for the production-owned pre-service admission
+ * predicate.  It has no client, media, or authority hooks and cannot run a
+ * guest.  A transcript pair is counted only after the same predicate used by
+ * both production loops admits the request. */
+export function probeM6ProductionHostTransactionCapForTest({
+  selectedM7 = false, requestedMaxHostTransactions,
+} = {}) {
+  const selectedCap = selectedM7 ?
+    CADR_M7_EFFECTIVE_PAGE_IDENTITY_MAX_HOST_TRANSACTIONS :
+    CADR_M6_HARD_MAX_HOST_TRANSACTIONS;
+  if (selectedM7 && requestedMaxHostTransactions !== undefined &&
+      requestedMaxHostTransactions !== selectedCap) {
+    throw new TypeError("the selected M7 P4 host-transaction cap is fixed");
+  }
+  const limits = validateLimits({ maxBoundaries: 1n,
+    maxHostTransactions: selectedM7 ? selectedCap :
+      (requestedMaxHostTransactions ?? selectedCap),
+    ...(selectedM7 ? { m7EffectivePageIdentityPolicy: Object.freeze({}) } : {}),
+  });
+  let completed = 0; let transcriptRecords = 0; const hostComplete = [];
+  for (let requestId = 1; ; requestId += 1) {
+    if (hostTransactionLimitReached(completed, limits)) {
+      return Object.freeze({ completed_host_transactions: completed,
+        transcript_record_count: transcriptRecords,
+        last_completed_request_id: completed,
+        outstanding_request_id: requestId,
+        host_complete_request_ids: Object.freeze(hostComplete),
+      });
+    }
+    transcriptRecords += 2;
+    completed += 1;
+    hostComplete.push(requestId);
+  }
 }
 
 function artifactMaps(artifacts, profile) {
@@ -725,7 +772,7 @@ async function failResult(client, context, reason, phase, status) {
         ((evidence.unimplementedDevice ?? null) !== null)) {
     throw new TypeError("status-13 failure diagnostic identity is inconsistent");
   }
-  return {
+  const result = {
     outcome: "failed",
     runEvidence: context.runEvidence,
     preflight: publicPreflight(context.preflight),
@@ -734,6 +781,17 @@ async function failResult(client, context, reason, phase, status) {
       { schemaVersion: (evidence.unimplementedDevice ?? null) === null ? 1 : 2,
         ...evidence, hostTranscriptSha256 }),
   };
+  if (context.preflight !== null) {
+    M6_FAILURE_HOST_TRANSCRIPTS.set(result, hostTranscript.slice());
+  }
+  return result;
+}
+
+/** M7-only failure retention seam; ordinary M6 result records stay unchanged. */
+export function captureM6FailureHostTranscript(result) {
+  const transcript = result !== null && typeof result === "object" ?
+    M6_FAILURE_HOST_TRANSCRIPTS.get(result) : undefined;
+  return transcript instanceof Uint8Array ? transcript.slice() : null;
 }
 
 function publicPreflight(preflight) {
@@ -2156,12 +2214,12 @@ async function runM6HeadlessBootInternal(config, testReady = null) {
       }
       if (batch.boundaryPendingHost) {
         if (batch.terminalStatus !== STATUS_WAITING_FOR_HOST ||
-            hostTransactions >= limits.maxHostTransactions) {
+            hostTransactionLimitReached(hostTransactions, limits)) {
           return failResult(config.client, context,
-            hostTransactions >= limits.maxHostTransactions ?
+            hostTransactionLimitReached(hostTransactions, limits) ?
               "host-transaction-limit-exhausted" : "inconsistent-host-boundary",
             "host-service",
-            hostTransactions >= limits.maxHostTransactions ?
+            hostTransactionLimitReached(hostTransactions, limits) ?
               CADR_STATUS_NOT_READY : STATUS_INVALID_ARGUMENT);
         }
         const before = context.transcript.length;
@@ -2374,10 +2432,17 @@ export async function runM6HeadlessBoot(config) {
 
 /** M7-only exact companion; ordinary M6 callers cannot enable this profile. */
 export async function runM6HeadlessBootWithM7EffectivePageIdentity(config) {
+  if (Object.prototype.hasOwnProperty.call(config, "maxHostTransactions") &&
+      config.maxHostTransactions !==
+        CADR_M7_EFFECTIVE_PAGE_IDENTITY_MAX_HOST_TRANSACTIONS) {
+    throw new TypeError("the selected M7 P4 host-transaction cap is fixed");
+  }
   const m7EffectivePageIdentityPolicy = parseM7EffectivePageIdentityPolicy({
     enabled: true, profile: CADR_M7_EFFECTIVE_PAGE_IDENTITY_PROFILE,
   });
-  return runM6HeadlessBootInternal({ ...config, m7EffectivePageIdentityPolicy });
+  return runM6HeadlessBootInternal({ ...config,
+    maxHostTransactions: CADR_M7_EFFECTIVE_PAGE_IDENTITY_MAX_HOST_TRANSACTIONS,
+    m7EffectivePageIdentityPolicy });
 }
 
 export function parseM6FastRunRecord(value) {
@@ -2523,7 +2588,7 @@ export function parseM6DevidSummary(response) {
 }
 
 async function serviceM6FastHost(client, context, hostTransactions, limits) {
-  if (hostTransactions >= limits.maxHostTransactions) {
+  if (hostTransactionLimitReached(hostTransactions, limits)) {
     return Object.freeze({ failed: "host-transaction-limit-exhausted", status: CADR_STATUS_NOT_READY,
       hostTransactions });
   }

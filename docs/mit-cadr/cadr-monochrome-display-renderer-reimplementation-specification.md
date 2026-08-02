@@ -3,7 +3,7 @@ type: Reimplementation Specification
 title: CADR-WEB-303 ABI 1.5 monochrome display and browser renderer reimplementation specification
 description: A release-bounded contract for transferring, validating, rendering, and testing the System 303 monochrome framebuffer without claiming an unrecorded native Listener-pixel oracle.
 tags: [mit-cadr, lm-3, system-303, webassembly, display, framebuffer, renderer, reimplementation]
-timestamp: 2026-08-02T10:02:00-04:00
+timestamp: 2026-08-02T13:00:48-04:00
 ---
 
 # CADR-WEB-303 ABI 1.5 monochrome display and browser renderer reimplementation specification
@@ -476,6 +476,66 @@ and `566dc7dd89247cf44f8784741c4400ca28b25d69b836fbfb8ff67729b34d6f1a`.
 This is direct runtime evidence for a second member, not evidence of the full
 future stream length. It motivated v2 and does not close P4.
 
+A later bounded run from signed source revision
+`8531c64211b38c07d9213c913930b4acd97575cc` stopped at the then-fixed 1,024
+host-transaction limit in the ignored session whose retained identifier begins
+`m7-p4-81dfa`. The canonical failure reports
+`host-transaction-limit-exhausted`, phase `host-service`, status `9`, boundary
+`1382343`, completed request `1024`, outstanding unserviced request `1025`,
+and next request ID `1026`. Its bounded tail contains successful reads
+`1017` through `1024` of LBAs `188487` through `188494`, all with host status
+zero. The transcript accounting records 2,048 issue/completion records, but
+that v2 failure did not retain the full transcript sidecar. The native Form-C
+frame hash remained
+`cf59250db3acc33fe0b72e6b3c126cf708b3ba0cb3225ba66b3c03f2921aea42`
+and the private disk remained
+`bb16e46ad81decfe1efe691d36b6aa4ce3fd4ffb82474365de3520989d397cb5`.
+
+That record proves only the stated terminal boundary and retained bounded
+tail. It does not establish the operations or LBAs of requests 134 through
+1016, the total acknowledgement count or acknowledgement progress, equality
+for every adjacent read, the highest write target, the descriptor of
+unserviced request 1025, the eventual READY location, or a safe completion
+ceiling. None may be inferred from the monotonically increasing visible tail.
+
+The next P4 control is deliberately fixed rather than operator-tunable. Its
+P4-only wrapper permits exactly 2,048 completed host transactions; ordinary
+M6 remains capped at 1,024, and request 2049 is left unserviced if the cap is
+reached. A three-hour monotonic deadline starts before staging and compilation,
+each protocol request is bounded by the smaller of 120 seconds and the
+remaining campaign time, the first terminal condition wins, and termination
+and artifact cleanup are active. There is no extension or resume path: every
+attempt uses a fresh session. Success uses
+`cadr-m7-frame-conformance-result-v3`; expected closure uses
+`cadr-m7-frame-expected-closure-v2`; portable and root failures use
+`cadr-m7-portable-failure-v4` and
+`cadr-m7-frame-conformance-failure-v3`. Root, portable, expected-closure, and
+P5 records redundantly bind and compare the fixed execution budget and
+canonical decimal execution accounting. Every post-preflight M6 failure now
+retains the complete 0600 `CDRM6HS1` sidecar and validates its framing,
+artifact-set hash, record count, digest, tail, and machine accounting before
+admission. The 2,048 control is a bounded experiment, not evidence that READY
+is reachable within that budget and not a closure of M7-P4.
+
+Deadline disposition is explicit state, not an inference from the final
+exception class: a deadline that is encountered inside M6 remains
+`portable-wall-time` even when M6 and the M7 checkpoint wrapper replace the
+surface exception. Staging, private reads, compilation, artifact reads, and
+private writes join any operation that loses the deadline race before failure
+evidence is installed, so no losing operation can mutate the session after its
+receipt. Worker close participates in the same arbitration, rechecks expiry,
+and shares one termination attempt with the failure path; a slow successful
+close cannot turn an expired campaign into success. Setup expiry retains
+closed portable and root failure receipts only after every concurrently started
+operation settles. Those receipts preserve each identity actually obtained and
+record `worker-not-started` without inventing termination; runtime failures
+still require complete worker identity and termination evidence.
+Failure receipts never enter P5: the browser command reads only a successful
+P4 session's `manifest.json` and its validator requires outcome `identical`.
+Portable/root failures terminate in the separate JavaScript failure-receipt
+validator, whose tests cover partial setup and reject forged worker-state and
+termination combinations.
+
 The selected arm is additionally pinned to generation/request/transaction/LBA
 tuples `(1,1,1,1)`, `(1,2,0,1)`, and `(1,3,0,0)` for initial commit,
 comparison read, and base read respectively, plus the exact reason-1 quiet
@@ -493,7 +553,7 @@ Retain raw screenshot bytes, PNG and decoded-pixel hashes, browser automation lo
 
 [`run-cadr-m7-browser-conformance.py`](../../scripts/run-cadr-m7-browser-conformance.py) is the P5 entrypoint. It binds the manifest session ID to the supplied directory basename and revalidates the complete closed P4 schema, including unchanged private disk, clean native/oracle/portable termination, session evidence, every redundant checkpoint hash, and fresh hashes of all nine P4 sidecars. It independently parses the rehashed fixed-size `CDRM7N1`, types every header field, and derives BOW from the uint32 TV mode before accepting the manifest capture identity. Before starting its server it snapshots the exact `CDRDISP1`, generated HTML, production JavaScript, renderer, and CSS bytes. GET and HEAD share one explicit loopback allowlist with `Cache-Control: no-store`; every other repository path returns 404, and no request rereads changing repository assets or falls back to `m7-synthetic-record.mjs`. On explicit `--execute`, it requires nonempty hashed Chromium and Xvfb command identities and the reviewed Chromium 150 profile, creates a new 0700 ignored session and a fresh 0600 Xauthority cookie, passes that cookie to Xvfb with `-auth`, and exposes `XAUTHORITY` only to Chromium. It starts headed Chromium on isolated 1920-by-1200 Xvfb with `devicePixelRatio = 1`, and binds the served host, renderer, and CSS snapshots by exact path and hash in the closed result. It independently recalculates integral fit, validates and retains integral canvas/stage/source-clip bounds, proves the source placement from stage origin plus letterbox offsets, verifies canvas backing and computed CSS dimensions, pixelated/no-smoothing policy, full source-frame pixel rectangles, and decoded ordinary/fullscreen PNG hashes. It requires a 767px zero-fit result. Fullscreen entry and exit are trusted host-control clicks and both must succeed; denial, a fallback message, fractional coordinate, cacheable frame route, missing full-frame capture, or failed exit invalidates the campaign. Raw captures and logs remain 0600 ignored session payloads. No P5 browser run has yet been performed.
 
-For v2, P5 additionally rehashes and validates the complete identity stream and
+For v3, P5 additionally rehashes and validates the complete identity stream and
 `CDRM6HS1` sidecars, bringing the P4 sidecar count to eleven. It never serves
 either evidence sidecar: both GET and HEAD remain outside the explicit
 allowlist and return 404. This source behavior is unit-tested but has not yet

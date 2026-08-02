@@ -20,9 +20,12 @@ import {
 } from "node:fs/promises";
 import { dirname, relative, resolve } from "node:path";
 import { Worker } from "node:worker_threads";
+import { performance } from "node:perf_hooks";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import {
   CADR_M6_PROTOCOL_VERSION,
+  CADR_M6_HOST_TRANSCRIPT_HEADER_BYTES,
+  CADR_M6_HOST_TRANSCRIPT_RECORD_BYTES,
   CADR_M6_READY_CONTRACT,
   CADR_M6_RELEASE_RECORD_SHA256,
   preflightM6Artifacts,
@@ -56,10 +59,18 @@ const M7_SUPPORT_PATHS = Object.freeze([
   resolve(ROOT, "cadr-web/oracle/native/cadr_m7_frame_witness.h"),
 ]);
 const M7_PROTOCOL_VERSION = 5;
-const REQUEST_TIMEOUT_MS = 120_000;
-const P4_SCHEMA = "cadr-m7-frame-conformance-result-v2";
+export const P4_MAX_HOST_TRANSACTIONS = 2048;
+export const P4_PORTABLE_WALL_TIME_MS = 10_800_000;
+export const P4_REQUEST_TIMEOUT_MS = 120_000;
+export const P4_EXECUTION_BUDGET_SCHEMA = "cadr-m7-p4-execution-budget-v1";
+const P4_SCHEMA = "cadr-m7-frame-conformance-result-v3";
 const P4_TARGET = "CADR-WEB-303/ABI1.5/protocol-v5/M7";
-export const P4_EXPECTED_CLOSURE_SCHEMA = "cadr-m7-frame-expected-closure-v1";
+export const P4_EXPECTED_CLOSURE_SCHEMA = "cadr-m7-frame-expected-closure-v2";
+const P4_PORTABLE_FAILURE_SCHEMA = "cadr-m7-portable-failure-v4";
+const P4_ROOT_FAILURE_SCHEMA = "cadr-m7-frame-conformance-failure-v3";
+const P4_DISK_BYTE_COUNT = "269562880";
+const P4_BLOCK_BYTES = 1024;
+const P4_DISK_BLOCK_COUNT = "263245";
 const ARTIFACT_LAYOUT = Object.freeze([
   Object.freeze({ kind: 1, id: "cadr-web-303-runnable-template", local_path: "cadr-web/profiles/cadr-web-303.ini.in" }),
   Object.freeze({ kind: 2, id: "prom-control-store", local_path: "l/sys/ubin/promh.mcr" }),
@@ -165,6 +176,284 @@ function canonicalU64(value, label) {
   if (typeof value !== "string" || !/^(0|[1-9][0-9]*)$/.test(value)) fail(`${label} is not a canonical decimal u64`);
   if (BigInt(value) > 0xffffffffffffffffn) fail(`${label} exceeds u64`);
   return value;
+}
+
+export function p4ExecutionBudgetRecord() {
+  return Object.freeze({
+    schema: P4_EXECUTION_BUDGET_SCHEMA,
+    max_host_transactions: P4_MAX_HOST_TRANSACTIONS,
+    portable_wall_time_ms: P4_PORTABLE_WALL_TIME_MS,
+    request_timeout_ms: P4_REQUEST_TIMEOUT_MS,
+    disk_byte_count: P4_DISK_BYTE_COUNT,
+    block_bytes: P4_BLOCK_BYTES,
+    disk_block_count: P4_DISK_BLOCK_COUNT,
+    extension_policy: "none",
+    resume_policy: "fresh-session-only",
+  });
+}
+
+function validateExecutionBudget(value, label) {
+  exactKeys(value, ["block_bytes", "disk_block_count", "disk_byte_count",
+    "extension_policy", "max_host_transactions", "portable_wall_time_ms",
+    "request_timeout_ms", "resume_policy", "schema"], label);
+  if (!sameJson(value, p4ExecutionBudgetRecord())) {
+    fail(`${label} differs from the fixed P4 budget`);
+  }
+  return value;
+}
+
+function validateExecutionAccounting(value, label) {
+  exactKeys(value, ["completed_host_transactions", "elapsed_monotonic_ms",
+    "final_boundary", "host_transcript_sha256", "last_completed_request_id",
+    "limit_hit", "outstanding_request_id", "transcript_record_count"], label);
+  for (const field of ["completed_host_transactions", "elapsed_monotonic_ms",
+    "final_boundary", "last_completed_request_id", "outstanding_request_id",
+    "transcript_record_count"]) canonicalU64(value[field], `${label}.${field}`);
+  digest(value.host_transcript_sha256, `${label}.host_transcript_sha256`);
+  if (value.limit_hit !== null &&
+      !["host-transactions", "portable-wall-time"].includes(value.limit_hit)) {
+    fail(`${label}.limit_hit is invalid`);
+  }
+  if (BigInt(value.transcript_record_count) !==
+        BigInt(value.completed_host_transactions) * 2n ||
+      BigInt(value.completed_host_transactions) > BigInt(P4_MAX_HOST_TRANSACTIONS)) {
+    fail(`${label} transaction accounting is inconsistent`);
+  }
+  if (value.limit_hit === "host-transactions" &&
+      (value.completed_host_transactions !== String(P4_MAX_HOST_TRANSACTIONS) ||
+       value.transcript_record_count !== String(P4_MAX_HOST_TRANSACTIONS * 2) ||
+       value.last_completed_request_id !== String(P4_MAX_HOST_TRANSACTIONS) ||
+       value.outstanding_request_id !== String(P4_MAX_HOST_TRANSACTIONS + 1))) {
+    fail(`${label} host transaction limit is not exact`);
+  }
+  return value;
+}
+
+function p4Accounting({ hostTranscript, elapsedMs, finalBoundary,
+  lastCompletedRequestId, outstandingRequestId, limitHit }) {
+  if (!(hostTranscript instanceof Uint8Array)) {
+    fail("P4 accounting host transcript is absent");
+  }
+  const parsed = parseP4HostTranscript(hostTranscript);
+  return Object.freeze({
+    completed_host_transactions: String(parsed.recordCount / 2),
+    transcript_record_count: String(parsed.recordCount),
+    host_transcript_sha256: sha256(hostTranscript),
+    elapsed_monotonic_ms: String(Math.max(0, Math.floor(elapsedMs))),
+    final_boundary: String(finalBoundary ?? 0),
+    last_completed_request_id: String(lastCompletedRequestId ?? 0),
+    outstanding_request_id: String(outstandingRequestId ?? 0),
+    limit_hit: limitHit,
+  });
+}
+
+function emptyP4HostTranscript() {
+  const bytes = new Uint8Array(CADR_M6_HOST_TRANSCRIPT_HEADER_BYTES);
+  bytes.set(new TextEncoder().encode("CDRM6HS1"), 0);
+  const view = new DataView(bytes.buffer);
+  view.setUint32(8, 1, true);
+  view.setUint32(12, CADR_M6_HOST_TRANSCRIPT_HEADER_BYTES, true);
+  view.setUint32(16, CADR_M6_HOST_TRANSCRIPT_RECORD_BYTES, true);
+  return bytes;
+}
+
+export function failureExecutionEvidence(caught, elapsedMs, terminalCause = null) {
+  let hostTranscript = emptyP4HostTranscript();
+  let report = null;
+  if (caught?.m6FailureDiagnostic instanceof Uint8Array) {
+    const diagnostic = parseCanonicalJsonBytes(
+      caught.m6FailureDiagnostic, "P4 M6 failure diagnostic").value;
+    report = diagnostic?.failure?.report ?? null;
+    if (report?.phase !== "preflight") {
+      if (!(caught.m6FailureHostTranscript instanceof Uint8Array)) {
+        fail("post-preflight P4 M6 failure omitted its full host transcript");
+      }
+      hostTranscript = caught.m6FailureHostTranscript.slice();
+      const parsed = parseP4HostTranscript(hostTranscript,
+        diagnostic.failure.preflight.artifactSetSha256);
+      if (String(parsed.recordCount) !== String(report.transcriptCount) ||
+          sha256(hostTranscript) !== report.hostTranscriptSha256) {
+        fail("P4 M6 failure transcript differs from its diagnostic accounting");
+      }
+      const retainedTail = parsed.records.slice(-diagnostic.failure.transcriptTail.length);
+      if (!sameJson(retainedTail, diagnostic.failure.transcriptTail)) {
+        fail("P4 M6 failure transcript tail differs from its diagnostic");
+      }
+    }
+  }
+  const machine = report?.machineInfo ?? null;
+  const explicitCause = terminalCause ?? caught?.p4TerminalCause ?? null;
+  const limitHit = explicitCause === "portable-wall-time" ?
+    "portable-wall-time" :
+    (report?.reason === "host-transaction-limit-exhausted" ?
+      "host-transactions" : null);
+  return Object.freeze({
+    hostTranscript,
+    accounting: p4Accounting({
+      hostTranscript, elapsedMs,
+      finalBoundary: report?.boundary ?? machine?.boundary ?? 0,
+      lastCompletedRequestId: machine?.lastCompletedRequestId ?? 0,
+      outstandingRequestId: machine?.outstandingRequestId ?? 0,
+      limitHit,
+    }),
+    retainTranscript: report !== null && report.phase !== "preflight",
+  });
+}
+
+export function parseP4HostTranscript(value, expectedArtifactSetSha256 = null) {
+  const bytes = value instanceof Uint8Array ? value : null;
+  if (bytes === null || bytes.byteLength < CADR_M6_HOST_TRANSCRIPT_HEADER_BYTES ||
+      new TextDecoder().decode(bytes.subarray(0, 8)) !== "CDRM6HS1") {
+    fail("P4 host transcript framing is invalid");
+  }
+  const header = new DataView(bytes.buffer, bytes.byteOffset,
+    CADR_M6_HOST_TRANSCRIPT_HEADER_BYTES);
+  const count = header.getUint32(20, true);
+  if (header.getUint32(8, true) !== 1 ||
+      header.getUint32(12, true) !== CADR_M6_HOST_TRANSCRIPT_HEADER_BYTES ||
+      header.getUint32(16, true) !== CADR_M6_HOST_TRANSCRIPT_RECORD_BYTES ||
+      count % 2 !== 0 || count > P4_MAX_HOST_TRANSACTIONS * 2 ||
+      bytes.byteLength !== CADR_M6_HOST_TRANSCRIPT_HEADER_BYTES +
+        count * CADR_M6_HOST_TRANSCRIPT_RECORD_BYTES ||
+      bytes.subarray(56, 64).some(byte => byte !== 0)) {
+    fail("P4 host transcript header is invalid");
+  }
+  const artifactSetSha256 = Buffer.from(bytes.subarray(24, 56)).toString("hex");
+  if (expectedArtifactSetSha256 !== null &&
+      artifactSetSha256 !== digest(expectedArtifactSetSha256,
+        "P4 expected artifact-set hash")) {
+    fail("P4 host transcript artifact set differs");
+  }
+  const records = [];
+  for (let index = 0; index < count; index += 1) {
+    const offset = CADR_M6_HOST_TRANSCRIPT_HEADER_BYTES +
+      index * CADR_M6_HOST_TRANSCRIPT_RECORD_BYTES;
+    const raw = bytes.subarray(offset,
+      offset + CADR_M6_HOST_TRANSCRIPT_RECORD_BYTES);
+    const view = new DataView(raw.buffer, raw.byteOffset, raw.byteLength);
+    if (view.getBigUint64(0, true) !== BigInt(index) ||
+        view.getUint32(8, true) !== (index % 2 === 0 ? 1 : 2) ||
+        raw.subarray(200).some(byte => byte !== 0)) {
+      fail(`P4 host transcript record ${index} is invalid`);
+    }
+    records.push(Object.freeze({
+      ordinal: index,
+      actor: index % 2 === 0 ? "issue" : "completion",
+      operation: view.getUint32(12, true),
+      guestBoundary: view.getBigUint64(16, true).toString(),
+      dueBoundary: view.getBigUint64(24, true).toString(),
+      generation: view.getBigUint64(32, true).toString(),
+      requestId: view.getBigUint64(40, true).toString(),
+      hostStatus: view.getUint32(48, true),
+      blockCount: view.getUint32(52, true),
+      descriptorByteCount: view.getBigUint64(56, true).toString(),
+      requestPayloadByteCount: view.getBigUint64(64, true).toString(),
+      completionByteCount: view.getBigUint64(72, true).toString(),
+      firstBlock: view.getBigUint64(80, true).toString(),
+      blockBytes: view.getUint32(88, true),
+      overlayGeneration: view.getBigUint64(96, true).toString(),
+      descriptorSha256: Buffer.from(raw.subarray(104, 136)).toString("hex"),
+      requestPayloadSha256: Buffer.from(raw.subarray(136, 168)).toString("hex"),
+      completionSha256: Buffer.from(raw.subarray(168, 200)).toString("hex"),
+    }));
+  }
+  const pairFields = ["operation", "guestBoundary", "dueBoundary", "generation",
+    "requestId", "hostStatus", "blockCount", "descriptorByteCount",
+    "requestPayloadByteCount", "completionByteCount", "firstBlock", "blockBytes",
+    "overlayGeneration", "descriptorSha256", "requestPayloadSha256"];
+  for (let index = 0; index < records.length; index += 2) {
+    const issue = records[index]; const completion = records[index + 1];
+    if (issue.requestId !== String(index / 2 + 1) ||
+        pairFields.some(field => issue[field] !== completion[field])) {
+      fail(`P4 host transcript pair ${index / 2} is inconsistent`);
+    }
+  }
+  return Object.freeze({ artifactSetSha256, recordCount: count,
+    records: Object.freeze(records) });
+}
+
+export class P4PortableDeadlineError extends Error {
+  constructor() {
+    super(`P4 portable wall-time limit exhausted after ${P4_PORTABLE_WALL_TIME_MS}ms`);
+    this.name = "P4PortableDeadlineError";
+  }
+}
+
+export class P4PortableExecutionDeadline {
+  #now; #setTimeout; #clearTimeout; #started; #timer; #expired = false;
+  #reject; #expiration; #terminator = null; #terminalError = null;
+  constructor({ now = performance.now.bind(performance),
+    setTimeoutFn = globalThis.setTimeout.bind(globalThis),
+    clearTimeoutFn = globalThis.clearTimeout.bind(globalThis),
+    wallTimeMs = P4_PORTABLE_WALL_TIME_MS } = {}) {
+    if (typeof now !== "function" || typeof setTimeoutFn !== "function" ||
+        typeof clearTimeoutFn !== "function" || !Number.isSafeInteger(wallTimeMs) ||
+        wallTimeMs < 1 || wallTimeMs > P4_PORTABLE_WALL_TIME_MS) {
+      fail("portable deadline test seam is invalid");
+    }
+    this.#now = now; this.#setTimeout = setTimeoutFn;
+    this.#clearTimeout = clearTimeoutFn; this.wallTimeMs = wallTimeMs;
+    this.#started = now();
+    this.#expiration = new Promise((_, reject) => { this.#reject = reject; });
+    void this.#expiration.catch(() => {});
+    this.#timer = setTimeoutFn(() => this.#expire(), wallTimeMs);
+  }
+  #expire() {
+    if (this.#expired) return;
+    this.#expired = true;
+    const error = new P4PortableDeadlineError();
+    Object.defineProperty(error, "p4TerminalCause", {
+      value: "portable-wall-time", enumerable: true,
+    });
+    this.#terminalError = error;
+    this.#reject(error);
+    try { this.#terminator?.(); } catch { /* deadline rejection remains first */ }
+  }
+  attachTerminator(terminator) {
+    if (typeof terminator !== "function" || this.#terminator !== null) {
+      fail("portable deadline terminator is invalid");
+    }
+    this.#terminator = terminator;
+    if (this.#expired) terminator();
+  }
+  remainingMs() {
+    return Math.max(0, this.wallTimeMs - Math.floor(this.#now() - this.#started));
+  }
+  requestTimeoutMs() {
+    const remaining = this.remainingMs();
+    if (remaining === 0) this.#expire();
+    return Math.min(P4_REQUEST_TIMEOUT_MS, remaining);
+  }
+  race(value) {
+    if (this.remainingMs() === 0) this.#expire();
+    return Promise.race([Promise.resolve(value), this.#expiration]);
+  }
+  async join(value) {
+    const operation = Promise.resolve(value);
+    try {
+      const result = await this.race(operation);
+      if (this.remainingMs() === 0) this.#expire();
+      if (this.#expired) throw this.#terminalError;
+      return result;
+    } catch (error) {
+      if (!this.#expired) throw error;
+      await operation.catch(() => {});
+      throw this.#terminalError;
+    }
+  }
+  elapsedMs() {
+    return Math.max(0, Math.floor(this.#now() - this.#started));
+  }
+  close() {
+    if (this.#timer !== null) this.#clearTimeout(this.#timer);
+    this.#timer = null;
+    return this.elapsedMs();
+  }
+  get expired() { return this.#expired; }
+  get terminalCause() {
+    return this.#expired ? "portable-wall-time" : null;
+  }
+  terminalError() { return this.#terminalError; }
 }
 
 function sameJson(left, right) {
@@ -631,7 +920,7 @@ export async function runNativeCapture({ prepared, nativeConfig, output, session
 }
 
 export class ProtocolV5Client {
-  constructor(worker, sessionId) {
+  constructor(worker, sessionId, executionDeadline = null) {
     if (typeof sessionId !== "string" || sessionId.length === 0) fail("portable session ID is absent");
     this.worker = worker;
     this.sessionId = sessionId;
@@ -640,6 +929,9 @@ export class ProtocolV5Client {
     this.log = [Object.freeze({ schema: "cadr-m7-portable-session-v1", session_id: sessionId })];
     this.closed = false;
     this.terminated = false;
+    this.terminationPromise = null;
+    this.workerTerminationPromise = null;
+    this.executionDeadline = executionDeadline;
     worker.on("message", message => this.#onMessage(message));
     worker.on("error", error => this.#failPending(error));
     worker.on("exit", code => { if (!this.closed && code !== 0) this.#failPending(new Error(`protocol-v5 worker exited ${code}`)); });
@@ -669,14 +961,33 @@ export class ProtocolV5Client {
   request(op, fields = {}, transfer = []) {
     if (this.closed) return Promise.reject(new Error("protocol-v5 request after close"));
     const id = this.nextId++;
-    return new Promise((resolveRequest, rejectRequest) => {
-      const timeout = setTimeout(() => {
-        this.pending.delete(id); rejectRequest(new Error(`protocol-v5 ${op} timed out after ${REQUEST_TIMEOUT_MS}ms`));
-      }, REQUEST_TIMEOUT_MS);
+    const request = new Promise((resolveRequest, rejectRequest) => {
+      const remaining = this.executionDeadline?.remainingMs() ??
+        P4_REQUEST_TIMEOUT_MS;
+      const timeoutMs = Math.min(P4_REQUEST_TIMEOUT_MS, remaining);
+      if (timeoutMs === 0) {
+        rejectRequest(new P4PortableDeadlineError()); return;
+      }
+      const timeout = timeoutMs < remaining || this.executionDeadline === null ?
+        setTimeout(() => {
+          this.pending.delete(id);
+          rejectRequest(new Error(
+            `protocol-v5 ${op} timed out after ${timeoutMs}ms`));
+        }, timeoutMs) : null;
       this.pending.set(id, { timeout, op, resolve: resolveRequest, reject: rejectRequest });
       try { this.worker.postMessage({ version: M7_PROTOCOL_VERSION, id, op, ...fields }, transfer); }
       catch (error) { this.pending.delete(id); clearTimeout(timeout); rejectRequest(error); }
     });
+    return this.executionDeadline === null ? request :
+      this.executionDeadline.join(request);
+  }
+
+  async terminateWorkerOnce() {
+    if (this.workerTerminationPromise === null) {
+      this.workerTerminationPromise = Promise.resolve(this.worker.terminate())
+        .then(code => { this.terminated = true; return code; });
+    }
+    return this.workerTerminationPromise;
   }
 
   async close() {
@@ -685,12 +996,12 @@ export class ProtocolV5Client {
     }
     if (this.pending.size !== 0) fail("portable worker has pending requests at termination");
     this.closed = true;
-    await this.worker.terminate();
-    this.terminated = true;
+    await this.terminateWorkerOnce();
     return Object.freeze({ pending_requests: 0, terminated: true });
   }
 
   async terminateFailure() {
+    if (this.terminationPromise !== null) return this.terminationPromise;
     if (this.terminated) {
       return Object.freeze({
         pending_requests_at_failure: 0, terminated: true,
@@ -698,15 +1009,17 @@ export class ProtocolV5Client {
       });
     }
     const pending = this.pending.size;
-    this.#failPending(new Error("protocol-v5 worker terminated after failure"));
-    this.closed = true;
-    const exitCode = await this.worker.terminate();
-    this.terminated = true;
-    return Object.freeze({
-      pending_requests_at_failure: pending,
-      terminated: true,
-      worker_exit_code: Number.isSafeInteger(exitCode) ? exitCode : null,
-    });
+    this.terminationPromise = (async () => {
+      this.#failPending(new Error("protocol-v5 worker terminated after failure"));
+      this.closed = true;
+      const exitCode = await this.terminateWorkerOnce();
+      return Object.freeze({
+        pending_requests_at_failure: pending,
+        terminated: true,
+        worker_exit_code: Number.isSafeInteger(exitCode) ? exitCode : null,
+      });
+    })();
+    return this.terminationPromise;
   }
 }
 
@@ -967,10 +1280,20 @@ function validateP4NativeBinding(value, label) {
 export function validateP4Manifest(value, expected) {
   exactKeys(expected, ["bindings", "schema"], "P4 expected closure");
   if (expected.schema !== P4_EXPECTED_CLOSURE_SCHEMA) fail("P4 expected closure has wrong schema");
-  exactKeys(expected.bindings, ["artifacts", "comparison", "m6_release_record", "native", "native_inputs",
+  exactKeys(expected.bindings, ["artifacts", "comparison", "execution_accounting",
+    "execution_budget", "m6_release_record", "native", "native_inputs",
     "patches", "portable", "prepared", "schedule", "source", "summary"], "P4 expected bindings");
-  exactKeys(value, ["artifacts", "comparison", "m6_release_record", "native", "native_inputs", "outcome", "patches", "portable", "prepared", "runtime_execution_performed", "schedule", "schema", "session", "source", "summary", "target"], "P4 manifest");
+  exactKeys(value, ["artifacts", "comparison", "execution_accounting", "execution_budget",
+    "m6_release_record", "native", "native_inputs", "outcome", "patches", "portable",
+    "prepared", "runtime_execution_performed", "schedule", "schema", "session", "source",
+    "summary", "target"], "P4 manifest");
   if (value.schema !== P4_SCHEMA || value.target !== P4_TARGET || value.outcome !== "identical" || value.runtime_execution_performed !== true) fail("P4 manifest has wrong status");
+  validateExecutionBudget(value.execution_budget, "P4 execution budget");
+  validateExecutionAccounting(value.execution_accounting, "P4 execution accounting");
+  if (value.execution_accounting.limit_hit !== null ||
+      value.execution_accounting.outstanding_request_id !== "0") {
+    fail("successful P4 execution accounting is terminal");
+  }
   exactKeys(value.session, ["id", "mode"], "P4 session");
   if (typeof value.session.id !== "string" || value.session.id.length === 0 || value.session.mode !== "0700") fail("P4 session is not private");
   exactKeys(value.source, ["system_fossil", "usim_fossil"], "P4 source"); digest(value.source.system_fossil, "P4 system fossil"); digest(value.source.usim_fossil, "P4 usim fossil");
@@ -1007,7 +1330,15 @@ export function validateP4Manifest(value, expected) {
   if (value.native.capture.schema !== "CDRM7N1" || value.native.capture.boundary !== CADR_M7_FORM_C_BOUNDARY.toString()) fail("P4 native capture has wrong boundary");
   digest(value.native.capture.sha256, "P4 native capture hash"); digest(value.native.capture.raw_words_sha256, "P4 native words hash");
   for (const [name, expectedPath] of [["frame_file", null], ["transcript_file", null], ["idle_file", null], ["metadata_file", null]]) privateFileIdentity(value.native[name], `P4 native ${name}`, expectedPath);
-  exactKeys(value.portable, ["cdrdisp_file", "contemporaneous_adapter_observation", "effective_page_identity", "effective_page_identity_file", "framebuffer_checkpoint", "host_transcript_file", "module", "ready_file", "session_evidence", "session_id", "termination", "witness_file", "worker", "worker_closure", "worker_log_file"], "P4 portable");
+  exactKeys(value.portable, ["cdrdisp_file", "contemporaneous_adapter_observation", "effective_page_identity", "effective_page_identity_file", "execution_accounting", "execution_budget", "framebuffer_checkpoint", "host_transcript_file", "module", "ready_file", "session_evidence", "session_id", "termination", "witness_file", "worker", "worker_closure", "worker_log_file"], "P4 portable");
+  validateExecutionBudget(value.portable.execution_budget,
+    "P4 portable execution budget");
+  validateExecutionAccounting(value.portable.execution_accounting,
+    "P4 portable execution accounting");
+  if (!sameJson(value.execution_budget, value.portable.execution_budget) ||
+      !sameJson(value.execution_accounting, value.portable.execution_accounting)) {
+    fail("P4 root and portable execution evidence differ");
+  }
   exactKeys(value.portable.session_evidence, ["ready_session_id", "worker_log_session_id"], "P4 portable session evidence");
   exactKeys(value.portable.termination, ["pending_requests", "terminated"], "P4 portable termination");
   if (typeof value.portable.session_id !== "string" || value.portable.session_id.length === 0 ||
@@ -1029,6 +1360,7 @@ export function validateP4Manifest(value, expected) {
   if (identitySummary.schema !== CADR_M7_EFFECTIVE_PAGE_IDENTITY_STREAM_SCHEMA ||
       identitySummary.profile !== CADR_M7_EFFECTIVE_PAGE_IDENTITY_PROFILE ||
       identitySummary.disposition !== CADR_M7_EFFECTIVE_PAGE_IDENTITY_STREAM_DISPOSITION ||
+      identitySummary.count > P4_MAX_HOST_TRANSACTIONS ||
       identitySummary.first.boundary !== "1366722" ||
       identitySummary.first.first_block !== "1299" ||
       identitySummary.first.generation !== "1" ||
@@ -1065,6 +1397,8 @@ export function validateP4Manifest(value, expected) {
   if (identitySummary.collection_sha256 !==
         value.portable.effective_page_identity_file.sha256 ||
       identitySummary.host_transcript_sha256 !==
+        value.portable.host_transcript_file.sha256 ||
+      value.execution_accounting.host_transcript_sha256 !==
         value.portable.host_transcript_file.sha256) {
     fail("P4 effective-page sidecar hashes differ from their summary");
   }
@@ -1094,8 +1428,10 @@ export function p4Bindings(value) {
   return {
     source: value.source, m6_release_record: value.m6_release_record, patches: value.patches,
     prepared: value.prepared, artifacts: value.artifacts, native_inputs: value.native_inputs,
-    schedule: value.schedule, native: { session_id: value.native.session_id, private_disk_instance_id: value.native.private_disk_instance_id, private_disk: value.native.private_disk, process: value.native.process, oracle_process: value.native.oracle_process, capture: value.native.capture, frame_file: value.native.frame_file, transcript_file: value.native.transcript_file, idle_file: value.native.idle_file, metadata_file: value.native.metadata_file },
-    portable: { session_id: value.portable.session_id, session_evidence: value.portable.session_evidence, module: value.portable.module, worker: value.portable.worker, worker_closure: value.portable.worker_closure, contemporaneous_adapter_observation: value.portable.contemporaneous_adapter_observation, effective_page_identity: value.portable.effective_page_identity, effective_page_identity_file: value.portable.effective_page_identity_file, host_transcript_file: value.portable.host_transcript_file, termination: value.portable.termination, framebuffer_checkpoint: value.portable.framebuffer_checkpoint, cdrdisp_file: value.portable.cdrdisp_file, witness_file: value.portable.witness_file, ready_file: value.portable.ready_file, worker_log_file: value.portable.worker_log_file },
+    schedule: value.schedule, execution_budget: value.execution_budget,
+    execution_accounting: value.execution_accounting,
+    native: { session_id: value.native.session_id, private_disk_instance_id: value.native.private_disk_instance_id, private_disk: value.native.private_disk, process: value.native.process, oracle_process: value.native.oracle_process, capture: value.native.capture, frame_file: value.native.frame_file, transcript_file: value.native.transcript_file, idle_file: value.native.idle_file, metadata_file: value.native.metadata_file },
+    portable: { session_id: value.portable.session_id, session_evidence: value.portable.session_evidence, module: value.portable.module, worker: value.portable.worker, worker_closure: value.portable.worker_closure, contemporaneous_adapter_observation: value.portable.contemporaneous_adapter_observation, effective_page_identity: value.portable.effective_page_identity, effective_page_identity_file: value.portable.effective_page_identity_file, host_transcript_file: value.portable.host_transcript_file, execution_budget: value.portable.execution_budget, execution_accounting: value.portable.execution_accounting, termination: value.portable.termination, framebuffer_checkpoint: value.portable.framebuffer_checkpoint, cdrdisp_file: value.portable.cdrdisp_file, witness_file: value.portable.witness_file, ready_file: value.portable.ready_file, worker_log_file: value.portable.worker_log_file },
     comparison: value.comparison, summary: value.summary,
   };
 }
@@ -1103,21 +1439,23 @@ export function p4Bindings(value) {
 export function validateP4FailureReceipts(root, portable, expected) {
   exactKeys(expected, ["portable", "root"], "P4 failure expected closure");
   exactKeys(root, [
-    "artifacts", "error_message", "error_name", "m6_release_record",
+    "artifacts", "error_message", "error_name", "execution_accounting",
+    "execution_budget", "m6_release_record",
     "native", "native_inputs", "outcome", "patches", "portable_failure_file",
     "prepared", "runtime_execution_performed", "schedule", "schema",
     "session", "source", "target",
   ], "P4 root failure");
   exactKeys(portable, [
     "checkpoint", "contemporaneous_adapter_observation", "error_message", "error_name",
-    "checkpoint_comparison_file", "m6_failure_file", "m6_release_record",
+    "checkpoint_comparison_file", "execution_accounting", "execution_budget",
+    "host_transcript_file", "m6_failure_file", "m6_release_record",
     "module", "schema", "session_id", "target", "termination", "worker",
-    "worker_closure", "worker_log_file",
+    "worker_closure", "worker_disposition", "worker_log_file",
   ], "P4 portable failure");
-  if (root.schema !== "cadr-m7-frame-conformance-failure-v1" ||
+  if (root.schema !== P4_ROOT_FAILURE_SCHEMA ||
       root.target !== P4_TARGET || root.outcome !== "failed" ||
       root.runtime_execution_performed !== true ||
-      portable.schema !== "cadr-m7-portable-failure-v2" ||
+      portable.schema !== P4_PORTABLE_FAILURE_SCHEMA ||
       portable.target !== P4_TARGET ||
       typeof root.error_name !== "string" ||
       typeof root.error_message !== "string" ||
@@ -1127,6 +1465,17 @@ export function validateP4FailureReceipts(root, portable, expected) {
       root.error_message !== portable.error_message ||
       !sameJson(root.m6_release_record, portable.m6_release_record)) {
     fail("P4 failure receipts have the wrong status or error binding");
+  }
+  validateExecutionBudget(root.execution_budget, "P4 root failure budget");
+  validateExecutionBudget(portable.execution_budget,
+    "P4 portable failure budget");
+  validateExecutionAccounting(root.execution_accounting,
+    "P4 root failure accounting");
+  validateExecutionAccounting(portable.execution_accounting,
+    "P4 portable failure accounting");
+  if (!sameJson(root.execution_budget, portable.execution_budget) ||
+      !sameJson(root.execution_accounting, portable.execution_accounting)) {
+    fail("P4 failure execution bindings differ");
   }
   exactKeys(root.session, ["id", "mode"], "P4 failure session");
   if (typeof root.session.id !== "string" || root.session.id.length === 0 ||
@@ -1138,20 +1487,38 @@ export function validateP4FailureReceipts(root, portable, expected) {
   privateFileIdentity(root.portable_failure_file,
     "P4 portable failure file", "portable/failure.json");
   validateP4NativeBinding(root.native, "P4 failure native");
-  byteIdentity(portable.module, "P4 failure module");
-  byteIdentity(portable.worker, "P4 failure worker");
-  workerClosureIdentity(portable.worker_closure,
-    "P4 failure worker closure");
-  if (!sameJson(portable.worker, portable.worker_closure.entry)) {
-    fail("P4 failure worker differs from its staged closure entry");
+  if (portable.worker_disposition === "worker-not-started") {
+    if (portable.termination !== null ||
+        portable.m6_failure_file !== null || portable.host_transcript_file !== null ||
+        portable.checkpoint !== null || portable.checkpoint_comparison_file !== null ||
+        (portable.module !== null && typeof portable.module !== "object") ||
+        (portable.worker !== null && typeof portable.worker !== "object") ||
+        (portable.worker_closure !== null && typeof portable.worker_closure !== "object")) {
+      fail("P4 setup failure has a forged worker disposition");
+    }
+    if (portable.module !== null) byteIdentity(portable.module, "P4 setup module");
+    if (portable.worker !== null) byteIdentity(portable.worker, "P4 setup worker");
+    if (portable.worker_closure !== null) workerClosureIdentity(
+      portable.worker_closure, "P4 setup worker closure");
+  } else if (portable.worker_disposition === "worker-terminated") {
+    byteIdentity(portable.module, "P4 failure module");
+    byteIdentity(portable.worker, "P4 failure worker");
+    workerClosureIdentity(portable.worker_closure, "P4 failure worker closure");
+    if (!sameJson(portable.worker, portable.worker_closure.entry)) {
+      fail("P4 failure worker differs from its staged closure entry");
+    }
+  } else {
+    fail("P4 failure worker disposition is invalid");
   }
-  if (!Array.isArray(portable.contemporaneous_adapter_observation) ||
+  if (portable.worker_disposition === "worker-not-started" &&
+      portable.contemporaneous_adapter_observation === null) {
+    /* The concurrent setup group did not produce this identity. */
+  } else if (!Array.isArray(portable.contemporaneous_adapter_observation) ||
       portable.contemporaneous_adapter_observation.length !== 2) {
     fail("P4 failure contemporaneous adapter observation is incomplete");
   }
-  portable.contemporaneous_adapter_observation.forEach((value, index) =>
-    byteIdentity(value,
-      `P4 failure contemporaneous adapter observation ${index}`));
+  portable.contemporaneous_adapter_observation?.forEach((value, index) =>
+    byteIdentity(value, `P4 failure contemporaneous adapter observation ${index}`));
   byteIdentity(portable.m6_release_record, "P4 failure release record");
   privateFileIdentity(portable.worker_log_file,
     "P4 failure worker log", "worker.ndjson");
@@ -1161,14 +1528,23 @@ export function validateP4FailureReceipts(root, portable, expected) {
   } else if (portable.error_name === "CadrM7UnderlyingM6Failure") {
     fail("P4 underlying M6 failure has no bounded diagnostic");
   }
-  exactKeys(portable.termination, [
+  if (portable.host_transcript_file !== null) {
+    privateFileIdentity(portable.host_transcript_file,
+      "P4 full failure host transcript", "failure-host-transcript.cdrm6hs1");
+    if (portable.host_transcript_file.sha256 !==
+        portable.execution_accounting.host_transcript_sha256) {
+      fail("P4 failure host transcript identity differs from accounting");
+    }
+  }
+  if (portable.worker_disposition === "worker-terminated") exactKeys(portable.termination, [
     "pending_requests_at_failure", "terminated", "worker_exit_code",
   ], "P4 failure termination");
-  if (!Number.isSafeInteger(portable.termination.pending_requests_at_failure) ||
+  if (portable.worker_disposition === "worker-terminated" &&
+      (!Number.isSafeInteger(portable.termination.pending_requests_at_failure) ||
       portable.termination.pending_requests_at_failure < 0 ||
       portable.termination.terminated !== true ||
       (portable.termination.worker_exit_code !== null &&
-       !Number.isSafeInteger(portable.termination.worker_exit_code))) {
+       !Number.isSafeInteger(portable.termination.worker_exit_code)))) {
     fail("P4 failure worker did not terminate with bounded accounting");
   }
   if (portable.checkpoint !== null) {
@@ -1203,6 +1579,58 @@ export function validateP4FailureReceipts(root, portable, expected) {
   return root;
 }
 
+export function validateP4FailureTranscriptBinding(portable,
+  m6FailureBytes, hostTranscriptBytes) {
+  if (!(m6FailureBytes instanceof Uint8Array)) {
+    fail("P4 M6 failure bytes are absent");
+  }
+  const diagnostic = parseCanonicalJsonBytes(
+    m6FailureBytes, "P4 retained M6 failure").value;
+  const report = diagnostic?.failure?.report;
+  const postPreflight = report?.phase !== "preflight";
+  if (portable.m6_failure_file === null ||
+      portable.m6_failure_file.bytes !== m6FailureBytes.byteLength ||
+      portable.m6_failure_file.sha256 !== sha256(m6FailureBytes)) {
+    fail("P4 retained M6 failure identity differs");
+  }
+  if (!postPreflight) {
+    if (portable.host_transcript_file !== null || hostTranscriptBytes !== null) {
+      fail("P4 preflight failure invented a host transcript sidecar");
+    }
+    return diagnostic;
+  }
+  if (!(hostTranscriptBytes instanceof Uint8Array) ||
+      portable.host_transcript_file === null ||
+      portable.host_transcript_file.bytes !== hostTranscriptBytes.byteLength ||
+      portable.host_transcript_file.sha256 !== sha256(hostTranscriptBytes)) {
+    fail("P4 post-preflight failure host transcript identity differs");
+  }
+  const parsed = parseP4HostTranscript(hostTranscriptBytes,
+    diagnostic.failure.preflight.artifactSetSha256);
+  if (String(parsed.recordCount) !== String(report.transcriptCount) ||
+      sha256(hostTranscriptBytes) !== report.hostTranscriptSha256 ||
+      sha256(hostTranscriptBytes) !==
+        portable.execution_accounting.host_transcript_sha256 ||
+      String(parsed.recordCount) !==
+        portable.execution_accounting.transcript_record_count ||
+      String(parsed.recordCount / 2) !==
+        portable.execution_accounting.completed_host_transactions ||
+      !sameJson(parsed.records.slice(-diagnostic.failure.transcriptTail.length),
+        diagnostic.failure.transcriptTail)) {
+    fail("P4 failure transcript/accounting/tail binding differs");
+  }
+  const machine = report.machineInfo;
+  if (machine !== null &&
+      (portable.execution_accounting.final_boundary !== String(report.boundary) ||
+       portable.execution_accounting.last_completed_request_id !==
+         String(machine.lastCompletedRequestId) ||
+       portable.execution_accounting.outstanding_request_id !==
+         String(machine.outstandingRequestId))) {
+    fail("P4 failure machine accounting differs");
+  }
+  return diagnostic;
+}
+
 export async function writeP4PortableFailureEvidence({
   portableDirectory,
   caught,
@@ -1213,6 +1641,10 @@ export async function writeP4PortableFailureEvidence({
   workerClosure,
   contemporaneousAdapterObservation,
   m6ReleaseRecord,
+  executionBudget,
+  executionAccounting,
+  failureHostTranscript,
+  retainFailureHostTranscript,
   termination,
   workerLogBytes,
 }) {
@@ -1226,6 +1658,17 @@ export async function writeP4PortableFailureEvidence({
     m6FailureFile = await writePrivateNew(
       resolve(portableDirectory, "m6-failure.json"),
       caught.m6FailureDiagnostic);
+  }
+  let hostTranscriptFile = null;
+  if (retainFailureHostTranscript === true) {
+    parseP4HostTranscript(failureHostTranscript);
+    if (sha256(failureHostTranscript) !==
+        executionAccounting.host_transcript_sha256) {
+      fail("P4 failure host transcript differs from execution accounting");
+    }
+    hostTranscriptFile = await writePrivateNew(
+      resolve(portableDirectory, "failure-host-transcript.cdrm6hs1"),
+      failureHostTranscript);
   }
   let checkpoint = null;
   let checkpointComparisonFile = null;
@@ -1266,19 +1709,24 @@ export async function writeP4PortableFailureEvidence({
       resolve(portableDirectory, "failure-comparison.json"), comparison);
   }
   const failure = Object.freeze({
-    schema: "cadr-m7-portable-failure-v2",
+    schema: P4_PORTABLE_FAILURE_SCHEMA,
     target: P4_TARGET,
     session_id: sessionId,
     error_name: typeof caught?.name === "string" ? caught.name : "Error",
     error_message: String(caught?.message ?? caught),
-    module,
-    worker,
-    worker_closure: workerClosure,
+    module: module ?? null,
+    worker: worker ?? null,
+    worker_closure: workerClosure ?? null,
     contemporaneous_adapter_observation:
-      contemporaneousAdapterObservation,
+      contemporaneousAdapterObservation ?? null,
     m6_release_record: m6ReleaseRecord,
+    execution_budget: executionBudget,
+    execution_accounting: executionAccounting,
     m6_failure_file: m6FailureFile === null ? null : Object.freeze({
       path: "m6-failure.json", ...m6FailureFile,
+    }),
+    host_transcript_file: hostTranscriptFile === null ? null : Object.freeze({
+      path: "failure-host-transcript.cdrm6hs1", ...hostTranscriptFile,
     }),
     checkpoint,
     checkpoint_comparison_file:
@@ -1289,6 +1737,7 @@ export async function writeP4PortableFailureEvidence({
       path: "worker.ndjson", ...workerLogFile,
     }),
     termination,
+    worker_disposition: termination === null ? "worker-not-started" : "worker-terminated",
   });
   const failureFile = await writePrivateNew(
     resolve(portableDirectory, "failure.json"), failure);
@@ -1296,6 +1745,11 @@ export async function writeP4PortableFailureEvidence({
     resolve(portableDirectory, "failure.json"), "P4 portable failure");
   if (!sameJson(failureInfo.value, failure)) {
     fail("P4 portable failure bytes differ from the retained receipt");
+  }
+  if (m6FailureFile !== null) {
+    validateP4FailureTranscriptBinding(failureInfo.value,
+      caught.m6FailureDiagnostic,
+      retainFailureHostTranscript === true ? failureHostTranscript : null);
   }
   return Object.freeze({
     failure: failureInfo.value,
@@ -1306,36 +1760,105 @@ export async function writeP4PortableFailureEvidence({
 }
 
 async function portableCheckpoint({ nativeFrame, pinned, wasmPath, artifactRoot, portableDirectory, sessionId }) {
-  const wasmBound = await readBoundRegularFile(wasmPath, "M7 Wasm module");
-  const wasmIdentity = wasmBound.identity;
-  const workerStage = await stageM7WorkerClosure({
-    stageDirectory: resolve(portableDirectory, "worker-stage"),
-  });
-  const workerIdentity = workerStage.closure.entry;
-  const contemporaneousAdapterObservation = await Promise.all(
-    ADAPTER_PATHS.map(path =>
-      fileIdentity(path, "M7 contemporaneous Wasm adapter observation")));
-  const module = await WebAssembly.compile(wasmBound.bytes);
-  const artifacts = await openArtifacts(pinned.expected, artifactRoot);
-  const client = new ProtocolV5Client(
-    new Worker(workerStage.entryUrl, { type: "module" }), sessionId);
+  /* The fixed budget starts before source staging and compilation.  It is not
+   * a CLI option and has no resume or extension path. */
+  const executionBudget = p4ExecutionBudgetRecord();
+  const deadline = new P4PortableExecutionDeadline();
+  let wasmBound; let wasmIdentity; let workerStage; let workerIdentity;
+  let contemporaneousAdapterObservation; let module; let artifacts = null;
+  let client = null;
+  try {
+    const wasmPromise = readBoundRegularFile(wasmPath, "M7 Wasm module")
+      .then(value => { wasmBound = value; wasmIdentity = value.identity; return value; });
+    const stagePromise = stageM7WorkerClosure({
+      stageDirectory: resolve(portableDirectory, "worker-stage"),
+    }).then(value => { workerStage = value; workerIdentity = value.closure.entry; return value; });
+    const adapterPromise = Promise.all(ADAPTER_PATHS.map(path =>
+      fileIdentity(path, "M7 contemporaneous Wasm adapter observation")))
+      .then(value => { contemporaneousAdapterObservation = value; return value; });
+    const setupResults = await deadline.join(Promise.allSettled(
+      [wasmPromise, stagePromise, adapterPromise]));
+    const rejectedSetup = setupResults.find(result => result.status === "rejected");
+    if (rejectedSetup !== undefined) throw rejectedSetup.reason;
+    wasmIdentity = wasmBound.identity;
+    workerIdentity = workerStage.closure.entry;
+    module = await deadline.join(WebAssembly.compile(wasmBound.bytes));
+    const artifactsPromise = openArtifacts(pinned.expected, artifactRoot)
+      .then(value => { artifacts = value; return value; });
+    await deadline.join(artifactsPromise);
+    client = new ProtocolV5Client(
+      new Worker(workerStage.entryUrl, { type: "module" }), sessionId, deadline);
+    deadline.attachTerminator(() => {
+      void client.terminateFailure().catch(() => {});
+    });
+  } catch (error) {
+    if (client !== null) await client.terminateFailure().catch(() => {});
+    if (artifacts !== null) await artifacts.close();
+    const elapsedMs = deadline.close();
+    if (client === null) {
+      if (error?.p4TerminalCause === undefined) {
+        Object.defineProperty(error, "p4TerminalCause", {
+          value: deadline.terminalCause, enumerable: true, configurable: true,
+        });
+      }
+      const failureExecution = failureExecutionEvidence(
+        error, elapsedMs, deadline.terminalCause);
+      const written = await writeP4PortableFailureEvidence({
+        portableDirectory, caught: error, nativeFrame, sessionId,
+        module: wasmIdentity ?? null, worker: workerIdentity ?? null,
+        workerClosure: workerStage?.closure ?? null,
+        contemporaneousAdapterObservation,
+        m6ReleaseRecord: Object.freeze({
+          path: relative(ROOT, RELEASE_PATH),
+          bytes: pinned.release.bytes.byteLength,
+          sha256: sha256(pinned.release.bytes),
+        }),
+        executionBudget,
+        executionAccounting: failureExecution.accounting,
+        failureHostTranscript: failureExecution.hostTranscript,
+        retainFailureHostTranscript: false,
+        termination: null,
+        workerLogBytes: new TextEncoder().encode(
+          `${canonicalJson({ schema: "cadr-m7-portable-session-v1", session_id: sessionId })}\n`),
+      });
+      error.portableFailure = written.failure;
+      error.portableFailureFile = written.failureFile;
+    }
+    throw error;
+  }
   let termination = null;
   let caught = null;
+  let elapsedMs = null;
   try {
     const instantiate = await client.request("instantiate", {
       module, m6DiskEvidencePolicy: true,
     });
     if (instantiate.status !== 0) fail(`protocol-v5 M7 instantiation failed with status ${instantiate.status}`);
     const profile = profileForM6(pinned.profile, pinned.expected);
-    const checked = await preflightM6Artifacts({ artifacts: artifacts.artifacts, profile, hashArtifact });
+    const hashP4Artifact = async artifact => {
+      const digest = createHash("sha256");
+      for (let offset = 0n; offset < artifact.byteCount; offset += 1_048_576n) {
+        const length = artifact.byteCount - offset < 1_048_576n ?
+          artifact.byteCount - offset : 1_048_576n;
+        const bytes = await deadline.join(artifact.readRange(offset, length));
+        if (!(bytes instanceof Uint8Array) || BigInt(bytes.byteLength) !== length) {
+          fail("P4 artifact source returned a short range");
+        }
+        digest.update(bytes);
+      }
+      return new Uint8Array(digest.digest());
+    };
+    const checked = await preflightM6Artifacts({
+      artifacts: artifacts.artifacts, profile, hashArtifact: hashP4Artifact,
+    });
     const result = await runM7CheckpointedM6Boot({
       nativeCapture: nativeFrame,
       client,
       artifacts: checked.sources,
       profile,
-      hashArtifact,
+      hashArtifact: hashP4Artifact,
       maxBoundaries: readyLimit(pinned.release.value),
-      maxHostTransactions: 1024,
+      maxHostTransactions: P4_MAX_HOST_TRANSACTIONS,
       ready: Object.freeze({ contract: CADR_M6_READY_CONTRACT, releaseRecord: pinned.release.bytes.slice() }),
     });
     if (result.comparison.outcome !== "identical") fail("M7 portable comparison did not report identity");
@@ -1369,23 +1892,47 @@ async function portableCheckpoint({ nativeFrame, pinned, wasmPath, artifactRoot,
       effective_page_identity: effectivePageIdentity,
       m6_release_record_sha256: result.comparison.m6_release_record_sha256,
       m6_witness_sample_sha256: result.comparison.m6_witness_sample_sha256 });
-    const frameFile = await writePrivateNew(resolve(portableDirectory, "frame.cdrdisp1"), frame);
-    const witnessFile = await writePrivateNew(resolve(portableDirectory, "witness.cdrm6i1"), witness);
-    const readyFile = await writePrivateNew(resolve(portableDirectory, "ready.json"), ready);
-    const identityStreamFile = await writePrivateNew(
-      resolve(portableDirectory, "effective-page-identity.json"), identityStreamBytes);
-    const hostTranscriptFile = await writePrivateNew(
-      resolve(portableDirectory, "host-transcript.cdrm6hs1"), hostTranscript);
-    termination = await client.close();
-    const workerLogFile = await writePrivateNew(resolve(portableDirectory, "worker.ndjson"),
-      new TextEncoder().encode(`${client.log.map(entry => canonicalJson(entry)).join("\n")}\n`));
+    const frameFile = await deadline.join(writePrivateNew(
+      resolve(portableDirectory, "frame.cdrdisp1"), frame));
+    const witnessFile = await deadline.join(writePrivateNew(
+      resolve(portableDirectory, "witness.cdrm6i1"), witness));
+    const readyFile = await deadline.join(writePrivateNew(
+      resolve(portableDirectory, "ready.json"), ready));
+    const identityStreamFile = await deadline.join(writePrivateNew(
+      resolve(portableDirectory, "effective-page-identity.json"), identityStreamBytes));
+    const hostTranscriptFile = await deadline.join(writePrivateNew(
+      resolve(portableDirectory, "host-transcript.cdrm6hs1"), hostTranscript));
+    const workerLogFile = await deadline.join(writePrivateNew(
+      resolve(portableDirectory, "worker.ndjson"),
+      new TextEncoder().encode(`${client.log.map(entry => canonicalJson(entry)).join("\n")}\n`)));
+    termination = await deadline.join(client.close());
+    elapsedMs = deadline.close();
+    const parsedTranscript = parseP4HostTranscript(hostTranscript,
+      Buffer.from(checked.artifactSetSha256).toString("hex"));
+    if (parsedTranscript.recordCount !== result.m6.transcript.length) {
+      fail("P4 successful transcript count differs from the M6 result");
+    }
+    const executionAccounting = p4Accounting({
+      hostTranscript, elapsedMs,
+      finalBoundary: result.m6.boundary,
+      lastCompletedRequestId: result.m6.machineInfo.lastCompletedRequestId,
+      outstandingRequestId: result.m6.machineInfo.outstandingRequestId,
+      limitHit: null,
+    });
     return Object.freeze({ result, sessionId: ready.session_id, workerLogSessionId: client.sessionId,
       module: wasmIdentity, worker: workerIdentity,
       contemporaneousAdapterObservation,
       workerClosure: workerStage.closure,
+      executionBudget, executionAccounting,
       frameFile, witnessFile, readyFile, identityStreamFile, hostTranscriptFile,
       workerLogFile, termination, ready });
   } catch (error) {
+    if (deadline.terminalCause !== null &&
+        error?.p4TerminalCause === undefined) {
+      Object.defineProperty(error, "p4TerminalCause", {
+        value: deadline.terminalCause, enumerable: true, configurable: true,
+      });
+    }
     caught = error;
   } finally {
     if (termination === null) {
@@ -1393,7 +1940,10 @@ async function portableCheckpoint({ nativeFrame, pinned, wasmPath, artifactRoot,
         await client.close() : await client.terminateFailure();
     }
     await artifacts.close();
+    if (elapsedMs === null) elapsedMs = deadline.close();
   }
+  const failureExecution = failureExecutionEvidence(
+    caught, elapsedMs, caught?.p4TerminalCause ?? deadline.terminalCause);
   const written = await writeP4PortableFailureEvidence({
     portableDirectory,
     caught,
@@ -1408,6 +1958,10 @@ async function portableCheckpoint({ nativeFrame, pinned, wasmPath, artifactRoot,
       bytes: pinned.release.bytes.byteLength,
       sha256: sha256(pinned.release.bytes),
     }),
+    executionBudget,
+    executionAccounting: failureExecution.accounting,
+    failureHostTranscript: failureExecution.hostTranscript,
+    retainFailureHostTranscript: failureExecution.retainTranscript,
     termination,
     workerLogBytes: new TextEncoder().encode(
       `${client.log.map(entry => canonicalJson(entry)).join("\n")}\n`),
@@ -1479,6 +2033,8 @@ async function runCampaign(options) {
       worker_closure: portable.workerClosure,
       contemporaneous_adapter_observation:
         portable.contemporaneousAdapterObservation,
+      execution_budget: portable.executionBudget,
+      execution_accounting: portable.executionAccounting,
       effective_page_identity: portable.ready.effective_page_identity,
       framebuffer_checkpoint: { boundary: comparison.boundary,
         cdrdisp1_sha256: comparison.portable_record_sha256,
@@ -1533,6 +2089,8 @@ async function runCampaign(options) {
         source: parentNativeInputs.source, m6_release_record: pinnedReleaseIdentity,
         patches: parentNativeInputs.patches, prepared: parentNativeInputs.prepared, artifacts: pinnedArtifacts,
         native_inputs: pinned.nativeInputs, schedule: parentNativeInputs.schedule,
+        execution_budget: portable.executionBudget,
+        execution_accounting: portable.executionAccounting,
         native: expectedNative, portable: expectedPortable,
         comparison: expectedComparison, summary: expectedSummary,
       }),
@@ -1542,6 +2100,8 @@ async function runCampaign(options) {
       session: { id: session.id, mode: "0700" }, source: native.source,
       m6_release_record: native.m6_release_record, patches: native.patches, prepared: native.prepared,
       artifacts: native.artifacts, native_inputs: native.native_inputs, schedule: native.schedule,
+      execution_budget: portable.executionBudget,
+      execution_accounting: portable.executionAccounting,
       native: nativeBinding, portable: portableBinding,
       comparison: comparisonBinding, summary: summaryBinding,
     };
@@ -1558,7 +2118,7 @@ async function runCampaign(options) {
     if (failureContext !== null && error?.portableFailureFile !== undefined) {
       const parent = failureContext.parentNativeInputs;
       const rootFailure = Object.freeze({
-        schema: "cadr-m7-frame-conformance-failure-v1",
+        schema: P4_ROOT_FAILURE_SCHEMA,
         target: P4_TARGET,
         outcome: "failed",
         runtime_execution_performed: true,
@@ -1570,6 +2130,8 @@ async function runCampaign(options) {
         artifacts: failureContext.native.artifacts,
         native_inputs: failureContext.native.native_inputs,
         schedule: parent.schedule,
+        execution_budget: error.portableFailure.execution_budget,
+        execution_accounting: error.portableFailure.execution_accounting,
         native: failureContext.nativeBinding,
         portable_failure_file: error.portableFailureFile,
         error_name: typeof error?.name === "string" ? error.name : "Error",

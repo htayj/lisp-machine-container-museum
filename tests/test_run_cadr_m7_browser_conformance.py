@@ -73,8 +73,23 @@ def p4_manifest(module):
     closure_tree = hashlib.sha256(json.dumps({
         "builtins": ["node:worker_threads"], "files": closure_files, "node": node,
     }, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
+    budget = {
+        "schema": "cadr-m7-p4-execution-budget-v1",
+        "max_host_transactions": 2048,
+        "portable_wall_time_ms": 10_800_000,
+        "request_timeout_ms": 120_000,
+        "disk_byte_count": "269562880", "block_bytes": 1024,
+        "disk_block_count": "263245", "extension_policy": "none",
+        "resume_policy": "fresh-session-only",
+    }
+    accounting = {
+        "completed_host_transactions": "5", "transcript_record_count": "10",
+        "host_transcript_sha256": h(36), "elapsed_monotonic_ms": "1",
+        "final_boundary": "982990278", "last_completed_request_id": "5",
+        "outstanding_request_id": "0", "limit_hit": None,
+    }
     return {
-        "schema": "cadr-m7-frame-conformance-result-v2", "target": module.P5_TARGET,
+        "schema": "cadr-m7-frame-conformance-result-v3", "target": module.P5_TARGET,
         "outcome": "identical", "runtime_execution_performed": True,
         "session": {"id": "p4", "mode": "0700"}, "source": {"system_fossil": h(1), "usim_fossil": h(2)},
         "m6_release_record": file("cadr-web/oracle/cadr-m6-release-record.json", 3),
@@ -87,6 +102,8 @@ def p4_manifest(module):
         "artifacts": [{"kind": kind, "byte_count": str(11 + index), "sha256": h(11 + index)} for index, kind in enumerate((1, 2, 4, 5, 3))],
         "native_inputs": [{"id": "usite-extra-hosts", "byte_count": "16", "sha256": h(16)}],
         "schedule": {"event_count": 17, "mapping_sha256": h(17), "sha256": h(18)},
+        "execution_budget": json_clone(budget),
+        "execution_accounting": json_clone(accounting),
         "native": {"session_id": "native", "private_disk_instance_id": "disk",
                    "private_disk": {"sha256_at_start": h(19), "sha256_at_end": h(19)},
                    "process": {"returncode": 0, "timed_out": False, "forced_stop": False, "state_may_be_incomplete": False, "pending_host_requests": 0},
@@ -94,6 +111,8 @@ def p4_manifest(module):
                    "capture": {"schema": "CDRM7N1", "sha256": h(20), "byte_count": "92512", "boundary": "982990214", "width": 768, "height": 963, "stride_words": 24, "backing_words": 32768, "active_words": 23112, "tv_mode": 4, "black_on_white": True, "raw_words_sha256": h(21)},
                    "frame_file": file("native/frame.cdrm7n1", 20), "transcript_file": file("native/capture.ndjson", 22), "idle_file": file("native/idle.bin", 23), "metadata_file": file("native/metadata.json", 24)},
         "portable": {"session_id": "portable",
+                     "execution_budget": json_clone(budget),
+                     "execution_accounting": json_clone(accounting),
                      "session_evidence": {"ready_session_id": "portable", "worker_log_session_id": "portable"},
                      "module": file("cadr-web/build/cadr-web-m7-O0.wasm", 25),
                      "worker": worker,
@@ -472,6 +491,16 @@ def main() -> None:
     manifest = p4_manifest(module)
     checked = module.validate_p4_manifest(manifest, module.canonical(manifest))
     assert checked["frame"]["path"] == "portable/frame.cdrdisp1"
+    failure_receipt = json_clone(manifest)
+    failure_receipt["schema"] = "cadr-m7-frame-conformance-failure-v3"
+    failure_receipt["outcome"] = "failed"
+    try:
+        module.validate_p4_manifest(
+            failure_receipt, module.canonical(failure_receipt))
+    except module.BrowserConformanceError:
+        pass
+    else:
+        raise AssertionError("success-only P5 admitted a P4 failure receipt")
     identity_raw, identity_transcript = identity_sidecars(module)
     module.validate_identity_stream(identity_raw, identity_transcript,
                                     manifest["portable"]["effective_page_identity"])
@@ -571,6 +600,10 @@ def main() -> None:
             receipt_fields[module.IDENTITY_PATH]["sha256"]
         on_disk["portable"]["effective_page_identity"]["host_transcript_sha256"] = \
             receipt_fields[module.HOST_TRANSCRIPT_PATH]["sha256"]
+        on_disk["execution_accounting"]["host_transcript_sha256"] = \
+            receipt_fields[module.HOST_TRANSCRIPT_PATH]["sha256"]
+        on_disk["portable"]["execution_accounting"] = \
+            json_clone(on_disk["execution_accounting"])
         on_disk["native"]["capture"]["sha256"] = native_hash
         on_disk["native"]["capture"]["raw_words_sha256"] = module.sha256(native[64:])
         on_disk["portable"]["framebuffer_checkpoint"].update(
@@ -621,6 +654,10 @@ def main() -> None:
             lambda value: value["artifacts"].pop(),
             lambda value: value["native_inputs"].pop(),
             lambda value: value["schedule"].__setitem__("sha256", "bad"),
+            lambda value: value["execution_budget"].__setitem__(
+                "max_host_transactions", 1024),
+            lambda value: value["portable"]["execution_accounting"].__setitem__(
+                "elapsed_monotonic_ms", "2"),
             lambda value: value["native"]["private_disk"].__setitem__("sha256_at_end", h(92)),
             lambda value: value["native"]["process"].__setitem__("pending_host_requests", 1),
             lambda value: value["native"]["capture"].__setitem__("schema", "OTHER"),
@@ -668,12 +705,12 @@ def main() -> None:
     assert identity_forgery_rejected is True
     assert identity_boundary_regression_rejected is True
     assert identity_schema_bool_mutations_rejected == 3
-    assert p4_mutations_rejected == 14
+    assert p4_mutations_rejected == 16
     assert p5_mutations_rejected == 15
     print("cadr M7 P5 conformance schema tests passed; "
           "identity_forgery=1 identity_boundary_regression=1 "
           "identity_schema_bool_mutations=3 identity_mutations=5 "
-          "p4_mutations=14 p5_mutations=15")
+          "p4_mutations=16 p5_mutations=15")
 
 
 def json_clone(value):

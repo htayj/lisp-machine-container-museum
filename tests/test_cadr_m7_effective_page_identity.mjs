@@ -270,12 +270,12 @@ async function testGlobalHighWaterAndBound() {
   assert.equal(stale.service.m7EffectivePageIdentityStatus().phase, "poisoned");
 
   const exhausted = await armedService();
-  for (let id = 4n; id <= 1025n; id += 1n) {
+  for (let id = 4n; id <= 2049n; id += 1n) {
     await poll(exhausted.service, 1030044n + id, readRequest(id, 50n),
       exhausted.events);
   }
   const status = exhausted.service.m7EffectivePageIdentityStatus();
-  assert.equal(status.completed_host_transactions, 1025);
+  assert.equal(status.completed_host_transactions, 2049);
   assert.equal(status.phase, "poisoned");
 }
 

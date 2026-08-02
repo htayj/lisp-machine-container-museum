@@ -7,6 +7,7 @@
 import {
   CADR_M6_FORM_C,
   CADR_M6_RELEASE_RECORD_SHA256,
+  captureM6FailureHostTranscript,
   captureM6FailureDiagnostic,
   runM6HeadlessBootWithM7EffectivePageIdentity,
 } from "./cadr-m6-headless-boot.mjs";
@@ -77,6 +78,7 @@ export class CadrM7UnderlyingM6Failure extends Error {
       `boundary=${String(boundary)})`);
     this.name = "CadrM7UnderlyingM6Failure";
     this.m6FailureDiagnostic = diagnostic.slice();
+    this.m6FailureHostTranscript = captureM6FailureHostTranscript(result);
     this.checkpoint = checkpoint === null ? null : Object.freeze({
       boundary: checkpoint.boundary,
       witness_sample: checkpoint.witness_sample.slice(),

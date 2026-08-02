@@ -14,23 +14,70 @@ import { resolve } from "node:path";
 import { PassThrough } from "node:stream";
 
 import {
+  CADR_M6_HARD_MAX_HOST_TRANSACTIONS,
   CADR_M6_RELEASE_RECORD_SHA256,
+  probeM6ProductionHostTransactionCapForTest,
+  runM6HeadlessBootWithM7EffectivePageIdentity,
 } from "../cadr-web/wasm/cadr-m6-headless-boot.mjs";
 import {
+  CADR_M7_EFFECTIVE_PAGE_IDENTITY_MAX_HOST_TRANSACTIONS,
+} from "../cadr-web/wasm/cadr-m7-effective-page-identity.mjs";
+import {
+  P4_EXECUTION_BUDGET_SCHEMA,
   P4_EXPECTED_CLOSURE_SCHEMA,
+  P4_MAX_HOST_TRANSACTIONS,
+  P4_PORTABLE_WALL_TIME_MS,
+  P4_REQUEST_TIMEOUT_MS,
+  P4PortableExecutionDeadline,
   ProtocolV5Client,
+  failureExecutionEvidence,
   matchesCanonicalJsonBytes,
+  parseP4HostTranscript,
   p4Bindings,
   runNativeCapture,
   stageM7WorkerClosure,
   validateP4FailureReceipts,
+  validateP4FailureTranscriptBinding,
   validateP4Manifest,
   writeP4PortableFailureEvidence,
 } from "../scripts/run-cadr-m7-frame-conformance.mjs";
 
 const runnerSource = await readFile(new URL(
   "../scripts/run-cadr-m7-frame-conformance.mjs", import.meta.url), "utf8");
-assert.match(runnerSource, /cadr-m7-portable-failure-v2/);
+assert.match(runnerSource, /cadr-m7-portable-failure-v4/);
+assert.equal(P4_MAX_HOST_TRANSACTIONS, 2048);
+assert.equal(CADR_M6_HARD_MAX_HOST_TRANSACTIONS, 1024,
+  "ordinary M6 retains its frozen cap");
+assert.equal(CADR_M7_EFFECTIVE_PAGE_IDENTITY_MAX_HOST_TRANSACTIONS, 2048,
+  "only the selected P4 identity wrapper receives the larger cap");
+await assert.rejects(
+  runM6HeadlessBootWithM7EffectivePageIdentity({ maxHostTransactions: 1024 }),
+  /P4 host-transaction cap is fixed/);
+const ordinaryCap = probeM6ProductionHostTransactionCapForTest({});
+assert.equal(ordinaryCap.completed_host_transactions, 1024);
+assert.equal(ordinaryCap.transcript_record_count, 2048);
+assert.equal(ordinaryCap.last_completed_request_id, 1024);
+assert.equal(ordinaryCap.outstanding_request_id, 1025);
+assert.equal(ordinaryCap.host_complete_request_ids.includes(1025), false,
+  "ordinary request 1025 is never admitted to host-complete");
+const p4Cap = probeM6ProductionHostTransactionCapForTest({ selectedM7: true });
+assert.equal(p4Cap.completed_host_transactions, 2048);
+assert.equal(p4Cap.transcript_record_count, 4096);
+assert.equal(p4Cap.last_completed_request_id, 2048);
+assert.equal(p4Cap.outstanding_request_id, 2049);
+assert.equal(p4Cap.host_complete_request_ids.includes(2049), false,
+  "P4 request 2049 is never admitted to host-complete");
+assert.throws(() => probeM6ProductionHostTransactionCapForTest({
+  selectedM7: true, requestedMaxHostTransactions: 1024,
+}), /P4 host-transaction cap is fixed/);
+assert.throws(() => probeM6ProductionHostTransactionCapForTest({
+  selectedM7: true, requestedMaxHostTransactions: 2049,
+}), /P4 host-transaction cap is fixed/);
+await assert.rejects(
+  runM6HeadlessBootWithM7EffectivePageIdentity({ maxHostTransactions: 2049 }),
+  /P4 host-transaction cap is fixed/);
+assert.equal(P4_PORTABLE_WALL_TIME_MS, 10_800_000);
+assert.equal(P4_REQUEST_TIMEOUT_MS, 120_000);
 assert.equal(runnerSource.includes(
   'resolve(portableDirectory, "worker.ndjson")'), true);
 assert.equal(runnerSource.includes(
@@ -47,6 +94,61 @@ assert.equal(matchesCanonicalJsonBytes(
   "arbitrary JSON whitespace is not accepted as canonical");
 
 const H = index => index.toString(16).padStart(64, "0");
+const executionBudget = () => ({
+  schema: P4_EXECUTION_BUDGET_SCHEMA,
+  max_host_transactions: 2048,
+  portable_wall_time_ms: 10_800_000,
+  request_timeout_ms: 120_000,
+  disk_byte_count: "269562880",
+  block_bytes: 1024,
+  disk_block_count: "263245",
+  extension_policy: "none",
+  resume_policy: "fresh-session-only",
+});
+const executionAccounting = (hostTranscriptSha256 = H(36), overrides = {}) => ({
+  completed_host_transactions: "2",
+  transcript_record_count: "4",
+  host_transcript_sha256: hostTranscriptSha256,
+  elapsed_monotonic_ms: "1",
+  final_boundary: "982990278",
+  last_completed_request_id: "2",
+  outstanding_request_id: "0",
+  limit_hit: null,
+  ...overrides,
+});
+const failureHostTranscript = artifactSetSha256 => {
+  const bytes = new Uint8Array(64 + 2 * 256);
+  bytes.set(new TextEncoder().encode("CDRM6HS1"));
+  bytes.set(Buffer.from(artifactSetSha256, "hex"), 24);
+  const header = new DataView(bytes.buffer);
+  header.setUint32(8, 1, true);
+  header.setUint32(12, 64, true);
+  header.setUint32(16, 256, true);
+  header.setUint32(20, 2, true);
+  for (let ordinal = 0; ordinal < 2; ordinal += 1) {
+    const offset = 64 + ordinal * 256;
+    const view = new DataView(bytes.buffer, offset, 256);
+    view.setBigUint64(0, BigInt(ordinal), true);
+    view.setUint32(8, ordinal === 0 ? 1 : 2, true);
+    view.setUint32(12, 1, true);
+    view.setBigUint64(16, 10n, true);
+    view.setBigUint64(24, 10n, true);
+    view.setBigUint64(32, 1n, true);
+    view.setBigUint64(40, 1n, true);
+    view.setUint32(48, 0, true);
+    view.setUint32(52, 1, true);
+    view.setBigUint64(56, 16n, true);
+    view.setBigUint64(64, 0n, true);
+    view.setBigUint64(72, 1024n, true);
+    view.setBigUint64(80, 7n, true);
+    view.setUint32(88, 1024, true);
+    view.setBigUint64(96, 0n, true);
+    bytes.set(Buffer.from(H(141), "hex"), offset + 104);
+    bytes.set(Buffer.from(H(142), "hex"), offset + 136);
+    bytes.set(Buffer.from(H(143), "hex"), offset + 168);
+  }
+  return bytes;
+};
 const file = (path, index) => ({ path, bytes: index + 1, sha256: H(index) });
 const support = (path, installedAs, index) => ({ path, installed_as: installedAs, bytes: index + 1, sha256: H(index) });
 const canonical = value => {
@@ -157,6 +259,89 @@ const workerClosure = (entry, files) => {
   }
 }
 
+async function joinedDeadlineMutation(label) {
+  let expire;
+  let finish;
+  let mutations = 0;
+  const deadline = new P4PortableExecutionDeadline({
+    setTimeoutFn: callback => { expire = callback; return 1; },
+    clearTimeoutFn: () => {}, wallTimeMs: 50,
+  });
+  const operation = new Promise(resolveOperation => { finish = () => {
+    mutations += 1; resolveOperation(label);
+  }; });
+  const joined = deadline.join(operation);
+  expire();
+  await Promise.resolve();
+  assert.equal(mutations, 0, `${label} remains joined after deadline`);
+  finish();
+  await assert.rejects(joined, error =>
+    error?.p4TerminalCause === "portable-wall-time");
+  const atReceipt = mutations;
+  await Promise.resolve();
+  assert.equal(mutations, atReceipt,
+    `${label} cannot mutate after failure receipt eligibility`);
+  deadline.close();
+}
+
+await joinedDeadlineMutation("staging");
+await joinedDeadlineMutation("private write");
+
+{
+  let expire; let rejectChild; let finishLate; let lateMutations = 0;
+  const deadline = new P4PortableExecutionDeadline({
+    setTimeoutFn: callback => { expire = callback; return 1; },
+    clearTimeoutFn: () => {}, wallTimeMs: 50,
+  });
+  const rejected = new Promise((_, reject) => { rejectChild = reject; });
+  const late = new Promise(resolveLate => { finishLate = () => {
+    lateMutations += 1; resolveLate();
+  }; });
+  let receiptEligible = false;
+  const setup = deadline.join(Promise.allSettled([rejected, late]))
+    .finally(() => { receiptEligible = true; });
+  expire();
+  rejectChild(new Error("concurrent setup rejection"));
+  await Promise.resolve();
+  assert.equal(receiptEligible, false,
+    "deadline plus one rejected child still joins every setup child");
+  finishLate();
+  await assert.rejects(setup, error =>
+    error?.p4TerminalCause === "portable-wall-time");
+  assert.equal(lateMutations, 1);
+  assert.equal(receiptEligible, true,
+    "receipt eligibility begins only after all setup children settle");
+  deadline.close();
+}
+
+{
+  let expire; let finishTerminate;
+  class SlowCloseWorker extends EventEmitter {
+    constructor() { super(); this.calls = 0; }
+    postMessage() {}
+    terminate() {
+      this.calls += 1;
+      return new Promise(resolveTerminate => { finishTerminate = resolveTerminate; });
+    }
+  }
+  const deadline = new P4PortableExecutionDeadline({
+    setTimeoutFn: callback => { expire = callback; return 1; },
+    clearTimeoutFn: () => {}, wallTimeMs: 50,
+  });
+  const worker = new SlowCloseWorker();
+  const client = new ProtocolV5Client(worker, "slow-close", deadline);
+  deadline.attachTerminator(() => { void client.terminateFailure().catch(() => {}); });
+  const closing = deadline.join(client.close());
+  expire();
+  finishTerminate(0);
+  await assert.rejects(closing, error =>
+    error?.p4TerminalCause === "portable-wall-time");
+  await client.terminateFailure();
+  assert.equal(worker.calls, 1,
+    "deadline arbitration shares the in-flight successful close termination");
+  deadline.close();
+}
+
 {
   const root = await mkdtemp(resolve(tmpdir(), "cadr-m7-worker-reject-test-"));
   const source = resolve(root, "source");
@@ -265,19 +450,97 @@ const workerClosure = (entry, files) => {
   const worker = new TerminationWorker();
   const client = new ProtocolV5Client(worker, "termination-test");
   await assert.rejects(client.close(), /injected terminate rejection/);
-  const receipt = await client.terminateFailure();
-  assert.equal(worker.calls, 2,
-    "a rejected terminate is retried rather than reported as complete");
-  assert.deepEqual(receipt, {
-    pending_requests_at_failure: 0,
-    terminated: true,
-    worker_exit_code: 9,
+  await assert.rejects(client.terminateFailure(),
+    /injected terminate rejection/);
+  assert.equal(worker.calls, 1,
+    "all terminal paths share exactly one worker termination attempt");
+}
+
+{
+  let now = 1000;
+  let expire = null;
+  let cleared = null;
+  let terminationCalls = 0;
+  const deadline = new P4PortableExecutionDeadline({
+    now: () => now,
+    setTimeoutFn: (callback, delay) => {
+      assert.equal(delay, 50);
+      expire = callback;
+      return 77;
+    },
+    clearTimeoutFn: token => { cleared = token; },
+    wallTimeMs: 50,
   });
+  deadline.attachTerminator(() => { terminationCalls += 1; });
+  assert.equal(deadline.requestTimeoutMs(), 50,
+    "a request is bounded by the smaller remaining portable deadline");
+  const pending = deadline.race(new Promise(() => {}));
+  now = 1050;
+  expire();
+  expire();
+  await assert.rejects(pending, error =>
+    error?.name === "P4PortableDeadlineError");
+  assert.equal(terminationCalls, 1, "the first terminal deadline wins");
+  assert.equal(deadline.elapsedMs(), 50);
+  deadline.close();
+  assert.equal(cleared, 77, "deadline cleanup clears the active timer");
+}
+
+{
+  const artifactSetSha256 = H(140);
+  const transcript = failureHostTranscript(artifactSetSha256);
+  const transcriptSha256 = createHash("sha256").update(transcript).digest("hex");
+  const parsed = parseP4HostTranscript(transcript, artifactSetSha256);
+  const diagnostic = {
+    failure: {
+      preflight: { artifactSetSha256 },
+      report: {
+        phase: "host-service", reason: "synthetic", boundary: "10",
+        transcriptCount: 2, hostTranscriptSha256: transcriptSha256,
+        machineInfo: { lastCompletedRequestId: "1", outstandingRequestId: "2" },
+      },
+      transcriptTail: parsed.records,
+    },
+  };
+  const diagnosticBytes = new TextEncoder().encode(canonical(diagnostic));
+  const portable = {
+    m6_failure_file: {
+      path: "m6-failure.json", bytes: diagnosticBytes.byteLength,
+      sha256: createHash("sha256").update(diagnosticBytes).digest("hex"),
+    },
+    host_transcript_file: {
+      path: "failure-host-transcript.cdrm6hs1", bytes: transcript.byteLength,
+      sha256: transcriptSha256,
+    },
+    execution_accounting: executionAccounting(transcriptSha256, {
+      completed_host_transactions: "1", transcript_record_count: "2",
+      final_boundary: "10", last_completed_request_id: "1",
+      outstanding_request_id: "2",
+    }),
+  };
+  assert.deepEqual(validateP4FailureTranscriptBinding(
+    portable, diagnosticBytes, transcript), diagnostic);
+  const corrupt = transcript.slice();
+  corrupt[255] = 1;
+  assert.throws(() => validateP4FailureTranscriptBinding(
+    portable, diagnosticBytes, corrupt), /identity differs|record 0 is invalid/);
+  const wrongAccounting = structuredClone(portable);
+  wrongAccounting.execution_accounting.transcript_record_count = "4";
+  assert.throws(() => validateP4FailureTranscriptBinding(
+    wrongAccounting, diagnosticBytes, transcript), /accounting/);
+  const wrappedM6Failure = new Error("deadline wrapped by M6 failure");
+  wrappedM6Failure.name = "CadrM7UnderlyingM6Failure";
+  wrappedM6Failure.m6FailureDiagnostic = diagnosticBytes;
+  wrappedM6Failure.m6FailureHostTranscript = transcript;
+  const deadlineEvidence = failureExecutionEvidence(
+    wrappedM6Failure, 50, "portable-wall-time");
+  assert.equal(deadlineEvidence.accounting.limit_hit, "portable-wall-time",
+    "explicit deadline terminal state survives M6 failure wrapping");
 }
 
 function manifest() {
   return {
-    schema: "cadr-m7-frame-conformance-result-v2",
+    schema: "cadr-m7-frame-conformance-result-v3",
     target: "CADR-WEB-303/ABI1.5/protocol-v5/M7",
     outcome: "identical",
     runtime_execution_performed: true,
@@ -295,6 +558,8 @@ function manifest() {
     artifacts: [1, 2, 4, 5, 3].map((kind, index) => ({ kind, byte_count: String(index + 11), sha256: H(index + 11) })),
     native_inputs: [{ id: "usite-extra-hosts", byte_count: "16", sha256: H(16) }],
     schedule: { event_count: 17, mapping_sha256: H(17), sha256: H(18) },
+    execution_budget: executionBudget(),
+    execution_accounting: executionAccounting(),
     native: { session_id: "native-test", private_disk_instance_id: "disk-test",
       private_disk: { sha256_at_start: H(19), sha256_at_end: H(19) },
       process: { returncode: 0, timed_out: false, forced_stop: false, state_may_be_incomplete: false, pending_host_requests: 0 },
@@ -306,6 +571,8 @@ function manifest() {
       idle_file: file("build/cadr-oracle/m7-p4-test/native/idle.bin", 23),
       metadata_file: file("build/cadr-oracle/m7-p4-test/native/metadata.json", 24) },
     portable: { session_id: "portable-test",
+      execution_budget: executionBudget(),
+      execution_accounting: executionAccounting(),
       session_evidence: { ready_session_id: "portable-test", worker_log_session_id: "portable-test" },
       module: file("cadr-web/build/cadr-web-m7-O0.wasm", 25),
       worker: file("cadr-web/wasm/cadr-worker.js", 26),
@@ -335,7 +602,7 @@ function manifest() {
 
 const baseline = manifest();
 const portableFailure = {
-  schema: "cadr-m7-portable-failure-v2",
+  schema: "cadr-m7-portable-failure-v4",
   target: "CADR-WEB-303/ABI1.5/protocol-v5/M7",
   session_id: "portable-failure-test",
   error_name: "CadrM7UnderlyingM6Failure",
@@ -352,6 +619,9 @@ const portableFailure = {
   ],
   m6_release_record: structuredClone(baseline.m6_release_record),
   m6_failure_file: file("m6-failure.json", 125),
+  host_transcript_file: file("failure-host-transcript.cdrm6hs1", 36),
+  execution_budget: executionBudget(),
+  execution_accounting: executionAccounting(),
   checkpoint: null,
   checkpoint_comparison_file: null,
   worker_log_file: file("worker.ndjson", 126),
@@ -360,9 +630,10 @@ const portableFailure = {
     terminated: true,
     worker_exit_code: 1,
   },
+  worker_disposition: "worker-terminated",
 };
 const rootFailure = {
-  schema: "cadr-m7-frame-conformance-failure-v1",
+  schema: "cadr-m7-frame-conformance-failure-v3",
   target: "CADR-WEB-303/ABI1.5/protocol-v5/M7",
   outcome: "failed",
   runtime_execution_performed: true,
@@ -374,6 +645,8 @@ const rootFailure = {
   artifacts: baseline.artifacts,
   native_inputs: baseline.native_inputs,
   schedule: baseline.schedule,
+  execution_budget: executionBudget(),
+  execution_accounting: executionAccounting(),
   native: baseline.native,
   portable_failure_file: file("portable/failure.json", 127),
   error_name: portableFailure.error_name,
@@ -392,20 +665,7 @@ for (const retainedCheckpoint of [false, true]) {
   const caught = new Error(retainedCheckpoint ?
     "post-Form-C retained checkpoint failure" :
     "terminal-machine-status; phase=run; status=12; boundary=1125883");
-  caught.name = "CadrM7UnderlyingM6Failure";
-  caught.m6FailureDiagnostic = new TextEncoder().encode(canonical({
-    schema: "cadr-m6-wasm-failure-diagnostic-v1",
-    outcome: "failed",
-    failure: {
-      report: {
-        reason: "terminal-machine-status", phase: "run", status: 12,
-        boundary: "1125883",
-      },
-      preflight: { profileId: "CADR-WEB-303" },
-      runEvidence: { sessionId: "observed-status12-session" },
-      transcriptTail: [],
-    },
-  }));
+  caught.name = "SyntheticPortableFailure";
   const writerRelease = {
     ...portableFailure.m6_release_record,
     sha256: Buffer.from(CADR_M6_RELEASE_RECORD_SHA256).toString("hex"),
@@ -425,6 +685,15 @@ for (const retainedCheckpoint of [false, true]) {
       contemporaneousAdapterObservation:
         portableFailure.contemporaneous_adapter_observation,
       m6ReleaseRecord: writerRelease,
+      executionBudget: executionBudget(),
+      executionAccounting: executionAccounting(H(0), {
+        completed_host_transactions: "0",
+        transcript_record_count: "0",
+        final_boundary: "0",
+        last_completed_request_id: "0",
+      }),
+      failureHostTranscript: null,
+      retainFailureHostTranscript: false,
       termination: portableFailure.termination,
       workerLogBytes: new TextEncoder().encode(
         '{"schema":"cadr-m7-portable-session-v1"}\n'),
@@ -446,6 +715,13 @@ for (const retainedCheckpoint of [false, true]) {
       error_message: caught.message,
       m6_release_record: writerRelease,
       portable_failure_file: written.failureFile,
+      execution_budget: executionBudget(),
+      execution_accounting: executionAccounting(H(0), {
+        completed_host_transactions: "0",
+        transcript_record_count: "0",
+        final_boundary: "0",
+        last_completed_request_id: "0",
+      }),
     };
     assert.equal(validateP4FailureReceipts(
       writtenRoot, written.failure, {
@@ -459,6 +735,29 @@ for (const retainedCheckpoint of [false, true]) {
 
 assert.equal(validateP4FailureReceipts(
   rootFailure, portableFailure, expectedFailure), rootFailure);
+{
+  const partial = structuredClone(portableFailure);
+  Object.assign(partial, {
+    error_name: "P4PortableDeadlineError", error_message: "setup expired",
+    module: null, worker: null, worker_closure: null,
+    contemporaneous_adapter_observation: null,
+    m6_failure_file: null, host_transcript_file: null,
+    checkpoint: null, checkpoint_comparison_file: null,
+    termination: null, worker_disposition: "worker-not-started",
+  });
+  const partialRoot = structuredClone(rootFailure);
+  partialRoot.error_name = partial.error_name;
+  partialRoot.error_message = partial.error_message;
+  assert.equal(validateP4FailureReceipts(partialRoot, partial, {
+    root: structuredClone(partialRoot), portable: structuredClone(partial),
+  }), partialRoot);
+  const forged = structuredClone(partial);
+  forged.termination = { pending_requests_at_failure: 0,
+    terminated: true, worker_exit_code: null };
+  assert.throws(() => validateP4FailureReceipts(partialRoot, forged, {
+    root: structuredClone(partialRoot), portable: structuredClone(forged),
+  }), /forged worker disposition/);
+}
 {
   const corrupt = structuredClone(portableFailure);
   corrupt.unreviewed = true;
@@ -520,6 +819,8 @@ const expected = { schema: P4_EXPECTED_CLOSURE_SCHEMA, bindings: {
   artifacts: independentlyRecorded.artifacts,
   native_inputs: independentlyRecorded.native_inputs,
   schedule: independentlyRecorded.schedule,
+  execution_budget: independentlyRecorded.execution_budget,
+  execution_accounting: independentlyRecorded.execution_accounting,
   native: independentlyRecorded.native,
   portable: independentlyRecorded.portable,
   comparison: independentlyRecorded.comparison,
