@@ -474,6 +474,7 @@ m12-unit: build/test_cadr_m2_public build/test_cadr_m12_machine_adapter build/te
 	guix shell node -- node ../tests/test_cadr_m11_audio_protocol.mjs
 	guix shell node -- node ../tests/test_cadr_m11_audio_worklet.mjs
 	python3 ../tests/test_cadr_native_source_witness.py
+	python3 ../tests/test_compare_cadr_m12_breakpoint_continuation.py
 
 m13-audio-unit: build/test_cadr_m13_audio_transport $(M13_AUDIO_WASM_O0) $(M13_AUDIO_WASM_O2)
 	./build/test_cadr_m13_audio_transport
