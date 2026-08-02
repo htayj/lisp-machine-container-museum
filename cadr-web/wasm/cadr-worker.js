@@ -14,6 +14,7 @@ import { CadrM12ProtocolSubhandler, CADR_M12_STATUS_OK,
   CADR_M12_CONFIG_SNAPSHOT_BYTES } from "./cadr-m12-debugger.mjs";
 import { parseCadrM7UnimplementedDiagnostic } from
   "./cadr-m7-devid-failure.mjs";
+import { copyRequestForStrictVersion } from "./cadr-worker-request-adapter.mjs";
 
 /*
  * CADR-WEB versioned dedicated-worker protocols.
@@ -476,11 +477,11 @@ function v6InputSubhandlerResult(e, request) {
     return Object.freeze({ id: request.id, op: request.op, status: preflight.status,
       reason: preflight.reason });
   }
-  /* M8/M9 keep their frozen v6 codec and controller contract.  V7 only wraps
-     that exact request shape in the composed worker; the outer response is
-     re-versioned by `response` after this result is stripped. */
-  const inputRequest = protocolVersion === CADR_M12_PROTOCOL_VERSION ?
-    Object.freeze({ ...request, version: CADR_M8_M9_PROTOCOL_VERSION }) : request;
+  /* M8/M9 keep their frozen v6 codec and controller contract.  Both later
+     envelopes are adapters, not a widening of the v6 handler: copy the
+     private request before changing its version.  `response` below retains
+     the caller's v7/v8 contract, id, and operation. */
+  const inputRequest = copyRequestForStrictVersion(request, CADR_M8_M9_PROTOCOL_VERSION);
   const sharedDeactivation = inputRequest.op === "keyboard-focus-lost" ||
     inputRequest.op === "pointer-neutralize";
   const keyboard = sharedDeactivation ? null : (m8KeyboardProtocol?.handle(inputRequest) ?? null);
@@ -695,7 +696,11 @@ function invokeM12Wasm(e, operation) {
 
 function v7M12SubhandlerResult(request) {
   if (![CADR_M12_PROTOCOL_VERSION, CADR_M13_PRIVATE_PROTOCOL_VERSION].includes(protocolVersion) || m12DebuggerProtocol === null) return null;
-  return m12DebuggerProtocol.handle(request);
+  /* The debugger parser is deliberately strict v7.  Protocol v8 is only a
+     private composition envelope, so adapt a copied request rather than
+     mutating the worker message or teaching the v7 parser a second version. */
+  const debuggerRequest = copyRequestForStrictVersion(request, CADR_M12_PROTOCOL_VERSION);
+  return m12DebuggerProtocol.handle(debuggerRequest);
 }
 
 function v7M11SubhandlerResult(request) {

@@ -146,6 +146,7 @@ class CadrM13SelectedWasmBrowserTest(unittest.TestCase):
                 "/cadr-web/browser/cadr-m13-audio-record.mjs",
                 "/cadr-web/browser/cadr-m13-audio-reducer.mjs",
                 "/cadr-web/wasm/cadr-worker.js",
+                "/cadr-web/wasm/cadr-worker-request-adapter.mjs",
                 "/cadr-web/wasm/cadr-m5-batch.mjs",
                 "/cadr-web/wasm/cadr-display-renderer.mjs",
                 "/cadr-web/wasm/cadr-m7-devid-failure.mjs",

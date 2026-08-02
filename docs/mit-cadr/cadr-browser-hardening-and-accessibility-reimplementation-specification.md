@@ -2,7 +2,7 @@
 type: concept
 title: CADR-WEB-303 browser hardening and accessibility reimplementation specification
 description: A release-bounded M13 contract for hostile host inputs, resource ceilings, offline execution, worker failure, and accessible controls around an unmodified CADR framebuffer.
-timestamp: 2026-08-02T07:07:32-04:00
+timestamp: 2026-08-02T09:53:41-04:00
 ---
 
 # CADR-WEB-303 browser hardening and accessibility reimplementation specification
@@ -652,6 +652,13 @@ private lower-version envelope, removes only the lower
 `type,version,id,op,status,ok` fields, and constructs a new v8 outer envelope.
 Every remaining own field is copied unchanged. In particular:
 
+The worker-side composition has a second, narrower adapter boundary: frozen M8/M9
+subhandlers remain strict v6 and the M12 debugger remains strict v7. A v8 request
+is shallow-copied, frozen, and re-versioned only for the selected strict handler;
+the caller-owned request retains v8, its ID, operation, and every other field. The
+pure `copyRequestForStrictVersion` seam is tested in the same JavaScript realm so
+the no-mutation claim does not rely on `worker_threads` structured cloning.
+
 - `machine-cold-power-on`, `machine-boot`, `machine-visibility`,
   `machine-start`, `machine-run`, `machine-pause`, `machine-reset`, and
   `machine-stop` map one-for-one to lower `cold-power-on`, `boot`,
@@ -868,6 +875,51 @@ every local pointer/keyboard listener that can deliver guest input; and focus th
 visible Release Input control. None of these local actions waits for a worker
 response, host button state, or neutralization result. They establish only DOM
 containment, not a fictitious guest all-up.
+
+The current P0 shell exposes this DOM-dependent part through a constructor-injected
+`releaseIngress` callback. It is invoked synchronously after ingress admission is
+closed and before `releaseInput` returns; the callback's sole production role is to
+detach keyboard/pointer listeners and invalidate their geometry. It receives no
+worker, request-ID allocator, or guest-operation capability. The shell separately
+gates each public keyboard edge and physical pointer edge, so a stale listener that
+does run after the callback cannot admit a v8 guest request. Pointer-capture release,
+guest-surface blur, and visible-control focus remain shell-owned and synchronous.
+Every call to `releaseInput`, including one made while rearming is already pending,
+advances a monotonic release generation, repeats the idempotent release callback,
+invalidates any earlier neutral acknowledgement, and starts a generation-bound
+neutralization attempt when the worker remains live. A late acknowledgement from an
+older generation neither confirms nor fails the current generation.
+
+Rearming is not a focus side effect. `restoreInputIngress()` remains closed until
+the current release generation's one bounded `pointer-neutralize` request receives
+status `0`, the
+injected M10 controller presently reports exactly
+`{state:"CLEAN",open:true,readOnly:false}`, and a new private `display-full`
+response validates as a full `CDRDISP1` frame. Only then may the optional
+synchronous `restoreIngress` callback reattach input listeners, and the shell
+reopens ingress. The shell remains the sole v8 public-ID coordinator throughout;
+the release, full-frame, and neutralization messages use its existing private lower
+sequence and never create an independent M8/M9 browser channel.
+`restoreIngress` is a trusted ownership hook with a strict synchronous contract:
+all listener attachment must finish before it returns, and it must not schedule
+attachment outside its returned control flow. Only one restore attempt may be in
+flight. Concurrent callers share its result and
+therefore emit one `display-full` request and invoke `restoreIngress` at most once.
+The attempt captures the release generation and checks it after the worker wait,
+before attachment, and after the synchronous hook; a newer release makes the old
+attempt terminally fail. Because a reentrant release may run before the callback
+continues attaching, the terminal path repeats `releaseIngress` after the callback
+has fully returned. If `restoreIngress` throws or returns a thenable after a partial
+attachment, the shell immediately closes semantic ingress, repeats the synchronous
+release fence, terminates the worker, rejects pending authority, and cannot retry.
+It never awaits the untrusted thenable, so a never-settling return cannot wedge the
+bounded stop. A retained fulfillment/rejection finalizer repeats `releaseIngress`
+if the thenable does settle, cleaning attachment performed within that returned
+chain. This eventual cleanup is defense in depth, not permission for asynchronous
+hooks: arbitrary side effects scheduled beyond settlement cannot be made atomic
+after the fact and violate the trusted hook contract. A failed or asynchronous
+`releaseIngress` likewise leaves admission failed and closed. Hook-failure status
+is not overwritten by a neutralization-pending announcement.
 
 The exact keyboard release chord is an uncaptured, capture-phase `keydown` with
 `event.code === "KeyR"`, `ctrlKey`, `altKey`, and `shiftKey` all true, `metaKey`

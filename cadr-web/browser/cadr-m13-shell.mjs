@@ -1,4 +1,5 @@
 import { CadrM13AudioBoundary, CadrM13WorkerAudioCore } from "./cadr-m13-audio-boundary.mjs";
+import { parseCdrDisp1 } from "../wasm/cadr-display-renderer.mjs";
 
 /*
  * CADR-WEB-303 M13 host shell.
@@ -561,12 +562,18 @@ const LOWER_OPERATION = Object.freeze({
   "machine-reset": "scheduler-reset", "machine-stop": "scheduler-stop",
 });
 const LOWER_REMAINDER = new Set(["lifecycle", "hidden", "completedSlots", "microinstructionsExecuted",
-  "discardedUnsavedState", "updated", "frame", "result", "reason", "audio", "state", "byteCount",
-  "coreSha256", "lastFailureEvidence", "terminal", "queuePackets", "queuedFrames"]);
+  "discardedUnsavedState", "updated", "full", "frame", "wireSchema", "machineGeneration",
+  "framebufferGeneration", "blackOnWhite", "width", "height", "dirtyRectangles", "observation",
+  "result", "reason", "audio", "state", "byteCount", "coreSha256", "lastFailureEvidence",
+  "terminal", "queuePackets", "queuedFrames"]);
 const M10_HOST_DESCRIPTOR_BYTES = 64;
 const M10_HOST_REQUEST_PAYLOAD_BYTES = 1024;
 const M10_HOST_COMPLETION_BYTES = 1024 * 1024;
 const M10_CONTROLLER_IN_DOUBT = "IN_DOUBT";
+const CADR_M13_INGRESS_OPERATIONS = new Set([
+  "keyboard-down", "keyboard-up", "keyboard-focus-lost",
+  "pointer-motion", "pointer-down", "pointer-up",
+]);
 
 function copiedInternalBytes(value, label, maximum) {
   const source = value instanceof ArrayBuffer ? new Uint8Array(value) :
@@ -626,6 +633,39 @@ function attach(worker, type, listener) {
   if (typeof worker.addEventListener === "function") { worker.addEventListener(type, listener); return () => worker.removeEventListener(type, listener); }
   if (typeof worker.on === "function") { worker.on(type, listener); return () => worker.off?.(type, listener); }
   throw new TypeError("M13 shell worker lacks an event listener API");
+}
+
+class M13AsyncIngressCallbackError extends Error {
+  constructor(message, settlement) { super(message); this.name = "M13AsyncIngressCallbackError"; this.settlement = settlement; }
+}
+
+function invokeSynchronousIngressCallback(callback, context, label, onThenableSettled = null) {
+  if (callback === null) return;
+  const result = callback(Object.freeze(context));
+  if ((typeof result === "object" && result !== null) || typeof result === "function") {
+    const then = result.then;
+    if (typeof then === "function") {
+      /* Reject the async contract immediately, but retain an explicit rollback
+         join: side effects performed by the returned chain are followed by a
+         second release fence before the failed restore reports completion. */
+      const settlement = Promise.resolve(result).then(
+        () => { onThenableSettled?.(); },
+        () => { onThenableSettled?.(); });
+      throw new M13AsyncIngressCallbackError(`${label} must complete synchronously`, settlement);
+    }
+  }
+}
+
+function cleanM10Controller(controller) {
+  try { assertSelectedM10Ready(controller); return true; }
+  catch { return false; }
+}
+
+function fullDisplayResponse(lower) {
+  if (lower.status !== CADR_M13_STATUS.OK || lower.remainder.full !== true ||
+      !(lower.remainder.frame instanceof ArrayBuffer)) return false;
+  try { return parseCdrDisp1(lower.remainder.frame).full === true; }
+  catch { return false; }
 }
 
 /**
@@ -823,13 +863,15 @@ export class CadrM13Shell {
   #worker; #storage; #ledger = new CadrM13AdmissionLedger(); #sessionId; #expectedId = 1; #workerId = 1;
   #pending = new Map(); #terminal = false; #state = "NEW"; #releaseTarget; #releaseControl; #guestSurface; #statusSink;
   #workerDetach = []; #timeoutMs; #setTimeout; #clearTimeout; #wasmCompiler; #capturedPointerId = null; #ingressEnabled = true;
+  #releaseIngress = null; #restoreIngress = null; #neutralInputConfirmed = false;
+  #ingressGeneration = 0; #restoreIngressPromise = null;
   #lastStatus = null; #m10Controller = null; #m10Bridge = null;
   #audioBoundary = null; #audioEventTail = Promise.resolve();
   #baseMediaBinding = null; #selectedBootArtifacts = null; #mediaMounted = false;
   #selectedWasmSha256 = null; #bootstrapped = false; #adoptedBaseImportId = null; #m10Ready = false;
 
   constructor({ worker, storage = null, sessionRandom = undefined, releaseTarget = null, releaseControl = null,
-    guestSurface = null, statusSink = null, timeoutMs = 10000,
+    guestSurface = null, statusSink = null, releaseIngress = null, restoreIngress = null, timeoutMs = 10000,
     setTimeoutFn = globalThis.setTimeout.bind(globalThis),
     clearTimeoutFn = globalThis.clearTimeout.bind(globalThis), m10Controller = null, m10BridgeFactory = null,
     baseMediaBinding = null, selectedBootArtifacts: configuredBootArtifacts = null,
@@ -840,7 +882,13 @@ export class CadrM13Shell {
     this.#worker = worker; this.#storage = storage === null ? null : (storage instanceof CadrM13StorageBoundary ? storage : new CadrM13StorageBoundary(storage));
     invariant(Number.isSafeInteger(initialId) && initialId >= 1 && initialId <= MAX_U32, "initial v8 request ID is invalid"); this.#expectedId = initialId;
     this.#sessionId = randomSession(sessionRandom); this.#releaseTarget = releaseTarget; this.#releaseControl = releaseControl;
-    this.#guestSurface = guestSurface; this.#statusSink = statusSink; this.#timeoutMs = timeoutMs; this.#setTimeout = setTimeoutFn; this.#clearTimeout = clearTimeoutFn; this.#wasmCompiler = wasmCompiler;
+    invariant(releaseIngress === null || typeof releaseIngress === "function",
+      "M13 release ingress hook must be a function");
+    invariant(restoreIngress === null || typeof restoreIngress === "function",
+      "M13 restore ingress hook must be a function");
+    this.#guestSurface = guestSurface; this.#statusSink = statusSink;
+    this.#releaseIngress = releaseIngress; this.#restoreIngress = restoreIngress;
+    this.#timeoutMs = timeoutMs; this.#setTimeout = setTimeoutFn; this.#clearTimeout = clearTimeoutFn; this.#wasmCompiler = wasmCompiler;
     invariant(audioBoundary === null || audioFactory === null,
       "M13 audio boundary and factory are mutually exclusive");
     if (audioFactory !== null) {
@@ -905,22 +953,105 @@ export class CadrM13Shell {
 
   releaseInput(cause = "release-input") {
     /* This entire local half completes synchronously in the current DOM task. */
+    const generation = ++this.#ingressGeneration;
     this.#ingressEnabled = false;
+    this.#neutralInputConfirmed = false;
+    const releaseFenceFailed = !this.#fenceIngressOwner(cause);
     const pointer = this.#capturedPointerId; this.#capturedPointerId = null;
     if (pointer !== null) { try { this.#guestSurface?.releasePointerCapture?.(pointer); } catch { /* release is still complete locally */ } }
     try { this.#guestSurface?.blur?.(); } catch { /* no DOM authority required */ }
     try { this.#releaseControl?.focus?.(); } catch { /* focus failure does not re-enable input */ }
-    this.announce("CADR guest input released; guest neutralization is pending");
-    void this.#bestEffortNeutralize(cause);
+    if (!releaseFenceFailed) this.announce("CADR guest input released; guest neutralization is pending");
+    if (!this.#terminal) void this.#bestEffortNeutralize(cause, generation);
     return Object.freeze({ released: true, guestNeutralization: "pending" });
   }
 
-  async #bestEffortNeutralize(cause) {
+  #fenceIngressOwner(cause) {
+    /* Every release generation and post-restore rollback repeats the
+       idempotent owner fence.  It never receives a worker, a v8 ID allocator,
+       or a guest operation capability. */
+    try {
+      invokeSynchronousIngressCallback(this.#releaseIngress, { cause }, "M13 release ingress hook");
+      return true;
+    } catch {
+      this.#state = "FAILED";
+      this.announce("CADR guest ingress fence could not complete");
+      return false;
+    }
+  }
+
+  async #bestEffortNeutralize(cause, generation) {
     if (this.#terminal) return;
     const id = this.#nextInternalRequestId();
     const request = { version: CADR_M13_LOWER_PROTOCOL_VERSION, id, op: "pointer-neutralize", cause: "capture-loss" };
-    try { await this.#postLower(request, { external: null, timeoutMs: 250 }); }
-    catch { this.#state = "FAILED"; this.announce(`CADR guest input release could not be confirmed (${cause})`); }
+    try {
+      const lower = await this.#postLower(request, { external: null, timeoutMs: 250 });
+      if (this.#terminal || generation !== this.#ingressGeneration) return;
+      if (lower.status !== CADR_M13_STATUS.OK) throw new Error("neutralization was rejected");
+      this.#neutralInputConfirmed = true;
+    }
+    catch {
+      if (this.#terminal || generation !== this.#ingressGeneration) return;
+      this.#state = "FAILED"; this.announce(`CADR guest input release could not be confirmed (${cause})`);
+    }
+  }
+
+  /* A release cannot be undone by focus or an ordinary frame.  The one shell
+   * coordinator first requires its matching neutralization acknowledgement,
+   * then a clean M10 view and a freshly validated full frame before it lets an
+   * injected DOM owner attach ingress again. */
+  restoreInputIngress() {
+    if (this.#restoreIngressPromise !== null) return this.#restoreIngressPromise;
+    const attempt = this.#restoreInputIngressOnce(this.#ingressGeneration);
+    this.#restoreIngressPromise = attempt;
+    void attempt.then(() => {
+      if (this.#restoreIngressPromise === attempt) this.#restoreIngressPromise = null;
+    }, () => {
+      if (this.#restoreIngressPromise === attempt) this.#restoreIngressPromise = null;
+    });
+    return attempt;
+  }
+
+  async #restoreInputIngressOnce(generation) {
+    if (this.#terminal || this.#state === "FAILED" || this.#ingressEnabled ||
+        generation !== this.#ingressGeneration || !this.#neutralInputConfirmed ||
+        !cleanM10Controller(this.#m10Controller)) return false;
+    let lower;
+    try {
+      lower = await this.#postLower({ version: CADR_M13_LOWER_PROTOCOL_VERSION,
+        id: this.#nextInternalRequestId(), op: "display-full" }, { external: null });
+    } catch { return false; }
+    if (this.#terminal || generation !== this.#ingressGeneration ||
+        !fullDisplayResponse(lower) || !cleanM10Controller(this.#m10Controller)) return false;
+    try {
+      invokeSynchronousIngressCallback(this.#restoreIngress, { frame: lower.remainder.frame },
+        "M13 restore ingress hook",
+        () => { this.#fenceIngressOwner("restore-ingress-async-settled"); });
+    } catch (error) {
+      /* The hook may have attached only some listeners before failing.  The
+         terminal loss path repeats releaseIngress synchronously and removes
+         every remaining request authority. */
+      this.#workerLost("restore-ingress-failed", true);
+      /* Do not await an untrusted thenable: it may never settle.  Its retained
+         settlement finalizer repeats the owner fence if it does settle, while
+         terminal ingress gating is effective immediately. */
+      if (error instanceof M13AsyncIngressCallbackError) void error.settlement;
+      return false;
+    }
+    if (this.#terminal) {
+      /* A reentrant terminal transition may have fenced before the callback
+         continued attaching.  Fence once more after it has fully returned. */
+      this.#fenceIngressOwner("restore-ingress-invalidated-after-hook");
+      return false;
+    }
+    if (generation !== this.#ingressGeneration) {
+      /* A reentrant release wins.  Terminal handling repeats the owner fence
+         after the callback's possible late synchronous attachment. */
+      this.#workerLost("restore-ingress-reentrant-release", true);
+      return false;
+    }
+    this.#ingressEnabled = true;
+    return true;
   }
 
   async submit(candidate) {
@@ -938,6 +1069,10 @@ export class CadrM13Shell {
       const canonical = await canonicalizeCadrM13Request(candidate, { sessionId: this.#sessionId });
       const schema = CADR_M13_OPERATION_SCHEMAS[canonical.request.op];
       if (schema.internal) throw new M13AdmissionError("internal M13 operation cannot be caller-issued");
+      if (CADR_M13_INGRESS_OPERATIONS.has(canonical.request.op) && !this.#ingressEnabled) {
+        return this.#completePublicResponse(common, response(common, CADR_M13_STATUS.NOT_READY,
+          { reason: shellReason(CADR_M13_STATUS.NOT_READY) }));
+      }
       const field = schema.body; const bodyBytes = field === undefined ? 0 : canonical.request[field].byteLength;
       this.#ledger.reserve(common.id, { metadataBytes: canonical.metadataBytes, bodyBytes, streaming: schema.streaming === true });
       let result;
