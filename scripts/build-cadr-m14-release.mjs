@@ -11,6 +11,7 @@ import { chmod, lstat, mkdir, readFile, readdir, realpath, writeFile } from "nod
 import { basename, dirname, isAbsolute, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
+import { validateM14EvidenceGates, validateM14EvidencePolicy } from "./cadr-m14-evidence.mjs";
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const OUTPUT_ROOT = resolve(ROOT, "build/cadr-m14");
@@ -38,35 +39,6 @@ const NAMED_DEFAULT_EXTERNAL_PRIMITIVES = [
   /\bRTCPeerConnection\b/u, /\bWebTransport\b/u,
 ];
 const exec = promisify(execFile);
-const DOD = [
-  ["CW4-DOD-01", "the selected System 303 profile boots reproducibly in a browser worker", ["M6", "M7"]],
-  ["CW4-DOD-02", "native and WASM processor/device traces pass the declared differential suites", ["M6", "M7"]],
-  ["CW4-DOD-03", "every CADR key and pointer operation is reachable", ["M8", "M9"]],
-  ["CW4-DOD-04", "the logical framebuffer is pixel-identical at selected checkpoints", ["M7", "M9"]],
-  ["CW4-DOD-05", "private disk state is crash-consistent, exportable, and tied to an immutable base", ["M10"]],
-  ["CW4-DOD-06", "pause, reset, failure, and worker termination cannot be mistaken for saved state", ["M9", "M10", "M12", "M13"]],
-  ["CW4-DOD-07", "the default build performs no network traffic", ["M13", "M14"]],
-  ["CW4-DOD-08", "all bundled artifacts have established distribution provenance", ["M14"]],
-  ["CW4-DOD-09", "the build and conformance report are reproducible", ["M14"]],
-  ["CW4-DOD-10", "remaining physical-device or timing gaps are named optional profiles", ["M11", "M12", "M14"]],
-];
-const REQUIRED_DOD = [
-  ["CW4-DOD-02"],
-  ["CW4-DOD-01", "CW4-DOD-02"],
-  ["CW4-DOD-03", "CW4-DOD-04", "CW4-DOD-06"],
-  ["CW4-DOD-05", "CW4-DOD-06"],
-  ["CW4-DOD-07", "CW4-DOD-08", "CW4-DOD-09", "CW4-DOD-10"],
-];
-const MILESTONE_BLOCKS = new Map([
-  ["M6", ["CW4-DOD-01", "CW4-DOD-02"]],
-  ["M7", ["CW4-DOD-01", "CW4-DOD-02", "CW4-DOD-04"]],
-  ["M8", ["CW4-DOD-03"]],
-  ["M9", ["CW4-DOD-03", "CW4-DOD-04", "CW4-DOD-06"]],
-  ["M10", ["CW4-DOD-05", "CW4-DOD-06"]],
-  ["M11", ["CW4-DOD-10"]],
-  ["M12", ["CW4-DOD-06", "CW4-DOD-10"]],
-  ["M13", ["CW4-DOD-06", "CW4-DOD-07"]],
-]);
 
 function fail(message) { throw new TypeError(`C-M14: ${message}`); }
 function hash(bytes) { return createHash("sha256").update(bytes).digest("hex"); }
@@ -386,8 +358,9 @@ function conformanceReport(gates, matrix) {
   return `# CADR-WEB-303 release conformance report
 
 Release claim: **none**. This deterministic scaffold does not close CW4.
-The policy accepts no receipt, manual status, or free-form evidence as gate
-advancement; a future evidence-qualified schema must define the receipt verifier.
+Only a case adapter registered in the tracked evidence policy may admit a receipt;
+the production adapter registry is empty. Manual status and free-form evidence
+cannot advance a gate.
 
 | Gate | State | Required CW4 definition-of-done clauses |
 | --- | --- | --- |
@@ -416,7 +389,7 @@ function stringArray(value, label) {
   if (!Array.isArray(value)) fail(`${label} must be an array of nonempty strings`);
   for (const [index, item] of value.entries()) publicText(item, `${label}[${index}]`);
 }
-export function validateM14PolicyDocuments(policy, rights, matrix, gates) {
+export function validateM14PolicyDocuments(policy, rights, matrix, gates, evidencePolicy, evidencePolicySha256) {
   exactKeys(policy, ["schema", "profile", "status", "closedInventoryStatus", "offlineRuntimeStatus", "canonicalJson", "logicalEpoch",
     "entries", "generated", "excludedPrivateInputs", "unresolvedComponents"], "package policy");
   if (policy.schema !== "cadr-m14-package-policy-v2" || policy.status !== "scaffold-only" ||
@@ -483,54 +456,12 @@ export function validateM14PolicyDocuments(policy, rights, matrix, gates) {
   if (new Set(matrix.required.map(row => row.engine)).size !== matrixEngines.length) {
     fail("browser matrix must contain exactly one row per required engine");
   }
-  exactKeys(gates, ["schema", "releaseClaim", "evidenceAuthority", "gates", "unresolvedMilestoneBlockers",
-    "cw4DefinitionOfDone"], "conformance gates");
-  validateEvidenceAuthority(gates.evidenceAuthority, "conformance-gate evidence authority");
-  if (gates.schema !== "cadr-m14-evidence-qualified-gates-v2" || gates.releaseClaim !== "none" ||
-      !Array.isArray(gates.gates) || gates.gates.length !== 5 ||
-      !Array.isArray(gates.unresolvedMilestoneBlockers) || gates.unresolvedMilestoneBlockers.length !== 8 ||
-      !Array.isArray(gates.cw4DefinitionOfDone) || gates.cw4DefinitionOfDone.length !== 10) {
-    fail("conformance gates are malformed");
-  }
-  const doneIds = gates.cw4DefinitionOfDone.map(record => record?.id);
-  const expectedDoneIds = DOD.map(record => record[0]);
-  if (doneIds.join("\u0000") !== expectedDoneIds.join("\u0000")) fail("CW4 definition-of-done clauses are incomplete");
-  const knownDone = new Set(doneIds); const knownMilestones = new Set(["M6", "M7", "M8", "M9", "M10", "M11", "M12", "M13", "M14"]);
-  for (const [index, record] of gates.cw4DefinitionOfDone.entries()) {
-    exactKeys(record, ["id", "clause", "blockingMilestones"], `CW4 definition-of-done clause ${index}`);
-    publicText(record.clause, `CW4 definition-of-done clause ${index} clause`);
-    if (record.clause !== DOD[index][1] ||
-        canonical(record.blockingMilestones) !== canonical(DOD[index][2]) ||
-        record.blockingMilestones.some(value => !knownMilestones.has(value))) {
-      fail("CW4 definition-of-done clause text or exact blockers differ");
-    }
-  }
-  for (const [index, gate] of gates.gates.entries()) {
-    exactKeys(gate, ["id", "state", "requiredDoD"], `conformance gate ${index}`);
-    if (gate.id !== `CW${index}` || gate.state !== "not-evaluated" || !Array.isArray(gate.requiredDoD) ||
-        canonical(gate.requiredDoD) !== canonical(REQUIRED_DOD[index]) ||
-        gate.requiredDoD.some(value => !knownDone.has(value))) {
-      fail("conformance gates must remain unevaluated for the scaffold");
-    }
-  }
-  const milestones = gates.unresolvedMilestoneBlockers.map(record => record?.milestone);
-  const expectedMilestones = ["M6", "M7", "M8", "M9", "M10", "M11", "M12", "M13"];
-  if (milestones.join("\u0000") !== expectedMilestones.join("\u0000")) fail("M6-M13 blockers are incomplete");
-  for (const [index, record] of gates.unresolvedMilestoneBlockers.entries()) {
-    exactKeys(record, ["milestone", "state", "blocks", "blockers"], `milestone blocker ${index}`);
-    if (record.state !== "unresolved" || !Array.isArray(record.blocks) ||
-        canonical(record.blocks) !== canonical(MILESTONE_BLOCKS.get(record.milestone)) ||
-        record.blocks.some(value => !knownDone.has(value)) || !Array.isArray(record.blockers) ||
-        record.blockers.length === 0) fail("milestone blocker is malformed");
-    stringArray(record.blockers, `milestone blocker ${index} blockers`);
-    const inverse = gates.cw4DefinitionOfDone.filter(done =>
-      done.blockingMilestones.includes(record.milestone)).map(done => done.id);
-    if (canonical(inverse) !== canonical(record.blocks)) fail("milestone and definition-of-done blocker mappings disagree");
-  }
+  validateM14EvidencePolicy(evidencePolicy);
+  validateM14EvidenceGates(gates, evidencePolicy, evidencePolicySha256);
 }
 function validateEvidenceAuthority(value, label) {
   exactKeys(value, ["receiptAdmission", "manualStatus", "freeFormEvidence"], label);
-  if (value.receiptAdmission !== "not-implemented-no-receipts-accepted" ||
+  if (value.receiptAdmission !== "registered-case-adapters-required-production-registry-empty" ||
       value.manualStatus !== "cannot-advance" || value.freeFormEvidence !== "cannot-advance") {
     fail(`${label} permits unqualified evidence`);
   }
@@ -726,22 +657,25 @@ async function treeFiles(root, prefix = "") {
 }
 
 export async function buildCadrM14(output) {
-  const [policyPath, rightsPath, matrixPath, gatesPath, generatorPath] = await Promise.all([
+  const [policyPath, rightsPath, matrixPath, gatesPath, evidencePolicyPath, generatorPath, evidenceEnginePath] = await Promise.all([
     repoFile("cadr-web/release/cadr-m14-package-policy.json", "package policy"),
     repoFile("cadr-web/release/cadr-m14-rights-policy.json", "rights policy"),
     repoFile("cadr-web/release/cadr-m14-browser-matrix.json", "browser matrix"),
     repoFile("cadr-web/release/cadr-m14-gates.json", "conformance gates"),
+    repoFile("cadr-web/release/cadr-m14-evidence-policy.json", "evidence policy"),
     repoFile("scripts/build-cadr-m14-release.mjs", "release generator"),
+    repoFile("scripts/cadr-m14-evidence.mjs", "evidence admission engine"),
   ]);
-  let [policyRecord, rightsRecord, matrixRecord, gatesRecord] = await Promise.all([
+  let [policyRecord, rightsRecord, matrixRecord, gatesRecord, evidencePolicyRecord] = await Promise.all([
     json(policyPath, "cadr-m14-package-policy-v2"),
     json(rightsPath, "cadr-m14-rights-policy-v1"),
     json(matrixPath, "cadr-m14-browser-matrix-v2"),
-    json(gatesPath, "cadr-m14-evidence-qualified-gates-v2"),
+    json(gatesPath, "cadr-m14-evidence-qualified-gates-v3"),
+    json(evidencePolicyPath, "cadr-m14-evidence-policy-v1", true),
   ]);
   let policy = policyRecord.value; let rights = rightsRecord.value;
-  let matrix = matrixRecord.value; let gates = gatesRecord.value;
-  validateM14PolicyDocuments(policy, rights, matrix, gates);
+  let matrix = matrixRecord.value; let gates = gatesRecord.value; let evidencePolicy = evidencePolicyRecord.value;
+  validateM14PolicyDocuments(policy, rights, matrix, gates, evidencePolicy, hash(evidencePolicyRecord.bytes));
   await outputDirectory(output, "output", false);
   if (await lstat(`${output}.cdrm14`).then(() => true, error =>
     error?.code === "ENOENT" ? false : Promise.reject(error))) fail("archive already exists; replacement is forbidden");
@@ -749,18 +683,19 @@ export async function buildCadrM14(output) {
   await directoryNonSymlink(output, "new output");
   const sourcePaths = await Promise.all(policy.entries.map(entry =>
     repoFile(entry.source, `package source ${entry.source}`)));
-  const closurePaths = [policyPath, rightsPath, matrixPath, gatesPath, generatorPath, ...sourcePaths];
+  const closurePaths = [policyPath, rightsPath, matrixPath, gatesPath, evidencePolicyPath, generatorPath, evidenceEnginePath, ...sourcePaths];
   const captured = await buildProvenance(closurePaths, generatorPath);
   const provenance = captured.provenance;
-  const capturedRecord = (path, schema) => jsonBytes(captured.captures.get(relative(ROOT, path)),
-    relative(ROOT, path), schema);
+  const capturedRecord = (path, schema, canonicalBytes = false) => jsonBytes(captured.captures.get(relative(ROOT, path)),
+    relative(ROOT, path), schema, canonicalBytes);
   policyRecord = capturedRecord(policyPath, "cadr-m14-package-policy-v2");
   rightsRecord = capturedRecord(rightsPath, "cadr-m14-rights-policy-v1");
   matrixRecord = capturedRecord(matrixPath, "cadr-m14-browser-matrix-v2");
-  gatesRecord = capturedRecord(gatesPath, "cadr-m14-evidence-qualified-gates-v2");
+  gatesRecord = capturedRecord(gatesPath, "cadr-m14-evidence-qualified-gates-v3");
+  evidencePolicyRecord = capturedRecord(evidencePolicyPath, "cadr-m14-evidence-policy-v1", true);
   policy = policyRecord.value; rights = rightsRecord.value;
-  matrix = matrixRecord.value; gates = gatesRecord.value;
-  validateM14PolicyDocuments(policy, rights, matrix, gates);
+  matrix = matrixRecord.value; gates = gatesRecord.value; evidencePolicy = evidencePolicyRecord.value;
+  validateM14PolicyDocuments(policy, rights, matrix, gates, evidencePolicy, hash(evidencePolicyRecord.bytes));
   if (canonical(policy.entries.map(entry => entry.source).sort()) !==
       canonical(sourcePaths.map(path => relative(ROOT, path)).sort())) {
     fail("captured package policy source closure differs from discovered closure");
@@ -811,7 +746,7 @@ export async function buildCadrM14(output) {
       directInputsFor([rightsPath, policyPath, generatorPath, ...sourcePaths]) :
       name.startsWith("browser") ? directInputsFor([matrixPath, generatorPath]) :
       name.startsWith("USER") ? directInputsFor([policyPath, generatorPath]) :
-      directInputsFor([gatesPath, matrixPath, generatorPath]),
+      directInputsFor([gatesPath, matrixPath, evidencePolicyPath, evidenceEnginePath, generatorPath]),
       transform: "deterministic-generator-v2" });
   }
   sourceMap.push({ output: "source-map.json",

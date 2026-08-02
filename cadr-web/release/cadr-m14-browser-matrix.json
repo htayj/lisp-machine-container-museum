@@ -2,7 +2,7 @@
   "schema": "cadr-m14-browser-matrix-v2",
   "evidenceStatus": "not-evaluated",
   "evidenceAuthority": {
-    "receiptAdmission": "not-implemented-no-receipts-accepted",
+    "receiptAdmission": "registered-case-adapters-required-production-registry-empty",
     "manualStatus": "cannot-advance",
     "freeFormEvidence": "cannot-advance"
   },

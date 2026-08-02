@@ -134,8 +134,8 @@ the public LM-3 software and the `usim` emulator.
   complete input, private storage, release, networking, and optional translation.
 - [CADR-WEB reproducible museum release evidence scaffolding](cadr-web-reproducible-museum-release-scaffolding.md)
   defines M14's closed static inventory, direct-input provenance, browser matrix,
-  rights ledger, generated guide/report, and explicit nonclaim of runtime-offline
-  behavior or CW4.
+  rights ledger, empty-production receipt-admission boundary, generated guide/report,
+  and explicit nonclaim of runtime-offline behavior or CW4.
 - [CADR-WEB-303 ABI1.3 boot-media controller specification](cadr-boot-media-controller-reimplementation-specification.md)
   defines the selected disk registers, CCWs, asynchronous range service, volatile
   block-1 overlay, controller/media evidence, failures, and M4 conformance gate.

@@ -3,7 +3,7 @@ type: Implementation Roadmap
 title: MIT CADR System 303 browser and WebAssembly implementation roadmap
 description: A milestone-complete plan for porting the pinned System 303 CADR emulator to a deterministic, locally persistent, browser-hosted WebAssembly machine.
 tags: [mit-cadr, lm-3, system-303, webassembly, browser, emulator, roadmap]
-timestamp: 2026-08-02T07:07:32-04:00
+timestamp: 2026-08-02T09:18:17-04:00
 ---
 
 # MIT CADR System 303 browser and WebAssembly implementation roadmap
@@ -1309,14 +1309,18 @@ Exit gate `CW4-MUSEUM`: two independent clean source extractions can build the s
 load only policy-permitted inputs, pass all conformance gates, and complete the
 guided smoke workflow without a network.
 
-Scaffolding status, 2026-07-30: the tracked
+Scaffolding status, 2026-08-02: the tracked
 [M14 release note](cadr-web-reproducible-museum-release-scaffolding.md) and
 `cadr-web/release/` policies define a deterministic logical manifest, complete
 direct-input source map, closed static inventory, three-engine evidence matrix, rights
-inventory, and deterministic guide/report generators. Runtime no-network behavior is
-`not-evaluated`. The scaffold omits the
-final Wasm/worklet and leaves CW0–CW4 and all browser rows `not-evaluated`. It
-is not a CW4 claim.
+inventory, deterministic guide/report generators, and a v1 receipt-admission policy.
+The candidate is derived from the exact canonical logical manifest; stable M6--M14
+cases and blockers map to the existing definition-of-done clauses. The production
+adapter registry is intentionally empty, so any supplied receipt rejects and a
+zero-receipt aggregation remains entirely `not-evaluated` with release claim `none`.
+Runtime no-network behavior is still `not-evaluated`. The scaffold omits the final
+Wasm/worklet and leaves CW0–CW4 and all browser rows `not-evaluated`; it is not a
+CW4 claim.
 
 ### M15 — Optional isolated Chaos networking
 

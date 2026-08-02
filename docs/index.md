@@ -60,7 +60,7 @@ machine-readable metadata layer while retaining ordinary Markdown as the source.
   and optional networking or translation.
 - [CADR-WEB reproducible museum release evidence scaffolding](mit-cadr/cadr-web-reproducible-museum-release-scaffolding.md)
   records M14's deterministic static inventory, direct-input provenance, rights,
-  evidence-qualified compatibility boundary, and conformance-report nonclaim of
+  empty-production receipt-admission boundary, and conformance-report nonclaim of
   runtime-offline behavior or CW4.
 - [CADR-WEB-303 ABI1.1 deterministic tracing and snapshot specification](mit-cadr/cadr-deterministic-tracing-and-snapshot-reimplementation-specification.md)
   defines the new portable-core CDRGTRC1/CDRSNAP1 trace and continuation boundary.

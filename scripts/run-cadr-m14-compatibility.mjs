@@ -39,7 +39,7 @@ function nonemptyString(value, label) {
 }
 function validateEvidenceAuthority(value, label) {
   exactKeys(value, ["receiptAdmission", "manualStatus", "freeFormEvidence"], label);
-  if (value.receiptAdmission !== "not-implemented-no-receipts-accepted" ||
+  if (value.receiptAdmission !== "registered-case-adapters-required-production-registry-empty" ||
       value.manualStatus !== "cannot-advance" || value.freeFormEvidence !== "cannot-advance") {
     fail(`${label} permits unqualified evidence`);
   }

@@ -32,7 +32,11 @@ const run = (command, args, cwd, extraEnv = {}) => {
 };
 async function cleanExtraction() {
   const target = await mkdtemp(resolve(tmpdir(), "cadr-m14-clean-extraction-"));
-  const listed = run("git", ["ls-files", "-z"], repo).stdout.split("\0").filter(Boolean);
+  const listed = [...new Set([
+    ...run("git", ["ls-files", "-z"], repo).stdout.split("\0"),
+    ...run("git", ["diff", "--name-only", "-z"], repo).stdout.split("\0"),
+    ...run("git", ["ls-files", "--others", "--exclude-standard", "-z"], repo).stdout.split("\0"),
+  ].filter(Boolean))].sort();
   for (const path of listed) {
     const destination = resolve(target, path);
     await mkdir(dirname(destination), { recursive: true });
@@ -124,7 +128,12 @@ const [policy, rights, matrixPolicy, gates] = await Promise.all([
   readFile(resolve(repo, "cadr-web/release/cadr-m14-browser-matrix.json"), "utf8").then(JSON.parse),
   readFile(resolve(repo, "cadr-web/release/cadr-m14-gates.json"), "utf8").then(JSON.parse),
 ]);
-validateM14PolicyDocuments(policy, rights, matrixPolicy, gates);
+const evidencePolicyBytes = await readFile(resolve(repo, "cadr-web/release/cadr-m14-evidence-policy.json"));
+const evidencePolicy = JSON.parse(evidencePolicyBytes);
+const validatePolicies = (packagePolicy, rightsPolicy, matrix, gatePolicy) =>
+  validateM14PolicyDocuments(packagePolicy, rightsPolicy, matrix, gatePolicy, evidencePolicy,
+    sha256(evidencePolicyBytes));
+validatePolicies(policy, rights, matrixPolicy, gates);
 assert.deepEqual(matrixPolicy.registeredAdapters, []);
 for (const forge of [
   value => { value.gates[0].state = "closed"; },
@@ -138,15 +147,15 @@ for (const forge of [
   value => { value.cw4DefinitionOfDone[6].blockingMilestones = ["M14"]; },
 ]) {
   const forged = structuredClone(gates); forge(forged);
-  assert.throws(() => validateM14PolicyDocuments(policy, rights, matrixPolicy, forged),
-    /unevaluated|missing|extra|permits|incomplete|malformed|differ|disagree/);
+  assert.throws(() => validatePolicies(policy, rights, matrixPolicy, forged),
+    /unevaluated|missing|extra|permits|incomplete|malformed|differ|disagree|bind|unknown/);
 }
 for (const forge of [
   value => { value.evidenceAuthority.freeFormEvidence = "can-advance"; },
   value => { value.registeredAdapters = [{ id: "manual-browser" }]; },
 ]) {
   const forged = structuredClone(matrixPolicy); forge(forged);
-  assert.throws(() => validateM14PolicyDocuments(policy, rights, forged, gates));
+  assert.throws(() => validatePolicies(policy, rights, forged, gates));
 }
 for (const mutate of [
   value => { value.entries[0].source = "/etc/passwd"; },
@@ -157,16 +166,16 @@ for (const mutate of [
   value => { value.entries[0].url = "/profiles/../escape"; },
 ]) {
   const altered = structuredClone(policy); mutate(altered);
-  assert.throws(() => validateM14PolicyDocuments(altered, rights, matrixPolicy, gates));
+  assert.throws(() => validatePolicies(altered, rights, matrixPolicy, gates));
 }
 const badMatrix = structuredClone(matrixPolicy); badMatrix.privatePlanPath = "/tmp/anything";
-assert.throws(() => validateM14PolicyDocuments(policy, rights, badMatrix, gates));
+assert.throws(() => validatePolicies(policy, rights, badMatrix, gates));
 for (const absoluteToken of ["/root/secret", "/etc/passwd", "note:(/home/tay/private)",
   "C:\\Users\\tay\\private", "\\\\server\\share\\private", "\\Windows\\System32",
   "file:///home/tay/private", "~/private-world", "~tay/private-world"]) {
   const alteredRights = structuredClone(rights);
   alteredRights.records[0].sourceNotice = absoluteToken;
-  assert.throws(() => validateM14PolicyDocuments(policy, alteredRights, matrixPolicy, gates),
+  assert.throws(() => validatePolicies(policy, alteredRights, matrixPolicy, gates),
     /private or machine absolute path/, absoluteToken);
 }
 for (const sample of [
@@ -236,10 +245,12 @@ try {
     "cadr-web/profiles/cadr-web-303.ini.in",
     "cadr-web/profiles/cadr-web-303.json",
     "cadr-web/release/cadr-m14-browser-matrix.json",
+    "cadr-web/release/cadr-m14-evidence-policy.json",
     "cadr-web/release/cadr-m14-gates.json",
     "cadr-web/release/cadr-m14-package-policy.json",
     "cadr-web/release/cadr-m14-rights-policy.json",
     "scripts/build-cadr-m14-release.mjs",
+    "scripts/cadr-m14-evidence.mjs",
   ], "build provenance must close over every direct byte-generating source and policy");
   const sourceMap = JSON.parse(await readFile(resolve(first, "source-map.json")));
   assert.deepEqual(sourceMap.mappings.map(mapping => mapping.output).sort(),
@@ -260,7 +271,7 @@ try {
     [...manifest.files.map(item => item.path), "logical-build-manifest.json"].sort());
   assert.match(await readFile(resolve(first, "USER-GUIDE.md"), "utf8"), /Runtime\noffline behavior is \*\*not evaluated\*\*/);
   assert.match(await readFile(resolve(first, "CONFORMANCE-REPORT.md"), "utf8"), /Release claim: \*\*none\*\*/);
-  assert.match(await readFile(resolve(first, "CONFORMANCE-REPORT.md"), "utf8"), /no receipt, manual status, or free-form evidence/);
+  assert.match(await readFile(resolve(first, "CONFORMANCE-REPORT.md"), "utf8"), /production adapter registry is empty/);
   const generatedMatrix = JSON.parse(await readFile(resolve(first, "browser-compatibility-matrix.json")));
   assert.equal(generatedMatrix.evidenceStatus, "not-evaluated");
   assert.equal(generatedMatrix.closedInventoryStatus, "closed-static-inventory");

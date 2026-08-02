@@ -1,9 +1,9 @@
 ---
 type: Technical Note
 title: CADR-WEB reproducible museum release evidence scaffolding
-description: The deterministic logical manifest, closed static inventory, direct-input provenance, browser matrix, rights, guide, and evidence-qualified conformance scaffold prepared for M14 without claiming CW4.
+description: The deterministic logical manifest, closed static inventory, direct-input provenance, browser matrix, rights, guide, and bounded receipt-admission scaffold prepared for M14 without claiming CW4.
 tags: [mit-cadr, cadr-web, release, offline, provenance, conformance]
-timestamp: 2026-08-02T10:15:00-04:00
+timestamp: 2026-08-02T16:46:00-04:00
 ---
 
 # CADR-WEB reproducible museum release evidence scaffolding
@@ -50,11 +50,14 @@ than static scaffold verification; every CW0–CW4 gate and browser row remains
 ## Evidence and provenance state
 
 `TEST-M14` is source-visible implementation and synthetic adversarial-test evidence
-for the generator, archive verifier, and collector boundary. It does not establish
-browser behavior, CSP behavior, or a hardware/runtime result. The policy has no
-accepted receipt grammar: manual status and free-form evidence cannot advance a gate
-or browser row. A later schema must name and verify each admissible receipt before
-it can change any `not-evaluated` result.
+for the generator, archive verifier, and receipt boundary. It does not establish
+browser behavior, CSP behavior, or a hardware/runtime result. The tracked evidence
+policy now defines a receipt envelope, a candidate derived from the exact canonical
+logical manifest, normalized admitted records, stable M6--M14 case and blocker IDs,
+and a same-process branded deterministic aggregation. Manual status and free-form evidence cannot advance a gate
+or browser row. The compiled production adapter registry is empty, so every supplied
+receipt currently rejects; zero receipts deterministically retain every gate and
+browser row at `not-evaluated` and the release claim at `none`.
 
 ## Architecture and trust model
 
@@ -63,8 +66,10 @@ it can change any `not-evaluated` result.
 | `cadr-m14-package-policy.json` | Closed URL/output/source/media-type/rights inventory, distinct static-inventory and runtime-offline dispositions, private exclusions, unresolved components |
 | `cadr-m14-rights-policy.json` | Rights classifications, non-grant notice, forbidden bundle classes |
 | `cadr-m14-browser-matrix.json` | Required Blink, Gecko, and WebKit rows, explicit evidence authority, static-inventory status, runtime-offline `not-evaluated`, and an empty registered-adapter set |
-| `cadr-m14-gates.json` | Evidence-qualified CW0–CW4 ledger, M6–M13 blockers, and the complete ten-clause CW4 definition-of-done map; every gate is `not-evaluated` |
+| `cadr-m14-evidence-policy.json` | Canonical v1 future-case registry, stable M6–M14 blocker IDs, case-to-definition-of-done mapping, and a deliberately empty production authority set |
+| `cadr-m14-gates.json` | v3 CW0–CW4 ledger bound to the exact evidence-policy SHA-256; every gate remains `not-evaluated` |
 | `build-cadr-m14-release.mjs` | Copier, generators, logical manifest/source map, componentwise-confined closed-inventory verifier, and archive verifier |
+| `cadr-m14-evidence.mjs` | Pure candidate derivation, confined receipt/result/cleanup capture, compiled adapter admission boundary, and deterministic aggregation; its production registry is empty |
 | `run-cadr-m14-compatibility.mjs` | Bounded collector for exact-schema, untrusted private adapter attestations; it cannot advance a browser row |
 
 Canonical JSON is UTF-8 with recursively sorted object keys, no insignificant
@@ -95,6 +100,25 @@ forms, and ancestor symlinks. A package URL is either `/` for `index.html` or th
 exact slash-prefixed package output path; query, fragment, alternate, and escaping
 forms are not policy URL forms. The output command accepts only one direct child of
 `build/cadr-m14/` and rejects replacement, traversal, and absolute-path forms.
+
+The admission command accepts one canonical logical manifest, one confined receipt
+directory, and one new output file below a direct `build/cadr-m14/` home. It reads
+receipt, result, and cleanup bytes once from regular non-symlink files; receipt paths
+and free-form mappings never become an authority. The receipt must repeat the
+candidate's exact logical-manifest, source-closure, artifact-set, and toolchain-set
+hashes. Producer and verifier identity come from the policy, must be distinct, and
+must have different primary program-closure hashes. A registered case adapter then
+validates the captured case-specific result; it cannot choose the case's milestone,
+definition-of-done, or blocker mapping.
+
+The stable case, blocker, definition-of-done, and gate projection has a separately
+pinned normative digest, so a coherent rename or remapping cannot redefine success
+merely by updating the outer policy hash. Adapter-visible JSON is recursively frozen,
+and admission captures the verifier outcome, cleanup state, result hash, and policy
+mapping before invoking adapter code. Each successful admitted record is itself
+recursively frozen and carries a module-private in-process identity. Aggregation
+accepts only those exact objects returned by the same process's admission boundary;
+a serialized, copied, or hand-constructed record cannot advance a gate.
 
 ## Failure and recovery boundary
 
@@ -127,6 +151,17 @@ recover by fetching a missing resource, following a symlink, accepting extra
 attestation data, or changing a gate; remediation is to construct a new isolated
 output from corrected, policy-conforming inputs.
 
+Admission is all-or-nothing. A wrong candidate, source, artifact, toolchain,
+policy, profile, authority, verifier outcome, result hash, cleanup hash, schema,
+duplicate receipt bytes, or second receipt for a case rejects the complete input set
+and writes no aggregation. A conformance failure makes its case, blockers,
+definition-of-done clauses, and affected gates fail; a later receipt cannot erase it
+because conflicting case attempts are rejected. Infrastructure failure and incomplete
+evidence remain retained attempts but leave the case `not-evaluated`. Failed cleanup
+fails a case; unknown cleanup cannot pass it. Even an injected synthetic all-pass
+registry produces `releaseClaim: none`: enabling a claim is a later policy/schema
+change, not an aggregation outcome.
+
 ## Rights, guide, and report
 
 The scaffold makes no blanket license conclusion. Repository-authored
@@ -151,6 +186,7 @@ packaging cannot change a gate.
 ```sh
 node scripts/build-cadr-m14-release.mjs --output build/cadr-m14/release
 node tests/test_cadr_m14_release.mjs
+node tests/test_cadr_m14_evidence.mjs
 node scripts/run-cadr-m14-compatibility.mjs
 ```
 
@@ -165,14 +201,23 @@ confirms that even successful sandboxed attestations do not change the browser
 matrix. The compatibility command without `--execute` refuses. No browser matrix,
 runtime-offline, or CW4 evidence has been recorded.
 
+The receipt test builds a disposable exact-source candidate, exercises zero-receipt
+production aggregation and production rejection of supplied receipts, then injects
+only in-memory synthetic authorities and adapters. It covers pass, partial,
+infrastructure, conformance, and cleanup outcomes; every candidate identity field;
+authority forgery and non-independence; result mutation; duplicate/conflicting and
+noncanonical receipts; getters, private-path text, traversal, symlink capture, and
+deterministic ordering. It also proves that an all-pass synthetic aggregation cannot
+claim a release.
+
 ## Known unknowns and next oracle
 
 Remaining work is to join final M11–M13 artifacts, add the final Wasm/worklet
 with exact rights and build identities, join M10 host-cleanup and state
-evidence with every transitive supervisor input, define the evidence-qualified
-receipt grammar, run all browser rows under a runtime no-network oracle,
-register real adapters with exact executable/tool identities before accepting a
-browser result, bind validated CW0–CW4 evidence to the exact provenanced inputs,
+evidence with every transitive supervisor input, implement and register reviewed
+case-specific adapters with exact executable/tool identities before accepting a
+browser result, run all browser rows under a runtime no-network oracle, bind
+validated CW0–CW4 evidence to the exact provenanced inputs,
 and complete the release rights review. Until then
 the only permitted outcome is
 `scaffold-only` with release claim `none`.
