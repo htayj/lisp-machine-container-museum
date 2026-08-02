@@ -380,6 +380,7 @@ class FastReady4Client extends FakeClient {
       this.fastStops.push([SYNTH_C_BOUNDARY + 1n, CADR_M6_FORM_C ^ 1n]);
     }
     this.observedDebugStops = [];
+    this.fastHostWaitDelivered = false;
   }
 
   async request(op, fields = {}) {
@@ -388,19 +389,26 @@ class FastReady4Client extends FakeClient {
       const before = this.boundary;
       const requested = fields.clockSlots;
       const limit = before + BigInt(requested);
-      const next = this.fastStops.find(([boundary]) =>
+      const hostWait = this.mode === "host" && !this.fastHostWaitDelivered;
+      const next = hostWait ? undefined : this.fastStops.find(([boundary]) =>
         boundary > before && boundary <= limit);
-      const after = next?.[0] ?? limit;
+      const after = hostWait ? before + 1n : (next?.[0] ?? limit);
       const debugBefore = this.debugInstruction;
       if (next !== undefined) this.debugInstruction = next[1];
-      const reason = next === undefined ? 1 : 2;
+      const reason = hostWait ? 3 : (next === undefined ? 1 : 2);
+      const terminalStatus = hostWait ? 8 : 0;
+      if (hostWait) {
+        this.fastHostWaitDelivered = true;
+        this.outstanding = 1n;
+        this.lifecycle = "WAITING_FOR_HOST";
+      }
       const bytes = new Uint8Array(128);
       bytes.set(new TextEncoder().encode("CDRM6FAST1"));
       const view = new DataView(bytes.buffer);
       view.setUint32(16, 1, true);
       view.setUint32(20, 128, true);
       view.setUint32(24, reason, true);
-      view.setUint32(28, 0, true);
+      view.setUint32(28, terminalStatus, true);
       view.setUint32(32, requested, true);
       view.setBigUint64(40, after - before, true);
       view.setBigUint64(48, after - before, true);
@@ -410,18 +418,18 @@ class FastReady4Client extends FakeClient {
       view.setBigUint64(80, this.debugInstruction, true);
       view.setUint32(88, 0, true);
       view.setUint32(92, 2, true);
-      view.setBigUint64(96, 0n, true);
+      view.setBigUint64(96, this.outstanding, true);
       this.boundary = after;
       if (reason === 2) {
         this.observedDebugStops.push([debugBefore, this.debugInstruction, after]);
       }
       return {
         status: 0, wireSchema: "CDRM6FAST1", fastRun: bytes.buffer,
-        reason, terminalStatus: 0, requestedSlots: requested,
+        reason, terminalStatus, requestedSlots: requested,
         completedSlots: after - before, microinstructionDelta: after - before,
         preBoundary: before, postBoundary: after, debugBefore,
         debugAfter: this.debugInstruction, persistentStatus: 0,
-        coreLifecycle: 2, outstandingRequestId: 0n,
+        coreLifecycle: 2, outstandingRequestId: this.outstanding,
       };
     }
     if (op === "boot-witness") {
@@ -988,6 +996,39 @@ print(json.dumps(record, sort_keys=True, separators=(",", ":"),
     [CADR_M6_FORM_B, 0x5aa549444d36n, SYNTH_C_BOUNDARY - 1n],
     [0x5aa549444d36n, CADR_M6_FORM_C, SYNTH_C_BOUNDARY],
   ], "the actual READY4 entrypoint crosses every observable partial/full ABC marker");
+}
+
+{
+  const client = new FastReady4Client("host");
+  const result = await runSyntheticM6Ready4FastForTest({
+    ...fixtures,
+    client,
+    maxBoundaries: 225000000n,
+    maxHostTransactions: 2,
+    fastSlots: 1048576,
+  }, await syntheticReleaseRecord());
+  assert.equal(result.outcome, "ready4",
+    `${result.report?.reason ?? "no-reason"}: ${result.report?.phase ?? "no-phase"}: ${result.report?.status ?? "no-status"}`);
+  const operations = client.calls.map(call => call.op);
+  const wait = operations.indexOf("run-until-event-m6");
+  const next = operations.indexOf("host-next-request");
+  const complete = operations.indexOf("host-complete");
+  const resumed = operations.findIndex((op, index) => index > complete && op === "run-until-event-m6");
+  const checkpointDigest = operations.indexOf("boundary-digest-v5", resumed);
+  assert.ok(wait !== -1 && wait < next && next < complete && complete < resumed && resumed < checkpointDigest,
+    "READY4 services a fast-run host stop, lets the next C-owned run apply completion, then checkpoints");
+  assert.equal(result.hostWaitCount, 1,
+    "READY4 separately counts its exact C-owned reason-3 host-stop record");
+  assert.equal(result.hostWaitChainSha256.byteLength, 32,
+    "READY4 returns the exact host-stop chain commitment");
+  assert.equal(result.hostWaitRecords.length, 1,
+    "READY4 retains the exact CDRM6FAST1 reason-3 record that its host-stop chain commits");
+  assert.equal(new DataView(result.hostWaitRecords[0].buffer, result.hostWaitRecords[0].byteOffset,
+    result.hostWaitRecords[0].byteLength).getUint32(24, true), 3,
+  "the retained host-stop record is reason 3");
+  assert.equal(client.calls.filter(call => call.op === "run-until-event-m6").every(call =>
+    call.fields.clockSlots > 0 && call.fields.clockSlots <= 1048576), true,
+  "READY4 never widens its fixed fast-run request bound");
 }
 
 for (const mode of ["wrong-partial", "reordered-partial", "late-partial"]) {

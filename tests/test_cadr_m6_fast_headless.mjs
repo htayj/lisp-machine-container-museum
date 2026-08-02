@@ -9,8 +9,13 @@ function record(reason = 1) {
   view.setBigUint64(40, reason === 3 ? 1n : 3n, true); view.setBigUint64(48, 9n, true);
   view.setBigUint64(56, 10n, true); view.setBigUint64(64, reason === 3 ? 11n : 13n, true);
   if (reason === 1) view.setUint32(28, 0, true);
-  else if (reason === 2) { view.setUint32(28, 0, true); view.setBigUint64(80, 1n, true); }
-  else if (reason === 3) { view.setUint32(28, 8, true); view.setBigUint64(96, 7n, true); }
+  else if (reason === 2) {
+    view.setUint32(28, 0, true); view.setBigUint64(80, 1n, true);
+    view.setUint32(92, 2, true);
+  } else if (reason === 3) {
+    view.setUint32(28, 8, true); view.setUint32(92, 2, true);
+    view.setBigUint64(96, 7n, true);
+  }
   else view.setUint32(28, 12, true);
   return bytes;
 }

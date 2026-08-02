@@ -1336,27 +1336,37 @@ async function canonicalM6ReadyWitnessV3({
 
 /* READY4 is intentionally an additional binding: the existing READY3 digest
  * remains frozen, while this new preimage commits the selected M6 evidence
- * policy, its maximum, and the SHA-256 of one exact CDRM6E1 record. */
+ * policy, its maximum, one exact CDRM6E1 record, and the independently
+ * recomputable settled-checkpoint and reason-3 host-wait chains. */
 export async function canonicalM6ReadyWitnessV4({
   ready3Witness,
   target = CADR_M6_DEVID_PROFILE,
   policyId = CADR_M6_DEVID_POLICY_ID,
   selectedMaximum,
   cdrm6e1Sha256,
+  checkpointCount,
+  checkpointChainSha256,
+  hostWaitCount,
+  hostWaitChainSha256,
 }) {
   const ready3 = bytesOf(ready3Witness);
   const summary = bytesOf(cdrm6e1Sha256);
+  const checkpoint = bytesOf(checkpointChainSha256);
+  const hostWait = bytesOf(hostWaitChainSha256);
   if (ready3?.byteLength !== 32 || summary?.byteLength !== 32 ||
+      checkpoint?.byteLength !== 32 || hostWait?.byteLength !== 32 ||
       target !== CADR_M6_DEVID_PROFILE || policyId !== CADR_M6_DEVID_POLICY_ID ||
       !unsigned64(selectedMaximum) ||
+      !Number.isSafeInteger(checkpointCount) || checkpointCount < 1 ||
+      !Number.isSafeInteger(hostWaitCount) || hostWaitCount < 0 ||
       selectedMaximum === 0n || selectedMaximum > 0x7fffffffffffffffn) {
     throw new TypeError("invalid M6 READY4 disk-evidence binding");
   }
-  const domain = new TextEncoder().encode("CDRM6READY4");
+  const domain = new TextEncoder().encode("CDRM6READY4-CHAINS1");
   const targetBytes = new TextEncoder().encode(`${target}\0`);
   const policy = new TextEncoder().encode(`${policyId}\0`);
   const bytes = new Uint8Array(domain.byteLength + ready3.byteLength +
-    targetBytes.byteLength + policy.byteLength + 8 + summary.byteLength);
+    targetBytes.byteLength + policy.byteLength + 8 + summary.byteLength + 8 + 32 + 8 + 32);
   bytes.set(domain, 0);
   bytes.set(ready3, domain.byteLength);
   bytes.set(targetBytes, domain.byteLength + ready3.byteLength);
@@ -1366,6 +1376,13 @@ export async function canonicalM6ReadyWitnessV4({
     selectedMaximum, true);
   bytes.set(summary, domain.byteLength + ready3.byteLength + targetBytes.byteLength +
     policy.byteLength + 8);
+  let offset = domain.byteLength + ready3.byteLength + targetBytes.byteLength +
+    policy.byteLength + 8 + summary.byteLength;
+  const view = new DataView(bytes.buffer);
+  view.setBigUint64(offset, BigInt(checkpointCount), true); offset += 8;
+  bytes.set(checkpoint, offset); offset += 32;
+  view.setBigUint64(offset, BigInt(hostWaitCount), true); offset += 8;
+  bytes.set(hostWait, offset);
   return sha256(bytes);
 }
 
@@ -2095,9 +2112,9 @@ export async function runM6HeadlessBoot(config) {
   return runM6HeadlessBootInternal({ ...config });
 }
 
-export function parseM6FastRunResponse(response) {
-  const bytes = bytesOf(response?.fastRun);
-  if (response?.wireSchema !== "CDRM6FAST1" || bytes?.byteLength !== 128 ||
+export function parseM6FastRunRecord(value) {
+  const bytes = bytesOf(value);
+  if (bytes?.byteLength !== 128 ||
       new TextDecoder().decode(bytes.subarray(0, 10)) !== "CDRM6FAST1" ||
       bytes.subarray(10, 16).some(value => value !== 0) ||
       bytes.subarray(104).some(value => value !== 0)) {
@@ -2128,17 +2145,28 @@ export function parseM6FastRunResponse(response) {
         record.debugBefore !== record.debugAfter) ||
       record.reason === 2 && (record.terminalStatus !== CADR_STATUS_OK ||
         record.debugBefore === record.debugAfter || record.outstandingRequestId !== 0n ||
-        record.persistentStatus !== CADR_STATUS_OK) ||
+        record.persistentStatus !== CADR_STATUS_OK || record.coreLifecycle !== 2) ||
       record.reason === 3 && (record.terminalStatus !== STATUS_WAITING_FOR_HOST ||
-        record.outstandingRequestId === 0n || record.persistentStatus !== CADR_STATUS_OK) ||
+        record.outstandingRequestId === 0n || record.persistentStatus !== CADR_STATUS_OK ||
+        record.coreLifecycle !== 2) ||
       record.reason === 4 && (record.terminalStatus === CADR_STATUS_OK ||
         record.terminalStatus === STATUS_WAITING_FOR_HOST)) {
     throw new TypeError("invalid CDRM6FAST1 stop semantics");
   }
-  for (const [field, value] of Object.entries(record)) {
-    if (response[field] !== value) throw new TypeError(`CDRM6FAST1 ${field} projection drift`);
-  }
   return Object.freeze({ ...record, bytes: bytes.slice() });
+}
+
+export function parseM6FastRunResponse(response) {
+  if (response?.wireSchema !== "CDRM6FAST1") {
+    throw new TypeError("malformed CDRM6FAST1 response");
+  }
+  const record = parseM6FastRunRecord(response.fastRun);
+  for (const [field, value] of Object.entries(record)) {
+    if (field !== "bytes" && response[field] !== value) {
+      throw new TypeError(`CDRM6FAST1 ${field} projection drift`);
+    }
+  }
+  return record;
 }
 
 export async function appendM6FastCheckpoint(previous, ordinal, fastRecord,
@@ -2150,7 +2178,8 @@ export async function appendM6FastCheckpoint(previous, ordinal, fastRecord,
     throw new TypeError("invalid M6 fast checkpoint inputs");
   }
   const record = bytesOf(fastRecord);
-  if (record?.byteLength !== 128) throw new TypeError("invalid M6 fast record checkpoint");
+  const parsed = parseM6FastRunRecord(record);
+  if (parsed.reason === 3) throw new TypeError("host-wait stop cannot be a settled checkpoint");
   const domain = new TextEncoder().encode("CDRM6FASTCHAIN1\0");
   const recordDigest = await sha256(record);
   const bytes = new Uint8Array(domain.byteLength + 8 + 32 * 4);
@@ -2160,6 +2189,28 @@ export async function appendM6FastCheckpoint(previous, ordinal, fastRecord,
   for (const part of [previous, state, queue, recordDigest]) {
     bytes.set(part, offset); offset += 32;
   }
+  return sha256(bytes);
+}
+
+/* A reason-3 stop exposes an outstanding request whose payload is deliberately
+ * excluded from public CDRSTATE5.  Preserve that exact CDRM6FAST1 in a
+ * separate chain, rather than asking the public state endpoint to hash an
+ * ineligible payload-bearing state or silently dropping the stop. */
+export async function appendM6FastHostWait(previous, ordinal, fastRecord) {
+  if (previous?.byteLength !== 32 || !Number.isSafeInteger(ordinal) || ordinal < 0) {
+    throw new TypeError("invalid M6 fast host-wait chain inputs");
+  }
+  const record = bytesOf(fastRecord);
+  if (parseM6FastRunRecord(record).reason !== 3) {
+    throw new TypeError("host-wait chain requires an exact reason-3 CDRM6FAST1 record");
+  }
+  const domain = new TextEncoder().encode("CDRM6FASTHOSTWAIT1\0");
+  const recordDigest = await sha256(record);
+  const bytes = new Uint8Array(domain.byteLength + 8 + 32 * 2);
+  bytes.set(domain, 0);
+  new DataView(bytes.buffer).setBigUint64(domain.byteLength, BigInt(ordinal), true);
+  bytes.set(previous, domain.byteLength + 8);
+  bytes.set(recordDigest, domain.byteLength + 8 + 32);
   return sha256(bytes);
 }
 
@@ -2191,6 +2242,16 @@ function validM6DevidSummary(response) {
       summary.subarray(272, 304).every(value => value === 0)) return null;
   return Object.freeze({ bytes: summary.slice(), digest: digest.slice(),
     selectedMaximum: view.getBigUint64(32, true), totalAccepted });
+}
+
+/* The CDRM6E1 parser is intentionally shared by READY4 consumers outside the
+ * boot driver.  It exposes no inferred state: the selected maximum and the
+ * two event counts are the fields serialized by the C-owned summary. */
+export function parseM6DevidSummary(response) {
+  const summary = validM6DevidSummary(response);
+  if (summary === null) throw new TypeError("invalid CDRM6E1 evidence summary");
+  return Object.freeze({ ...summary,
+    tailEventCount: summary.totalAccepted - 512n });
 }
 
 async function serviceM6FastHost(client, context, hostTransactions, limits) {
@@ -2274,6 +2335,8 @@ async function runM6Ready4FastInternal(config, testReady = null) {
     terminalStateDigest: null, terminalQueueDigest: null, lastRunFraming: null,
     transcript: [], preflight: null, checkpointChain: await sha256(
       new TextEncoder().encode("CDRM6FASTCHAIN1\0")), checkpointCount: 0,
+    hostWaitChain: await sha256(new TextEncoder().encode("CDRM6FASTHOSTWAIT1\0")),
+    hostWaitCount: 0, hostWaitRecords: [],
     runEvidence: { sessionId: freshEvidenceId("m6-ready4-session"),
       privateDiskInstanceId: freshEvidenceId("m6-ready4-private-disk"),
       privateDiskBaseSha256: null }, blockService: null,
@@ -2368,6 +2431,30 @@ async function runM6Ready4FastInternal(config, testReady = null) {
       }
       const completedDebugMarker = validateM6FastDebugStop(
         config.ready, context.readyState, fast);
+      /* The worker transitions to WAITING_FOR_HOST as it publishes the
+       * reason-3 record.  Its digest operations are intentionally unavailable
+       * in that state, so record the C-owned stop first, service the one host
+       * request, and only then capture the checkpoint's post-completion
+       * CDRSTATE5/CDRM5Q1 pair.  Asking for the pair before service converts a
+       * valid fast host stop into an unrelated protocol-status-9 failure. */
+      context.lastRunFraming = Object.freeze({ operation: "run-until-event-m6",
+        requestedClockSlots: fast.requestedSlots, completedSlots: fast.completedSlots,
+        terminalStatus: fast.terminalStatus, reason: fast.reason,
+        preBoundary: fast.preBoundary, postBoundary: fast.postBoundary });
+      context.boundary = fast.postBoundary;
+      if (fast.reason === 3) {
+        context.hostWaitRecords.push(fast.bytes.slice());
+        context.hostWaitChain = await appendM6FastHostWait(context.hostWaitChain,
+          context.hostWaitCount++, fast.bytes);
+        const serviced = await serviceM6FastHost(config.client, context, hostTransactions, limits);
+        hostTransactions = serviced.hostTransactions;
+        if (serviced.failed !== null) return failResult(config.client, context,
+          serviced.failed, "host-service", serviced.status);
+        /* Completion is only applied by the next C-owned run.  CDRSTATE5
+         * therefore remains intentionally unavailable here; that next stable
+         * CDRM6FAST1 becomes the next ordinary checkpoint-chain link. */
+        continue;
+      }
       let stateDigest; let queueDigest;
       if (fast.reason === 4) {
         stateDigest = responseDigest(response, "coreStateDigest");
@@ -2383,11 +2470,6 @@ async function runM6Ready4FastInternal(config, testReady = null) {
       context.checkpointChain = await appendM6FastCheckpoint(context.checkpointChain,
         context.checkpointCount++, fast.bytes, stateDigest, queueDigest);
       context.terminalStateDigest = stateDigest; context.terminalQueueDigest = queueDigest;
-      context.lastRunFraming = Object.freeze({ operation: "run-until-event-m6",
-        requestedClockSlots: fast.requestedSlots, completedSlots: fast.completedSlots,
-        terminalStatus: fast.terminalStatus, reason: fast.reason,
-        preBoundary: fast.preBoundary, postBoundary: fast.postBoundary });
-      context.boundary = fast.postBoundary;
       if (fast.reason === 4) {
         return failResult(config.client, context, "terminal-machine-status", "run", fast.terminalStatus);
       }
@@ -2424,8 +2506,8 @@ async function runM6Ready4FastInternal(config, testReady = null) {
       await workerOk(config.client, "scheduler-pause"); context.lifecycle = "PAUSED";
       context.lastMachineInfo = await assertQuiescent(config.client, context.blockService);
       const summaryResponse = await workerOk(config.client, "m6-disk-evidence-summary");
-      const summary = validM6DevidSummary(summaryResponse);
-      if (summary === null || !sameBytes(await sha256(summary.bytes), summary.digest)) {
+      const summary = parseM6DevidSummary(summaryResponse);
+      if (!sameBytes(await sha256(summary.bytes), summary.digest)) {
         throw new Error("closed CDRM6E1 evidence summary mismatch");
       }
       const hostTranscript = serializeM6HostTranscript(context.transcript,
@@ -2442,14 +2524,23 @@ async function runM6Ready4FastInternal(config, testReady = null) {
         cdrm5q1Sha256: queueDigest, hostTranscriptSha256 });
       const ready4Witness = await canonicalM6ReadyWitnessV4({ ready3Witness,
         target: CADR_M6_DEVID_PROFILE, selectedMaximum: summary.selectedMaximum,
-        cdrm6e1Sha256: summary.digest });
+        cdrm6e1Sha256: summary.digest,
+        checkpointCount: context.checkpointCount,
+        checkpointChainSha256: context.checkpointChain,
+        hostWaitCount: context.hostWaitCount,
+        hostWaitChainSha256: context.hostWaitChain });
       return Object.freeze({ outcome: "ready4", target: CADR_M6_DEVID_PROFILE,
         contract: CADR_M6_READY4_CONTRACT, runEvidence: context.runEvidence,
         preflight: publicPreflight(context.preflight), ready: Object.freeze({ ...readyWitness,
           ready3Witness, ready4Witness }), boundary: context.boundary,
         cdrstate5Sha256: stateDigest, cdrm5q1Sha256: queueDigest,
         checkpointChainSha256: context.checkpointChain, checkpointCount: context.checkpointCount,
+        hostWaitChainSha256: context.hostWaitChain, hostWaitCount: context.hostWaitCount,
+        hostWaitRecords: Object.freeze(context.hostWaitRecords.map(record => record.slice())),
         cdrm6e1: summary.bytes, cdrm6e1Sha256: summary.digest,
+        cdrm6e1SelectedMaximum: summary.selectedMaximum,
+        cdrm6e1TotalAccepted: summary.totalAccepted,
+        cdrm6e1TailEventCount: summary.tailEventCount,
         transcript: context.transcript.slice(), hostTranscript, hostTranscriptSha256,
         machineInfo: context.lastMachineInfo, noPendingOrOrphanedHostRequest: true });
     } catch (error) {
