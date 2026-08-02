@@ -314,7 +314,7 @@ def validate_p4_manifest(value: dict[str, Any], raw: bytes,
     for name, (_path, identity) in native_files.items():
         file_identity(identity, f"P4 native {name}")
     exact_keys(value["portable"], ["cdrdisp_file", "contemporaneous_adapter_observation",
-                                    "framebuffer_checkpoint", "module", "ready_file",
+                                    "effective_page_identity", "framebuffer_checkpoint", "module", "ready_file",
                                     "session_evidence", "session_id", "termination",
                                     "witness_file", "worker", "worker_closure",
                                     "worker_log_file"], "P4 portable")
@@ -328,6 +328,17 @@ def validate_p4_manifest(value: dict[str, Any], raw: bytes,
                              "P4 portable termination")
     if termination != {"pending_requests": 0, "terminated": True}:
         raise BrowserConformanceError("P4 portable worker did not terminate cleanly")
+    identity = exact_keys(value["portable"]["effective_page_identity"],
+                          ["acknowledgement_sha256", "boundary", "disposition",
+                           "first_block", "request_id"],
+                          "P4 effective-page identity")
+    digest(identity["acknowledgement_sha256"],
+           "P4 effective-page identity acknowledgement")
+    if identity != {
+            "acknowledgement_sha256": identity["acknowledgement_sha256"],
+            "boundary": "1366722", "disposition": "IDENTITY_ACK",
+            "first_block": "1299", "request_id": "135"}:
+        raise BrowserConformanceError("P4 effective-page identity is not the selected acknowledgement")
     file_identity(value["portable"]["module"], "P4 portable module")
     worker = file_identity(value["portable"]["worker"], "P4 portable worker")
     closure = exact_keys(value["portable"]["worker_closure"],

@@ -3,7 +3,7 @@ type: Reimplementation Specification
 title: CADR-WEB-303 ABI 1.5 monochrome display and browser renderer reimplementation specification
 description: A release-bounded contract for transferring, validating, rendering, and testing the System 303 monochrome framebuffer without claiming an unrecorded native Listener-pixel oracle.
 tags: [mit-cadr, lm-3, system-303, webassembly, display, framebuffer, renderer, reimplementation]
-timestamp: 2026-08-02T05:37:12-04:00
+timestamp: 2026-08-02T07:09:28-04:00
 ---
 
 # CADR-WEB-303 ABI 1.5 monochrome display and browser renderer reimplementation specification
@@ -12,7 +12,7 @@ timestamp: 2026-08-02T05:37:12-04:00
 
 `CADR-WEB-303/ABI1.5/protocol-v5/M7` defines a new, browser-facing transfer and presentation layer for the selected LM-3 System 303 monochrome display. It preserves the declared logical screen shape, raw-word bit order, black-on-white control bit, and selected source-visible redraw effects. Nonclaim: it excludes X11-window, phosphor, browser-chrome, CSS-layout, monitor-timing, and color-TV compatibility.
 
-The implementation and synthetic cross-target checks described here are complete. The M7-only native-capture support, strict private-record verifier, portable Form-C checkpoint wrapper, and fail-closed P4/P5 campaign orchestrators are implemented and unit-tested, but `C-M7` is **not yet closed**. It has two independent runtime obligations: raw native/Wasm identity at one real System 303 boundary (`TODO-RUNTIME-M7-01`) and a real-browser presentation capture proving integral fit and fullscreen behavior (`TODO-RUNTIME-M7-02`). Neither long campaign has run. The current native/Wasm comparison uses a deliberately synthetic two-word frame. That is useful evidence for bit order and transfer correctness, but not evidence that a real Listener screen has identical pixels in the two machines or that a browser presents it correctly.
+The implementation and synthetic cross-target checks described here are complete. The M7-only native-capture support, strict private-record verifier, portable Form-C checkpoint wrapper, and fail-closed P4/P5 campaign orchestrators are implemented and unit-tested, but `C-M7` is **not yet closed**. It has two independent runtime obligations: raw native/Wasm identity at one real System 303 boundary (`TODO-RUNTIME-M7-01`) and a real-browser presentation capture proving integral fit and fullscreen behavior (`TODO-RUNTIME-M7-02`). Neither long campaign has completed successfully. The current native/Wasm comparison uses a deliberately synthetic two-word frame. That is useful evidence for bit order and transfer correctness, but not evidence that a real Listener screen has identical pixels in the two machines or that a browser presents it correctly.
 
 This specification claims the following compatibility levels only:
 
@@ -369,8 +369,9 @@ recognizes one later write whose bytes already equal an effective in-range
 1,024-byte disk page, without mutating that page or inventing a second M4
 commit. It is not a general CADR disk protocol claim.
 
-The M7 wrapper supplies the exact policy to the M6 fast driver, which retains
-its frozen M4 and `CDRM6FAST1` representations.  The companion first observes
+The production M7 checkpoint wrapper supplies the exact policy to a dedicated
+M7-only entry into the ordinary checkpointed M6 driver, which retains
+its frozen M4 behavior and ordinary M6 records. The companion first observes
 the selected M4 sequence: the normal initial LBA-1 `COMMIT`, its overlay-backed
 comparison read, and the LBA-0 base read.  It then requires the next qualifying
 M6 quiet suffix at or after boundary `1030044`: reason `1`, persistent status
@@ -421,6 +422,28 @@ requirements derived from retained request evidence, not proof that the new
 acknowledgement path has completed a real P4 run. `M7-EPI-UNIT` remains
 synthetic unit evidence; no new P4 campaign was run, and `M7-P4`, `M7-P5`, and
 `C-M7` remain open.
+
+The retained failed session `m7-p4-cb196332a04b4ba889f9d832178ecf70`
+established why this production distinction is normative. Its native Form-C
+capture SHA-256 was
+`cf59250db3acc33fe0b72e6b3c126cf708b3ba0cb3225ba66b3c03f2921aea42`;
+the private disk remained
+`bb16e46ad81decfe1efe691d36b6aa4ce3fd4ffb82474365de3520989d397cb5`.
+Portable request `135` completed with legacy host status `1`, the transcript
+ended after 270 records with no request `136`, and the machine stopped at the
+old boundary `1366780` with status `16`. The top, portable, M6, and worker-log
+failure hashes were respectively
+`74a8461b8e86a098347040748d8123d528c879f62e74e0b11b9ef44050a762d8`,
+`019012c5c21ad46332ebe7931da80ff9488d9964253fc6f8c631a215501d509b`,
+`209bc3e1b75aa827fa4563a40ff495c0248f1ff2088bc6294b13190a4650acfb`,
+and `c9a09e571d123aafb4752bce12be8987ab77b069d13a4f77e573da027897f8d2`.
+Source inspection showed that the checkpoint path still called frozen
+`runM6HeadlessBoot`; only the privileged READY4 fast path had received the
+policy, and that fast production runner was intentionally inert. The dedicated
+checkpoint entry now carries the policy, trusted preflighted base authority,
+quiet arm, receipt hooks, and transcript binding. Ordinary M6 explicitly
+discards a caller-supplied M7 policy. This source repair is not a P4 closure:
+a fresh signed receipt cycle and successful long run remain required.
 
 The selected arm is additionally pinned to generation/request/transaction/LBA
 tuples `(1,1,1,1)`, `(1,2,0,1)`, and `(1,3,0,0)` for initial commit,

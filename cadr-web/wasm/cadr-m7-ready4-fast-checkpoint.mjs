@@ -54,6 +54,7 @@ export const CADR_M7_READY4_FAST_BUILD_ARGV = Object.freeze([
   "cadr-web/build/cadr-web-m7-devid-O2.wasm",
 ]);
 export const CADR_M7_READY4_FAST_WORKER_TRANSITIVE_MODULES = Object.freeze([
+  "cadr-web/browser/cadr-m13-audio-record.mjs",
   "cadr-web/wasm/cadr-display-renderer.mjs",
   "cadr-web/wasm/cadr-m5-batch.mjs",
   "cadr-web/wasm/cadr-m7-devid-failure.mjs",
@@ -64,6 +65,7 @@ export const CADR_M7_READY4_FAST_WORKER_TRANSITIVE_MODULES = Object.freeze([
   "cadr-web/wasm/cadr-m9-pointer.mjs",
   "cadr-web/wasm/cadr-m11-audio.mjs",
   "cadr-web/wasm/cadr-m12-debugger.mjs",
+  "cadr-web/wasm/cadr-m13-audio-source.mjs",
   "cadr-web/wasm/cadr-worker.js",
 ]);
 export const CADR_M7_READY4_FAST_REQUIRED_AUTHORITIES = Object.freeze([

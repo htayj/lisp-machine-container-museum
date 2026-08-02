@@ -865,10 +865,32 @@ and the selected arm tuples `(1,1,1,1)`, `(1,2,0,1)`, and `(1,3,0,0)` plus
 the exact boundary-`1030044` quiet record. It binds the receipt's canonical
 digest into the campaign execution receipt. Synthetic
 positive and adversarial tests establish the state-machine and verifier rules;
-no new long P4 campaign has exercised the path, so these changes do not turn
-the retained request observation into an acknowledged completion and do not
-close either runtime prong of `C-M7`. The later M12 and M13 source status below
-is unchanged.
+the corrected wiring has not yet completed a successful long campaign, so it
+does not close either runtime prong of `C-M7`.
+
+Failed runtime observation, 2026-08-02: signed release
+`652756f9d5d6b08b18f45d4aee43f1581c9d2392` produced clean native Form-C
+capture `cf59250db3acc33fe0b72e6b3c126cf708b3ba0cb3225ba66b3c03f2921aea42`
+in ignored session `m7-p4-cb196332a04b4ba889f9d832178ecf70`, with selected
+private disk SHA-256 unchanged at
+`bb16e46ad81decfe1efe691d36b6aa4ce3fd4ffb82474365de3520989d397cb5`.
+The portable half nevertheless issued and completed request `135` with legacy
+host status `1`, then terminated at the old boundary `1366780` with machine
+status `16`. Its top, portable, M6, and worker-log failure hashes are
+`74a8461b8e86a098347040748d8123d528c879f62e74e0b11b9ef44050a762d8`,
+`019012c5c21ad46332ebe7931da80ff9488d9964253fc6f8c631a215501d509b`,
+`209bc3e1b75aa827fa4563a40ff495c0248f1ff2088bc6294b13190a4650acfb`,
+and `c9a09e571d123aafb4752bce12be8987ab77b069d13a4f77e573da027897f8d2`.
+The 270-record transcript ends with request `135`; no request `136` or later
+base-different write was issued. Source inspection established the cause:
+the ordinary checkpoint campaign still selected frozen `runM6HeadlessBoot`,
+whose block service did not receive the default-disabled M7 policy. The M7
+checkpoint entrypoint now selects a dedicated exact companion that supplies
+that policy, derives base authority from preflighted selected media, forces
+the authoritative quiet-boundary observation, and binds the resulting arm,
+transcript-linked receipt, and digest. Ordinary M6 still deletes any
+caller-supplied M7 policy before entering its frozen path. A new long campaign
+remains required. The later M12 and M13 source status below is unchanged.
 
 ### M8 — Implement complete keyboard input
 

@@ -8,7 +8,7 @@ import {
   CADR_M6_FORM_C,
   CADR_M6_RELEASE_RECORD_SHA256,
   captureM6FailureDiagnostic,
-  runM6HeadlessBoot,
+  runM6HeadlessBootWithM7EffectivePageIdentity,
 } from "./cadr-m6-headless-boot.mjs";
 import {
   CADR_DISPLAY_ACTIVE_WORDS,
@@ -17,6 +17,11 @@ import {
   CADR_DISPLAY_WIDTH,
   parseCdrDisp1,
 } from "./cadr-display-renderer.mjs";
+import {
+  CADR_M7_EFFECTIVE_PAGE_IDENTITY_PROFILE,
+  m7EffectivePageIdentityAcknowledgementSha256,
+  validateSelectedM7P4EffectivePageIdentityAcknowledgement,
+} from "./cadr-m7-effective-page-identity.mjs";
 
 export const CADR_M7_NATIVE_FRAME_SCHEMA = "CDRM7N1";
 export const CADR_M7_NATIVE_FRAME_HEADER_BYTES = 64;
@@ -355,7 +360,8 @@ export class CadrM7CBoundaryClient {
   }
 }
 
-async function runM7CheckpointedM6BootInternal({ nativeCapture, ...config }, runBoot) {
+async function runM7CheckpointedM6BootInternal({ nativeCapture, ...config }, runBoot,
+                                                requireIdentity = false) {
   const client = new CadrM7CBoundaryClient(config.client, nativeCapture);
   const requireM7DevidFailureDiagnostic = config.m6DiskEvidencePolicy === true;
   const result = await runBoot({ ...config, client,
@@ -373,16 +379,36 @@ async function runM7CheckpointedM6BootInternal({ nativeCapture, ...config }, run
     m6_release_record_sha256: releaseRecordSha256.slice() });
   const comparison = await compareM7FrameCheckpoint(
     nativeCapture, checkpoint);
-  return Object.freeze({ m6: result, checkpoint, comparison });
+  let identityAcknowledgement = null;
+  let identityAcknowledgementSha256 = null;
+  if (requireIdentity) {
+    const record = result.m7EffectivePageIdentity;
+    required(record !== null && typeof record === "object" &&
+      Object.keys(record).sort().join(",") === "acknowledgements,arm,profile" &&
+      record.profile === CADR_M7_EFFECTIVE_PAGE_IDENTITY_PROFILE &&
+      Array.isArray(record.acknowledgements) && record.acknowledgements.length === 1,
+    "selected P4 requires exactly one effective-page identity acknowledgement");
+    identityAcknowledgement =
+      await validateSelectedM7P4EffectivePageIdentityAcknowledgement(
+        record.acknowledgements[0], result.hostTranscript);
+    identityAcknowledgementSha256 =
+      await m7EffectivePageIdentityAcknowledgementSha256(identityAcknowledgement);
+  }
+  return Object.freeze({ m6: result, checkpoint, comparison,
+    ...(identityAcknowledgement === null ? {} : {
+      identityAcknowledgement, identityAcknowledgementSha256,
+    }) });
 }
 
-/** Execute the frozen production M6 state machine with the M7-only hook. */
+/** Execute frozen M6 plus the exact default-disabled M7 P4 companion. */
 export async function runM7CheckpointedM6Boot(config) {
-  return runM7CheckpointedM6BootInternal(config, runM6HeadlessBoot);
+  return runM7CheckpointedM6BootInternal(config,
+    runM6HeadlessBootWithM7EffectivePageIdentity, true);
 }
 
 /** Test-only seam: exercises M7 ordering without relaxing production M6. */
 export async function runM7CheckpointedM6BootForTest(config, runBoot) {
   required(typeof runBoot === "function", "M7 test boot driver");
-  return runM7CheckpointedM6BootInternal(config, runBoot);
+  return runM7CheckpointedM6BootInternal(config, runBoot,
+    config.requireM7EffectivePageIdentity === true);
 }

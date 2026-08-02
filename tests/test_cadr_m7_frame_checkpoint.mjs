@@ -20,6 +20,8 @@ import {
   parseCdrM7N1,
   runM7CheckpointedM6BootForTest,
 } from "../cadr-web/wasm/cadr-m7-frame-checkpoint.mjs";
+import { CADR_M7_EFFECTIVE_PAGE_IDENTITY_PROFILE } from
+  "../cadr-web/wasm/cadr-m7-effective-page-identity.mjs";
 
 const BOUNDARY = 982990214n;
 
@@ -308,6 +310,39 @@ async function testFullM7ControlFlowUsesFrozenReleaseBinding() {
       error.m6FailureDiagnostic)).failure.report.mutationStarted === false);
 }
 
+async function testSelectedIdentityFailsClosed() {
+  const runCase = async m7EffectivePageIdentity => {
+    const rawClient = new CheckpointClient({
+      boundary: BOUNDARY - 1n, batches: [1], frame: portableRecord(),
+    });
+    return runM7CheckpointedM6BootForTest({
+      nativeCapture: nativeRecord(), client: rawClient,
+      requireM7EffectivePageIdentity: true,
+    }, async config => {
+      await config.client.request("machine-info");
+      await config.client.request("run-digest-batch-m5");
+      return { outcome: "ready",
+        releaseRecordSha256: CADR_M6_RELEASE_RECORD_SHA256.slice(),
+        hostTranscript: new Uint8Array(64), m7EffectivePageIdentity };
+    });
+  };
+  await assert.rejects(runCase({
+    profile: CADR_M7_EFFECTIVE_PAGE_IDENTITY_PROFILE, arm: {},
+    acknowledgements: [],
+  }), /requires exactly one effective-page identity acknowledgement/,
+  "the default or zero-ack path cannot satisfy selected P4");
+  await assert.rejects(runCase({
+    profile: CADR_M7_EFFECTIVE_PAGE_IDENTITY_PROFILE, arm: {},
+    acknowledgements: [{}],
+  }), /M7 effective-page acknowledgement/,
+  "a forged acknowledgement cannot cross the transcript authority boundary");
+  await assert.rejects(runCase({
+    profile: CADR_M7_EFFECTIVE_PAGE_IDENTITY_PROFILE, arm: {}, extra: true,
+    acknowledgements: [{}],
+  }), /requires exactly one effective-page identity acknowledgement/,
+  "an authority envelope with additional untrusted state is rejected");
+}
+
 function testObservedStatus12FailureTransport() {
   const digest = value => new Uint8Array(32).fill(value);
   const result = {
@@ -374,5 +409,6 @@ await testStrictRecordAndFirstDifference();
 await testCheckpointExactStopAndConsecutiveBatches();
 await testOvershootFailsClosedAndWrongCIsRejected();
 await testFullM7ControlFlowUsesFrozenReleaseBinding();
+await testSelectedIdentityFailsClosed();
 testObservedStatus12FailureTransport();
 console.log("cadr M7 frame-checkpoint tests passed");

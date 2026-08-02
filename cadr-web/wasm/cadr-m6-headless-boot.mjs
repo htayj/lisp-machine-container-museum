@@ -18,8 +18,12 @@ import {
   CADR_STATUS_NOT_READY,
   createM4BlockRangeService,
 } from "./cadr-m4-block-service.mjs";
-import { createM7EffectivePageIdentityAcknowledgement } from
-  "./cadr-m7-effective-page-identity.mjs";
+import {
+  CADR_M7_EFFECTIVE_PAGE_IDENTITY_MIN_QUIET_BOUNDARY,
+  CADR_M7_EFFECTIVE_PAGE_IDENTITY_PROFILE,
+  createM7EffectivePageIdentityAcknowledgement,
+  parseM7EffectivePageIdentityPolicy,
+} from "./cadr-m7-effective-page-identity.mjs";
 import { CADR_STATUS_UNIMPLEMENTED_DEVICE,
   parseCadrM7UnimplementedDiagnostic } from "./cadr-m7-devid-failure.mjs";
 
@@ -1949,7 +1953,7 @@ async function runM6HeadlessBootInternal(config, testReady = null) {
       config.requireM7DevidFailureDiagnostic === true,
     terminalQueueDigest: null,
     lastRunFraming: null,
-    transcript: [],
+    transcript: [], identityCandidates: [], selectedBase: null,
     preflight: null,
     runEvidence: {
       sessionId: freshEvidenceId("m6-session"),
@@ -1992,11 +1996,17 @@ async function runM6HeadlessBootInternal(config, testReady = null) {
     const diskIdentity = context.preflight.artifacts.find(
       artifact => artifact.kind === 3);
     context.runEvidence.privateDiskBaseSha256 = diskIdentity.sha256.slice();
+    context.selectedBase = Object.freeze({ byte_count: disk.byteCount,
+      sha256: diskIdentity.sha256.slice() });
     context.runEvidence = Object.freeze(context.runEvidence);
     context.blockService = createM4BlockRangeService({
       imageByteCount: disk.byteCount,
       expectedImageByteCount: disk.byteCount,
       readRange: disk.readRange,
+      ...(config.m7EffectivePageIdentityPolicy === undefined ? {} : {
+        m7EffectivePageIdentityPolicy: config.m7EffectivePageIdentityPolicy,
+        selectedBaseSha256: diskIdentity.sha256,
+      }),
     });
   } catch (error) {
     return {
@@ -2066,6 +2076,12 @@ async function runM6HeadlessBootInternal(config, testReady = null) {
       const remaining = limits.maxBoundaries - context.boundary;
       let allowed = remaining < BigInt(limits.batchSlots) ?
         remaining : BigInt(limits.batchSlots);
+      if (context.blockService.m7EffectivePageIdentityEnabled() &&
+          context.boundary < CADR_M7_EFFECTIVE_PAGE_IDENTITY_MIN_QUIET_BOUNDARY) {
+        const untilQuiet =
+          CADR_M7_EFFECTIVE_PAGE_IDENTITY_MIN_QUIET_BOUNDARY - context.boundary;
+        if (untilQuiet < allowed) allowed = untilQuiet;
+      }
       if (context.readyState.phase === "suffix" && allowed > 1n) allowed = 1n;
       const nextInput = nextUnscheduledInputBoundary(
         config.ready, context.readyState);
@@ -2129,6 +2145,14 @@ async function runM6HeadlessBootInternal(config, testReady = null) {
       context.lastMachineInfo =
         parseMachineInfo(await workerOk(config.client, "machine-info"));
       context.boundary = context.lastMachineInfo.boundary;
+      if (context.blockService.m7EffectivePageIdentityEnabled() &&
+          context.boundary === CADR_M7_EFFECTIVE_PAGE_IDENTITY_MIN_QUIET_BOUNDARY) {
+        await context.blockService.observeM7EffectivePageIdentityQuietSuffix({
+          boundary: context.boundary, reason: 1,
+          persistentStatus: context.lastMachineInfo.persistentStatus,
+          outstandingRequestId: context.lastMachineInfo.outstandingRequestId,
+        });
+      }
       if (batch.boundaryPendingHost) {
         if (batch.terminalStatus !== STATUS_WAITING_FOR_HOST ||
             hostTransactions >= limits.maxHostTransactions) {
@@ -2216,8 +2240,17 @@ async function runM6HeadlessBootInternal(config, testReady = null) {
         }
         for (const event of polled.events) {
           if (event.requestSeen) hostTransactions += 1;
-          context.transcript.push(
-            await transcriptRecord(event, context.transcript.length));
+          const ordinal = context.transcript.length;
+          context.transcript.push(await transcriptRecord(event, ordinal));
+          if (event.identityAcknowledgementCandidate !== undefined) {
+            if (!context.blockService.m7EffectivePageIdentityEnabled() || ordinal === 0) {
+              throw new TypeError("M7 effective-page candidate appeared outside its profile");
+            }
+            context.identityCandidates.push(Object.freeze({
+              candidate: event.identityAcknowledgementCandidate,
+              issueOrdinal: ordinal - 1, completionOrdinal: ordinal,
+            }));
+          }
         }
         if (context.transcript.length === before ||
             context.blockService.hasPendingRequest()) {
@@ -2248,6 +2281,34 @@ async function runM6HeadlessBootInternal(config, testReady = null) {
         const stateDigest = responseDigest(state, "digest");
         const queueDigest = responseDigest(queue, "digest");
         const hostTranscriptSha256 = await sha256(hostTranscript);
+        let m7EffectivePageIdentity = null;
+        if (context.blockService.m7EffectivePageIdentityEnabled()) {
+          if (context.identityCandidates.length !== 1) {
+            throw new Error("selected P4 requires exactly one effective-page candidate");
+          }
+          const linked = context.identityCandidates[0];
+          const serviceCandidates =
+            context.blockService.m7EffectivePageIdentityCandidates();
+          const witness = await context.blockService.m7EffectivePageIdentityWitness();
+          if (serviceCandidates.length !== 1 || witness === null ||
+              serviceCandidates[0] !== linked.candidate) {
+            throw new Error("M7 effective-page candidate lacks its trusted reread");
+          }
+          m7EffectivePageIdentity = Object.freeze({
+            profile: config.m7EffectivePageIdentityPolicy.profile,
+            arm: context.blockService.m7EffectivePageIdentityArm(),
+            acknowledgements: Object.freeze([
+              await createM7EffectivePageIdentityAcknowledgement({
+                candidate: linked.candidate,
+                issue_ordinal: linked.issueOrdinal,
+                completion_ordinal: linked.completionOrdinal,
+                host_transcript: hostTranscript,
+                selected_base: context.selectedBase,
+                effective_page_witness: witness,
+              }),
+            ]),
+          });
+        }
         const semanticWitness = await canonicalM6ReadyWitnessFromValidatedRecord({
           record: config.ready,
           releaseRecord: config.ready.releaseRecord,
@@ -2278,6 +2339,7 @@ async function runM6HeadlessBootInternal(config, testReady = null) {
           transcript: context.transcript.slice(),
           hostTranscript,
           hostTranscriptSha256,
+          ...(m7EffectivePageIdentity === null ? {} : { m7EffectivePageIdentity }),
           machineInfo: context.lastMachineInfo,
           noPendingOrOrphanedHostRequest: true,
         };
@@ -2292,7 +2354,17 @@ async function runM6HeadlessBootInternal(config, testReady = null) {
 }
 
 export async function runM6HeadlessBoot(config) {
-  return runM6HeadlessBootInternal({ ...config });
+  const frozen = { ...config };
+  delete frozen.m7EffectivePageIdentityPolicy;
+  return runM6HeadlessBootInternal(frozen);
+}
+
+/** M7-only exact companion; ordinary M6 callers cannot enable this profile. */
+export async function runM6HeadlessBootWithM7EffectivePageIdentity(config) {
+  const m7EffectivePageIdentityPolicy = parseM7EffectivePageIdentityPolicy({
+    enabled: true, profile: CADR_M7_EFFECTIVE_PAGE_IDENTITY_PROFILE,
+  });
+  return runM6HeadlessBootInternal({ ...config, m7EffectivePageIdentityPolicy });
 }
 
 export function parseM6FastRunRecord(value) {

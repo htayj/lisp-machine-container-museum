@@ -245,6 +245,8 @@ const workerClosure = (entry, files) => {
     assert.equal(staged.closure.files.some(
       file => file.path.endsWith("/cadr-worker.js")), true);
   } finally {
+    await chmod(resolve(stage, "browser"), 0o700).catch(() => {});
+    await chmod(resolve(stage, "wasm"), 0o700).catch(() => {});
     await chmod(stage, 0o700).catch(() => {});
     await rm(root, { recursive: true, force: true });
   }
@@ -313,6 +315,9 @@ function manifest() {
         ]), contemporaneous_adapter_observation: [
         file("cadr-web/wasm/cadr_wasm_adapter.c", 27), file("cadr-web/wasm/cadr_wasm_adapter.h", 28),
       ], termination: { pending_requests: 0, terminated: true },
+      effective_page_identity: { acknowledgement_sha256: H(35),
+        boundary: "1366722", disposition: "IDENTITY_ACK",
+        first_block: "1299", request_id: "135" },
       framebuffer_checkpoint: { boundary: "982990214", cdrdisp1_sha256: H(29), cdrm6i1_sha256: H(30) },
       cdrdisp_file: file("portable/frame.cdrdisp1", 29), witness_file: file("portable/witness.cdrm6i1", 30),
       ready_file: file("portable/ready.json", 31), worker_log_file: file("portable/worker.ndjson", 32) },
@@ -548,6 +553,9 @@ const mutations = [
   }],
   ["portable adapter observation", value => {
     value.portable.contemporaneous_adapter_observation[1].sha256 = H(106);
+  }],
+  ["effective-page acknowledgement", value => {
+    value.portable.effective_page_identity.acknowledgement_sha256 = H(106);
   }],
   ["portable checkpoint", value => { value.portable.framebuffer_checkpoint.cdrdisp1_sha256 = H(107); }],
   ["redundant portable file hash", value => { value.portable.cdrdisp_file.sha256 = H(107); }],

@@ -104,6 +104,10 @@ def p4_manifest(module):
                      },
                      "contemporaneous_adapter_observation": [
                          file("a.c", 27), file("a.h", 28)],
+                     "effective_page_identity": {
+                         "acknowledgement_sha256": h(35),
+                         "boundary": "1366722", "disposition": "IDENTITY_ACK",
+                         "first_block": "1299", "request_id": "135"},
                      "termination": {"pending_requests": 0, "terminated": True},
                      "framebuffer_checkpoint": {"boundary": "982990214", "cdrdisp1_sha256": h(29), "cdrm6i1_sha256": h(30)},
                      "cdrdisp_file": file("portable/frame.cdrdisp1", 29), "witness_file": file("portable/witness.cdrm6i1", 30), "ready_file": file("portable/ready.json", 31), "worker_log_file": file("portable/worker.ndjson", 32)},
@@ -315,6 +319,7 @@ def main() -> None:
             lambda value: value["native"]["capture"].__setitem__("schema", "OTHER"),
             lambda value: value["native"]["capture"].__setitem__("byte_count", "1"),
             lambda value: value["portable"]["termination"].__setitem__("pending_requests", 1),
+            lambda value: value["portable"]["effective_page_identity"].__setitem__("acknowledgement_sha256", "bad"),
             lambda value: value["portable"]["framebuffer_checkpoint"].__setitem__("cdrdisp1_sha256", h(92)),
             duplicate_worker_file,
             lambda value: value["portable"]["cdrdisp_file"].__setitem__("path", "synthetic"),
