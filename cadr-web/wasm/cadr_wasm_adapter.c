@@ -10,6 +10,9 @@
 #if defined(CADR_M11_WASM)
 #include "cadr_audio_model.h"
 #endif
+#if defined(CADR_M13_AUDIO_WASM)
+#include "cadr_m13_audio_transport.h"
+#endif
 #if defined(CADR_M6_DEVID_WASM)
 #include "cadr_m6_disk_evidence.h"
 #include "cadr_m6_fast_run.h"
@@ -81,6 +84,9 @@ static uint32_t cadr_wasm_restore_used;
 #elif defined(CADR_M6_DEVID_WASM)
 #define CADR_WASM_SNAPSHOT_ABI_MINOR CADR_ABI_MINOR_M5
 #define CADR_WASM_ACTIVE_ABI_MINOR CADR_ABI_MINOR_M5
+#elif defined(CADR_M13_AUDIO_WASM)
+#define CADR_WASM_SNAPSHOT_ABI_MINOR CADR_ABI_MINOR_M5
+#define CADR_WASM_ACTIVE_ABI_MINOR CADR_ABI_MINOR_M13_AUDIO
 #elif defined(CADR_M12_WASM)
 #define CADR_WASM_SNAPSHOT_ABI_MINOR CADR_ABI_MINOR_M5
 #define CADR_WASM_ACTIVE_ABI_MINOR CADR_ABI_MINOR_M12
@@ -477,6 +483,28 @@ uint32_t cadr_wasm_run(uint32_t clock_slots)
 }
 
 #if defined(CADR_M11_WASM)
+/* ABI1.11's source-only M13 audio session opener.  CDRM11O1 contains no
+ * caller-selected epoch and no native authority token.  ABI1.10 builds do not
+ * define CADR_M13_AUDIO_WASM and therefore retain their exact export set. */
+#if defined(CADR_M13_AUDIO_WASM)
+CADR_WASM_EXPORT("cadr_wasm_m13_audio_open")
+uint32_t cadr_wasm_m13_audio_open(void)
+{
+    cadr_audio_model *model;
+    if (cadr_wasm_machine == NULL || cadr_wasm_output == NULL) {
+        return CADR_STATUS_NOT_READY;
+    }
+    model = cadr_wasm_machine->state.devices.audio_model;
+    if (model == NULL || model->authority == NULL) return CADR_STATUS_NOT_READY;
+    {
+        uint32_t status = cadr_m13_audio_open_model(model, cadr_wasm_output);
+        if (status != CADR_STATUS_OK) return status;
+    }
+    (void)memset(&cadr_wasm_m11_cursor, 0, sizeof(cadr_wasm_m11_cursor));
+    cadr_wasm_m11_cursor_valid = 0U;
+    return CADR_STATUS_OK;
+}
+#endif
 /* CDRM11A1 is a closed status view.  It exposes no authority or pointer. */
 CADR_WASM_EXPORT("cadr_wasm_m11_audio_state")
 uint32_t cadr_wasm_m11_audio_state(void)

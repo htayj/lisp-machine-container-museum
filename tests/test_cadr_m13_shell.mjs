@@ -18,7 +18,7 @@ import {
 
 const session = "12".repeat(32);
 const SYNTHETIC_WASM_SHA256 = "6e340b9cffb37a989ca544e6bb780a2c78901d3fb33738768511a30617afa01d";
-assert.equal(CADR_M13_PROFILE, "CADR-WEB-303/ABI1.10/protocol-v8/M13-HARDENING-v2");
+assert.equal(CADR_M13_PROFILE, "CADR-WEB-303/ABI1.11/protocol-v8/M13-AUDIO1");
 const request = (id, op, fields = {}) => ({
   type: "cadr-request", version: CADR_M13_PROTOCOL_VERSION, sessionId: session, id, op, ...fields,
 });
@@ -35,7 +35,7 @@ class FakeWorker {
   postMessage(value) {
     this.requests.push(value);
     queueMicrotask(() => this.emit("message", { data: {
-      type: "cadr-response", version: 7, id: value.id, op: value.op, status: 0, ok: true, lifecycle: "PAUSED",
+      type: "cadr-response", version: 8, id: value.id, op: value.op, status: 0, ok: true, lifecycle: "PAUSED",
     } }));
   }
   emit(type, event) { for (const listener of this.#listeners.get(type) ?? []) listener(event); }
@@ -53,7 +53,7 @@ class MountStageFailureWorker extends FakeWorker {
     this.operationOrdinals.set(value.op, ordinal);
     const failed = value.op === this.failOperation && ordinal === this.failOrdinal;
     queueMicrotask(() => this.emit("message", { data: {
-      type: "cadr-response", version: 7, id: value.id, op: value.op,
+      type: "cadr-response", version: 8, id: value.id, op: value.op,
       status: failed ? CADR_M13_STATUS.HOST_FAILURE : 0, ok: !failed,
       lifecycle: "PAUSED",
     } }));
@@ -74,7 +74,7 @@ class MountStageTransportWorker extends FakeWorker {
       queueMicrotask(() => {
         if (this.fault === "malformed") {
           this.emit("message", { data: {
-            type: "cadr-response", version: 7, id: value.id, op: value.op,
+            type: "cadr-response", version: 8, id: value.id, op: value.op,
             status: 0, ok: false,
           } });
         } else {
@@ -84,7 +84,7 @@ class MountStageTransportWorker extends FakeWorker {
       return;
     }
     queueMicrotask(() => this.emit("message", { data: {
-      type: "cadr-response", version: 7, id: value.id, op: value.op,
+      type: "cadr-response", version: 8, id: value.id, op: value.op,
       status: 0, ok: true, lifecycle: "PAUSED",
     } }));
   }
@@ -254,7 +254,7 @@ class SchedulerWorker extends FakeWorker {
     const lifecycle = value.op === "scheduler-start" || value.op === "scheduler-run-v7-slice" ?
       "RUNNING" : "PAUSED";
     queueMicrotask(() => this.emit("message", { data: {
-      type: "cadr-response", version: 7, id: value.id, op: value.op,
+      type: "cadr-response", version: 8, id: value.id, op: value.op,
       status: 0, ok: true, lifecycle, completedSlots: value.op === "scheduler-run-v7-slice" ? 1n : undefined,
       microinstructionsExecuted: value.op === "scheduler-run-v7-slice" ? 0n : undefined,
     } }));
@@ -527,7 +527,7 @@ for (const fail of [false, true]) {
  * protocol violation, rather than an accidental new public status code. */
 class Status21Worker extends FakeWorker {
   postMessage(value) { this.requests.push(value); queueMicrotask(() => this.emit("message", { data: {
-    type: "cadr-response", version: 7, id: value.id, op: value.op, status: 21, ok: false,
+    type: "cadr-response", version: 8, id: value.id, op: value.op, status: 21, ok: false,
   } })); }
 }
 const status21Shell = new CadrM13Shell({ worker: new Status21Worker(), sessionRandom: () => Uint8Array.from({ length: 32 }, () => 0x12) });

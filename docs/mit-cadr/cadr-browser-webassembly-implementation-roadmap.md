@@ -1149,7 +1149,7 @@ declared `NO-AUDIO` profile; it cannot be reported as complete hardware emulatio
 Exit gate `C-M11`: deterministic sample/event hashes match the selected native
 software model, and pause/resume neither duplicates nor loses queued guest events.
 
-Implementation status, 2026-07-30: M11 now has a machine-owned core mapping for
+Implementation status, 2026-08-02: M11 now has a machine-owned core mapping for
 IOB `0764110`, pointer-free `CDRAUDS1` queue-state save/restore, an isolated
 protocol-v7 M12-Wasm subhandler, deterministic fixed-table signed-16 PCM, and a
 bounded AudioWorklet queue/acknowledgement bridge. Strict C, Node, and O0/O2 Wasm
@@ -1164,6 +1164,13 @@ blocked on M9 continuation. A source-bound System 303 session evaluated
 O0/O2 and freshly rebuilt selected-M12 Wasm O0/O2. These results do not exercise
 selected-Wasm browser playback, pause/device-loss semantics, Votrax serial output,
 or a guest-generated browser audio workflow, so full `C-M11` remains open.
+An opt-in ABI1.11 source slice now adds core-issued `CDRM11O1` epochs, exact
+`CDRPCM1`, private retention of acknowledgement frame counts, zero-frame UART
+handling, an eight-record Worklet, a worker-owned adapter that calls the actual
+ABI1.11 export and pumps at most 64 semantic packets per automatic turn, and
+synthetic shell lifecycle coverage. The real worker/empty-core seam is exercised,
+but no selected guest PCM was available in that test. It
+does not alter ABI1.10/v7 and is not runtime closure.
 
 ### M12 — Debugger, trace, and preservation controls
 
@@ -1244,6 +1251,13 @@ pinned-object records, adopts no snapshot, and performs no paused/reset composit
 restore. All source inputs remain byte-identical. This closes neither a guest-
 generated changed write, normative export/restore, the complete F06/F07 power-loss/
 failure algebra, composed M8--M12 accessibility/audio workflows, nor final `C-M13`.
+The `M13-AUDIO1` source profile now composes optional audio dispatch through the
+public shell and retains the no-audio default. Its real private v8 worker owns the
+ABI1.11 source, calls the actual open export, and pumps at most 64 semantic packets
+after open or acknowledgement. O0/O2, exact-record, overflow, source, worker, and
+synthetic lifecycle tests are implementation evidence only; the E27 selected-media
+run did not select audio playback. Selected-media playback, composed browser
+autoplay, accessibility review, and failure campaigns therefore remain open.
 
 ### M14 — Reproducible museum release
 

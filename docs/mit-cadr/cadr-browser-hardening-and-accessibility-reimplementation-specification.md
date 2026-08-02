@@ -9,7 +9,7 @@ timestamp: 2026-08-02T05:27:51-04:00
 
 ## Reconstruction claim and scope
 
-`CADR-WEB-303/ABI1.10/protocol-v8/M13-HARDENING-v2` defines the host-side security, resource, failure,
+`CADR-WEB-303/ABI1.11/protocol-v8/M13-AUDIO1` defines the host-side security, resource, failure,
 and accessibility contract required before the browser CADR can be packaged as a
 museum release. It does not change the historical guest display or input semantics.
 It constrains the browser shell, worker protocol, imported artifacts, private
@@ -37,13 +37,27 @@ admission/isolation test, and a build-local CSP/offline policy harness generated
 The shell descriptor-scans and canonicalizes source-side messages without invoking
 getters, rejects symbols/inherited/unknown fields, copies admitted buffers, accounts
 `M13META1` metadata, fences v8 session/ID state, and gives the worker a private
-v7 adapter envelope rather than a caller object or a storage capability. Its named
+v8 ABI1.11 adapter envelope rather than a caller object or a storage capability. Its named
 M10 boundary is an authority-minimising adapter, not a new durable-store claim.
 
 The current source and Chromium probes exercise bounded portions of `M13-F01`,
 `M13-F02`, `M13-F04`, `M13-F05a`, `M13-F06`/`F07`, `M13-F08`--`M13-F13`, and
 `M13-F15`/`F15b`.
-They include a real browser Worker boundary, the exact provisional CSP attack
+
+The ABI1.11 source now also contains the exact `CDRM11O1` and `CDRPCM1`
+validators, an eight-record M13 Worklet queue, and a private worker-owned
+frame-authority adapter that calls the actual ABI1.11 open export and performs a
+64-packet-bounded pump after open and acknowledgement,
+the reducer-driven deadline/device/pause coordinator, and optional public-shell
+dispatch. Audio remains disabled unless an authority is injected, and context
+preparation is a separate synchronous method that a direct user-activation
+handler must call before asynchronous public request validation. Synthetic tests
+cover autoplay refusal before core open, core-issued fresh epochs, exact worker
+ownership against the actual empty O0 Wasm core, partial and
+stale acknowledgements, zero-frame UART, high water, pause/resume, timeout,
+processor/context/device loss, and worker-loss teardown. No selected System 303
+browser playback has run for this profile; `C-M11` and `C-M13` remain open.
+Those earlier probes include a real browser Worker boundary, the exact provisional CSP attack
 matrix, a keyboard route through every provisional host control, a narrow real
 AudioContext/AudioWorklet component probe, and deterministic named-parser and
 ledger campaigns. The current local F03 report passes ASan+UBSan and
@@ -60,8 +74,8 @@ The separate disposable-browser F05b probe observes a fixed-Wasm-capacity refusa
 and a host-watchdog-ended V8 heap stress while proving isolated input hashes
 unchanged. It deliberately does not reinterpret either result as injected
 `NO_MEMORY`, browser loss, durable-store behavior, or a composed M13 workflow.
-The focused selected-Wasm probe now additionally compiles the current M12 O2 module
-through the v8 shell, structured-clones it to the real v7 module Worker, and
+The focused selected-Wasm probe now additionally compiles the current ABI1.11 O2
+module through the v8 shell, structured-clones it to the real v8 module Worker, and
 observes module instantiation plus a nonterminal `NOT_READY` cold-power result. It
 also proves that an absent M10 boundary rejects the selected base-import request
 without requesting base media. This is a normal composition seam only: it neither
@@ -146,11 +160,12 @@ python3 tests/test_cadr_m13_audio_browser.py
 The compatibility boundary is the modern host shell and its exact selected
 lower-milestone profiles. It excludes historical CADR hardware security behavior,
 unselected browser versions, M15 networking, and any unperformed runtime gate.
-`ABI1.10` names the selected cumulative M12 Wasm/core contract, including the
-browser-safe scalar inspector export. M13 adds the protocol-v8 host wrapper only:
-it adds no further C or Wasm export, no C ABI record, and no change beyond that
-selected lower ABI. Its separately versioned browser protocol therefore is not an
-invented ABI1.11 claim.
+`ABI1.10` names the frozen cumulative M12 Wasm/core contract, including the
+browser-safe scalar inspector export. The opt-in M13 build is `ABI1.11`: it retains
+the ABI1.10 exports and adds exactly `cadr_wasm_m13_audio_open`, whose 48-byte
+`CDRM11O1` result is specified below. Protocol v8 is the only shell-to-worker
+profile that selects that export. ABI1.10 and protocol v7 remain independently
+buildable and do not acquire it.
 
 The key words **MUST**, **MUST NOT**, **REQUIRED**, **SHALL**, **SHALL NOT**,
 **SHOULD**, **SHOULD NOT**, **RECOMMENDED**, **MAY**, and **OPTIONAL** in this
@@ -162,7 +177,7 @@ reimplementation profile.
 | Field | Selected value |
 | --- | --- |
 | Machine profile | `CADR-WEB-303` |
-| Hardening profile | `CADR-WEB-303/ABI1.10/protocol-v8/M13-HARDENING-v2` |
+| Hardening profile | `CADR-WEB-303/ABI1.11/protocol-v8/M13-AUDIO1` |
 | Browser protocol | additive `v8`; no v1--v7 request is accepted on this port |
 | Required lower gates | `CW1-BOOT`, `C-M7`, `C-M8`, `CW2-INTERACTIVE`, `CW3-PERSISTENT`, `C-M11`, and `C-M12` |
 | Audio selection | `USIM-SDL3-SINE-330D8248-CANONICAL-v1` through validated `CDRPCM1`/AudioWorklet; `NO-AUDIO` is not this profile's fallback |
@@ -603,7 +618,7 @@ selection, even if reopen proves that the proposed generation became durable.
 | `keyboard-drain` | optional `maxEvents` | `0,2,9,22,23,24,25` | exactly `result:{events}` on success |
 | `keyboard-state` | none | `0,2,9,22,23,24,25` | exact M8 remainder |
 | `pointer-motion`, `pointer-down`, `pointer-up`, `pointer-neutralize`, `pointer-warp-request`, `pointer-state`, `pointer-drain` | exact M9 fields for that named operation | `0,2,9,22,23,24,25` | exact M9 remainder |
-| `audio-open` — composite | `rendererProfile,consumerEpoch` | `0,2,3,9,22,23,24,25,26` | exact audio state below |
+| `audio-open` — composite | `rendererProfile`; the core returns the new epoch | `0,2,3,9,22,23,24,25,26` | exact audio state below |
 | `audio-ack` — worker/internal | `generation,consumerEpoch,sequence,frameOffset` | `0,2,3,9,22,23,24,25,26` | exact audio state below |
 | `audio-pause`, `audio-resume` — composite | none | `0,2,3,9,22,23,24,25,26` | exact audio state below |
 | `audio-device-lost` — worker/internal | `generation:u64,consumerEpoch:u64,sequence:u64|null,frameOffset:u64|null,cause`; cause exactly `reply-timeout`, `processorerror`, `context-closed`, or `device-loss`; sequence/frame offset are non-null exactly for timeout | `0,2,3,9,22,23,24,25,26` | exact audio state below |
@@ -889,9 +904,10 @@ operation has a versioned cancellation handshake that reports an unchanged state
 ### M11 renderer and AudioWorklet boundary
 
 M13 selects the M11 `USIM-SDL3-SINE-330D8248-CANONICAL-v1` software-render target,
-not `NO-AUDIO`. This does not assert that the M11 renderer or Worklet exists today:
-M13 cannot pass until `C-M11-04-PCM` and `C-M11-05-WORKLET` are closed. When they
-are, the worker sends only a validated current-generation `CDRPCM1` record to the
+not `NO-AUDIO`. The source-only ABI1.11 renderer/Worklet transport exists, but this
+does not assert selected guest/browser runtime closure: M13 cannot pass until the
+remaining `C-M11-05-WORKLET` runtime campaign closes. The worker sends only a
+validated current-generation `CDRPCM1` record to the
 shell; the shell validates its fixed header and forwards only its sample bytes plus
 generation, consumer epoch, sequence, and frame offset to an AudioWorklet. The
 Worklet receives no disk, snapshot, message port to the worker, DOM, URL, or storage
@@ -910,7 +926,7 @@ envelope:
 
 There are no `id`, `op`, `status`, `ok`, `terminal`, or additional fields.
 `eventOrdinal` begins at `1n`, increases by exactly one, and never repeats in a
-session. `record` is one complete 64..1,088-byte `CDRPCM1`; the shell verifies its
+session. `record` is one complete 66..1,088-byte `CDRPCM1`; the shell verifies its
 digest, generation, sequence, frame offset/count, 8 kHz mono s16le format, and
 current consumer epoch before starting a deadline. The shell-to-Worklet message is
 exactly `{type:"cadr-audio-pcm",version:1,generation,consumerEpoch,sequence,

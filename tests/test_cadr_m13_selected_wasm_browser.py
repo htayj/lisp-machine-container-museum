@@ -1,4 +1,4 @@
-"""Chromium evidence for the M13-shell/selected-Wasm/v7-worker seam.
+"""Chromium evidence for the M13-shell/selected-ABI1.11-worker seam.
 
 It deliberately does not provide the M10 storage service, any base bytes, or a
 CADR audio device.  A successful result therefore establishes module and worker
@@ -19,7 +19,7 @@ from playwright.sync_api import expect, sync_playwright
 ROOT = Path(__file__).resolve().parents[1]
 BROWSER = ROOT / "cadr-web" / "browser"
 WASM = ROOT / "cadr-web" / "wasm"
-SELECTED_WASM = ROOT / "cadr-web" / "build" / "cadr-web-m12-O2.wasm"
+SELECTED_WASM = ROOT / "cadr-web" / "build" / "cadr-web-m13-audio-O2.wasm"
 CSP = ("default-src 'none'; script-src 'self' 'wasm-unsafe-eval'; worker-src 'self'; "
        "connect-src 'self'; object-src 'none'; base-uri 'none'; form-action 'none'; "
        "frame-ancestors 'none'")
@@ -43,7 +43,7 @@ class Handler(BaseHTTPRequestHandler):
             candidate = WASM / path.removeprefix("/cadr-web/wasm/")
             if candidate.is_file() and candidate.resolve().parent == WASM.resolve():
                 relative = candidate
-        elif path == "/cadr-web/build/cadr-web-m12-O2.wasm":
+        elif path == "/cadr-web/build/cadr-web-m13-audio-O2.wasm":
             relative = SELECTED_WASM; mime = "application/wasm"
         if relative is None:
             self.send_response(404); self.send_header("Content-Security-Policy", CSP); self.end_headers(); return
@@ -64,7 +64,7 @@ class CadrM13SelectedWasmBrowserTest(unittest.TestCase):
     @classmethod
     def setUpClass(cls) -> None:
         if not SELECTED_WASM.is_file():
-            raise RuntimeError("build the selected M12 O2 Wasm module before this browser probe")
+            raise RuntimeError("build the selected M13 ABI1.11 O2 Wasm module before this browser probe")
         cls.server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
         cls.thread = Thread(target=cls.server.serve_forever, daemon=True)
         cls.thread.start()
@@ -74,7 +74,7 @@ class CadrM13SelectedWasmBrowserTest(unittest.TestCase):
     def tearDownClass(cls) -> None:
         cls.server.shutdown(); cls.thread.join(timeout=3); cls.server.server_close()
 
-    def test_v8_shell_bootstraps_selected_wasm_in_real_v7_worker(self) -> None:
+    def test_v8_shell_bootstraps_selected_wasm_in_real_v8_worker(self) -> None:
         Handler.requests = []
         with sync_playwright() as playwright:
             browser = playwright.chromium.launch(
@@ -91,7 +91,7 @@ class CadrM13SelectedWasmBrowserTest(unittest.TestCase):
             self.assertFalse(bootstrap["terminal"])
             self.assertEqual(bootstrap["lifecycle"], "NEW")
             expect(page.locator("#cadr-m13-selected-wasm-status")).to_have_text(
-                "Selected M12 Wasm instantiated in the real v7 worker; no storage is configured.")
+                "Selected M13 ABI1.11 Wasm instantiated in the real v8 worker; no storage is configured.")
 
             # The M12 worker is real, but its canonical machine has no selected
             # artifacts yet: it must fail closed without terminalizing the v8
@@ -142,9 +142,13 @@ class CadrM13SelectedWasmBrowserTest(unittest.TestCase):
                 "/cadr-web/browser/cadr-m13-selected-wasm-browser.html",
                 "/cadr-web/browser/cadr-m13-selected-wasm-browser.mjs",
                 "/cadr-web/browser/cadr-m13-shell.mjs",
+                "/cadr-web/browser/cadr-m13-audio-boundary.mjs",
+                "/cadr-web/browser/cadr-m13-audio-record.mjs",
+                "/cadr-web/browser/cadr-m13-audio-reducer.mjs",
                 "/cadr-web/wasm/cadr-worker.js",
                 "/cadr-web/wasm/cadr-m5-batch.mjs",
                 "/cadr-web/wasm/cadr-display-renderer.mjs",
+                "/cadr-web/wasm/cadr-m7-devid-failure.mjs",
                 "/cadr-web/wasm/cadr-m9-pointer.mjs",
                 "/cadr-web/wasm/cadr-m8-m9-deactivation.mjs",
                 "/cadr-web/wasm/cadr-m8-m9-campaign.mjs",
@@ -152,7 +156,8 @@ class CadrM13SelectedWasmBrowserTest(unittest.TestCase):
                 "/cadr-web/wasm/cadr-m8-keyboard.mjs",
                 "/cadr-web/wasm/cadr-m11-audio.mjs",
                 "/cadr-web/wasm/cadr-m12-debugger.mjs",
-                "/cadr-web/build/cadr-web-m12-O2.wasm",
+                "/cadr-web/wasm/cadr-m13-audio-source.mjs",
+                "/cadr-web/build/cadr-web-m13-audio-O2.wasm",
             }
             self.assertEqual(set(Handler.requests), expected_paths)
             self.assertEqual(errors, [], errors)

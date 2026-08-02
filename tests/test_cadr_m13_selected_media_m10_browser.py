@@ -34,8 +34,8 @@ SMALL = {
     "/l/sys/ubin/promh.sym": (INPUT_ROOT / "promh.sym") if INPUT_ROOT else ROOT / "l" / "sys" / "ubin" / "promh.sym",
     "/l/sys/ubin/ucadr.sym": (INPUT_ROOT / "ucadr.sym") if INPUT_ROOT else ROOT / "l" / "sys" / "ubin" / "ucadr.sym",
 }
-SELECTED_WASM = BUILD / "cadr-web-m12-O2.wasm"
-SELECTED_WASM_SHA256 = "62062a742c34aea8e0f7e49d48b19adefe4dd715795869557e1a085cbebb6396"
+SELECTED_WASM = BUILD / "cadr-web-m13-audio-O2.wasm"
+SELECTED_WASM_SHA256 = "11794b191dd355e6577133f293b591f065bb695b07ff0b3c41c2597c8c6bcd35"
 CSP = ("default-src 'none'; script-src 'self' 'wasm-unsafe-eval'; worker-src 'self'; "
        "connect-src 'self'; object-src 'none'; base-uri 'none'; form-action 'none'; "
        "frame-ancestors 'none'")
@@ -84,7 +84,7 @@ class Handler(BaseHTTPRequestHandler):
             target = BROWSER / path.removeprefix("/cadr-web/browser/"); mime = "text/javascript; charset=utf-8"
         elif path.startswith("/cadr-web/wasm/") and path.endswith((".js", ".mjs")):
             target = WASM / path.removeprefix("/cadr-web/wasm/"); mime = "text/javascript; charset=utf-8"
-        elif path == "/cadr-web/build/cadr-web-m12-O2.wasm":
+        elif path == "/cadr-web/build/cadr-web-m13-audio-O2.wasm":
             target = SELECTED_WASM; mime = "application/wasm"
         else:
             target = SMALL.get(path); mime = "application/octet-stream"
@@ -229,7 +229,7 @@ class CadrM13SelectedMediaM10BrowserTest(unittest.TestCase):
             self.assertEqual(result["profileSha256"],
                              "58ea88164b0156f8dbcd83f172d0e2b3e641f44575aa1473793745b97a7efdf6")
             self.assertEqual(result["artifactSetSha256"],
-                             "3e676e43de78e389f32f7c5efaef944a20a49b9c4695c81a2659dfc989059da2")
+                             "54417f58ecda7074b97ac88265b88c376dbde5f2367bc69f59783209435594ba")
             self.assertEqual(result["forbiddenRunOperations"], [])
             self.assertIn("scheduler-run-v7-slice", result["lowerOperations"])
             self.assertNotIn("scheduler-run", result["lowerOperations"])
@@ -237,7 +237,7 @@ class CadrM13SelectedMediaM10BrowserTest(unittest.TestCase):
                                  for operation in result["lowerOperations"]))
             self.assertGreaterEqual(len(Handler.base_ranges), 260)
             self.assertTrue(all(path in Handler.requests for path in SMALL))
-            self.assertIn("/cadr-web/build/cadr-web-m12-O2.wasm", Handler.requests)
+            self.assertIn("/cadr-web/build/cadr-web-m13-audio-O2.wasm", Handler.requests)
             self.assertEqual(errors, [], errors)
             after = {role: {"bytes": path.stat().st_size, "sha256": self._digest(path)}
                      for role, path in self.input_paths.items()}

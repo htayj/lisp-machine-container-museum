@@ -19,10 +19,14 @@ function isPositiveU64(value) {
   return typeof value === "bigint" && value > 0n && value <= 0xffff_ffff_ffff_ffffn;
 }
 
+function isSequence(value) {
+  return typeof value === "bigint" && value >= 0n && value <= 0xffff_ffff_ffff_ffffn;
+}
+
 function assertRecordIdentity(record) {
   if (record === null || typeof record !== "object" ||
       !isPositiveU64(record.generation) || !isPositiveU64(record.consumerEpoch) ||
-      !isPositiveU64(record.sequence) || !isU32(record.frameOffset)) {
+      !isSequence(record.sequence) || !isU32(record.frameOffset)) {
     throw new TypeError("M13 audio record identity is invalid");
   }
   return Object.freeze({ generation: record.generation, consumerEpoch: record.consumerEpoch,

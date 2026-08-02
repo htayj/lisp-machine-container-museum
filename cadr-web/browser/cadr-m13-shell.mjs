@@ -1,3 +1,5 @@
+import { CadrM13AudioBoundary, CadrM13WorkerAudioCore } from "./cadr-m13-audio-boundary.mjs";
+
 /*
  * CADR-WEB-303 M13 host shell.
  *
@@ -17,7 +19,7 @@
 
 export const CADR_M13_PROTOCOL_VERSION = 8;
 export const CADR_M13_PROFILE =
-  "CADR-WEB-303/ABI1.10/protocol-v8/M13-HARDENING-v2";
+  "CADR-WEB-303/ABI1.11/protocol-v8/M13-AUDIO1";
 export const CADR_M13_METADATA_MAGIC = "M13META1";
 export const CADR_M13_MAX_PENDING = 64;
 export const CADR_M13_MAX_METADATA_BYTES = 65536;
@@ -59,6 +61,7 @@ export const CADR_M13_STATUS = Object.freeze({
 
 const MAX_U32 = 0xffffffff;
 const MAX_U64 = 0xffffffffffffffffn;
+const CADR_M13_LOWER_PROTOCOL_VERSION = 8;
 const COMMON_FIELDS = Object.freeze(["type", "version", "sessionId", "id", "op"]);
 const EMPTY = Object.freeze([]);
 const UTF8 = new TextEncoder();
@@ -230,7 +233,7 @@ export const CADR_M13_OPERATION_SCHEMAS = Object.freeze({
   "pointer-warp-request": operationSchema(["cursorState", "x", "y", "generation"], { worker: true }),
   "pointer-state": operationSchema(EMPTY, { worker: true }),
   "pointer-drain": operationSchema(["maxEntries"], { worker: true }),
-  "audio-open": operationSchema(["rendererProfile", "consumerEpoch"], { composite: true }),
+  "audio-open": operationSchema(["rendererProfile"], { composite: true }),
   "audio-pause": operationSchema(EMPTY, { composite: true }),
   "audio-resume": operationSchema(EMPTY, { composite: true }),
   "audio-ack": operationSchema(["generation", "consumerEpoch", "sequence", "frameOffset"], { internal: true }),
@@ -320,7 +323,7 @@ function validateOperationFields(op, source) {
     case "pointer-warp-request":
       output.cursorState = u32(output.cursorState, "cursorState"); output.x = u32(output.x, "x"); output.y = u32(output.y, "y"); output.generation = u32(output.generation, "generation"); break;
     case "pointer-drain": if (Object.hasOwn(output, "maxEntries")) output.maxEntries = u32(output.maxEntries, "maxEntries"); break;
-    case "audio-open": output.rendererProfile = scalarString(output.rendererProfile, "renderer profile", { min: 1, max: 256, asciiOnly: true }); output.consumerEpoch = u64(output.consumerEpoch, "consumerEpoch"); break;
+    case "audio-open": output.rendererProfile = scalarString(output.rendererProfile, "renderer profile", { min: 1, max: 256, asciiOnly: true }); break;
     case "audio-ack": for (const key of ["generation", "consumerEpoch", "sequence"]) output[key] = u64(output[key], key); output.frameOffset = u32(output.frameOffset, "frameOffset"); break;
     case "audio-device-lost":
       output.generation = u64(output.generation, "generation"); output.consumerEpoch = u64(output.consumerEpoch, "consumerEpoch");
@@ -597,7 +600,7 @@ function safeWorkerResponse(value, expectedId, expectedOp) {
   const allowed = ["type", "version", "id", "op", "status", "ok", ...LOWER_REMAINDER,
     ...(hostNext ? ["request", "descriptor", "requestPayload"] : [])];
   const fields = descriptorRecord(value, "worker response", { allowed, required: ["type", "version", "id", "op", "status", "ok"] });
-  invariant(fields.type === "cadr-response" && fields.version === 7 && fields.id === expectedId && fields.op === expectedOp &&
+  invariant(fields.type === "cadr-response" && fields.version === CADR_M13_LOWER_PROTOCOL_VERSION && fields.id === expectedId && fields.op === expectedOp &&
     Number.isSafeInteger(fields.status) && fields.status >= 0 && fields.status <= MAX_U32 && fields.ok === (fields.status === 0),
     "worker response does not correlate to the private request");
   const result = Object.create(null);
@@ -821,6 +824,7 @@ export class CadrM13Shell {
   #pending = new Map(); #terminal = false; #state = "NEW"; #releaseTarget; #releaseControl; #guestSurface; #statusSink;
   #workerDetach = []; #timeoutMs; #setTimeout; #clearTimeout; #wasmCompiler; #capturedPointerId = null; #ingressEnabled = true;
   #lastStatus = null; #m10Controller = null; #m10Bridge = null;
+  #audioBoundary = null; #audioEventTail = Promise.resolve();
   #baseMediaBinding = null; #selectedBootArtifacts = null; #mediaMounted = false;
   #selectedWasmSha256 = null; #bootstrapped = false; #adoptedBaseImportId = null; #m10Ready = false;
 
@@ -829,7 +833,7 @@ export class CadrM13Shell {
     setTimeoutFn = globalThis.setTimeout.bind(globalThis),
     clearTimeoutFn = globalThis.clearTimeout.bind(globalThis), m10Controller = null, m10BridgeFactory = null,
     baseMediaBinding = null, selectedBootArtifacts: configuredBootArtifacts = null,
-    selectedWasmSha256 = null,
+    selectedWasmSha256 = null, audioBoundary = null, audioFactory = null,
     wasmCompiler = globalThis.WebAssembly?.compile.bind(globalThis.WebAssembly), initialId = 1 } = {}) {
     invariant(worker !== null && typeof worker === "object" && typeof worker.postMessage === "function", "M13 shell needs a dedicated worker");
     invariant(typeof timeoutMs === "number" && timeoutMs > 0, "worker timeout must be positive");
@@ -837,6 +841,23 @@ export class CadrM13Shell {
     invariant(Number.isSafeInteger(initialId) && initialId >= 1 && initialId <= MAX_U32, "initial v8 request ID is invalid"); this.#expectedId = initialId;
     this.#sessionId = randomSession(sessionRandom); this.#releaseTarget = releaseTarget; this.#releaseControl = releaseControl;
     this.#guestSurface = guestSurface; this.#statusSink = statusSink; this.#timeoutMs = timeoutMs; this.#setTimeout = setTimeoutFn; this.#clearTimeout = clearTimeoutFn; this.#wasmCompiler = wasmCompiler;
+    invariant(audioBoundary === null || audioFactory === null,
+      "M13 audio boundary and factory are mutually exclusive");
+    if (audioFactory !== null) {
+      const core = new CadrM13WorkerAudioCore({ request: fields => {
+        const { op, ...tail } = fields;
+        return this.#postLower({ version: CADR_M13_LOWER_PROTOCOL_VERSION,
+          id: this.#nextInternalRequestId(), op, ...tail }, { external: null });
+      } });
+      this.#audioBoundary = new CadrM13AudioBoundary({ core, audioFactory,
+        onStatus: text => this.announce(text) });
+    } else if (audioBoundary !== null) {
+      invariant(typeof audioBoundary.prepareActivation === "function" &&
+        typeof audioBoundary.open === "function" && typeof audioBoundary.pause === "function" &&
+        typeof audioBoundary.resume === "function" && typeof audioBoundary.acceptWorkerEvent === "function" &&
+        typeof audioBoundary.closeForWorkerLoss === "function", "M13 audio boundary is incomplete");
+      this.#audioBoundary = audioBoundary;
+    }
     if (m10Controller !== null) {
       invariant(typeof m10Controller === "object" && typeof m10Controller.commitWrites === "function" &&
         typeof m10Controller.readBlock === "function" && typeof m10Controller.invalidateAfterAmbiguousGuest === "function",
@@ -866,6 +887,9 @@ export class CadrM13Shell {
   get ledger() { return this.#ledger.snapshot(); }
   setCapturedPointer(pointerId) { this.#capturedPointerId = Number.isInteger(pointerId) ? pointerId : null; }
   announce(text) { if (text !== this.#lastStatus) { this.#lastStatus = text; this.#statusSink?.(text); } }
+  /* Must be called synchronously by the host's direct activation handler,
+   * before submit() crosses its validation/digest promise boundary. */
+  prepareAudioActivation() { return this.#audioBoundary?.prepareActivation() ?? false; }
 
   bindReleaseChord(target = this.#releaseTarget) {
     invariant(target !== null && typeof target.addEventListener === "function", "release-chord target is unavailable");
@@ -894,7 +918,7 @@ export class CadrM13Shell {
   async #bestEffortNeutralize(cause) {
     if (this.#terminal) return;
     const id = this.#nextInternalRequestId();
-    const request = { version: 7, id, op: "pointer-neutralize", cause: "capture-loss" };
+    const request = { version: CADR_M13_LOWER_PROTOCOL_VERSION, id, op: "pointer-neutralize", cause: "capture-loss" };
     try { await this.#postLower(request, { external: null, timeoutMs: 250 }); }
     catch { this.#state = "FAILED"; this.announce(`CADR guest input release could not be confirmed (${cause})`); }
   }
@@ -972,7 +996,16 @@ export class CadrM13Shell {
       }
       catch (error) { const status = error instanceof M13AdmissionError ? error.status : CADR_M13_STATUS.HOST_FAILURE; return response(request, status, { reason: shellReason(status) }); }
     }
-    if (schema.composite) return response(request, CADR_M13_STATUS.NOT_READY, { reason: "not-ready" });
+    if (schema.composite) {
+      if (this.#audioBoundary === null || !["audio-open", "audio-pause", "audio-resume"].includes(request.op)) {
+        return response(request, CADR_M13_STATUS.NOT_READY, { reason: "not-ready" });
+      }
+      const result = request.op === "audio-open" ? await this.#audioBoundary.open(request.rendererProfile) :
+        (request.op === "audio-pause" ? await this.#audioBoundary.pause() : await this.#audioBoundary.resume());
+      const status = result?.status ?? CADR_M13_STATUS.HOST_FAILURE;
+      return response(request, status, status === CADR_M13_STATUS.OK ? { audio: result.audio } :
+        { reason: shellReason(status) });
+    }
     if (request.op === "bootstrap") {
       if (this.#selectedMediaConfigured()) {
         invariant(!this.#bootstrapped && !this.#mediaMounted,
@@ -986,7 +1019,8 @@ export class CadrM13Shell {
       try {
         invariant(typeof this.#wasmCompiler === "function", "Wasm compiler is unavailable", { status: CADR_M13_STATUS.NOT_READY });
         const module = await this.#wasmCompiler(request.wasmBytes.slice(0));
-        const lower = await this.#postLower({ version: 7, id: this.#nextInternalRequestId(), op: "instantiate", module }, { external: request });
+        const lower = await this.#postLower({ version: CADR_M13_LOWER_PROTOCOL_VERSION,
+          id: this.#nextInternalRequestId(), op: "instantiate", module, sessionId: this.#sessionId }, { external: request });
         if (lower.status === CADR_M13_STATUS.OK && this.#selectedMediaConfigured()) this.#bootstrapped = true;
         return response(request, lower.status, lower.remainder, { terminal: request.id === MAX_U32 || lower.status === 24 || lower.status === 25 });
       } catch { return response(request, CADR_M13_STATUS.HOST_FAILURE, { reason: "host-failure" }); }
@@ -998,7 +1032,7 @@ export class CadrM13Shell {
       assertSelectedM10Ready(this.#m10Controller);
     }
     const lowerOp = LOWER_OPERATION[request.op] ?? request.op;
-    const lower = Object.create(null); lower.version = 7; lower.id = this.#nextInternalRequestId(); lower.op = lowerOp;
+    const lower = Object.create(null); lower.version = CADR_M13_LOWER_PROTOCOL_VERSION; lower.id = this.#nextInternalRequestId(); lower.op = lowerOp;
     for (const [key, value] of Object.entries(request)) if (!COMMON_FIELDS.includes(key)) lower[key] = value;
     try {
       const result = await this.#postLower(lower, { external: request });
@@ -1049,20 +1083,20 @@ export class CadrM13Shell {
       for (const artifact of this.#selectedBootArtifacts) {
         const input = artifact.bytes.slice(0);
         lowerMutationIssued = true;
-        let lower = await this.#postLower({ version: 7,
+        let lower = await this.#postLower({ version: CADR_M13_LOWER_PROTOCOL_VERSION,
           id: this.#nextInternalRequestId(), op: "input", bytes: input },
         { external: null });
         if (lower.status !== CADR_M13_STATUS.OK) throw new M13AdmissionError(
           "selected boot-artifact input was rejected", { status: lower.status });
         lowerMutationIssued = true;
-        lower = await this.#postLower({ version: 7,
+        lower = await this.#postLower({ version: CADR_M13_LOWER_PROTOCOL_VERSION,
           id: this.#nextInternalRequestId(), op: "import", artifactKind: artifact.kind,
           byteCount: artifact.bytes.byteLength }, { external: null });
         if (lower.status !== CADR_M13_STATUS.OK) throw new M13AdmissionError(
           "selected boot-artifact import was rejected", { status: lower.status });
       }
       lowerMutationIssued = true;
-      let lower = await this.#postLower({ version: 7,
+      let lower = await this.#postLower({ version: CADR_M13_LOWER_PROTOCOL_VERSION,
         id: this.#nextInternalRequestId(), op: "stream-begin", artifactKind: 3,
         byteCount: BigInt(CADR_M13_BASE_BYTES) }, { external: null });
       if (lower.status !== CADR_M13_STATUS.OK) throw new M13AdmissionError(
@@ -1071,7 +1105,7 @@ export class CadrM13Shell {
         const blockCount = Math.min(1024, CADR_M13_BASE_BLOCKS - firstBlock);
         const body = await this.#baseMediaBinding.readMountRange(firstBlock, blockCount);
         lowerMutationIssued = true;
-        lower = await this.#postLower({ version: 7,
+        lower = await this.#postLower({ version: CADR_M13_LOWER_PROTOCOL_VERSION,
           id: this.#nextInternalRequestId(), op: "stream-chunk",
           offset: BigInt(firstBlock) * 1024n, bytes: body.buffer }, { external: null });
         if (lower.status !== CADR_M13_STATUS.OK) throw new M13AdmissionError(
@@ -1079,7 +1113,7 @@ export class CadrM13Shell {
         firstBlock += blockCount;
       }
       lowerMutationIssued = true;
-      lower = await this.#postLower({ version: 7,
+      lower = await this.#postLower({ version: CADR_M13_LOWER_PROTOCOL_VERSION,
         id: this.#nextInternalRequestId(), op: "stream-finish" }, { external: null });
       if (lower.status !== CADR_M13_STATUS.OK) throw new M13AdmissionError(
         "selected base stream did not verify", { status: lower.status });
@@ -1104,7 +1138,7 @@ export class CadrM13Shell {
       allowed: ["op", "operation", "hostStatus", "generation", "requestId", "bytes"], required: ["op"], maximumKeys: 6,
     });
     invariant(fields.op === "host-next-request" || fields.op === "host-complete", "M10 bridge operation is not closed");
-    const lower = Object.create(null); lower.version = 7; lower.id = this.#nextInternalRequestId(); lower.op = fields.op;
+    const lower = Object.create(null); lower.version = CADR_M13_LOWER_PROTOCOL_VERSION; lower.id = this.#nextInternalRequestId(); lower.op = fields.op;
     if (fields.op === "host-next-request") {
       invariant(Object.keys(fields).length === 1, "M10 host-next request has extra fields");
     } else {
@@ -1156,6 +1190,16 @@ export class CadrM13Shell {
     });
   }
   #onWorkerMessage(value) {
+    if (value?.type === "cadr-event") {
+      if (this.#audioBoundary === null) { this.#workerLost("unexpected-worker-event", true); return; }
+      this.#audioEventTail = this.#audioEventTail.then(async () => {
+        if (this.#terminal) return;
+        if (!await this.#audioBoundary.acceptWorkerEvent(value, this.#sessionId)) {
+          this.#workerLost("malformed-audio-event", true);
+        }
+      }, () => this.#workerLost("malformed-audio-event", true));
+      return;
+    }
     const id = value?.id; const pending = this.#pending.get(id);
     if (pending === undefined) { this.#workerLost("uncorrelated-worker-response", true); return; }
     this.#pending.delete(id); this.#clearTimeout(pending.timer);
@@ -1174,6 +1218,7 @@ export class CadrM13Shell {
   #terminalResponse(request, status) { this.#workerLost(status === 25 ? "protocol-violation" : "worker-lost", status === 25); return response(request, status, { reason: shellReason(status) }, { terminal: true }); }
   #workerLost(reason, protocol = false) {
     if (this.#terminal) return;
+    this.#audioBoundary?.closeForWorkerLoss();
     this.#terminal = true; this.#state = "FAILED"; this.releaseInput(reason);
     for (const [id, pending] of this.#pending) { this.#pending.delete(id); this.#clearTimeout(pending.timer); pending.reject(new M13AdmissionError(reason, { status: protocol ? 25 : 24 })); }
     try { this.#worker.terminate?.(); } catch { /* termination is best effort */ }
@@ -1183,14 +1228,25 @@ export class CadrM13Shell {
 }
 
 /** Build DOM controls without assigning historical key meanings to host keys. */
-export function mountCadrM13AccessibilityShell({ documentObject = globalThis.document, root, submit = null } = {}) {
+export function mountCadrM13AccessibilityShell({ documentObject = globalThis.document, root,
+  submit = null, prepareAudioActivation = null } = {}) {
   invariant(documentObject?.createElement !== undefined && root !== undefined && root !== null, "M13 accessibility shell needs a document root");
-  const make = (name, label) => { const item = documentObject.createElement("button"); item.type = "button"; item.textContent = label; item.setAttribute("aria-label", label); item.dataset.cadrM13Operation = name; if (submit !== null) item.addEventListener("click", () => submit(name)); return item; };
+  invariant(prepareAudioActivation === null || typeof prepareAudioActivation === "function",
+    "M13 audio activation hook must be a function");
+  const make = (name, label) => { const item = documentObject.createElement("button"); item.type = "button"; item.textContent = label; item.setAttribute("aria-label", label); item.dataset.cadrM13Operation = name; if (submit !== null) item.addEventListener("click", () => {
+    if (name === "audio-open" || name === "audio-resume") prepareAudioActivation?.();
+    submit(name);
+  }); return item; };
   const skip = documentObject.createElement("a"); skip.href = "#cadr-m13-controls"; skip.textContent = "Skip to CADR controls";
   const description = documentObject.createElement("p"); description.id = "cadr-m13-guest-description"; description.textContent = "CADR guest framebuffer. Its pixels are historical output and are not transcribed as modern text.";
   const canvas = documentObject.createElement("canvas"); canvas.width = 768; canvas.height = 963; canvas.tabIndex = 0; canvas.setAttribute("aria-describedby", description.id); canvas.setAttribute("aria-label", "CADR guest framebuffer; use the separate controls and Space Cadet keyboard.");
   const controls = documentObject.createElement("section"); controls.id = "cadr-m13-controls"; controls.setAttribute("aria-label", "CADR host controls");
-  for (const [name, label] of [["machine-start", "Start"], ["machine-pause", "Pause"], ["audio-resume", "Resume"], ["machine-reset", "Reset"], ["base-import-begin", "Import"], ["save-commit", "Save/Commit"], ["m10-export-open", "Export"], ["fullscreen", "Fullscreen"], ["release-input", "Release Input"], ["open-keyboard", "Open Keyboard"], ["open-pointer-controls", "Open Pointer Controls"], ["open-debugger", "Open Debugger"], ["help", "Help"]]) controls.append(make(name, label));
+  for (const [name, label] of [["machine-start", "Start Machine"], ["machine-pause", "Pause Machine"],
+    ["audio-open", "Start Audio"], ["audio-pause", "Pause Audio"], ["audio-resume", "Resume Audio"],
+    ["machine-reset", "Reset"], ["base-import-begin", "Import"], ["save-commit", "Save/Commit"],
+    ["m10-export-open", "Export"], ["fullscreen", "Fullscreen"], ["release-input", "Release Input"],
+    ["open-keyboard", "Open Keyboard"], ["open-pointer-controls", "Open Pointer Controls"],
+    ["open-debugger", "Open Debugger"], ["help", "Help"]]) controls.append(make(name, label));
   const release = controls.querySelector?.('[data-cadr-m13-operation="release-input"]') ?? null;
   if (release !== null) release.setAttribute("aria-description", "Also press Control Alt Shift R using physical Key R to release input immediately.");
   const status = documentObject.createElement("output"); status.setAttribute("role", "status"); status.setAttribute("aria-live", "polite"); status.setAttribute("aria-atomic", "true"); status.textContent = "CADR shell ready; machine state is volatile until a confirmed save.";

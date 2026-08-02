@@ -92,8 +92,10 @@ M9_DEVID_WASM_O0 := build/cadr-web-m9-devid-O0.wasm
 M9_DEVID_WASM_O2 := build/cadr-web-m9-devid-O2.wasm
 M12_WASM_O0 := build/cadr-web-m12-O0.wasm
 M12_WASM_O2 := build/cadr-web-m12-O2.wasm
+M13_AUDIO_WASM_O0 := build/cadr-web-m13-audio-O0.wasm
+M13_AUDIO_WASM_O2 := build/cadr-web-m13-audio-O2.wasm
 
-.PHONY: all test clean audit forbidden-symbols exported-symbols mutable-globals dependency-audit header-audit mutant-audit python-cross-parse m3-wasm m3-browser m3-differential m3-conformance m3-snapshot-cross-target m4-unit m4-browser m4-differential m4-media-compare m5-unit m6-release-validation m6-devid-wasm m6-diagnostic-receipt-unit m7-unit m7-native-source-pin m7-native-source-unit m8-m9-unit m8-m9-devid-unit m10-unit m11-unit m12-unit
+.PHONY: all test clean audit forbidden-symbols exported-symbols mutable-globals dependency-audit header-audit mutant-audit python-cross-parse m3-wasm m3-browser m3-differential m3-conformance m3-snapshot-cross-target m4-unit m4-browser m4-differential m4-media-compare m5-unit m6-release-validation m6-devid-wasm m6-diagnostic-receipt-unit m7-unit m7-native-source-pin m7-native-source-unit m8-m9-unit m8-m9-devid-unit m10-unit m11-unit m12-unit m13-audio-unit
 
 all: $(LIBRARY) $(HOST_BINARY) $(M2_HOST_BINARY) $(M3_HOST_BINARY) $(M3_SNAPSHOT_HOST_BINARY)
 
@@ -315,6 +317,12 @@ $(M12_WASM_O0): wasm/build-wasm.sh wasm/cadr_wasm_adapter.c wasm/cadr_wasm_runti
 $(M12_WASM_O2): wasm/build-wasm.sh wasm/cadr_wasm_adapter.c wasm/cadr_wasm_runtime.c $(M12_CORE_SOURCES) $(CORE_HEADERS) | build
 	sh wasm/build-wasm.sh --m12 --opt O2 $@
 
+$(M13_AUDIO_WASM_O0): wasm/build-wasm.sh wasm/cadr_wasm_adapter.c wasm/cadr_wasm_runtime.c $(M12_CORE_SOURCES) core/cadr_m13_audio_transport.c core/cadr_m13_audio_transport.h $(CORE_HEADERS) | build
+	sh wasm/build-wasm.sh --m13-audio --opt O0 $@
+
+$(M13_AUDIO_WASM_O2): wasm/build-wasm.sh wasm/cadr_wasm_adapter.c wasm/cadr_wasm_runtime.c $(M12_CORE_SOURCES) core/cadr_m13_audio_transport.c core/cadr_m13_audio_transport.h $(CORE_HEADERS) | build
+	sh wasm/build-wasm.sh --m13-audio --opt O2 $@
+
 test: $(TEST_BINARIES) $(HOST_BINARY) $(M2_HOST_BINARY) $(M3_HOST_BINARY) mutant-audit python-cross-parse m3-wasm m3-conformance m3-browser m4-unit m4-browser m5-unit m6-devid-wasm m6-diagnostic-receipt-unit m7-unit m7-native-source-unit m8-m9-unit audit
 	./build/test_cadr_host_api
 	./build/test_cadr_machine_state
@@ -455,6 +463,22 @@ m12-unit: build/test_cadr_m12_machine_adapter build/test_cadr_m12_composed_m8_m1
 	guix shell node -- node ../tests/test_cadr_m11_audio_protocol.mjs
 	guix shell node -- node ../tests/test_cadr_m11_audio_worklet.mjs
 	python3 ../tests/test_cadr_native_source_witness.py
+
+m13-audio-unit: build/test_cadr_m13_audio_transport $(M13_AUDIO_WASM_O0) $(M13_AUDIO_WASM_O2)
+	./build/test_cadr_m13_audio_transport
+	guix shell node -- node ../tests/test_cadr_m13_audio_records.mjs
+	guix shell node -- node ../tests/test_cadr_m13_audio_worklet.mjs
+	guix shell node -- node ../tests/test_cadr_m13_audio_source.mjs
+	guix shell node -- node ../tests/test_cadr_m13_audio_reducer.mjs
+	guix shell node -- node ../tests/test_cadr_m13_audio_failures.mjs
+	guix shell node -- node ../tests/test_cadr_m13_audio_shell.mjs
+	guix shell node -- node ../tests/test_cadr_m13_audio_worker.mjs
+	guix shell node -- node ../tests/test_cadr_m13_accessibility_audio.mjs
+	guix shell node -- node ../tests/test_cadr_m13_audio_wasm_exports.mjs
+	CADR_M13_AUDIO_WASM_VARIANT=O2 guix shell node -- node ../tests/test_cadr_m13_audio_wasm_exports.mjs
+
+build/test_cadr_m13_audio_transport: tests/test_cadr_m13_audio_transport.c core/cadr_audio_model.c core/cadr_audio_model.h core/cadr_m13_audio_transport.c core/cadr_m13_audio_transport.h | build
+	$(CC) $(CPPFLAGS) $(CFLAGS) -o $@ tests/test_cadr_m13_audio_transport.c core/cadr_audio_model.c core/cadr_m13_audio_transport.c
 
 m11-unit: build/test_cadr_m11_core_audio
 	$(CC) $(CPPFLAGS) $(CFLAGS) -Icore -o build/test_cadr_m11_audio_model tests/test_cadr_m11_audio_model.c core/cadr_audio_model.c

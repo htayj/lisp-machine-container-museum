@@ -68,6 +68,9 @@ uint32_t cadr_wasm_m9_input_deliver(uint32_t byte_count);
 uint32_t cadr_wasm_m9_input_state(void);
 #endif
 #if defined(CADR_M11_WASM)
+#if defined(CADR_M13_AUDIO_WASM)
+uint32_t cadr_wasm_m13_audio_open(void);
+#endif
 uint32_t cadr_wasm_m11_audio_state(void);
 uint32_t cadr_wasm_m11_audio_peek(void);
 uint32_t cadr_wasm_m11_audio_render(uint32_t generation_low,

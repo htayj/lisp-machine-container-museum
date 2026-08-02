@@ -13,6 +13,8 @@ assert.ok(["O0", "O2"].includes(variant), "M12 Wasm variant");
 const wasm = await WebAssembly.compile(await readFile(
   resolve(ROOT, `cadr-web/build/cadr-web-m12-${variant}.wasm`)));
 const names = new Set(WebAssembly.Module.exports(wasm).map(entry => entry.name));
+assert.equal(names.has("cadr_wasm_m13_audio_open"), false,
+  "frozen ABI1.10/M12 does not acquire the ABI1.11 audio session export");
 for (const name of [
   "cadr_wasm_m12_debug_state", "cadr_wasm_m12_inspect_read", "cadr_wasm_m12_breakpoint_set",
   "cadr_wasm_m12_breakpoint_clear", "cadr_wasm_m12_resume_one_boundary",

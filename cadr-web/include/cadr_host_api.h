@@ -29,7 +29,10 @@ extern "C" {
 /* M12 debugger/snapshot is ABI1.9; the browser-safe scalar inspector is the
  * next additive M12 surface and therefore ABI1.10. */
 #define CADR_ABI_MINOR_M12 UINT32_C(10)
-#if defined(CADR_M12_CORE)
+#define CADR_ABI_MINOR_M13_AUDIO UINT32_C(11)
+#if defined(CADR_M13_AUDIO_CORE)
+#define CADR_ABI_MINOR CADR_ABI_MINOR_M13_AUDIO
+#elif defined(CADR_M12_CORE)
 #define CADR_ABI_MINOR CADR_ABI_MINOR_M12
 #elif defined(CADR_M9_CORE)
 #define CADR_ABI_MINOR CADR_ABI_MINOR_M9

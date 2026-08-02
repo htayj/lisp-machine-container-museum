@@ -3,7 +3,7 @@ type: Reimplementation Specification
 title: CADR audio, beeper, and Votrax reimplementation specification
 description: A Phase 1, source-bounded contract for deterministic CADR beeper and Votrax event delivery, without a hardware, device, or historical-PCM-emulation claim.
 tags: [mit-cadr, audio, votrax, reimplementation, cadr-web, preservation]
-timestamp: 2026-07-30T07:42:00-04:00
+timestamp: 2026-08-02T15:30:00-04:00
 ---
 
 # CADR audio, beeper, and Votrax reimplementation specification
@@ -18,6 +18,15 @@ M12 Wasm profile. Its synthetic C, Node, O0/O2 Wasm-export, and Worklet-queue
 tests are supplemented by one source-bound System 303 `%BEEP` runtime observation.
 No audio-device, browser-integration, Votrax, or System 46 runtime equivalence is
 claimed.
+
+ABI1.11 now adds a source-only M13 transport slice without changing ABI1.10 or
+the frozen public v7 operation tree. The core is the sole consumer-epoch issuer;
+the new opt-in Wasm export returns `CDRM11O1`, and a private source adapter binds
+rendered frame counts to `CDRPCM1` identities so neither a page caller nor an
+AudioWorklet can choose the frame count used for acknowledgement. Synthetic O0,
+O2, mutation, stale-epoch, zero-frame UART, and eight-record backpressure tests
+pass. This is not a selected guest/browser playback observation, so `C-M11`
+remains open.
 
 It claims:
 
@@ -43,6 +52,44 @@ is satisfied. It therefore does not change the frozen earlier profile merely bec
 the files are present in the repository.
 
 ## Evidence and selected profiles
+
+### ABI1.11 M13 audio records
+
+`cadr_wasm_m13_audio_open()` exists only in the opt-in ABI1.11 build. It first
+calls `cadr_audio_model_start_consumer_session()` and then emits exactly 48 bytes:
+
+| Offset | Field |
+| ---: | --- |
+| 0 | `"CDRM11O1"` |
+| 8 | `version:u32le=1`, `length:u32le=48` |
+| 16 | `generation:u64le` |
+| 24 | `consumer_epoch:u64le` |
+| 32 | `queued_frames:u64le` |
+| 40 | `queue_packets:u32le` |
+| 44 | `renderer_profile:u32le=2` |
+
+One PCM delivery record is exactly `64 + 2 * frame_count` bytes, hence 66 through
+1,088 bytes because `frame_count` is never zero:
+
+| Offset | `CDRPCM1` field |
+| ---: | --- |
+| 0 | magic `"CDRPCM1\0"` |
+| 8 | `version:u16le=1`, `header_bytes:u16le=64`, `flags:u32le=0` |
+| 16 | `total_bytes:u32le`, `sample_rate:u32le=8000` |
+| 24 | `generation:u64le`, `consumer_epoch:u64le`, `sequence:u64le` |
+| 48 | `frame_offset:u32le` |
+| 52 | `frame_count:u32le` in `1..512` |
+| 56 | `channels:u16le=1` |
+| 58 | `sample_format:u16le=1` |
+| 60 | `renderer_profile:u32le=2` |
+| 64 | `frame_count` signed-16 little-endian mono samples |
+
+Generation and epoch are nonzero; sequence may be zero. `frame_offset +
+frame_count` must not exceed 512. The outer v8 envelope
+supplies the SHA-256, which is verified before the sample copy reaches the
+Worklet. Zero-frame Votrax/UART records never become `CDRPCM1`: the private
+source acknowledges their exact M11 cursor with `frames=0` and emits no silent
+Worklet cell.
 
 ### Evidence codes
 

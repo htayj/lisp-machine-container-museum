@@ -18,7 +18,9 @@ status.id = "cadr-m13-status";
 status.className = "cadr-m13-status"; status.setAttribute("role", "status");
 status.setAttribute("aria-live", "polite"); status.setAttribute("aria-atomic", "true");
 status.textContent = "CADR host shell loaded. No machine is running in this M13 policy harness.";
-for (const label of ["Start", "Pause", "Resume", "Reset", "Import", "Save/Commit", "Export", "Fullscreen", "Release Input", "Open Keyboard", "Open Pointer Controls", "Open Debugger", "Help"]) {
+for (const label of ["Start Machine", "Pause Machine", "Start Audio", "Pause Audio", "Resume Audio",
+  "Reset", "Import", "Save/Commit", "Export", "Fullscreen", "Release Input", "Open Keyboard",
+  "Open Pointer Controls", "Open Debugger", "Help"]) {
   const button = document.createElement("button"); button.type = "button"; button.textContent = label; button.setAttribute("aria-label", label);
   button.addEventListener("click", () => { if (status.textContent !== `${label} is unavailable until the selected machine is configured.`) status.textContent = `${label} is unavailable until the selected machine is configured.`; });
   controls.append(button);

@@ -1,5 +1,5 @@
-/* Narrow browser composition probe for the real selected M12 Wasm module and
- * protocol-v7 worker.  This is intentionally not an application bootstrap:
+/* Narrow browser composition probe for the real selected M13 ABI1.11 Wasm
+ * module and protocol-v8 worker.  This is intentionally not an application bootstrap:
  * no licensed base bytes, M10 service, audio device, or DOM input path is
  * supplied.  Its only claim is that the M13 v8 shell compiles a byte-checked
  * selected module, structured-clones it to the real worker, and preserves
@@ -27,7 +27,7 @@ let selectedWasmBytes = null;
 let selectedWasmSha256 = null;
 async function bootstrap() {
   if (bootstrapped) throw new Error("selected-Wasm probe is single-bootstrap");
-  const response = await fetch(new URL("../build/cadr-web-m12-O2.wasm", import.meta.url),
+  const response = await fetch(new URL("../build/cadr-web-m13-audio-O2.wasm", import.meta.url),
     { cache: "no-store" });
   if (!response.ok) throw new Error(`selected Wasm fetch failed (${response.status})`);
   const wasmBytes = await response.arrayBuffer();
@@ -38,8 +38,8 @@ async function bootstrap() {
   }));
   if (result.status === 0) bootstrapped = true;
   status.textContent = result.status === 0 ?
-    "Selected M12 Wasm instantiated in the real v7 worker; no storage is configured." :
-    `Selected M12 Wasm bootstrap failed with status ${result.status}.`;
+    "Selected M13 ABI1.11 Wasm instantiated in the real v8 worker; no storage is configured." :
+    `Selected M13 ABI1.11 Wasm bootstrap failed with status ${result.status}.`;
   return result;
 }
 
@@ -64,7 +64,7 @@ async function bootstrapAtMaximumId() {
   } finally { maximumShell.dispose(); }
 }
 
-/* `terminate()` is an actual browser-worker loss rather than a synthetic v7
+/* `terminate()` is an actual browser-worker loss rather than a synthetic lower
  * reply.  The independent shell has a short explicit response deadline; its
  * status-24 result remains distinct from the selected worker's normal status
  * 9 cold-power response checked by the primary shell. */

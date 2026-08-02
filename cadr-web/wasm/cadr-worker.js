@@ -7,6 +7,7 @@ import { commitCadrM8M9SharedDeactivation,
   prepareCadrM8M9SharedDeactivation } from "./cadr-m8-m9-deactivation.mjs";
 import { commitCadrM8M9CoreDelivery } from "./cadr-m8-m9-transaction.mjs";
 import { CadrM11AudioProtocolSubhandler } from "./cadr-m11-audio.mjs";
+import { CadrM13AudioSource } from "./cadr-m13-audio-source.mjs";
 import { CadrM12ProtocolSubhandler, CADR_M12_STATUS_OK,
   CADR_M12_STATUS_DEBUG_STOP,
   CADR_M12_STATUS_LIMIT_REACHED,
@@ -38,6 +39,7 @@ const CADR_M6_PROTOCOL_VERSION = 4;
 const CADR_M7_PROTOCOL_VERSION = 5;
 const CADR_M8_M9_PROTOCOL_VERSION = 6;
 const CADR_M12_PROTOCOL_VERSION = 7;
+const CADR_M13_PRIVATE_PROTOCOL_VERSION = 8;
 const CADR_STATUS_OK = 0;
 const CADR_STATUS_INVALID_ARGUMENT = 2;
 const CADR_STATUS_HOST_FAILURE = 7;
@@ -146,31 +148,37 @@ let m8KeyboardProtocol = null;
 let m9PointerProtocol = null;
 let m11AudioProtocol = null;
 let m12DebuggerProtocol = null;
+let m13AudioSource = null;
+let m13SessionId = null;
 
 function isM5ProtocolVersion(version) {
   return version === CADR_M5_PROTOCOL_VERSION ||
     version === CADR_M6_PROTOCOL_VERSION ||
     version === CADR_M7_PROTOCOL_VERSION ||
     version === CADR_M8_M9_PROTOCOL_VERSION ||
-    version === CADR_M12_PROTOCOL_VERSION;
+    version === CADR_M12_PROTOCOL_VERSION ||
+    version === CADR_M13_PRIVATE_PROTOCOL_VERSION;
 }
 
 function isM6ProtocolVersion(version) {
   return version === CADR_M6_PROTOCOL_VERSION ||
     version === CADR_M7_PROTOCOL_VERSION ||
     version === CADR_M8_M9_PROTOCOL_VERSION ||
-    version === CADR_M12_PROTOCOL_VERSION;
+    version === CADR_M12_PROTOCOL_VERSION ||
+    version === CADR_M13_PRIVATE_PROTOCOL_VERSION;
 }
 
 function isM7ProtocolVersion(version) {
   return version === CADR_M7_PROTOCOL_VERSION ||
     version === CADR_M8_M9_PROTOCOL_VERSION ||
-    version === CADR_M12_PROTOCOL_VERSION;
+    version === CADR_M12_PROTOCOL_VERSION ||
+    version === CADR_M13_PRIVATE_PROTOCOL_VERSION;
 }
 
 function isM8M9ProtocolVersion(version) {
   return version === CADR_M8_M9_PROTOCOL_VERSION ||
-    version === CADR_M12_PROTOCOL_VERSION;
+    version === CADR_M12_PROTOCOL_VERSION ||
+    version === CADR_M13_PRIVATE_PROTOCOL_VERSION;
 }
 
 function isM6DevidProtocolVersion(version) {
@@ -377,6 +385,7 @@ function discardWorkerState() {
   diagnosticModule = false; m6DevidModule = false; m7DevidDiagnosticModule = false;
   m8KeyboardProtocol = null; m9PointerProtocol = null;
   m11AudioProtocol = null; m12DebuggerProtocol = null;
+  m13AudioSource = null; m13SessionId = null;
 }
 
 function m9InputCoreState(e) {
@@ -535,6 +544,15 @@ function m11OutputBytes(e, byteCount) {
   return new Uint8Array(e.memory.buffer, pointer, byteCount);
 }
 
+function invokeM13AudioWasm(e, operation) {
+  if (operation.op !== "audio-open-private" ||
+      typeof e.cadr_wasm_m13_audio_open !== "function") return { status: CADR_STATUS_INVALID_ARGUMENT };
+  const bytes = m11OutputBytes(e, 48);
+  if (bytes === null) return { status: CADR_STATUS_NOT_READY };
+  const status = e.cadr_wasm_m13_audio_open() >>> 0;
+  return status === CADR_STATUS_OK ? { status, record: bytes.slice().buffer } : { status };
+}
+
 function invokeM11Wasm(e, operation) {
   if (operation.op === "audio-state") {
     const bytes = m11OutputBytes(e, 40);
@@ -676,12 +694,12 @@ function invokeM12Wasm(e, operation) {
 }
 
 function v7M12SubhandlerResult(request) {
-  if (protocolVersion !== CADR_M12_PROTOCOL_VERSION || m12DebuggerProtocol === null) return null;
+  if (![CADR_M12_PROTOCOL_VERSION, CADR_M13_PRIVATE_PROTOCOL_VERSION].includes(protocolVersion) || m12DebuggerProtocol === null) return null;
   return m12DebuggerProtocol.handle(request);
 }
 
 function v7M11SubhandlerResult(request) {
-  if (protocolVersion !== CADR_M12_PROTOCOL_VERSION || m11AudioProtocol === null) return null;
+  if (![CADR_M12_PROTOCOL_VERSION, CADR_M13_PRIVATE_PROTOCOL_VERSION].includes(protocolVersion) || m11AudioProtocol === null) return null;
   return m11AudioProtocol.handle(request);
 }
 
@@ -1179,12 +1197,20 @@ async function handle(request) {
       typeof instance.exports.cadr_wasm_m7_unimplemented_diagnostic === "function";
     m8KeyboardProtocol = new CadrM8KeyboardProtocolSubhandler();
     m9PointerProtocol = new CadrM9PointerProtocolSubhandler();
-    m11AudioProtocol = protocolVersion === CADR_M12_PROTOCOL_VERSION ?
+    m11AudioProtocol = [CADR_M12_PROTOCOL_VERSION, CADR_M13_PRIVATE_PROTOCOL_VERSION].includes(protocolVersion) ?
       new CadrM11AudioProtocolSubhandler({ invoke: operation =>
         invokeM11Wasm(instance.exports, operation) }) : null;
-    m12DebuggerProtocol = protocolVersion === CADR_M12_PROTOCOL_VERSION ?
+    m12DebuggerProtocol = [CADR_M12_PROTOCOL_VERSION, CADR_M13_PRIVATE_PROTOCOL_VERSION].includes(protocolVersion) ?
       new CadrM12ProtocolSubhandler({ invoke: operation =>
         invokeM12Wasm(instance.exports, operation) }) : null;
+    if (protocolVersion === CADR_M13_PRIVATE_PROTOCOL_VERSION) {
+      m13SessionId = request.sessionId;
+      m13AudioSource = new CadrM13AudioSource({
+        invoke: operation => operation.op === "audio-open-private" ?
+          invokeM13AudioWasm(instance.exports, operation) : invokeM11Wasm(instance.exports, operation),
+        emit: event => send(event, [event.record]),
+      });
+    }
     mediaBusy = false;
     mediaDirty = false;
     mediaSnapshotBlocked = false;
@@ -1230,17 +1256,59 @@ async function handle(request) {
     response(id, op, CADR_STATUS_INVALID_ARGUMENT);
     return;
   }
-  if (protocolVersion !== CADR_M12_PROTOCOL_VERSION && CADR_M11_ONLY_OPERATIONS.has(op)) {
+  if (![CADR_M12_PROTOCOL_VERSION, CADR_M13_PRIVATE_PROTOCOL_VERSION].includes(protocolVersion) && CADR_M11_ONLY_OPERATIONS.has(op)) {
     response(id, op, CADR_STATUS_INVALID_ARGUMENT);
     return;
   }
-  if (protocolVersion !== CADR_M12_PROTOCOL_VERSION && CADR_M12_ONLY_OPERATIONS.has(op)) {
+  if (![CADR_M12_PROTOCOL_VERSION, CADR_M13_PRIVATE_PROTOCOL_VERSION].includes(protocolVersion) && CADR_M12_ONLY_OPERATIONS.has(op)) {
     response(id, op, CADR_STATUS_INVALID_ARGUMENT);
     return;
   }
 
   const e = exportsOrStatus(id, op);
   if (e === null) return;
+  if (protocolVersion === CADR_M13_PRIVATE_PROTOCOL_VERSION &&
+      ["m13-audio-open", "m13-audio-resume", "m13-audio-pause", "m13-audio-ack",
+        "m13-audio-device-lost"].includes(op)) {
+    if (m13AudioSource === null) { response(id, op, CADR_STATUS_NOT_READY); return; }
+    const keys = Object.keys(request);
+    let result;
+    if (op === "m13-audio-open" || op === "m13-audio-resume") {
+      if (keys.some(key => !["version", "id", "op"].includes(key))) {
+        response(id, op, CADR_STATUS_INVALID_ARGUMENT); return;
+      }
+      result = await m13AudioSource.open();
+      response(id, op, result.status, result.status === CADR_STATUS_OK ?
+        { audio: m13AudioSource.audioState("READY") } : {});
+      if (result.status === CADR_STATUS_OK) await m13AudioSource.pump(m13SessionId);
+      return;
+    }
+    if (op === "m13-audio-pause") {
+      if (keys.some(key => !["version", "id", "op", "consumerEpoch"].includes(key)) ||
+          typeof request.consumerEpoch !== "bigint") { response(id, op, CADR_STATUS_INVALID_ARGUMENT); return; }
+      result = await m13AudioSource.pause({ consumerEpoch: request.consumerEpoch });
+      response(id, op, result.status, result.status === CADR_STATUS_OK ?
+        { audio: m13AudioSource.audioState("PAUSED") } : {}); return;
+    }
+    if (op === "m13-audio-ack") {
+      if (keys.some(key => !["version", "id", "op", "generation", "consumerEpoch", "sequence", "frameOffset"].includes(key)) ||
+          ![request.generation, request.consumerEpoch, request.sequence].every(value => typeof value === "bigint") ||
+          !Number.isInteger(request.frameOffset)) { response(id, op, CADR_STATUS_INVALID_ARGUMENT); return; }
+      result = await m13AudioSource.ack(request);
+      response(id, op, result.status, result.status === CADR_STATUS_OK ?
+        { audio: m13AudioSource.audioState(m13AudioSource.backpressured ? "BACKPRESSURE" : "READY") } : {});
+      if (result.status === CADR_STATUS_OK) await m13AudioSource.pump(m13SessionId);
+      return;
+    }
+    if (keys.some(key => !["version", "id", "op", "consumerEpoch", "cause", "generation", "sequence", "frameOffset"].includes(key)) ||
+        typeof request.consumerEpoch !== "bigint" ||
+        !["reply-timeout", "processorerror", "context-closed", "device-loss"].includes(request.cause)) {
+      response(id, op, CADR_STATUS_INVALID_ARGUMENT); return;
+    }
+    result = await m13AudioSource.deviceLost({ consumerEpoch: request.consumerEpoch });
+    response(id, op, result.status, result.status === CADR_STATUS_OK ?
+      { audio: m13AudioSource.audioState("DEVICE_LOST") } : {}); return;
+  }
   if (isM8M9ProtocolVersion(protocolVersion) && op === "input-state") {
     if (Object.keys(request).some(key => !["version", "id", "op"].includes(key))) {
       response(id, op, CADR_STATUS_INVALID_ARGUMENT);
@@ -2315,7 +2383,7 @@ async function receive(event) {
       ![CADR_M3_PROTOCOL_VERSION, CADR_M4_PROTOCOL_VERSION,
         CADR_M5_PROTOCOL_VERSION, CADR_M6_PROTOCOL_VERSION,
         CADR_M7_PROTOCOL_VERSION, CADR_M8_M9_PROTOCOL_VERSION,
-        CADR_M12_PROTOCOL_VERSION]
+        CADR_M12_PROTOCOL_VERSION, CADR_M13_PRIVATE_PROTOCOL_VERSION]
         .includes(request.version) ||
       (isM5ProtocolVersion(request.version) && request.op === "instantiate" &&
        (!(request.module instanceof WebAssembly.Module) ||
@@ -2366,7 +2434,7 @@ async function receive(event) {
          entry => entry.name === "cadr_wasm_m9_input_deliver") ||
         !WebAssembly.Module.exports(request.module).some(
           entry => entry.name === "cadr_wasm_m9_input_state"))) ||
-      (request.version === CADR_M12_PROTOCOL_VERSION &&
+      ([CADR_M12_PROTOCOL_VERSION, CADR_M13_PRIVATE_PROTOCOL_VERSION].includes(request.version) &&
        request.op === "instantiate" &&
        (!(request.module instanceof WebAssembly.Module) ||
         !["cadr_wasm_m12_debug_state", "cadr_wasm_m12_inspect_read", "cadr_wasm_m12_breakpoint_set",
@@ -2380,6 +2448,9 @@ async function receive(event) {
           "cadr_wasm_m11_audio_snapshot_size", "cadr_wasm_m11_audio_snapshot_save",
           "cadr_wasm_m11_audio_snapshot_restore"].every(name =>
           WebAssembly.Module.exports(request.module).some(entry => entry.name === name)))) ||
+      (request.version === CADR_M13_PRIVATE_PROTOCOL_VERSION && request.op === "instantiate" &&
+       (typeof request.sessionId !== "string" || !/^[0-9a-f]{64}$/.test(request.sessionId) ||
+        !WebAssembly.Module.exports(request.module).some(entry => entry.name === "cadr_wasm_m13_audio_open"))) ||
       (protocolVersion !== null && request.version !== protocolVersion) ||
       !validId(request.id) || typeof request.op !== "string") {
     error(isRecord(request) && validId(request.id) ? request.id : null,

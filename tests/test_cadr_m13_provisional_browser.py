@@ -61,7 +61,7 @@ class CadrM13ProvisionalBrowserTest(unittest.TestCase):
                 expect(status).to_have_text(
                     "CADR host shell loaded. No machine is running in this M13 policy harness.", timeout=15000)
                 buttons = page.locator("#cadr-m13-controls button")
-                self.assertEqual(buttons.count(), 13)
+                self.assertEqual(buttons.count(), 15)
                 self.assertEqual(page.locator("#cadr-shell-root > a").get_attribute("href"), "#cadr-m13-controls")
                 self.assertEqual(page.locator("#cadr-m13-status").get_attribute("role"), "status")
                 self.assertEqual(page.locator("#cadr-m13-status").get_attribute("aria-live"), "polite")

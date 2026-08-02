@@ -30,7 +30,7 @@ class ManualWorker {
     for (const listener of this.#listeners.get(type) ?? []) listener(event);
   }
   reply(requestValue, fields = {}) {
-    this.emit("message", { data: { type: "cadr-response", version: 7,
+    this.emit("message", { data: { type: "cadr-response", version: 8,
       id: requestValue.id, op: requestValue.op, status: 0, ok: true, ...fields } });
   }
 }
@@ -138,7 +138,8 @@ async function testWorkerLossMatrix() {
    * fails before lower dispatch rather than pretending the source matrix is a
    * device-loss test. */
   const worker = new ManualWorker(); const timers = new ManualTimers(); const shell = shellFor(worker, timers);
-  const result = await shell.submit(request(1, "audio-open", { rendererProfile: "USIM-SDL3-SINE", consumerEpoch: 1n }));
+  const result = await shell.submit(request(1, "audio-open", {
+    rendererProfile: "USIM-SDL3-SINE-330D8248-CANONICAL-v1" }));
   assert.equal(result.status, CADR_M13_STATUS.NOT_READY);
   assert.equal(worker.requests.length, 0);
 }

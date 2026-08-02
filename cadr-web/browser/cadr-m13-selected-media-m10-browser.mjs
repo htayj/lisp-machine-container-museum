@@ -1,5 +1,5 @@
 /*
- * Browser-only public-v8 composition probe for the selected M12/v7 worker,
+ * Browser-only public-v8 composition probe for the selected M13 ABI1.11 worker,
  * verified System 303 media ingress, and real C-M10 IndexedDB bridge. Its
  * sources are fixed local preservation inputs; no media bytes are bundled or
  * tracked by this probe.
@@ -19,7 +19,7 @@ import { parseCdrM10W1, serializeCdrM10W1 } from "../wasm/cadr-m10-wrapper.mjs";
 const BASE_BYTES = 269562880;
 const BASE_BLOCKS = 263245;
 const BASE_SHA256 = "bb16e46ad81decfe1efe691d36b6aa4ce3fd4ffb82474365de3520989d397cb5";
-const SELECTED_WASM_SHA256 = "62062a742c34aea8e0f7e49d48b19adefe4dd715795869557e1a085cbebb6396";
+const SELECTED_WASM_SHA256 = "11794b191dd355e6577133f293b591f065bb695b07ff0b3c41c2597c8c6bcd35";
 const status = document.querySelector("#cadr-m13-selected-media-m10-status");
 const text = new TextEncoder();
 
@@ -30,8 +30,8 @@ const artifacts = Object.freeze([
   Object.freeze({ kind: 5, role: "ucadr-symbols", url: new URL("../../l/sys/ubin/ucadr.sym", import.meta.url) }),
 ]);
 const baseUrl = new URL("../../l/usim/disk-sys-303-0.img", import.meta.url);
-const wasmUrl = new URL("../build/cadr-web-m12-O2.wasm", import.meta.url);
-const SELECTED_WASM_ROLE = "cadr-web-m12-o2-wasm";
+const wasmUrl = new URL("../build/cadr-web-m13-audio-O2.wasm", import.meta.url);
+const SELECTED_WASM_ROLE = "cadr-web-m13-audio-o2-wasm";
 const PROFILE_ID_MAGIC = text.encode("CADR-M13-SELECTED-PROFILE-v1\0");
 const ARTIFACT_SET_ID_MAGIC = text.encode("CADR-M13-SELECTED-ARTIFACT-SET-v1\0");
 const TEST_ADAPTER_PROFILE = "M13-E27-CDRM10W1-DISPATCH-ADAPTER-v1";
