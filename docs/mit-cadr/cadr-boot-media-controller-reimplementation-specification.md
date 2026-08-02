@@ -3,7 +3,7 @@ type: Reimplementation Specification
 title: CADR-WEB-303 ABI 1.3 boot-media controller reimplementation specification
 description: An implementation-ready contract for the selected System 303 disk controller, asynchronous range service, volatile boot-scratch overlay, controller evidence, and native/Wasm conformance gate.
 tags: [mit-cadr, lm-3, system-303, disk-controller, webassembly, reimplementation]
-timestamp: 2026-08-02T05:37:12-04:00
+timestamp: 2026-08-02T09:22:18-04:00
 ---
 
 # CADR-WEB-303 ABI 1.3 boot-media controller reimplementation specification
@@ -262,7 +262,7 @@ overlay:
 
 ### M7-only effective-page acknowledgement companion
 
-`CADR-WEB-303/ABI1.5/protocol-v5/C-M7-P4-EFFECTIVE-PAGE-IDENTITY-v1` is a
+`CADR-WEB-303/ABI1.5/protocol-v5/C-M7-P4-EFFECTIVE-PAGE-IDENTITY-v2` is a
 default-disabled JavaScript companion selected only by the M7 P4 wrapper.  It
 does not revise this ABI1.3 profile, the native M4 service, or `CDRM4MEDIA1`.
 The first valid LBA-1 boot-scratch write remains the sole M4 `COMMIT`, and an
@@ -272,24 +272,38 @@ considered.
 After that initial M4 commit, the companion requires the exact overlay-backed
 LBA-1 comparison and base-backed LBA-0 read above, followed by an exact M6 fast
 reason-1 quiet suffix at or after boundary `1030044`, with persistent status
-zero and no outstanding request. Only then can a strictly newer generation and
-request identity propose a well-formed one-block write to **any** LBA whose
-1,024-byte range lies wholly within the selected base. Generation is compared
-first and request ID second; transaction ID must equal request ID. A stale
+zero and no outstanding request. Only then can the exact v1 anchor,
+generation/request/transaction `1/135/135`, LBA `1299`, boundary `1366722`,
+and pinned payload hash propose the first member. After its acknowledgement the
+companion remains in streaming state. Each later member retains generation `1`,
+sets transaction ID equal to request ID, exceeds the global completed-host-
+request high-water (reads included), and names a well-formed one-block write
+wholly within the selected base. A stale
 identity, or the original identity with a changed descriptor or payload, is not
 an acknowledgement. Exact descriptor-and-payload replay of the original M4
 LBA-1 commit is resolved first and remains ordinary M4 replay.
 
 For LBA 1, the comparison authority is the effective overlay page. For every
 other LBA it is an overflow-safe `readRange(firstBlock * 1024, 1024)` of the
-selected base. Equal bytes create only an internal candidate. After successful
-host completion, M6 independently rereads the effective page and cross-links
+selected base. The service rereads the target immediately before success and
+again after host completion. Equal bytes create only an internal candidate.
+M6 cross-links
 the candidate and each of the arm's initial-commit, comparison-read, and
 base-read operations to unique adjacent `CDRM6HS1` issue/completion pairs:
 LBA and bounds, generation/request/transaction, descriptor and payload,
 boundaries, host status, overlay generation/root, effective source, selected
-base identity, and the full arm. The public `IDENTITY_ACK` carries those hashes
-and unchanged before/after media state, but no page bytes.
+base identity, and the full arm. Optional provenance for an immediately
+preceding successful one-block read must occupy the adjacent transcript pair.
+Each public `IDENTITY_ACK` carries those hashes and unchanged before/after
+media state, but no page bytes.
+
+M6 validates the whole ordered collection as
+`cadr-m7-effective-page-identity-stream-v1` / `IDENTITY_ACK_STREAM`. Candidate
+schema v3 and acknowledgement schema v4 carry a zero-based ordinal and both
+target-reread hashes. Request IDs, boundaries, and transcript ordinals increase
+across the collection; the first tuple remains the exact request-135 anchor;
+and no stream member may replay. The bound is 1,024 total host transactions,
+not 1,024 acknowledgements.
 
 Validation does not trust the receipt's base or root assertions. Its authority
 must independently supply the expected base byte count and SHA-256. The
@@ -300,8 +314,9 @@ authoritative initial LBA-1 payload hash. Any substituted base, false root,
 missing or duplicate arm pair, or forged record link is rejected.
 
 Changed payloads, malformed or out-of-range descriptors, stale or reused
-identities, a failed or short range read, any targeted M4 fault, rejected
-delivery, detach, missing fresh witness, or transcript mismatch fail closed
+identities, a failed or short target read, any targeted M4 fault, rejected
+delivery, detach/reset, target drift, high-water regression, exhaustion,
+missing ordered witness, or transcript mismatch poison the stream and fail closed
 without an acknowledgement, stage, commit, generation advance, root change,
 persistence, or sparse overlay. This is an implementation-tested
 reconstruction rule, not a claim about a historical CADR disk no-op
@@ -458,8 +473,9 @@ Only a successful write delivery has COMMIT. A failed delivery has ABORT and lea
 overlay identity unchanged. Reads use NONE. The stable turn requires no outstanding
 request, queued completion, or request payload.
 
-`IDENTITY_ACK` is deliberately not a `CDRM4MEDIA1` disposition.  It belongs to
-the separately typed M7 companion evidence above, so frozen M4 media bytes and
+`IDENTITY_ACK` and `IDENTITY_ACK_STREAM` are deliberately not `CDRM4MEDIA1`
+dispositions. They belong to the separately typed M7 companion evidence above,
+so frozen M4 media bytes and
 their successful-write meaning remain unchanged.
 
 ### CDRM4CTRL1

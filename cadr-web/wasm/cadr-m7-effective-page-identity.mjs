@@ -7,15 +7,20 @@
 import { m4OverlayRootForBase } from "./cadr-m4-media.mjs";
 
 export const CADR_M7_EFFECTIVE_PAGE_IDENTITY_PROFILE =
-  "CADR-WEB-303/ABI1.5/protocol-v5/C-M7-P4-EFFECTIVE-PAGE-IDENTITY-v1";
+  "CADR-WEB-303/ABI1.5/protocol-v5/C-M7-P4-EFFECTIVE-PAGE-IDENTITY-v2";
 export const CADR_M7_EFFECTIVE_PAGE_IDENTITY_ARM_SCHEMA =
   "cadr-m7-effective-page-identity-arm-v2";
 export const CADR_M7_EFFECTIVE_PAGE_IDENTITY_CANDIDATE_SCHEMA =
-  "cadr-m7-effective-page-identity-candidate-v2";
+  "cadr-m7-effective-page-identity-candidate-v3";
 export const CADR_M7_EFFECTIVE_PAGE_IDENTITY_EVIDENCE_SCHEMA =
-  "cadr-m7-effective-page-identity-evidence-v3";
+  "cadr-m7-effective-page-identity-evidence-v4";
+export const CADR_M7_EFFECTIVE_PAGE_IDENTITY_STREAM_SCHEMA =
+  "cadr-m7-effective-page-identity-stream-v1";
 export const CADR_M7_EFFECTIVE_PAGE_IDENTITY_DISPOSITION = "IDENTITY_ACK";
+export const CADR_M7_EFFECTIVE_PAGE_IDENTITY_STREAM_DISPOSITION =
+  "IDENTITY_ACK_STREAM";
 export const CADR_M7_EFFECTIVE_PAGE_IDENTITY_MIN_QUIET_BOUNDARY = 1030044n;
+export const CADR_M7_EFFECTIVE_PAGE_IDENTITY_MAX_HOST_TRANSACTIONS = 1024;
 
 export const CADR_M7_P4_IDENTITY_REQUEST = Object.freeze({
   generation: 1n,
@@ -195,15 +200,37 @@ function freezeMediaState(value, label) {
     persistent: state.persistent, staged: state.staged });
 }
 
+function freezePrecedingRead(value) {
+  if (value === null) return null;
+  const read = plainRecord(value,
+    ["completion_boundary", "first_block", "generation", "issue_boundary",
+      "page_sha256", "request_id"],
+    "M7 effective-page preceding read");
+  if (!u64(read.generation) || !u64(read.request_id) ||
+      !u64(read.first_block) || !u64(read.issue_boundary) ||
+      !u64(read.completion_boundary) ||
+      read.completion_boundary < read.issue_boundary) {
+    throw new TypeError("M7 effective-page preceding read is invalid");
+  }
+  return Object.freeze({ generation: read.generation,
+    request_id: read.request_id, first_block: read.first_block,
+    issue_boundary: read.issue_boundary,
+    completion_boundary: read.completion_boundary,
+    page_sha256: copyHash(read.page_sha256,
+      "M7 effective-page preceding-read hash") });
+}
+
 function freezeCandidate(value) {
   const candidate = plainRecord(value,
-    ["arm", "completion_boundary", "descriptor", "due_boundary",
+    ["acknowledgement_ordinal", "arm", "completion_boundary", "descriptor", "due_boundary",
       "effective_page_sha256", "effective_source", "first_block", "generation",
       "host_status", "issue_boundary", "media_after", "media_before", "profile",
+      "post_completion_target_sha256", "preceding_read", "pre_success_target_sha256",
       "request_id", "schema", "transaction_id"],
     "M7 effective-page identity candidate");
   if (candidate.schema !== CADR_M7_EFFECTIVE_PAGE_IDENTITY_CANDIDATE_SCHEMA ||
       candidate.profile !== CADR_M7_EFFECTIVE_PAGE_IDENTITY_PROFILE ||
+      !u32(candidate.acknowledgement_ordinal) ||
       !u64(candidate.generation) || !u64(candidate.request_id) ||
       !u64(candidate.transaction_id) || candidate.transaction_id !== candidate.request_id ||
       !u64(candidate.first_block) || !u64(candidate.issue_boundary) ||
@@ -212,6 +239,15 @@ function freezeCandidate(value) {
       candidate.completion_boundary < candidate.due_boundary ||
       candidate.host_status !== 0 || !["base", "overlay"].includes(candidate.effective_source)) {
     throw new TypeError("M7 effective-page identity candidate is invalid");
+  }
+  const effectiveHash = copyHash(candidate.effective_page_sha256,
+    "M7 effective-page candidate hash");
+  const preHash = copyHash(candidate.pre_success_target_sha256,
+    "M7 effective-page pre-success target hash");
+  const postHash = copyHash(candidate.post_completion_target_sha256,
+    "M7 effective-page post-completion target hash");
+  if (!sameBytes(effectiveHash, preHash) || !sameBytes(effectiveHash, postHash)) {
+    throw new TypeError("M7 effective-page target rereads differ");
   }
   const descriptor = copyBytes(candidate.descriptor, 24,
     "M7 effective-page identity descriptor");
@@ -225,12 +261,15 @@ function freezeCandidate(value) {
     throw new TypeError("M7 effective-page identity descriptor or source differs");
   }
   return Object.freeze({ schema: candidate.schema, profile: candidate.profile,
+    acknowledgement_ordinal: candidate.acknowledgement_ordinal,
     arm: freezeArm(candidate.arm), generation: candidate.generation,
     request_id: candidate.request_id, transaction_id: candidate.transaction_id,
     first_block: candidate.first_block, descriptor,
     effective_source: candidate.effective_source,
-    effective_page_sha256: copyHash(candidate.effective_page_sha256,
-      "M7 effective-page candidate hash"),
+    effective_page_sha256: effectiveHash,
+    pre_success_target_sha256: preHash,
+    post_completion_target_sha256: postHash,
+    preceding_read: freezePrecedingRead(candidate.preceding_read),
     issue_boundary: candidate.issue_boundary, due_boundary: candidate.due_boundary,
     completion_boundary: candidate.completion_boundary,
     host_status: candidate.host_status,
@@ -316,6 +355,37 @@ function recordsMatchCandidate(issue, completion, candidate, descriptorSha256) {
     sameBytes(completion.request_payload_sha256, candidate.effective_page_sha256) &&
     sameBytes(issue.completion_sha256, EMPTY_SHA256) &&
     sameBytes(completion.completion_sha256, EMPTY_SHA256);
+}
+
+function recordsMatchPrecedingRead(issue, completion, read) {
+  return issue.actor === 1 && completion.actor === 2 &&
+    issue.operation === 1 && completion.operation === 1 &&
+    completion.ordinal === issue.ordinal + 1 &&
+    issue.guest_boundary === read.issue_boundary &&
+    completion.guest_boundary === read.completion_boundary &&
+    issue.generation === read.generation && completion.generation === read.generation &&
+    issue.request_id === read.request_id && completion.request_id === read.request_id &&
+    issue.host_status === 0 && completion.host_status === 0 &&
+    issue.block_count === 1 && completion.block_count === 1 &&
+    issue.request_payload_byte_count === 0n &&
+    completion.request_payload_byte_count === 0n &&
+    issue.completion_byte_count === 1024n && completion.completion_byte_count === 1024n &&
+    issue.first_block === read.first_block && completion.first_block === read.first_block &&
+    issue.block_bytes === BLOCK_BYTES && completion.block_bytes === BLOCK_BYTES &&
+    sameBytes(issue.completion_sha256, EMPTY_SHA256) &&
+    sameBytes(completion.completion_sha256, read.page_sha256);
+}
+
+function validatePrecedingReadLink(transcript, candidatePair, read) {
+  if (read === null) return;
+  if (candidatePair.issue.ordinal < 2) {
+    throw new TypeError("M7 effective-page preceding read is not adjacent");
+  }
+  const issue = parseHostRecord(transcript, candidatePair.issue.ordinal - 2);
+  const completion = parseHostRecord(transcript, candidatePair.issue.ordinal - 1);
+  if (!recordsMatchPrecedingRead(issue, completion, read)) {
+    throw new TypeError("M7 effective-page preceding read differs from CDRM6HS1");
+  }
 }
 
 function armDescriptor(record, write) {
@@ -513,6 +583,7 @@ export async function createM7EffectivePageIdentityAcknowledgement(value) {
   const candidatePair = uniqueRecordPair(transcript,
     (issue, completion) => recordsMatchCandidate(issue, completion, candidate,
       descriptorSha256), "candidate");
+  validatePrecedingReadLink(transcript, candidatePair, candidate.preceding_read);
   const { issue, completion } = candidatePair;
   if (issue.ordinal !== input.issue_ordinal ||
       completion.ordinal !== input.completion_ordinal) {
@@ -531,7 +602,7 @@ export async function createM7EffectivePageIdentityAcknowledgement(value) {
     schema: CADR_M7_EFFECTIVE_PAGE_IDENTITY_EVIDENCE_SCHEMA,
     profile: CADR_M7_EFFECTIVE_PAGE_IDENTITY_PROFILE,
     disposition: CADR_M7_EFFECTIVE_PAGE_IDENTITY_DISPOSITION,
-    acknowledgement_ordinal: 0,
+    acknowledgement_ordinal: candidate.acknowledgement_ordinal,
     arm: candidate.arm,
     selected_base: Object.freeze({ byte_count: selectedBase.byte_count,
       sha256: baseSha256 }),
@@ -546,6 +617,11 @@ export async function createM7EffectivePageIdentityAcknowledgement(value) {
     effective_page: Object.freeze({ source: candidate.effective_source,
       first_block: candidate.first_block, byte_offset: offset,
       byte_count: BLOCK_BYTES, sha256: effectiveSha256 }),
+    target_rereads: Object.freeze({
+      pre_success_sha256: candidate.pre_success_target_sha256,
+      post_completion_sha256: candidate.post_completion_target_sha256,
+    }),
+    preceding_read: candidate.preceding_read,
     media_before: candidate.media_before,
     media_after: candidate.media_after,
     transcript: Object.freeze({ schema: "CDRM6HS1", sha256: transcriptSha256,
@@ -562,12 +638,12 @@ function freezeEvidence(value) {
   const evidence = plainRecord(value,
     ["acknowledgement_ordinal", "arm", "disposition", "effective_page",
       "media_after", "media_before", "profile", "request", "schema",
-      "selected_base", "transcript"],
+      "preceding_read", "selected_base", "target_rereads", "transcript"],
     "M7 effective-page acknowledgement evidence");
   if (evidence.schema !== CADR_M7_EFFECTIVE_PAGE_IDENTITY_EVIDENCE_SCHEMA ||
       evidence.profile !== CADR_M7_EFFECTIVE_PAGE_IDENTITY_PROFILE ||
       evidence.disposition !== CADR_M7_EFFECTIVE_PAGE_IDENTITY_DISPOSITION ||
-      evidence.acknowledgement_ordinal !== 0) {
+      !u32(evidence.acknowledgement_ordinal)) {
     throw new TypeError("M7 effective-page acknowledgement evidence identity differs");
   }
   const request = plainRecord(evidence.request,
@@ -584,6 +660,9 @@ function freezeEvidence(value) {
     ["arm_records", "artifact_set_sha256", "completion_ordinal", "completion_record_sha256",
       "issue_ordinal", "issue_record_sha256", "schema", "sha256"],
     "M7 effective-page transcript link");
+  const targetRereads = plainRecord(evidence.target_rereads,
+    ["post_completion_sha256", "pre_success_sha256"],
+    "M7 effective-page target rereads");
   if (!u64(request.generation) || !u64(request.request_id) ||
       !u64(request.transaction_id) || request.transaction_id !== request.request_id ||
       !u64(request.first_block) || request.block_count !== 1 ||
@@ -599,6 +678,14 @@ function freezeEvidence(value) {
       !u32(transcript.issue_ordinal) || !u32(transcript.completion_ordinal) ||
       transcript.completion_ordinal !== transcript.issue_ordinal + 1) {
     throw new TypeError("M7 effective-page acknowledgement evidence is malformed");
+  }
+  const effectiveHash = copyHash(page.sha256, "M7 evidence effective hash");
+  const preHash = copyHash(targetRereads.pre_success_sha256,
+    "M7 evidence pre-success target hash");
+  const postHash = copyHash(targetRereads.post_completion_sha256,
+    "M7 evidence post-completion target hash");
+  if (!sameBytes(effectiveHash, preHash) || !sameBytes(effectiveHash, postHash)) {
+    throw new TypeError("M7 effective-page evidence target rereads differ");
   }
   return Object.freeze({ schema: evidence.schema, profile: evidence.profile,
     disposition: evidence.disposition,
@@ -620,7 +707,10 @@ function freezeEvidence(value) {
     effective_page: Object.freeze({ source: page.source,
       first_block: page.first_block, byte_offset: page.byte_offset,
       byte_count: page.byte_count,
-      sha256: copyHash(page.sha256, "M7 evidence effective hash") }),
+      sha256: effectiveHash }),
+    target_rereads: Object.freeze({ pre_success_sha256: preHash,
+      post_completion_sha256: postHash }),
+    preceding_read: freezePrecedingRead(evidence.preceding_read),
     media_before: freezeMediaState(evidence.media_before,
       "M7 evidence media before"),
     media_after: freezeMediaState(evidence.media_after,
@@ -659,12 +749,16 @@ export async function validateM7EffectivePageIdentityAcknowledgement(value, trus
   const transcript = parseHostTranscript(authority.host_transcript);
   const descriptorSha256 = await sha256(evidence.request.descriptor);
   const candidate = Object.freeze({ schema: CADR_M7_EFFECTIVE_PAGE_IDENTITY_CANDIDATE_SCHEMA,
-    profile: evidence.profile, arm: evidence.arm,
+    profile: evidence.profile, acknowledgement_ordinal: evidence.acknowledgement_ordinal,
+    arm: evidence.arm,
     generation: evidence.request.generation, request_id: evidence.request.request_id,
     transaction_id: evidence.request.transaction_id,
     first_block: evidence.request.first_block, descriptor: evidence.request.descriptor,
     effective_source: evidence.effective_page.source,
     effective_page_sha256: evidence.effective_page.sha256,
+    pre_success_target_sha256: evidence.target_rereads.pre_success_sha256,
+    post_completion_target_sha256: evidence.target_rereads.post_completion_sha256,
+    preceding_read: evidence.preceding_read,
     issue_boundary: evidence.request.issue_boundary,
     due_boundary: evidence.request.due_boundary,
     completion_boundary: evidence.request.completion_boundary,
@@ -673,6 +767,7 @@ export async function validateM7EffectivePageIdentityAcknowledgement(value, trus
   const candidatePair = uniqueRecordPair(transcript,
     (issue, completion) => recordsMatchCandidate(issue, completion, candidate,
       descriptorSha256), "candidate");
+  validatePrecedingReadLink(transcript, candidatePair, evidence.preceding_read);
   const [transcriptSha256, candidateLink, trustedArmLinks,
     expectedOverlayRoot] = await Promise.all([
       sha256(transcript.bytes), recordPairLink(candidatePair),
@@ -728,7 +823,8 @@ export async function validateSelectedM7P4EffectivePageIdentityAcknowledgement(
   const selected = CADR_M7_P4_IDENTITY_REQUEST;
   const selectedArm = CADR_M7_P4_IDENTITY_ARM;
   const arm = evidence.arm;
-  if (evidence.request.generation !== selected.generation ||
+  if (evidence.acknowledgement_ordinal !== 0 ||
+      evidence.request.generation !== selected.generation ||
       evidence.request.request_id !== selected.request_id ||
       evidence.request.transaction_id !== selected.transaction_id ||
       evidence.request.first_block !== selected.first_block ||
@@ -763,6 +859,129 @@ export async function validateSelectedM7P4EffectivePageIdentityAcknowledgement(
   return evidence;
 }
 
+function sameArm(left, right) {
+  return canonicalEvidence(freezeArm(left)) === canonicalEvidence(freezeArm(right));
+}
+
+function freezeStream(value) {
+  const stream = plainRecord(value,
+    ["acknowledgements", "count", "disposition", "first", "host_transcript",
+      "profile", "schema"], "M7 effective-page identity stream");
+  if (stream.schema !== CADR_M7_EFFECTIVE_PAGE_IDENTITY_STREAM_SCHEMA ||
+      stream.profile !== CADR_M7_EFFECTIVE_PAGE_IDENTITY_PROFILE ||
+      stream.disposition !== CADR_M7_EFFECTIVE_PAGE_IDENTITY_STREAM_DISPOSITION ||
+      !u32(stream.count) || stream.count === 0 ||
+      !Array.isArray(stream.acknowledgements) ||
+      stream.acknowledgements.length !== stream.count) {
+    throw new TypeError("M7 effective-page identity stream has the wrong shape");
+  }
+  const first = plainRecord(stream.first,
+    ["boundary", "first_block", "generation", "request_id", "transaction_id"],
+    "M7 effective-page identity stream first tuple");
+  const transcript = plainRecord(stream.host_transcript,
+    ["artifact_set_sha256", "byte_count", "record_count", "schema", "sha256"],
+    "M7 effective-page identity stream transcript");
+  if (!u64(first.boundary) || !u64(first.first_block) ||
+      !u64(first.generation) || !u64(first.request_id) ||
+      !u64(first.transaction_id) || transcript.schema !== "CDRM6HS1" ||
+      !u64(transcript.byte_count) || !u32(transcript.record_count)) {
+    throw new TypeError("M7 effective-page identity stream metadata is invalid");
+  }
+  const acknowledgements = stream.acknowledgements.map(freezeEvidence);
+  for (let index = 0; index < acknowledgements.length; index += 1) {
+    const current = acknowledgements[index];
+    if (current.acknowledgement_ordinal !== index ||
+        !sameArm(current.arm, acknowledgements[0].arm) ||
+        !sameBytes(current.selected_base.sha256,
+          acknowledgements[0].selected_base.sha256) ||
+        current.selected_base.byte_count !== acknowledgements[0].selected_base.byte_count ||
+        !sameBytes(current.transcript.sha256, transcript.sha256) ||
+        !sameBytes(current.transcript.artifact_set_sha256,
+          transcript.artifact_set_sha256) ||
+        (index !== 0 &&
+          (current.request.generation !== 1n ||
+           current.request.request_id <= acknowledgements[index - 1].request.request_id ||
+           current.request.issue_boundary <
+             acknowledgements[index - 1].request.completion_boundary ||
+           current.transcript.issue_ordinal <=
+             acknowledgements[index - 1].transcript.completion_ordinal))) {
+      throw new TypeError("M7 effective-page identity stream ordering differs");
+    }
+  }
+  const selected = acknowledgements[0].request;
+  if (first.boundary !== selected.issue_boundary ||
+      first.first_block !== selected.first_block ||
+      first.generation !== selected.generation ||
+      first.request_id !== selected.request_id ||
+      first.transaction_id !== selected.transaction_id) {
+    throw new TypeError("M7 effective-page identity stream first tuple differs");
+  }
+  return Object.freeze({ schema: stream.schema, profile: stream.profile,
+    disposition: stream.disposition, count: stream.count,
+    first: Object.freeze({ boundary: first.boundary, first_block: first.first_block,
+      generation: first.generation, request_id: first.request_id,
+      transaction_id: first.transaction_id }),
+    host_transcript: Object.freeze({ schema: transcript.schema,
+      byte_count: transcript.byte_count, record_count: transcript.record_count,
+      sha256: copyHash(transcript.sha256, "M7 stream transcript hash"),
+      artifact_set_sha256: copyHash(transcript.artifact_set_sha256,
+        "M7 stream artifact-set hash") }),
+    acknowledgements: Object.freeze(acknowledgements) });
+}
+
+export async function createM7EffectivePageIdentityStream(value) {
+  const input = plainRecord(value, ["acknowledgements", "host_transcript"],
+    "M7 effective-page identity stream input");
+  if (!Array.isArray(input.acknowledgements) || input.acknowledgements.length === 0) {
+    throw new TypeError("M7 effective-page identity stream needs acknowledgements");
+  }
+  const transcript = parseHostTranscript(input.host_transcript);
+  const transcriptSha256 = await sha256(transcript.bytes);
+  const first = freezeEvidence(input.acknowledgements[0]);
+  const stream = freezeStream({ schema: CADR_M7_EFFECTIVE_PAGE_IDENTITY_STREAM_SCHEMA,
+    profile: CADR_M7_EFFECTIVE_PAGE_IDENTITY_PROFILE,
+    disposition: CADR_M7_EFFECTIVE_PAGE_IDENTITY_STREAM_DISPOSITION,
+    count: input.acknowledgements.length,
+    first: { boundary: first.request.issue_boundary,
+      first_block: first.request.first_block, generation: first.request.generation,
+      request_id: first.request.request_id,
+      transaction_id: first.request.transaction_id },
+    host_transcript: { schema: "CDRM6HS1", byte_count: BigInt(transcript.bytes.byteLength),
+      record_count: transcript.count, sha256: transcriptSha256,
+      artifact_set_sha256: transcript.artifact_set_sha256 },
+    acknowledgements: input.acknowledgements });
+  await validateSelectedM7P4EffectivePageIdentityAcknowledgement(
+    stream.acknowledgements[0], transcript.bytes);
+  return stream;
+}
+
+export async function validateM7EffectivePageIdentityStream(value, trusted) {
+  const stream = freezeStream(value);
+  const authority = plainRecord(trusted, ["expected_base", "host_transcript"],
+    "M7 effective-page stream validation authority");
+  const transcript = parseHostTranscript(authority.host_transcript);
+  const transcriptSha256 = await sha256(transcript.bytes);
+  if (stream.host_transcript.byte_count !== BigInt(transcript.bytes.byteLength) ||
+      stream.host_transcript.record_count !== transcript.count ||
+      !sameBytes(stream.host_transcript.sha256, transcriptSha256) ||
+      !sameBytes(stream.host_transcript.artifact_set_sha256,
+        transcript.artifact_set_sha256)) {
+    throw new TypeError("M7 effective-page stream transcript differs");
+  }
+  const expectedBase = plainRecord(authority.expected_base,
+    ["byte_count", "sha256"], "M7 effective-page stream trusted base");
+  for (const acknowledgement of stream.acknowledgements) {
+    await validateM7EffectivePageIdentityAcknowledgement(acknowledgement, {
+      host_transcript: transcript.bytes, effective_page_bytes: null,
+      expected_effective_page_sha256: acknowledgement.effective_page.sha256,
+      expected_base: expectedBase,
+    });
+  }
+  await validateSelectedM7P4EffectivePageIdentityAcknowledgement(
+    stream.acknowledgements[0], transcript.bytes);
+  return stream;
+}
+
 function canonicalEvidence(value) {
   const bytes = bytesOf(value);
   if (bytes !== null) {
@@ -781,4 +1000,12 @@ function canonicalEvidence(value) {
 export async function m7EffectivePageIdentityAcknowledgementSha256(value) {
   const bytes = new TextEncoder().encode(canonicalEvidence(freezeEvidence(value)));
   return sha256(bytes);
+}
+
+export function serializeM7EffectivePageIdentityStream(value) {
+  return new TextEncoder().encode(`${canonicalEvidence(freezeStream(value))}\n`);
+}
+
+export async function m7EffectivePageIdentityStreamSha256(value) {
+  return sha256(serializeM7EffectivePageIdentityStream(value));
 }

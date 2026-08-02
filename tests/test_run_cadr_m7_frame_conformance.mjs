@@ -277,7 +277,7 @@ const workerClosure = (entry, files) => {
 
 function manifest() {
   return {
-    schema: "cadr-m7-frame-conformance-result-v1",
+    schema: "cadr-m7-frame-conformance-result-v2",
     target: "CADR-WEB-303/ABI1.5/protocol-v5/M7",
     outcome: "identical",
     runtime_execution_performed: true,
@@ -315,12 +315,18 @@ function manifest() {
         ]), contemporaneous_adapter_observation: [
         file("cadr-web/wasm/cadr_wasm_adapter.c", 27), file("cadr-web/wasm/cadr_wasm_adapter.h", 28),
       ], termination: { pending_requests: 0, terminated: true },
-      effective_page_identity: { acknowledgement_sha256: H(35),
-        boundary: "1366722", disposition: "IDENTITY_ACK",
-        first_block: "1299", request_id: "135" },
+      effective_page_identity: {
+        schema: "cadr-m7-effective-page-identity-stream-v1",
+        profile: "CADR-WEB-303/ABI1.5/protocol-v5/C-M7-P4-EFFECTIVE-PAGE-IDENTITY-v2",
+        disposition: "IDENTITY_ACK_STREAM", count: 2,
+        collection_sha256: H(35), host_transcript_sha256: H(36),
+        first: { generation: "1", request_id: "135", transaction_id: "135",
+          first_block: "1299", boundary: "1366722" } },
       framebuffer_checkpoint: { boundary: "982990214", cdrdisp1_sha256: H(29), cdrm6i1_sha256: H(30) },
       cdrdisp_file: file("portable/frame.cdrdisp1", 29), witness_file: file("portable/witness.cdrm6i1", 30),
-      ready_file: file("portable/ready.json", 31), worker_log_file: file("portable/worker.ndjson", 32) },
+      ready_file: file("portable/ready.json", 31), worker_log_file: file("portable/worker.ndjson", 32),
+      effective_page_identity_file: file("portable/effective-page-identity.json", 35),
+      host_transcript_file: file("portable/host-transcript.cdrm6hs1", 36) },
     comparison: { file: file("comparison.json", 33), m6_witness_sample_sha256: H(30), native_capture_sha256: H(20),
       native_raw_words_sha256: H(21), portable_raw_words_sha256: H(34), portable_record_sha256: H(29) },
     summary: { manifest_kind: "hashes-only", comparison_sha256: H(33), native_frame_sha256: H(20), portable_frame_sha256: H(29) },
@@ -555,7 +561,8 @@ const mutations = [
     value.portable.contemporaneous_adapter_observation[1].sha256 = H(106);
   }],
   ["effective-page acknowledgement", value => {
-    value.portable.effective_page_identity.acknowledgement_sha256 = H(106);
+    value.portable.effective_page_identity.collection_sha256 = H(106);
+    value.portable.effective_page_identity_file.sha256 = H(106);
   }],
   ["portable checkpoint", value => { value.portable.framebuffer_checkpoint.cdrdisp1_sha256 = H(107); }],
   ["redundant portable file hash", value => { value.portable.cdrdisp_file.sha256 = H(107); }],

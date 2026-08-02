@@ -3,7 +3,7 @@ type: Implementation Roadmap
 title: MIT CADR System 303 browser and WebAssembly implementation roadmap
 description: A milestone-complete plan for porting the pinned System 303 CADR emulator to a deterministic, locally persistent, browser-hosted WebAssembly machine.
 tags: [mit-cadr, lm-3, system-303, webassembly, browser, emulator, roadmap]
-timestamp: 2026-08-02T09:18:17-04:00
+timestamp: 2026-08-02T10:26:15-04:00
 ---
 
 # MIT CADR System 303 browser and WebAssembly implementation roadmap
@@ -892,6 +892,43 @@ the authoritative quiet-boundary observation, and binds the resulting arm,
 transcript-linked receipt, and digest. Ordinary M6 still deletes any
 caller-supplied M7 policy before entering its frozen path. A new long campaign
 remains required. The later M12 and M13 source status below is unchanged.
+
+Second failed runtime observation and bounded v2 response, 2026-08-02: ignored
+session `m7-p4-6db56e8355ca42c9b9975896b766bf1c` directly observed that the
+stream continues beyond request `135`. Request `134` read LBA `187956` at
+boundary `1366543` with status `0` and completion hash
+`ba1b1cc2228edbe5028760e47687c6889023fc72221bd5c5f5be85c4cfbb6a00`;
+request `135` wrote the identical page to LBA `1299` at boundary `1366722` and
+succeeded. Request `136` then read LBA `187957` at boundary `1366946` with
+status `0` and completion hash
+`566dc7dd89247cf44f8784741c4400ca28b25d69b836fbfb8ff67729b34d6f1a`;
+request `137` wrote those bytes to LBA `1300` at boundary `1367125` but retained
+legacy host status `1`. Machine status `16` followed at boundary `1367183`.
+The native capture remained
+`cf59250db3acc33fe0b72e6b3c126cf708b3ba0cb3225ba66b3c03f2921aea42`
+and the private disk remained
+`bb16e46ad81decfe1efe691d36b6aa4ce3fd4ffb82474365de3520989d397cb5`.
+The top, portable, M6, and worker-log failure hashes were respectively
+`8a00abea95ae2f1314430228a0a611a09a8e900705902393a36d64d95978dfcd`,
+`fbdc542f17188056a9ca4b5df22c91e579c17b196892a8a4be31053222a8bd04`,
+`539d992645fa0243575ea728655f1600d467414c82a0d4f199885818715e6a49`,
+and `05187da6c4c154180580455ffbbb939619c18f95fbdce588f1c9a4b25c70a1ee`.
+
+Source v2 therefore retains the exact v1 arm and request-135 anchor, then
+streams ordered identity acknowledgements. It requires generation `1`,
+transaction ID equal to request ID, equality to fresh pre-success and
+post-completion target rereads, a global completed-host-request high-water
+including reads, no acknowledgement-member replay, and at most 1,024 total
+host transactions. The exact committed request-1 LBA-1 descriptor-and-payload
+replay remains the sole exception even after streaming begins and creates no
+acknowledgement member. Any
+malformation, mismatch, read/fault/completion failure, detach/reset, drift, or
+exhaustion poisons the stream without media/root/generation mutation. M6 emits
+candidate v3, acknowledgement v4, and `IDENTITY_ACK_STREAM` v1 evidence with
+ordered witnesses and optional adjacent-read provenance. P4 retains private
+0600 canonical stream and transcript sidecars; P5 hashes and validates but
+never serves them. The observed future stream length remains unknown, so a
+fresh campaign is still required and no P4 or P5 gate is closed.
 
 ### M8 — Implement complete keyboard input
 

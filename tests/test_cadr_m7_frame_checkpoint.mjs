@@ -328,18 +328,18 @@ async function testSelectedIdentityFailsClosed() {
   };
   await assert.rejects(runCase({
     profile: CADR_M7_EFFECTIVE_PAGE_IDENTITY_PROFILE, arm: {},
-    acknowledgements: [],
-  }), /requires exactly one effective-page identity acknowledgement/,
+    acknowledgements: [], stream: {},
+  }), /requires an effective-page identity stream/,
   "the default or zero-ack path cannot satisfy selected P4");
   await assert.rejects(runCase({
     profile: CADR_M7_EFFECTIVE_PAGE_IDENTITY_PROFILE, arm: {},
-    acknowledgements: [{}],
-  }), /M7 effective-page acknowledgement/,
+    acknowledgements: [{}], stream: {},
+  }), /M7 effective-page identity stream/,
   "a forged acknowledgement cannot cross the transcript authority boundary");
   await assert.rejects(runCase({
     profile: CADR_M7_EFFECTIVE_PAGE_IDENTITY_PROFILE, arm: {}, extra: true,
-    acknowledgements: [{}],
-  }), /requires exactly one effective-page identity acknowledgement/,
+    acknowledgements: [{}], stream: {},
+  }), /requires an effective-page identity stream/,
   "an authority envelope with additional untrusted state is rejected");
 }
 

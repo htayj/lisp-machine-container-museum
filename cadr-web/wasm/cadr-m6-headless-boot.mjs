@@ -22,6 +22,7 @@ import {
   CADR_M7_EFFECTIVE_PAGE_IDENTITY_MIN_QUIET_BOUNDARY,
   CADR_M7_EFFECTIVE_PAGE_IDENTITY_PROFILE,
   createM7EffectivePageIdentityAcknowledgement,
+  createM7EffectivePageIdentityStream,
   parseM7EffectivePageIdentityPolicy,
 } from "./cadr-m7-effective-page-identity.mjs";
 import { CADR_STATUS_UNIMPLEMENTED_DEVICE,
@@ -2283,30 +2284,42 @@ async function runM6HeadlessBootInternal(config, testReady = null) {
         const hostTranscriptSha256 = await sha256(hostTranscript);
         let m7EffectivePageIdentity = null;
         if (context.blockService.m7EffectivePageIdentityEnabled()) {
-          if (context.identityCandidates.length !== 1) {
-            throw new Error("selected P4 requires exactly one effective-page candidate");
-          }
-          const linked = context.identityCandidates[0];
           const serviceCandidates =
             context.blockService.m7EffectivePageIdentityCandidates();
-          const witness = await context.blockService.m7EffectivePageIdentityWitness();
-          if (serviceCandidates.length !== 1 || witness === null ||
-              serviceCandidates[0] !== linked.candidate) {
-            throw new Error("M7 effective-page candidate lacks its trusted reread");
+          const witnesses =
+            context.blockService.m7EffectivePageIdentityWitnesses();
+          const identityStatus =
+            context.blockService.m7EffectivePageIdentityStatus();
+          if (context.identityCandidates.length === 0 ||
+              serviceCandidates.length !== context.identityCandidates.length ||
+              witnesses.length !== context.identityCandidates.length ||
+              identityStatus.phase !== "streaming") {
+            throw new Error("selected P4 lacks a complete effective-page stream");
           }
-          m7EffectivePageIdentity = Object.freeze({
-            profile: config.m7EffectivePageIdentityPolicy.profile,
-            arm: context.blockService.m7EffectivePageIdentityArm(),
-            acknowledgements: Object.freeze([
+          const acknowledgements = [];
+          for (let index = 0; index < context.identityCandidates.length; index += 1) {
+            const linked = context.identityCandidates[index];
+            if (serviceCandidates[index] !== linked.candidate) {
+              throw new Error("M7 effective-page stream order differs");
+            }
+            acknowledgements.push(
               await createM7EffectivePageIdentityAcknowledgement({
                 candidate: linked.candidate,
                 issue_ordinal: linked.issueOrdinal,
                 completion_ordinal: linked.completionOrdinal,
                 host_transcript: hostTranscript,
                 selected_base: context.selectedBase,
-                effective_page_witness: witness,
-              }),
-            ]),
+                effective_page_witness: witnesses[index],
+              }));
+          }
+          const stream = await createM7EffectivePageIdentityStream({
+            acknowledgements, host_transcript: hostTranscript,
+          });
+          m7EffectivePageIdentity = Object.freeze({
+            profile: config.m7EffectivePageIdentityPolicy.profile,
+            arm: context.blockService.m7EffectivePageIdentityArm(),
+            acknowledgements: stream.acknowledgements,
+            stream,
           });
         }
         const semanticWitness = await canonicalM6ReadyWitnessFromValidatedRecord({
@@ -2800,30 +2813,38 @@ async function runM6Ready4FastInternal(config, testReady = null) {
         hostWaitRecords: context.hostWaitRecords,
       });
       let identityAcknowledgements = Object.freeze([]);
+      let identityStream = null;
       if (context.blockService.m7EffectivePageIdentityEnabled()) {
-        if (context.identityCandidates.length > 1) {
-          throw new Error("M7 effective-page profile produced multiple candidates");
+        const serviceCandidates =
+          context.blockService.m7EffectivePageIdentityCandidates();
+        const witnesses = context.blockService.m7EffectivePageIdentityWitnesses();
+        const identityStatus = context.blockService.m7EffectivePageIdentityStatus();
+        if (context.identityCandidates.length === 0 ||
+            serviceCandidates.length !== context.identityCandidates.length ||
+            witnesses.length !== context.identityCandidates.length ||
+            identityStatus.phase !== "streaming") {
+          throw new Error("selected P4 lacks a complete effective-page stream");
         }
-        if (context.identityCandidates.length === 1) {
-          const linked = context.identityCandidates[0];
-          const serviceCandidates =
-            context.blockService.m7EffectivePageIdentityCandidates();
-          const witness = await context.blockService.m7EffectivePageIdentityWitness();
-          if (serviceCandidates.length !== 1 || witness === null ||
-              serviceCandidates[0] !== linked.candidate) {
-            throw new Error("M7 effective-page candidate lacks its trusted reread");
+        const acknowledgements = [];
+        for (let index = 0; index < context.identityCandidates.length; index += 1) {
+          const linked = context.identityCandidates[index];
+          if (serviceCandidates[index] !== linked.candidate) {
+            throw new Error("M7 effective-page stream order differs");
           }
-          identityAcknowledgements = Object.freeze([
+          acknowledgements.push(
             await createM7EffectivePageIdentityAcknowledgement({
               candidate: linked.candidate,
               issue_ordinal: linked.issueOrdinal,
               completion_ordinal: linked.completionOrdinal,
               host_transcript: hostTranscript,
               selected_base: context.selectedBase,
-              effective_page_witness: witness,
-            }),
-          ]);
+              effective_page_witness: witnesses[index],
+            }));
         }
+        identityStream = await createM7EffectivePageIdentityStream({
+          acknowledgements, host_transcript: hostTranscript,
+        });
+        identityAcknowledgements = identityStream.acknowledgements;
       }
       const ready3Witness = await canonicalM6ReadyWitnessFromValidatedRecord({
         record: config.ready, releaseRecord: config.ready.releaseRecord,
@@ -2847,6 +2868,7 @@ async function runM6Ready4FastInternal(config, testReady = null) {
           profile: config.m7EffectivePageIdentityPolicy.profile,
           arm: context.blockService.m7EffectivePageIdentityArm(),
           acknowledgements: identityAcknowledgements,
+          stream: identityStream,
         }) : null;
       return Object.freeze({ outcome: "ready4", target: CADR_M6_DEVID_PROFILE,
         contract: CADR_M6_READY4_CONTRACT, runEvidence: context.runEvidence,

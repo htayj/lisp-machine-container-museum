@@ -9,6 +9,7 @@ import os
 from pathlib import Path
 import sys
 import tempfile
+import struct
 from threading import Thread
 from urllib.error import HTTPError
 from urllib.request import Request, urlopen
@@ -73,7 +74,7 @@ def p4_manifest(module):
         "builtins": ["node:worker_threads"], "files": closure_files, "node": node,
     }, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
     return {
-        "schema": "cadr-m7-frame-conformance-result-v1", "target": module.P5_TARGET,
+        "schema": "cadr-m7-frame-conformance-result-v2", "target": module.P5_TARGET,
         "outcome": "identical", "runtime_execution_performed": True,
         "session": {"id": "p4", "mode": "0700"}, "source": {"system_fossil": h(1), "usim_fossil": h(2)},
         "m6_release_record": file("cadr-web/oracle/cadr-m6-release-record.json", 3),
@@ -105,12 +106,18 @@ def p4_manifest(module):
                      "contemporaneous_adapter_observation": [
                          file("a.c", 27), file("a.h", 28)],
                      "effective_page_identity": {
-                         "acknowledgement_sha256": h(35),
-                         "boundary": "1366722", "disposition": "IDENTITY_ACK",
-                         "first_block": "1299", "request_id": "135"},
+                         "schema": "cadr-m7-effective-page-identity-stream-v1",
+                         "profile": "CADR-WEB-303/ABI1.5/protocol-v5/C-M7-P4-EFFECTIVE-PAGE-IDENTITY-v2",
+                         "disposition": "IDENTITY_ACK_STREAM", "count": 1,
+                         "collection_sha256": h(35), "host_transcript_sha256": h(36),
+                         "first": {"generation": "1", "request_id": "135",
+                                   "transaction_id": "135", "first_block": "1299",
+                                   "boundary": "1366722"}},
                      "termination": {"pending_requests": 0, "terminated": True},
                      "framebuffer_checkpoint": {"boundary": "982990214", "cdrdisp1_sha256": h(29), "cdrm6i1_sha256": h(30)},
-                     "cdrdisp_file": file("portable/frame.cdrdisp1", 29), "witness_file": file("portable/witness.cdrm6i1", 30), "ready_file": file("portable/ready.json", 31), "worker_log_file": file("portable/worker.ndjson", 32)},
+                     "cdrdisp_file": file("portable/frame.cdrdisp1", 29), "witness_file": file("portable/witness.cdrm6i1", 30), "ready_file": file("portable/ready.json", 31), "worker_log_file": file("portable/worker.ndjson", 32),
+                     "effective_page_identity_file": file("portable/effective-page-identity.json", 35),
+                     "host_transcript_file": file("portable/host-transcript.cdrm6hs1", 36)},
         "comparison": {"file": file("comparison.json", 33), "m6_witness_sample_sha256": h(30), "native_capture_sha256": h(20), "native_raw_words_sha256": h(21), "portable_raw_words_sha256": h(34), "portable_record_sha256": h(29)},
         "summary": {"manifest_kind": "hashes-only", "comparison_sha256": h(33), "native_frame_sha256": h(20), "portable_frame_sha256": h(29)},
     }
@@ -151,6 +158,249 @@ def p5_result(module):
             "browser_log": {"path": "browser.ndjson", "bytes": 1, "sha256": h(46)}}
 
 
+def identity_sidecars(module):
+    artifact_set = bytes.fromhex(h(55))
+    profile = module.IDENTITY_PROFILE
+    selected_hash = module.IDENTITY_SELECTED_PAGE_SHA256
+    overlay_hash, base_zero_hash = h(49), h(50)
+    empty_hash = module.sha256(b"")
+    tagged = lambda value: {"u64": str(value)}
+    tagged_bytes = lambda value: {"bytes": value}
+
+    def descriptor(operation, request_id, first_block):
+        if operation == 2:
+            return struct.pack("<QQII", request_id, first_block, 1, 1024)
+        return struct.pack("<QII", first_block, 1, 1024)
+
+    def pair(ordinal, operation, request_id, first_block, boundary, page_hash,
+             issue_overlay, completion_overlay):
+        descriptor_bytes = descriptor(operation, request_id, first_block)
+        descriptor_hash = bytes.fromhex(module.sha256(descriptor_bytes))
+        payload_hash = bytes.fromhex(page_hash if operation == 2 else empty_hash)
+        completion_hash = bytes.fromhex(empty_hash if operation == 2 else page_hash)
+        result = []
+        for actor, record_ordinal, record_boundary, overlay_generation in (
+                (1, ordinal, boundary, issue_overlay),
+                (2, ordinal + 1, boundary, completion_overlay)):
+            record = bytearray(256)
+            struct.pack_into("<QIIQQQQIIQQQQI", record, 0, record_ordinal, actor,
+                             operation, record_boundary, boundary, 1, request_id,
+                             0, 1, len(descriptor_bytes),
+                             1024 if operation == 2 else 0,
+                             0 if operation == 2 else 1024, first_block, 1024)
+            struct.pack_into("<Q", record, 96, overlay_generation)
+            record[104:136] = descriptor_hash
+            record[136:168] = payload_hash
+            record[168:200] = completion_hash if actor == 2 else bytes.fromhex(empty_hash)
+            result.append(bytes(record))
+        return result
+
+    records = []
+    records += pair(0, 2, 1, 1, 1_000_000, overlay_hash, 0, 1)
+    records += pair(2, 1, 2, 1, 1_000_001, overlay_hash, 1, 1)
+    records += pair(4, 1, 3, 0, 1_000_002, base_zero_hash, 1, 1)
+    records += pair(6, 1, 134, 187956, 1_366_543, selected_hash, 1, 1)
+    records += pair(8, 2, 135, 1299, 1_366_722, selected_hash, 1, 1)
+    transcript = bytearray(64)
+    transcript[:8] = b"CDRM6HS1"
+    struct.pack_into("<IIII", transcript, 8, 1, 64, 256, len(records))
+    transcript[24:56] = artifact_set
+    transcript_raw = bytes(transcript) + b"".join(records)
+
+    def boot_request(request_id, transaction_id, first_block, boundary, page_hash):
+        return {"generation": tagged(1), "request_id": tagged(request_id),
+                "transaction_id": tagged(transaction_id), "first_block": tagged(first_block),
+                "issue_boundary": tagged(boundary), "completion_boundary": tagged(boundary),
+                "page_sha256": tagged_bytes(page_hash)}
+
+    arm = {"schema": "cadr-m7-effective-page-identity-arm-v2", "profile": profile,
+           "initial_commit": boot_request(1, 1, 1, 1_000_000, overlay_hash),
+           "comparison_read": boot_request(2, 0, 1, 1_000_001, overlay_hash),
+           "base_read": boot_request(3, 0, 0, 1_000_002, base_zero_hash),
+           "quiet_suffix": {"boundary": tagged(1_030_044), "reason": 1,
+                            "persistent_status": 0, "outstanding_request_id": tagged(0)}}
+
+    def link(ordinal):
+        return {"issue_ordinal": ordinal,
+                "issue_record_sha256": tagged_bytes(module.sha256(records[ordinal])),
+                "completion_ordinal": ordinal + 1,
+                "completion_record_sha256": tagged_bytes(module.sha256(records[ordinal + 1]))}
+
+    overlay_root = module.sha256(b"CDRM4OVERLAY1\0" +
+                                 bytes.fromhex(module.IDENTITY_SELECTED_BASE_SHA256) +
+                                 (1).to_bytes(8, "little") + (1).to_bytes(8, "little") +
+                                 bytes.fromhex(overlay_hash))
+    media = {"dirty": True, "overlay_generation": tagged(1),
+             "overlay_root_sha256": tagged_bytes(overlay_root),
+             "persistent": False, "staged": False}
+    candidate_descriptor = descriptor(2, 135, 1299)
+    acknowledgement = {
+        "schema": "cadr-m7-effective-page-identity-evidence-v4",
+        "profile": profile,
+        "disposition": "IDENTITY_ACK", "acknowledgement_ordinal": 0,
+        "arm": arm,
+        "selected_base": {"byte_count": tagged(module.IDENTITY_SELECTED_BASE_BYTES),
+                          "sha256": tagged_bytes(module.IDENTITY_SELECTED_BASE_SHA256)},
+        "preceding_read": {"generation": tagged(1), "request_id": tagged(134),
+                           "first_block": tagged(187956),
+                           "issue_boundary": tagged(1_366_543),
+                           "completion_boundary": tagged(1_366_543),
+                           "page_sha256": tagged_bytes(selected_hash)},
+        "request": {"generation": tagged(1), "request_id": tagged(135),
+                    "transaction_id": tagged(135), "first_block": tagged(1299),
+                    "block_count": 1, "block_bytes": 1024,
+                    "issue_boundary": tagged(1_366_722), "due_boundary": tagged(1_366_722),
+                    "completion_boundary": tagged(1_366_722), "host_status": 0,
+                    "descriptor": tagged_bytes(candidate_descriptor.hex()),
+                    "descriptor_sha256": tagged_bytes(module.sha256(candidate_descriptor)),
+                    "payload_sha256": tagged_bytes(selected_hash)},
+        "effective_page": {"source": "base", "first_block": tagged(1299),
+                           "byte_offset": tagged(1299 * 1024), "byte_count": 1024,
+                           "sha256": tagged_bytes(selected_hash)},
+        "target_rereads": {"pre_success_sha256": tagged_bytes(selected_hash),
+                           "post_completion_sha256": tagged_bytes(selected_hash)},
+        "media_before": media, "media_after": json_clone(media),
+        "transcript": {"schema": "CDRM6HS1", "issue_ordinal": 8,
+                       "completion_ordinal": 9,
+                       "sha256": tagged_bytes(module.sha256(transcript_raw)),
+                       "artifact_set_sha256": tagged_bytes(artifact_set.hex()),
+                       "issue_record_sha256": tagged_bytes(module.sha256(records[8])),
+                       "completion_record_sha256": tagged_bytes(module.sha256(records[9])),
+                       "arm_records": {"initial_commit": link(0),
+                                       "comparison_read": link(2), "base_read": link(4)}},
+    }
+    stream = {
+        "schema": "cadr-m7-effective-page-identity-stream-v1",
+        "profile": acknowledgement["profile"], "disposition": "IDENTITY_ACK_STREAM",
+        "count": 1,
+        "first": {"generation": tagged(1), "request_id": tagged(135),
+                  "transaction_id": tagged(135), "first_block": tagged(1299),
+                  "boundary": tagged(1366722)},
+        "host_transcript": {"schema": "CDRM6HS1", "byte_count": tagged(len(transcript_raw)),
+                            "record_count": len(records),
+                            "sha256": tagged_bytes(module.sha256(transcript_raw)),
+                            "artifact_set_sha256": tagged_bytes(artifact_set.hex())},
+        "acknowledgements": [acknowledgement],
+    }
+    return (json.dumps(stream, sort_keys=True, separators=(",", ":")).encode() + b"\n",
+            transcript_raw)
+
+
+def forged_consistent_unselected_identity(module):
+    raw, transcript_raw = identity_sidecars(module)
+    stream = json.loads(raw)
+    acknowledgement = stream["acknowledgements"][0]
+    tagged = lambda value: {"u64": str(value)}
+    tagged_bytes = lambda value: {"bytes": value}
+    forged_hash = h(88)
+    descriptor = struct.pack("<QQII", 999, 5, 1, 1024)
+    forged_transcript = bytearray(transcript_raw)
+    for ordinal in (8, 9):
+        offset = 64 + ordinal * 256
+        struct.pack_into("<QQ", forged_transcript, offset + 16, 42, 42)
+        struct.pack_into("<Q", forged_transcript, offset + 40, 999)
+        struct.pack_into("<Q", forged_transcript, offset + 80, 5)
+        forged_transcript[offset + 104:offset + 136] = bytes.fromhex(module.sha256(descriptor))
+        forged_transcript[offset + 136:offset + 168] = bytes.fromhex(forged_hash)
+    transcript_bytes = bytes(forged_transcript)
+    acknowledgement["arm"] = {}
+    acknowledgement["selected_base"] = {}
+    acknowledgement["media_before"] = {}
+    acknowledgement["media_after"] = {}
+    acknowledgement["preceding_read"] = None
+    acknowledgement["request"].update({
+        "request_id": tagged(999), "transaction_id": tagged(999),
+        "first_block": tagged(5), "issue_boundary": tagged(42),
+        "due_boundary": tagged(42), "completion_boundary": tagged(42),
+        "descriptor": tagged_bytes(descriptor.hex()),
+        "descriptor_sha256": tagged_bytes(module.sha256(descriptor)),
+        "payload_sha256": tagged_bytes(forged_hash),
+    })
+    acknowledgement["effective_page"].update({
+        "first_block": tagged(5), "byte_offset": tagged(5 * 1024),
+        "sha256": tagged_bytes(forged_hash),
+    })
+    acknowledgement["target_rereads"] = {
+        "pre_success_sha256": tagged_bytes(forged_hash),
+        "post_completion_sha256": tagged_bytes(forged_hash),
+    }
+    acknowledgement["transcript"].update({
+        "sha256": tagged_bytes(module.sha256(transcript_bytes)),
+        "issue_record_sha256": tagged_bytes(module.sha256(
+            transcript_bytes[64 + 8 * 256:64 + 9 * 256])),
+        "completion_record_sha256": tagged_bytes(module.sha256(
+            transcript_bytes[64 + 9 * 256:64 + 10 * 256])),
+    })
+    stream["host_transcript"]["sha256"] = tagged_bytes(module.sha256(transcript_bytes))
+    stream["first"] = {"generation": tagged(1), "request_id": tagged(999),
+                       "transaction_id": tagged(999), "first_block": tagged(5),
+                       "boundary": tagged(42)}
+    summary = {"profile": module.IDENTITY_PROFILE, "count": 1,
+               "first": {"generation": "1", "request_id": "999",
+                         "transaction_id": "999", "first_block": "5", "boundary": "42"}}
+    return (json.dumps(stream, sort_keys=True, separators=(",", ":")).encode() + b"\n",
+            transcript_bytes, summary)
+
+
+def consistent_two_ack_identity(module, boundary):
+    raw, transcript_raw = identity_sidecars(module)
+    stream = json.loads(raw)
+    tagged = lambda value: {"u64": str(value)}
+    tagged_bytes = lambda value: {"bytes": value}
+    request_id, first_block = 137, 1300
+    descriptor = struct.pack("<QQII", request_id, first_block, 1, 1024)
+    descriptor_hash = module.sha256(descriptor)
+
+    transcript = bytearray(transcript_raw)
+    for source_ordinal, ordinal in ((8, 10), (9, 11)):
+        source = 64 + source_ordinal * 256
+        record = bytearray(transcript[source:source + 256])
+        struct.pack_into("<Q", record, 0, ordinal)
+        struct.pack_into("<QQ", record, 16, boundary, boundary)
+        struct.pack_into("<Q", record, 40, request_id)
+        struct.pack_into("<Q", record, 80, first_block)
+        record[104:136] = bytes.fromhex(descriptor_hash)
+        transcript.extend(record)
+    struct.pack_into("<I", transcript, 20, 12)
+    transcript_bytes = bytes(transcript)
+    transcript_hash = module.sha256(transcript_bytes)
+
+    first_acknowledgement = stream["acknowledgements"][0]
+    first_acknowledgement["transcript"]["sha256"] = tagged_bytes(transcript_hash)
+    second = json_clone(first_acknowledgement)
+    second["acknowledgement_ordinal"] = 1
+    second["preceding_read"] = None
+    second["request"].update({
+        "request_id": tagged(request_id), "transaction_id": tagged(request_id),
+        "first_block": tagged(first_block), "issue_boundary": tagged(boundary),
+        "due_boundary": tagged(boundary), "completion_boundary": tagged(boundary),
+        "descriptor": tagged_bytes(descriptor.hex()),
+        "descriptor_sha256": tagged_bytes(descriptor_hash),
+    })
+    second["effective_page"].update({
+        "first_block": tagged(first_block), "byte_offset": tagged(first_block * 1024),
+    })
+    second["transcript"].update({
+        "issue_ordinal": 10, "completion_ordinal": 11,
+        "issue_record_sha256": tagged_bytes(module.sha256(
+            transcript_bytes[64 + 10 * 256:64 + 11 * 256])),
+        "completion_record_sha256": tagged_bytes(module.sha256(
+            transcript_bytes[64 + 11 * 256:64 + 12 * 256])),
+    })
+    stream["acknowledgements"].append(second)
+    stream["count"] = 2
+    stream["host_transcript"].update({
+        "byte_count": tagged(len(transcript_bytes)), "record_count": 12,
+        "sha256": tagged_bytes(transcript_hash),
+    })
+    summary = {"profile": module.IDENTITY_PROFILE, "count": 2,
+               "first": {"generation": "1", "request_id": "135",
+                         "transaction_id": "135", "first_block": "1299",
+                         "boundary": "1366722"}}
+    return (json.dumps(stream, sort_keys=True, separators=(",", ":")).encode() + b"\n",
+            transcript_bytes, summary)
+
+
 def main() -> None:
     module = load_module()
     mutable_frame = bytearray(b"private-frame")
@@ -168,12 +418,15 @@ def main() -> None:
         assert urlopen(f"{base}/cadr-web/browser/m7-host.mjs").read() == (
             ROOT / "cadr-web/browser/m7-host.mjs").read_bytes()
         for method in ("GET", "HEAD"):
-            try:
-                urlopen(Request(f"{base}/AGENTS.md", method=method))
-            except HTTPError as exc:
-                assert exc.code == 404
-            else:
-                raise AssertionError(f"P5 server exposed a non-allowlisted repository file to {method}")
+            for path in ("AGENTS.md", module.IDENTITY_PATH,
+                         module.HOST_TRANSCRIPT_PATH):
+                try:
+                    urlopen(Request(f"{base}/{path}", method=method))
+                except HTTPError as exc:
+                    assert exc.code == 404
+                else:
+                    raise AssertionError(
+                        f"P5 server exposed non-served evidence {path} to {method}")
     finally:
         server.shutdown()
         server.server_close()
@@ -219,6 +472,50 @@ def main() -> None:
     manifest = p4_manifest(module)
     checked = module.validate_p4_manifest(manifest, module.canonical(manifest))
     assert checked["frame"]["path"] == "portable/frame.cdrdisp1"
+    identity_raw, identity_transcript = identity_sidecars(module)
+    module.validate_identity_stream(identity_raw, identity_transcript,
+                                    manifest["portable"]["effective_page_identity"])
+    identity_schema_bool_mutations_rejected = 0
+    for mutate in (
+            lambda value: value["acknowledgements"][0]["request"].__setitem__(
+                "host_status", False),
+            lambda value: value["acknowledgements"][0].__setitem__(
+                "acknowledgement_ordinal", False),
+            lambda value: value["acknowledgements"][0]["arm"]["quiet_suffix"].__setitem__(
+                "reason", True)):
+        candidate = json.loads(identity_raw); mutate(candidate)
+        candidate_raw = json.dumps(candidate, sort_keys=True,
+                                   separators=(",", ":")).encode() + b"\n"
+        try:
+            module.validate_identity_stream(
+                candidate_raw, identity_transcript,
+                manifest["portable"]["effective_page_identity"])
+        except module.BrowserConformanceError:
+            identity_schema_bool_mutations_rejected += 1
+        else:
+            raise AssertionError("P5 accepted a boolean in an untagged identity u32 field")
+    forged_raw, forged_transcript, forged_summary = forged_consistent_unselected_identity(module)
+    try:
+        module.validate_identity_stream(forged_raw, forged_transcript, forged_summary)
+    except module.BrowserConformanceError:
+        identity_forgery_rejected = True
+    else:
+        raise AssertionError(
+            "P5 accepted forged request 999/LBA 5/boundary 42 with empty arm/base/media")
+    monotonic_raw, monotonic_transcript, monotonic_summary = \
+        consistent_two_ack_identity(module, 1_400_000)
+    module.validate_identity_stream(monotonic_raw, monotonic_transcript,
+                                    monotonic_summary)
+    regressing_raw, regressing_transcript, regressing_summary = \
+        consistent_two_ack_identity(module, 1_200_000)
+    try:
+        module.validate_identity_stream(regressing_raw, regressing_transcript,
+                                        regressing_summary)
+    except module.BrowserConformanceError:
+        identity_boundary_regression_rejected = True
+    else:
+        raise AssertionError(
+            "P5 accepted second request 137 at boundary 1200000 after completion 1366722")
     private_root = ROOT / "build/cadr-oracle"
     private_root.mkdir(parents=True, exist_ok=True)
     with tempfile.TemporaryDirectory(prefix="m7-p4-rehash-", dir=private_root) as temporary:
@@ -229,6 +526,7 @@ def main() -> None:
         on_disk = json_clone(manifest)
         on_disk["session"]["id"] = session.name
         native = native_record()
+        identity_raw, host_transcript_raw = identity_sidecars(module)
         payloads = {
             "native/frame.cdrm7n1": native,
             "native/capture.ndjson": b"native-log\n",
@@ -238,6 +536,8 @@ def main() -> None:
             "portable/witness.cdrm6i1": b"witness",
             "portable/ready.json": b"{}",
             "portable/worker.ndjson": b"worker\n",
+            module.IDENTITY_PATH: identity_raw,
+            module.HOST_TRANSCRIPT_PATH: host_transcript_raw,
             "comparison.json": b"comparison",
         }
         receipt_fields = {
@@ -249,6 +549,8 @@ def main() -> None:
             "portable/witness.cdrm6i1": on_disk["portable"]["witness_file"],
             "portable/ready.json": on_disk["portable"]["ready_file"],
             "portable/worker.ndjson": on_disk["portable"]["worker_log_file"],
+            module.IDENTITY_PATH: on_disk["portable"]["effective_page_identity_file"],
+            module.HOST_TRANSCRIPT_PATH: on_disk["portable"]["host_transcript_file"],
             "comparison.json": on_disk["comparison"]["file"],
         }
         for path, payload in payloads.items():
@@ -265,6 +567,10 @@ def main() -> None:
         frame_hash = receipt_fields["portable/frame.cdrdisp1"]["sha256"]
         witness_hash = receipt_fields["portable/witness.cdrm6i1"]["sha256"]
         comparison_hash = receipt_fields["comparison.json"]["sha256"]
+        on_disk["portable"]["effective_page_identity"]["collection_sha256"] = \
+            receipt_fields[module.IDENTITY_PATH]["sha256"]
+        on_disk["portable"]["effective_page_identity"]["host_transcript_sha256"] = \
+            receipt_fields[module.HOST_TRANSCRIPT_PATH]["sha256"]
         on_disk["native"]["capture"]["sha256"] = native_hash
         on_disk["native"]["capture"]["raw_words_sha256"] = module.sha256(native[64:])
         on_disk["portable"]["framebuffer_checkpoint"].update(
@@ -310,6 +616,7 @@ def main() -> None:
             "node": closure["node"],
         }, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
 
+    p4_mutations_rejected = 0
     for mutate in (
             lambda value: value["artifacts"].pop(),
             lambda value: value["native_inputs"].pop(),
@@ -319,7 +626,7 @@ def main() -> None:
             lambda value: value["native"]["capture"].__setitem__("schema", "OTHER"),
             lambda value: value["native"]["capture"].__setitem__("byte_count", "1"),
             lambda value: value["portable"]["termination"].__setitem__("pending_requests", 1),
-            lambda value: value["portable"]["effective_page_identity"].__setitem__("acknowledgement_sha256", "bad"),
+            lambda value: value["portable"]["effective_page_identity"].__setitem__("collection_sha256", "bad"),
             lambda value: value["portable"]["framebuffer_checkpoint"].__setitem__("cdrdisp1_sha256", h(92)),
             duplicate_worker_file,
             lambda value: value["portable"]["cdrdisp_file"].__setitem__("path", "synthetic"),
@@ -329,11 +636,12 @@ def main() -> None:
         try:
             module.validate_p4_manifest(candidate, module.canonical(candidate))
         except module.BrowserConformanceError:
-            pass
+            p4_mutations_rejected += 1
         else:
             raise AssertionError("mutated P4 binding was accepted")
     result = p5_result(module)
     assert module.validate_p5_result(result) is result
+    p5_mutations_rejected = 0
     for mutate in (
             lambda value: value["environment"].__setitem__("device_pixel_ratio", 2),
             lambda value: value["environment"].__setitem__("xauthority", "open"),
@@ -354,10 +662,18 @@ def main() -> None:
         try:
             module.validate_p5_result(candidate)
         except module.BrowserConformanceError:
-            pass
+            p5_mutations_rejected += 1
         else:
             raise AssertionError("mutated P5 result was accepted")
-    print("cadr M7 P5 conformance schema tests passed")
+    assert identity_forgery_rejected is True
+    assert identity_boundary_regression_rejected is True
+    assert identity_schema_bool_mutations_rejected == 3
+    assert p4_mutations_rejected == 14
+    assert p5_mutations_rejected == 15
+    print("cadr M7 P5 conformance schema tests passed; "
+          "identity_forgery=1 identity_boundary_regression=1 "
+          "identity_schema_bool_mutations=3 identity_mutations=5 "
+          "p4_mutations=14 p5_mutations=15")
 
 
 def json_clone(value):

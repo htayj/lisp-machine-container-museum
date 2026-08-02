@@ -36,10 +36,12 @@ import {
 } from "./cadr-m7-frame-checkpoint.mjs";
 import {
   CADR_M7_EFFECTIVE_PAGE_IDENTITY_PROFILE,
+  CADR_M7_P4_IDENTITY_REQUEST,
   createM7EffectivePageIdentityArm,
   m7EffectivePageIdentityAcknowledgementSha256,
+  m7EffectivePageIdentityStreamSha256,
   parseM7EffectivePageIdentityPolicy,
-  validateSelectedM7P4EffectivePageIdentityAcknowledgement,
+  validateM7EffectivePageIdentityStream,
 } from "./cadr-m7-effective-page-identity.mjs";
 
 export const CADR_M7_READY4_FAST_TARGET =
@@ -705,31 +707,46 @@ async function runM7Ready4FastCheckpointedBootInternal(config, runBoot) {
   const record = m6.m7EffectivePageIdentity;
   required(record !== null && typeof record === "object" &&
     [Object.prototype, null].includes(Object.getPrototypeOf(record)) &&
-    Object.keys(record).sort().join(",") === "acknowledgements,arm,profile" &&
+    Object.keys(record).sort().join(",") === "acknowledgements,arm,profile,stream" &&
     record.profile === CADR_M7_EFFECTIVE_PAGE_IDENTITY_PROFILE &&
     Array.isArray(record.acknowledgements) &&
     record.arm !== null,
   "M7 effective-page identity result differs");
-  required(record.acknowledgements.length === 1,
-    "selected P4 requires exactly one effective-page identity acknowledgement");
+  required(record.acknowledgements.length > 0,
+    "selected P4 requires an effective-page identity stream");
   const identityArm = createM7EffectivePageIdentityArm(record.arm);
-  const identityAcknowledgement =
-    await validateSelectedM7P4EffectivePageIdentityAcknowledgement(
-      record.acknowledgements[0], m6.hostTranscript);
+  const identityAcknowledgementStream =
+    await validateM7EffectivePageIdentityStream(record.stream, {
+      host_transcript: m6.hostTranscript,
+      expected_base: {
+        byte_count: CADR_M7_P4_IDENTITY_REQUEST.selected_base_byte_count,
+        sha256: CADR_M7_P4_IDENTITY_REQUEST.selected_base_sha256,
+      },
+    });
+  const firstIdentityAcknowledgement = identityAcknowledgementStream.acknowledgements[0];
+  required(record.acknowledgements.length === identityAcknowledgementStream.count,
+    "M7 effective-page acknowledgement collection differs from its stream");
+  for (let index = 0; index < identityAcknowledgementStream.count; index += 1) {
+    required(sameBytes(
+      await m7EffectivePageIdentityAcknowledgementSha256(
+        record.acknowledgements[index]),
+      await m7EffectivePageIdentityAcknowledgementSha256(
+        identityAcknowledgementStream.acknowledgements[index])),
+    "M7 effective-page acknowledgement collection differs from its stream");
+  }
   required(sameM7EffectivePageIdentityArm(identityArm,
-    identityAcknowledgement.arm),
+    firstIdentityAcknowledgement.arm),
     "M7 effective-page acknowledgement is not bound to the selected arm");
-  const identityAcknowledgementSha256 =
-    await m7EffectivePageIdentityAcknowledgementSha256(
-      identityAcknowledgement);
+  const identityAcknowledgementStreamSha256 =
+    await m7EffectivePageIdentityStreamSha256(identityAcknowledgementStream);
   const evidence = await validateReady4Result(m6, bridge, frozenRelease);
   const checkpoint = Object.freeze({ ...bridge.checkpoint,
     m6_release_record_sha256: evidence.m6ReleaseRecordSha256.slice() });
   const comparison = await compareM7FrameCheckpoint(config.nativeCapture, checkpoint);
   return Object.freeze({ target: CADR_M7_READY4_FAST_TARGET,
     contract: CADR_M7_READY4_FAST_CONTRACT, moduleIdentity, m6, checkpoint,
-    comparison, evidence, identityAcknowledgement,
-    identityAcknowledgementSha256, fast: Object.freeze({
+    comparison, evidence, identityAcknowledgementStream,
+    identityAcknowledgementStreamSha256, fast: Object.freeze({
       maximum_slots: CADR_M6_FAST_RUN_MAX_SLOTS,
       minimum_spans_to_form_c: CADR_M7_READY4_FAST_MINIMUM_SPANS,
       total_stops_to_form_c: bridge.checkpoint.total_stop_ordinal,

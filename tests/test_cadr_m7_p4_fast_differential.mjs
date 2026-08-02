@@ -21,7 +21,8 @@ import {
 import { m4OverlayRootForBase } from
   "../cadr-web/wasm/cadr-m4-media.mjs";
 import { CADR_M7_EFFECTIVE_PAGE_IDENTITY_PROFILE,
-  CADR_M7_P4_IDENTITY_REQUEST, createM7EffectivePageIdentityArm } from
+  CADR_M7_P4_IDENTITY_REQUEST, createM7EffectivePageIdentityArm,
+  createM7EffectivePageIdentityStream } from
   "../cadr-web/wasm/cadr-m7-effective-page-identity.mjs";
 import {
   CADR_M7_READY4_FAST_CONTRACT,
@@ -683,7 +684,7 @@ async function selectedIdentityFixture(artifactSet) {
     overlay_root_sha256: overlayRoot, persistent: false, staged: false });
   const candidateLink = pairLink(6);
   const evidence = Object.freeze({
-    schema: "cadr-m7-effective-page-identity-evidence-v3",
+    schema: "cadr-m7-effective-page-identity-evidence-v4",
     profile: CADR_M7_EFFECTIVE_PAGE_IDENTITY_PROFILE,
     disposition: "IDENTITY_ACK", acknowledgement_ordinal: 0, arm,
     selected_base: { byte_count: selected.selected_base_byte_count,
@@ -697,13 +698,19 @@ async function selectedIdentityFixture(artifactSet) {
     effective_page: { source: "base", first_block: selected.first_block,
       byte_offset: selected.first_block * 1024n, byte_count: 1024,
       sha256: selected.payload_sha256 },
+    target_rereads: { pre_success_sha256: selected.payload_sha256,
+      post_completion_sha256: selected.payload_sha256 },
+    preceding_read: null,
     media_before: media, media_after: media,
     transcript: { schema: "CDRM6HS1", sha256: digest(hostTranscript),
       artifact_set_sha256: artifactSet, ...candidateLink,
       arm_records: { initial_commit: pairLink(0),
         comparison_read: pairLink(2), base_read: pairLink(4) } },
   });
-  return Object.freeze({ arm, evidence, hostTranscript,
+  const stream = await createM7EffectivePageIdentityStream({
+    acknowledgements: [evidence], host_transcript: hostTranscript,
+  });
+  return Object.freeze({ arm, evidence, stream, hostTranscript,
     hostTranscriptSha256: digest(hostTranscript) });
 }
 
@@ -754,7 +761,8 @@ async function resultFor(client, bridge, checkpointCount = undefined) {
     cdrm6e1SelectedMaximum: 0x7fff_ffff_ffff_ffffn,
     cdrm6e1TotalAccepted: 513n, cdrm6e1TailEventCount: 1n,
     m7EffectivePageIdentity: { profile: CADR_M7_EFFECTIVE_PAGE_IDENTITY_PROFILE,
-      arm: identity.arm, acknowledgements: [identity.evidence] } });
+      arm: identity.arm, acknowledgements: [identity.evidence],
+      stream: identity.stream } });
 }
 
 async function completeFastBoot({ client, checkpointCount, resultTransform } = {}) {
@@ -850,14 +858,14 @@ await assert.rejects(completeFastBoot({ resultTransform: value => ({ ...value,
 "an arbitrary P4 result object cannot pose as an identity acknowledgement");
 await assert.rejects(completeFastBoot({ resultTransform: value => ({ ...value,
   m7EffectivePageIdentity: { ...value.m7EffectivePageIdentity,
-    acknowledgements: [] } }) }), /exactly one effective-page identity acknowledgement/,
+    acknowledgements: [] } }) }), /effective-page identity result differs|requires an effective-page identity stream/,
 "the selected P4 profile cannot complete with zero acknowledgements");
 await assert.rejects(completeFastBoot({ resultTransform: value => {
   const evidence = structuredClone(value.m7EffectivePageIdentity.acknowledgements[0]);
   evidence.request.payload_sha256 = H(0);
   return { ...value, m7EffectivePageIdentity: { ...value.m7EffectivePageIdentity,
     acknowledgements: [evidence] } };
-} }), /selected P4 effective-page identity request differs|trusted evidence/,
+} }), /acknowledgement collection differs|selected P4 effective-page identity request differs|trusted evidence/,
 "a forged selected-P4 acknowledgement is rejected");
 await assert.rejects(completeFastBoot({ resultTransform: value => {
   const hostTranscript = value.hostTranscript.slice();
@@ -870,20 +878,20 @@ await assert.rejects(completeFastBoot({ resultTransform: value => {
   identity.arm.quiet_suffix.boundary += 1n;
   identity.acknowledgements[0].arm.quiet_suffix.boundary += 1n;
   return { ...value, m7EffectivePageIdentity: identity };
-} }), /selected P4 request/,
+} }), /not bound|acknowledgement collection differs|selected P4 request/,
 "the selected-P4 verifier pins the exact arm rather than trusting a self-consistent receipt");
 await assert.rejects(completeFastBoot({ resultTransform: value => {
   const identity = structuredClone(value.m7EffectivePageIdentity);
   identity.acknowledgements[0].media_before.overlay_root_sha256 = H(0);
   identity.acknowledgements[0].media_after.overlay_root_sha256 = H(0);
   return { ...value, m7EffectivePageIdentity: identity };
-} }), /trusted evidence/,
+} }), /acknowledgement collection differs|trusted evidence/,
 "the selected-P4 verifier derives and rejects a false canonical overlay root");
 await assert.rejects(completeFastBoot({ resultTransform: value => {
   const identity = structuredClone(value.m7EffectivePageIdentity);
   identity.acknowledgements[0].selected_base.sha256[0] ^= 1;
   return { ...value, m7EffectivePageIdentity: identity };
-} }), /trusted base/,
+} }), /acknowledgement collection differs|trusted base/,
 "the selected-P4 verifier rejects a substituted selected-base identity");
 assert.equal(complete.checkpoint.boundary, CADR_M7_FORM_C_BOUNDARY);
 assert.equal(complete.checkpoint.captured_before_next_boundary, true);
@@ -1364,7 +1372,9 @@ const fakeNative = () => Object.freeze({
 const fakeResult = async () => Object.freeze({
   target: CADR_M7_READY4_FAST_TARGET,
   contract: CADR_M7_READY4_FAST_CONTRACT,
-  identityAcknowledgementSha256: H(0x5a),
+  identityAcknowledgementStreamSha256: H(0x5a),
+  identityAcknowledgementStream: Object.freeze({ count: 2,
+    acknowledgements: Object.freeze([Object.freeze({}), Object.freeze({})]) }),
   checkpoint: Object.freeze({ boundary: CADR_M7_FORM_C_BOUNDARY }),
 });
 function executionConfig(supervisor, moduleBytes = wasm, identity = moduleIdentity) {
@@ -1715,11 +1725,35 @@ const testExecutionDependencies = Object.freeze({
   assert.equal(result.supervisor.disposal.schema, "cadr-m7-p4-fast-disposal-test-v1");
   assert.equal(result.executionReceipt.provenance.schema,
     "cadr-m7-p4-fast-execution-provenance-test-v1");
+  assert.deepEqual(Object.keys(result.executionReceipt).sort(), [
+    "effective_page_identity_stream_count",
+    "effective_page_identity_stream_sha256",
+    "p4_expected_closure_sha256", "p4_manifest_sha256", "protocol_transcript_sha256",
+    "provenance", "schema",
+  ]);
+  assert.equal(result.executionReceipt.schema,
+    "cadr-m7-p4-fast-execution-receipt-v4");
   assert.equal(result.nativeAuthority.schema, "test-native-authority");
   assert.equal(result.executionReceipt.p4_expected_closure_sha256, "4".repeat(64));
-  assert.equal(result.executionReceipt.effective_page_identity_ack_sha256,
+  assert.equal(result.executionReceipt.effective_page_identity_stream_sha256,
     "5a".repeat(32),
   "the campaign execution receipt binds the independently validated identity acknowledgement");
+  assert.equal(result.executionReceipt.effective_page_identity_stream_count, 2,
+    "the campaign execution receipt binds the independently bounded stream count");
+}
+
+for (const malformedStream of [
+  Object.freeze({ count: 0, acknowledgements: Object.freeze([]) }),
+  Object.freeze({ count: 2, acknowledgements: Object.freeze([Object.freeze({})]) }),
+  Object.freeze({ count: 1025, acknowledgements: Object.freeze([]) }),
+]) {
+  const supervisor = createM7P4TrustedWorkerSupervisorForTest();
+  await assert.rejects(executeM7P4FastDifferentialForTest(
+    executionConfig(supervisor), Object.freeze({ ...testExecutionDependencies,
+      run: async () => Object.freeze({ ...await fakeResult(),
+        identityAcknowledgementStream: malformedStream }) })),
+  /bounded identity stream count/,
+  "the fast receipt rejects a missing, inconsistent, or unbounded stream count");
 }
 
 for (const required of [

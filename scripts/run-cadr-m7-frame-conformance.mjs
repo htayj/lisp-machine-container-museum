@@ -32,6 +32,12 @@ import {
   compareM7FrameCheckpoint,
   runM7CheckpointedM6Boot,
 } from "../cadr-web/wasm/cadr-m7-frame-checkpoint.mjs";
+import {
+  CADR_M7_EFFECTIVE_PAGE_IDENTITY_PROFILE,
+  CADR_M7_EFFECTIVE_PAGE_IDENTITY_STREAM_DISPOSITION,
+  CADR_M7_EFFECTIVE_PAGE_IDENTITY_STREAM_SCHEMA,
+  serializeM7EffectivePageIdentityStream,
+} from "../cadr-web/wasm/cadr-m7-effective-page-identity.mjs";
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const PRIVATE_ROOT = resolve(ROOT, "build/cadr-oracle");
@@ -51,7 +57,7 @@ const M7_SUPPORT_PATHS = Object.freeze([
 ]);
 const M7_PROTOCOL_VERSION = 5;
 const REQUEST_TIMEOUT_MS = 120_000;
-const P4_SCHEMA = "cadr-m7-frame-conformance-result-v1";
+const P4_SCHEMA = "cadr-m7-frame-conformance-result-v2";
 const P4_TARGET = "CADR-WEB-303/ABI1.5/protocol-v5/M7";
 export const P4_EXPECTED_CLOSURE_SCHEMA = "cadr-m7-frame-expected-closure-v1";
 const ARTIFACT_LAYOUT = Object.freeze([
@@ -1001,7 +1007,7 @@ export function validateP4Manifest(value, expected) {
   if (value.native.capture.schema !== "CDRM7N1" || value.native.capture.boundary !== CADR_M7_FORM_C_BOUNDARY.toString()) fail("P4 native capture has wrong boundary");
   digest(value.native.capture.sha256, "P4 native capture hash"); digest(value.native.capture.raw_words_sha256, "P4 native words hash");
   for (const [name, expectedPath] of [["frame_file", null], ["transcript_file", null], ["idle_file", null], ["metadata_file", null]]) privateFileIdentity(value.native[name], `P4 native ${name}`, expectedPath);
-  exactKeys(value.portable, ["cdrdisp_file", "contemporaneous_adapter_observation", "effective_page_identity", "framebuffer_checkpoint", "module", "ready_file", "session_evidence", "session_id", "termination", "witness_file", "worker", "worker_closure", "worker_log_file"], "P4 portable");
+  exactKeys(value.portable, ["cdrdisp_file", "contemporaneous_adapter_observation", "effective_page_identity", "effective_page_identity_file", "framebuffer_checkpoint", "host_transcript_file", "module", "ready_file", "session_evidence", "session_id", "termination", "witness_file", "worker", "worker_closure", "worker_log_file"], "P4 portable");
   exactKeys(value.portable.session_evidence, ["ready_session_id", "worker_log_session_id"], "P4 portable session evidence");
   exactKeys(value.portable.termination, ["pending_requests", "terminated"], "P4 portable termination");
   if (typeof value.portable.session_id !== "string" || value.portable.session_id.length === 0 ||
@@ -1011,15 +1017,24 @@ export function validateP4Manifest(value, expected) {
     fail("P4 portable worker did not terminate cleanly or bind its session");
   }
   exactKeys(value.portable.effective_page_identity,
-    ["acknowledgement_sha256", "boundary", "disposition", "first_block", "request_id"],
+    ["collection_sha256", "count", "disposition", "first", "host_transcript_sha256", "profile", "schema"],
     "P4 effective-page identity");
-  digest(value.portable.effective_page_identity.acknowledgement_sha256,
-    "P4 effective-page acknowledgement");
-  if (value.portable.effective_page_identity.boundary !== "1366722" ||
-      value.portable.effective_page_identity.disposition !== "IDENTITY_ACK" ||
-      value.portable.effective_page_identity.first_block !== "1299" ||
-      value.portable.effective_page_identity.request_id !== "135") {
-    fail("P4 effective-page acknowledgement selection differs");
+  const identitySummary = value.portable.effective_page_identity;
+  exactKeys(identitySummary.first,
+    ["boundary", "first_block", "generation", "request_id", "transaction_id"],
+    "P4 effective-page first tuple");
+  digest(identitySummary.collection_sha256, "P4 effective-page collection");
+  digest(identitySummary.host_transcript_sha256, "P4 effective-page transcript");
+  positiveInteger(identitySummary.count, "P4 effective-page acknowledgement count");
+  if (identitySummary.schema !== CADR_M7_EFFECTIVE_PAGE_IDENTITY_STREAM_SCHEMA ||
+      identitySummary.profile !== CADR_M7_EFFECTIVE_PAGE_IDENTITY_PROFILE ||
+      identitySummary.disposition !== CADR_M7_EFFECTIVE_PAGE_IDENTITY_STREAM_DISPOSITION ||
+      identitySummary.first.boundary !== "1366722" ||
+      identitySummary.first.first_block !== "1299" ||
+      identitySummary.first.generation !== "1" ||
+      identitySummary.first.request_id !== "135" ||
+      identitySummary.first.transaction_id !== "135") {
+    fail("P4 effective-page stream selection differs");
   }
   byteIdentity(value.portable.module, "P4 Wasm module"); byteIdentity(value.portable.worker, "P4 worker");
   workerClosureIdentity(value.portable.worker_closure,
@@ -1043,6 +1058,16 @@ export function validateP4Manifest(value, expected) {
   privateFileIdentity(value.portable.witness_file, "P4 portable witness", "portable/witness.cdrm6i1");
   privateFileIdentity(value.portable.ready_file, "P4 portable ready", "portable/ready.json");
   privateFileIdentity(value.portable.worker_log_file, "P4 portable worker log", "portable/worker.ndjson");
+  privateFileIdentity(value.portable.effective_page_identity_file,
+    "P4 effective-page identity stream", "portable/effective-page-identity.json");
+  privateFileIdentity(value.portable.host_transcript_file,
+    "P4 host transcript", "portable/host-transcript.cdrm6hs1");
+  if (identitySummary.collection_sha256 !==
+        value.portable.effective_page_identity_file.sha256 ||
+      identitySummary.host_transcript_sha256 !==
+        value.portable.host_transcript_file.sha256) {
+    fail("P4 effective-page sidecar hashes differ from their summary");
+  }
   exactKeys(value.comparison, ["file", "m6_witness_sample_sha256", "native_capture_sha256", "native_raw_words_sha256", "portable_raw_words_sha256", "portable_record_sha256"], "P4 comparison");
   privateFileIdentity(value.comparison.file, "P4 comparison file", "comparison.json");
   for (const field of ["m6_witness_sample_sha256", "native_capture_sha256", "native_raw_words_sha256", "portable_raw_words_sha256", "portable_record_sha256"]) digest(value.comparison[field], `P4 comparison ${field}`);
@@ -1070,7 +1095,7 @@ export function p4Bindings(value) {
     source: value.source, m6_release_record: value.m6_release_record, patches: value.patches,
     prepared: value.prepared, artifacts: value.artifacts, native_inputs: value.native_inputs,
     schedule: value.schedule, native: { session_id: value.native.session_id, private_disk_instance_id: value.native.private_disk_instance_id, private_disk: value.native.private_disk, process: value.native.process, oracle_process: value.native.oracle_process, capture: value.native.capture, frame_file: value.native.frame_file, transcript_file: value.native.transcript_file, idle_file: value.native.idle_file, metadata_file: value.native.metadata_file },
-    portable: { session_id: value.portable.session_id, session_evidence: value.portable.session_evidence, module: value.portable.module, worker: value.portable.worker, worker_closure: value.portable.worker_closure, contemporaneous_adapter_observation: value.portable.contemporaneous_adapter_observation, effective_page_identity: value.portable.effective_page_identity, termination: value.portable.termination, framebuffer_checkpoint: value.portable.framebuffer_checkpoint, cdrdisp_file: value.portable.cdrdisp_file, witness_file: value.portable.witness_file, ready_file: value.portable.ready_file, worker_log_file: value.portable.worker_log_file },
+    portable: { session_id: value.portable.session_id, session_evidence: value.portable.session_evidence, module: value.portable.module, worker: value.portable.worker, worker_closure: value.portable.worker_closure, contemporaneous_adapter_observation: value.portable.contemporaneous_adapter_observation, effective_page_identity: value.portable.effective_page_identity, effective_page_identity_file: value.portable.effective_page_identity_file, host_transcript_file: value.portable.host_transcript_file, termination: value.portable.termination, framebuffer_checkpoint: value.portable.framebuffer_checkpoint, cdrdisp_file: value.portable.cdrdisp_file, witness_file: value.portable.witness_file, ready_file: value.portable.ready_file, worker_log_file: value.portable.worker_log_file },
     comparison: value.comparison, summary: value.summary,
   };
 }
@@ -1316,20 +1341,28 @@ async function portableCheckpoint({ nativeFrame, pinned, wasmPath, artifactRoot,
     if (result.comparison.outcome !== "identical") fail("M7 portable comparison did not report identity");
     const frame = result.checkpoint.display_record;
     const witness = result.checkpoint.witness_sample;
-    const acknowledgement = result.identityAcknowledgement;
-    const acknowledgementSha256 = result.identityAcknowledgementSha256;
-    if (acknowledgement?.disposition !== "IDENTITY_ACK" ||
-        acknowledgement.request?.request_id !== 135n ||
-        acknowledgement.request?.first_block !== 1299n ||
-        acknowledgement.request?.issue_boundary !== 1366722n ||
-        !(acknowledgementSha256 instanceof Uint8Array) ||
-        acknowledgementSha256.byteLength !== 32) {
-      fail("selected P4 effective-page acknowledgement differs");
+    const identityStream = result.identityStream;
+    const identityStreamSha256 = result.identityStreamSha256;
+    const firstAcknowledgement = identityStream?.acknowledgements?.[0];
+    if (identityStream?.disposition !== CADR_M7_EFFECTIVE_PAGE_IDENTITY_STREAM_DISPOSITION ||
+        identityStream.profile !== CADR_M7_EFFECTIVE_PAGE_IDENTITY_PROFILE ||
+        firstAcknowledgement?.request?.request_id !== 135n ||
+        firstAcknowledgement.request?.transaction_id !== 135n ||
+        firstAcknowledgement.request?.first_block !== 1299n ||
+        firstAcknowledgement.request?.issue_boundary !== 1366722n ||
+        !(identityStreamSha256 instanceof Uint8Array) ||
+        identityStreamSha256.byteLength !== 32) {
+      fail("selected P4 effective-page stream differs");
     }
+    const identityStreamBytes = serializeM7EffectivePageIdentityStream(identityStream);
+    const hostTranscript = result.m6.hostTranscript;
     const effectivePageIdentity = Object.freeze({
-      acknowledgement_sha256: Buffer.from(acknowledgementSha256).toString("hex"),
-      boundary: "1366722", disposition: "IDENTITY_ACK",
-      first_block: "1299", request_id: "135",
+      schema: identityStream.schema, profile: identityStream.profile,
+      disposition: identityStream.disposition, count: identityStream.count,
+      collection_sha256: Buffer.from(identityStreamSha256).toString("hex"),
+      host_transcript_sha256: sha256(hostTranscript),
+      first: Object.freeze({ generation: "1", request_id: "135",
+        transaction_id: "135", first_block: "1299", boundary: "1366722" }),
     });
     const ready = Object.freeze({ session_id: sessionId, outcome: result.m6.outcome,
       boundary: result.checkpoint.boundary.toString(),
@@ -1339,6 +1372,10 @@ async function portableCheckpoint({ nativeFrame, pinned, wasmPath, artifactRoot,
     const frameFile = await writePrivateNew(resolve(portableDirectory, "frame.cdrdisp1"), frame);
     const witnessFile = await writePrivateNew(resolve(portableDirectory, "witness.cdrm6i1"), witness);
     const readyFile = await writePrivateNew(resolve(portableDirectory, "ready.json"), ready);
+    const identityStreamFile = await writePrivateNew(
+      resolve(portableDirectory, "effective-page-identity.json"), identityStreamBytes);
+    const hostTranscriptFile = await writePrivateNew(
+      resolve(portableDirectory, "host-transcript.cdrm6hs1"), hostTranscript);
     termination = await client.close();
     const workerLogFile = await writePrivateNew(resolve(portableDirectory, "worker.ndjson"),
       new TextEncoder().encode(`${client.log.map(entry => canonicalJson(entry)).join("\n")}\n`));
@@ -1346,7 +1383,8 @@ async function portableCheckpoint({ nativeFrame, pinned, wasmPath, artifactRoot,
       module: wasmIdentity, worker: workerIdentity,
       contemporaneousAdapterObservation,
       workerClosure: workerStage.closure,
-      frameFile, witnessFile, readyFile, workerLogFile, termination, ready });
+      frameFile, witnessFile, readyFile, identityStreamFile, hostTranscriptFile,
+      workerLogFile, termination, ready });
   } catch (error) {
     caught = error;
   } finally {
@@ -1448,6 +1486,10 @@ async function runCampaign(options) {
       cdrdisp_file: { path: "portable/frame.cdrdisp1", ...portable.frameFile },
       witness_file: { path: "portable/witness.cdrm6i1", ...portable.witnessFile },
       ready_file: { path: "portable/ready.json", ...portable.readyFile },
+      effective_page_identity_file: { path: "portable/effective-page-identity.json",
+        ...portable.identityStreamFile },
+      host_transcript_file: { path: "portable/host-transcript.cdrm6hs1",
+        ...portable.hostTranscriptFile },
       worker_log_file: { path: "portable/worker.ndjson", ...portable.workerLogFile },
       termination: portable.termination };
     const comparisonBinding = { file: { path: "comparison.json", ...comparisonFile },

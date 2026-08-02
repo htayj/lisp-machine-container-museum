@@ -19,8 +19,10 @@ import {
 } from "./cadr-display-renderer.mjs";
 import {
   CADR_M7_EFFECTIVE_PAGE_IDENTITY_PROFILE,
+  CADR_M7_P4_IDENTITY_REQUEST,
   m7EffectivePageIdentityAcknowledgementSha256,
-  validateSelectedM7P4EffectivePageIdentityAcknowledgement,
+  m7EffectivePageIdentityStreamSha256,
+  validateM7EffectivePageIdentityStream,
 } from "./cadr-m7-effective-page-identity.mjs";
 
 export const CADR_M7_NATIVE_FRAME_SCHEMA = "CDRM7N1";
@@ -379,24 +381,37 @@ async function runM7CheckpointedM6BootInternal({ nativeCapture, ...config }, run
     m6_release_record_sha256: releaseRecordSha256.slice() });
   const comparison = await compareM7FrameCheckpoint(
     nativeCapture, checkpoint);
-  let identityAcknowledgement = null;
-  let identityAcknowledgementSha256 = null;
+  let identityStream = null;
+  let identityStreamSha256 = null;
   if (requireIdentity) {
     const record = result.m7EffectivePageIdentity;
     required(record !== null && typeof record === "object" &&
-      Object.keys(record).sort().join(",") === "acknowledgements,arm,profile" &&
+      Object.keys(record).sort().join(",") === "acknowledgements,arm,profile,stream" &&
       record.profile === CADR_M7_EFFECTIVE_PAGE_IDENTITY_PROFILE &&
-      Array.isArray(record.acknowledgements) && record.acknowledgements.length === 1,
-    "selected P4 requires exactly one effective-page identity acknowledgement");
-    identityAcknowledgement =
-      await validateSelectedM7P4EffectivePageIdentityAcknowledgement(
-        record.acknowledgements[0], result.hostTranscript);
-    identityAcknowledgementSha256 =
-      await m7EffectivePageIdentityAcknowledgementSha256(identityAcknowledgement);
+      Array.isArray(record.acknowledgements) && record.acknowledgements.length > 0,
+    "selected P4 requires an effective-page identity stream");
+    identityStream = await validateM7EffectivePageIdentityStream(record.stream, {
+      host_transcript: result.hostTranscript,
+      expected_base: {
+        byte_count: CADR_M7_P4_IDENTITY_REQUEST.selected_base_byte_count,
+        sha256: CADR_M7_P4_IDENTITY_REQUEST.selected_base_sha256,
+      },
+    });
+    required(identityStream.acknowledgements.length === record.acknowledgements.length,
+      "M7 effective-page acknowledgement collection differs from its stream");
+    for (let index = 0; index < identityStream.count; index += 1) {
+      required(sameBytes(
+        await m7EffectivePageIdentityAcknowledgementSha256(
+          identityStream.acknowledgements[index]),
+        await m7EffectivePageIdentityAcknowledgementSha256(
+          record.acknowledgements[index])),
+      "M7 effective-page acknowledgement collection differs from its stream");
+    }
+    identityStreamSha256 = await m7EffectivePageIdentityStreamSha256(identityStream);
   }
   return Object.freeze({ m6: result, checkpoint, comparison,
-    ...(identityAcknowledgement === null ? {} : {
-      identityAcknowledgement, identityAcknowledgementSha256,
+    ...(identityStream === null ? {} : {
+      identityStream, identityStreamSha256,
     }) });
 }
 

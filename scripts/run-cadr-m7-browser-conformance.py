@@ -23,7 +23,7 @@ import subprocess
 import sys
 import time
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
-from struct import unpack
+from struct import pack as struct_pack, unpack, unpack_from
 from threading import Thread
 from typing import Any
 from urllib.parse import urlparse
@@ -38,6 +38,13 @@ P5_SCHEMA = "cadr-m7-browser-conformance-result-v1"
 P5_TARGET = "CADR-WEB-303/ABI1.5/protocol-v5/M7"
 WIDTH, HEIGHT, STRIDE_WORDS, ACTIVE_WORDS = 768, 963, 24, 23112
 FRAME_PATH = "portable/frame.cdrdisp1"
+IDENTITY_PATH = "portable/effective-page-identity.json"
+HOST_TRANSCRIPT_PATH = "portable/host-transcript.cdrm6hs1"
+IDENTITY_PROFILE = "CADR-WEB-303/ABI1.5/protocol-v5/C-M7-P4-EFFECTIVE-PAGE-IDENTITY-v2"
+IDENTITY_SELECTED_BASE_BYTES = 269_562_880
+IDENTITY_SELECTED_BASE_SHA256 = "bb16e46ad81decfe1efe691d36b6aa4ce3fd4ffb82474365de3520989d397cb5"
+IDENTITY_SELECTED_PAGE_SHA256 = "ba1b1cc2228edbe5028760e47687c6889023fc72221bd5c5f5be85c4cfbb6a00"
+IDENTITY_EMPTY_SHA256 = hashlib.sha256(b"").hexdigest()
 TIMEOUT_MS = 20_000
 XAUTH = Path("/usr/bin/xauth")
 P5_PAGE = b"""<!doctype html><html><head><meta charset=\"utf-8\"><link rel=\"stylesheet\" href=\"/cadr-web/browser/m7-host.css\"></head><body><main id=\"cadr-m7-demo\"></main><script type=\"module\">import {createM7BrowserHost} from \"/cadr-web/browser/m7-host.mjs\";const r=await fetch(\"/p4-frame.cdrdisp1\",{cache:\"no-store\"});if(!r.ok)throw new Error(\"P4 frame fetch failed\");window.cadrM7Demo=createM7BrowserHost({root:document.querySelector(\"#cadr-m7-demo\"),record:new Uint8Array(await r.arrayBuffer())});document.documentElement.dataset.cadrM7Ready=\"true\";</script></body></html>"""
@@ -204,13 +211,434 @@ def rehash_p4_sidecar(session: Path, relative_path: str, identity: dict[str, Any
         raise BrowserConformanceError(f"{label} bytes differ from the P4 receipt")
 
 
+def tagged_u64(value: Any, label: str) -> int:
+    if not isinstance(value, dict) or set(value) != {"u64"} or not isinstance(value["u64"], str) or \
+            not re.fullmatch(r"0|[1-9][0-9]*", value["u64"]):
+        raise BrowserConformanceError(f"{label} is not a canonical tagged u64")
+    result = int(value["u64"])
+    if result > 0xffffffffffffffff:
+        raise BrowserConformanceError(f"{label} exceeds uint64")
+    return result
+
+
+def identity_u32(value: Any, label: str) -> int:
+    if type(value) is not int or not 0 <= value <= 0xffffffff:
+        raise BrowserConformanceError(f"{label} is not an unsigned 32-bit integer")
+    return value
+
+
+def tagged_hash(value: Any, label: str) -> str:
+    if not isinstance(value, dict) or set(value) != {"bytes"}:
+        raise BrowserConformanceError(f"{label} is not tagged bytes")
+    return digest(value["bytes"], label)
+
+
+def tagged_bytes(value: Any, label: str, byte_count: int | None = None) -> bytes:
+    if not isinstance(value, dict) or set(value) != {"bytes"} or \
+            not isinstance(value["bytes"], str) or not re.fullmatch(r"(?:[0-9a-f]{2})*", value["bytes"]):
+        raise BrowserConformanceError(f"{label} is not canonical tagged bytes")
+    result = bytes.fromhex(value["bytes"])
+    if byte_count is not None and len(result) != byte_count:
+        raise BrowserConformanceError(f"{label} has the wrong byte count")
+    return result
+
+
+def identity_host_record(transcript: bytes, ordinal: int, count: int) -> dict[str, Any]:
+    if not isinstance(ordinal, int) or isinstance(ordinal, bool) or not 0 <= ordinal < count:
+        raise BrowserConformanceError("P4 identity transcript ordinal is out of range")
+    record = transcript[64 + ordinal * 256:64 + (ordinal + 1) * 256]
+    if len(record) != 256 or unpack_from("<Q", record, 0)[0] != ordinal or \
+            record[92:96] != b"\0" * 4 or record[200:] != b"\0" * 56:
+        raise BrowserConformanceError("P4 identity transcript record is noncanonical")
+    return {"bytes": record, "ordinal": ordinal,
+            "actor": unpack_from("<I", record, 8)[0],
+            "operation": unpack_from("<I", record, 12)[0],
+            "boundary": unpack_from("<Q", record, 16)[0],
+            "due": unpack_from("<Q", record, 24)[0],
+            "generation": unpack_from("<Q", record, 32)[0],
+            "request": unpack_from("<Q", record, 40)[0],
+            "status": unpack_from("<I", record, 48)[0],
+            "block_count": unpack_from("<I", record, 52)[0],
+            "descriptor_bytes": unpack_from("<Q", record, 56)[0],
+            "payload_bytes": unpack_from("<Q", record, 64)[0],
+            "completion_bytes": unpack_from("<Q", record, 72)[0],
+            "first_block": unpack_from("<Q", record, 80)[0],
+            "block_bytes": unpack_from("<I", record, 88)[0],
+            "overlay_generation": unpack_from("<Q", record, 96)[0],
+            "descriptor_sha256": record[104:136].hex(),
+            "payload_sha256": record[136:168].hex(),
+            "completion_sha256": record[168:200].hex()}
+
+
+def identity_pair_link(value: Any, label: str) -> dict[str, Any]:
+    link = exact_keys(value, ["completion_ordinal", "completion_record_sha256",
+                              "issue_ordinal", "issue_record_sha256"], label)
+    issue = identity_u32(link["issue_ordinal"], f"{label} issue ordinal")
+    completion = identity_u32(link["completion_ordinal"], f"{label} completion ordinal")
+    if completion != issue + 1:
+        raise BrowserConformanceError(f"{label} has invalid ordinals")
+    return {"issue": issue, "completion": completion,
+            "issue_hash": tagged_hash(link["issue_record_sha256"], f"{label} issue hash"),
+            "completion_hash": tagged_hash(link["completion_record_sha256"],
+                                           f"{label} completion hash")}
+
+
+def identity_media(value: Any, label: str) -> dict[str, Any]:
+    media = exact_keys(value, ["dirty", "overlay_generation", "overlay_root_sha256",
+                               "persistent", "staged"], label)
+    if media["dirty"] is not True or media["persistent"] is not False or media["staged"] is not False:
+        raise BrowserConformanceError(f"{label} is not stable volatile overlay state")
+    return {"dirty": True,
+            "generation": tagged_u64(media["overlay_generation"], f"{label} generation"),
+            "root": tagged_hash(media["overlay_root_sha256"], f"{label} root"),
+            "persistent": False, "staged": False}
+
+
+def identity_boot_request(value: Any, label: str) -> dict[str, Any]:
+    request = exact_keys(value, ["completion_boundary", "first_block", "generation",
+                                 "issue_boundary", "page_sha256", "request_id",
+                                 "transaction_id"], label)
+    result = {name: tagged_u64(request[name], f"{label} {name}") for name in
+              ("completion_boundary", "first_block", "generation", "issue_boundary",
+               "request_id", "transaction_id")}
+    result["page_sha256"] = tagged_hash(request["page_sha256"], f"{label} page")
+    if result["completion_boundary"] < result["issue_boundary"]:
+        raise BrowserConformanceError(f"{label} boundaries are reversed")
+    return result
+
+
+def validate_identity_arm(value: Any) -> dict[str, Any]:
+    arm = exact_keys(value, ["base_read", "comparison_read", "initial_commit", "profile",
+                             "quiet_suffix", "schema"], "P4 identity arm")
+    if arm["schema"] != "cadr-m7-effective-page-identity-arm-v2" or arm["profile"] != IDENTITY_PROFILE:
+        raise BrowserConformanceError("P4 identity arm profile differs")
+    initial = identity_boot_request(arm["initial_commit"], "P4 identity initial commit")
+    comparison = identity_boot_request(arm["comparison_read"], "P4 identity comparison read")
+    base = identity_boot_request(arm["base_read"], "P4 identity base read")
+    quiet = exact_keys(arm["quiet_suffix"], ["boundary", "outstanding_request_id",
+                                             "persistent_status", "reason"],
+                       "P4 identity quiet suffix")
+    quiet_boundary = tagged_u64(quiet["boundary"], "P4 identity quiet boundary")
+    outstanding = tagged_u64(quiet["outstanding_request_id"], "P4 identity quiet request")
+    reason = identity_u32(quiet["reason"], "P4 identity quiet reason")
+    persistent_status = identity_u32(quiet["persistent_status"],
+                                     "P4 identity quiet persistent status")
+    if ((initial["generation"], initial["request_id"], initial["transaction_id"],
+         initial["first_block"]) != (1, 1, 1, 1) or
+            (comparison["generation"], comparison["request_id"], comparison["transaction_id"],
+             comparison["first_block"]) != (1, 2, 0, 1) or
+            (base["generation"], base["request_id"], base["transaction_id"],
+             base["first_block"]) != (1, 3, 0, 0) or
+            initial["page_sha256"] != comparison["page_sha256"] or
+            comparison["issue_boundary"] < initial["completion_boundary"] or
+            base["issue_boundary"] < comparison["completion_boundary"] or
+            quiet_boundary != 1_030_044 or reason != 1 or
+            persistent_status != 0 or outstanding != 0 or
+            quiet_boundary < base["completion_boundary"]):
+        raise BrowserConformanceError("P4 identity arm is not the selected boot suffix")
+    return {"initial_commit": initial, "comparison_read": comparison,
+            "base_read": base, "quiet_boundary": quiet_boundary, "raw": arm}
+
+
+def validate_identity_stream(raw: bytes, transcript_raw: bytes,
+                             summary: dict[str, Any]) -> None:
+    if not raw.endswith(b"\n"):
+        raise BrowserConformanceError("P4 identity stream lacks its canonical newline")
+    try:
+        stream = json.loads(raw, object_pairs_hook=reject_duplicate_members)
+    except (UnicodeDecodeError, json.JSONDecodeError) as error:
+        raise BrowserConformanceError("P4 identity stream is not canonical JSON") from error
+    if canonical(stream) + b"\n" != raw:
+        raise BrowserConformanceError("P4 identity stream bytes are noncanonical")
+    exact_keys(stream, ["acknowledgements", "count", "disposition", "first",
+                        "host_transcript", "profile", "schema"], "P4 identity stream")
+    stream_count = identity_u32(stream["count"], "P4 identity stream count")
+    summary_count = identity_u32(summary["count"], "P4 identity summary count")
+    if (stream["schema"] != "cadr-m7-effective-page-identity-stream-v1" or
+            stream["profile"] != IDENTITY_PROFILE or stream["profile"] != summary["profile"] or
+            stream["disposition"] != "IDENTITY_ACK_STREAM" or
+            stream_count != summary_count or
+            not isinstance(stream["acknowledgements"], list) or
+            len(stream["acknowledgements"]) != stream_count or
+            not 1 <= stream_count <= 1024):
+        raise BrowserConformanceError("P4 identity stream header differs")
+    transcript = exact_keys(stream["host_transcript"],
+                            ["artifact_set_sha256", "byte_count", "record_count",
+                            "schema", "sha256"], "P4 identity transcript binding")
+    transcript_record_count = identity_u32(transcript["record_count"],
+                                           "P4 transcript record count")
+    if (transcript["schema"] != "CDRM6HS1" or
+            tagged_u64(transcript["byte_count"], "P4 transcript byte count") != len(transcript_raw) or
+            tagged_hash(transcript["sha256"], "P4 transcript hash") != sha256(transcript_raw)):
+        raise BrowserConformanceError("P4 identity transcript binding differs")
+    if len(transcript_raw) < 64 or transcript_raw[:8] != b"CDRM6HS1":
+        raise BrowserConformanceError("P4 host transcript header differs")
+    version, header_bytes, record_bytes, record_count = unpack_from("<IIII", transcript_raw, 8)
+    if (version, header_bytes, record_bytes, record_count) != \
+            (1, 64, 256, transcript_record_count) or len(transcript_raw) != 64 + record_count * 256 or \
+            record_count == 0 or record_count % 2 != 0 or record_count > 2048:
+        raise BrowserConformanceError("P4 host transcript framing differs")
+    if tagged_hash(transcript["artifact_set_sha256"], "P4 transcript artifact set") != \
+            transcript_raw[24:56].hex():
+        raise BrowserConformanceError("P4 transcript artifact-set binding differs")
+    records = [identity_host_record(transcript_raw, ordinal, record_count)
+               for ordinal in range(record_count)]
+    high_water = -1
+    initial_replay_signature: tuple[str, str] | None = None
+    for ordinal in range(0, record_count, 2):
+        issue, completion = records[ordinal], records[ordinal + 1]
+        if (issue["actor"] != 1 or completion["actor"] != 2 or
+                any(issue[name] != completion[name] for name in
+                    ("operation", "generation", "request", "status", "block_count",
+                     "descriptor_bytes", "payload_bytes", "completion_bytes", "first_block",
+                     "block_bytes", "descriptor_sha256", "payload_sha256")) or
+                completion["boundary"] < issue["boundary"] or issue["status"] != 0):
+            raise BrowserConformanceError("P4 host transcript request pair differs")
+        if ordinal == 0:
+            initial_replay_signature = (issue["descriptor_sha256"], issue["payload_sha256"])
+        is_initial_replay = (ordinal != 0 and issue["request"] == 1 and issue["operation"] == 2 and
+                             issue["generation"] == 1 and issue["first_block"] == 1 and
+                             issue["block_count"] == 1 and issue["block_bytes"] == 1024 and
+                             issue["descriptor_bytes"] == 24 and issue["payload_bytes"] == 1024 and
+                             issue["completion_bytes"] == 0 and issue["overlay_generation"] == 1 and
+                             completion["overlay_generation"] == 1 and
+                             issue["completion_sha256"] == IDENTITY_EMPTY_SHA256 and
+                             completion["completion_sha256"] == IDENTITY_EMPTY_SHA256 and
+                             initial_replay_signature ==
+                             (issue["descriptor_sha256"], issue["payload_sha256"]))
+        if not is_initial_replay:
+            if issue["generation"] != 1 or issue["request"] <= high_water:
+                raise BrowserConformanceError("P4 host transcript high-water differs")
+            high_water = issue["request"]
+    previous_request = previous_completion_ordinal = previous_completion_boundary = -1
+    selected_arm = selected_arm_links = None
+    used_candidate_records: set[int] = set()
+    for index, acknowledgement in enumerate(stream["acknowledgements"]):
+        exact_keys(acknowledgement,
+                   ["acknowledgement_ordinal", "arm", "disposition", "effective_page",
+                    "media_after", "media_before", "preceding_read", "profile", "request",
+                    "schema", "selected_base", "target_rereads", "transcript"],
+                   f"P4 identity acknowledgement {index}")
+        request = exact_keys(acknowledgement["request"],
+                             ["block_bytes", "block_count", "completion_boundary", "descriptor",
+                              "descriptor_sha256", "due_boundary", "first_block", "generation",
+                              "host_status", "issue_boundary", "payload_sha256", "request_id",
+                              "transaction_id"], f"P4 acknowledgement {index} request")
+        page = exact_keys(acknowledgement["effective_page"],
+                          ["byte_count", "byte_offset", "first_block", "sha256", "source"],
+                          f"P4 acknowledgement {index} effective page")
+        base = exact_keys(acknowledgement["selected_base"], ["byte_count", "sha256"],
+                          f"P4 acknowledgement {index} selected base")
+        rereads = exact_keys(acknowledgement["target_rereads"],
+                             ["post_completion_sha256", "pre_success_sha256"],
+                             f"P4 acknowledgement {index} target rereads")
+        link = exact_keys(acknowledgement["transcript"],
+                          ["arm_records", "artifact_set_sha256", "completion_ordinal",
+                           "completion_record_sha256", "issue_ordinal", "issue_record_sha256",
+                           "schema", "sha256"], f"P4 acknowledgement {index} transcript")
+        arm = validate_identity_arm(acknowledgement["arm"])
+        acknowledgement_ordinal = identity_u32(acknowledgement["acknowledgement_ordinal"],
+                                               f"P4 acknowledgement {index} ordinal")
+        block_count = identity_u32(request["block_count"],
+                                   f"P4 acknowledgement {index} block count")
+        block_bytes = identity_u32(request["block_bytes"],
+                                   f"P4 acknowledgement {index} block bytes")
+        host_status = identity_u32(request["host_status"],
+                                   f"P4 acknowledgement {index} host status")
+        page_byte_count = identity_u32(page["byte_count"],
+                                       f"P4 acknowledgement {index} page byte count")
+        before = identity_media(acknowledgement["media_before"],
+                                f"P4 acknowledgement {index} media before")
+        after = identity_media(acknowledgement["media_after"],
+                               f"P4 acknowledgement {index} media after")
+        request_id = tagged_u64(request["request_id"], f"P4 acknowledgement {index} request")
+        generation = tagged_u64(request["generation"], f"P4 acknowledgement {index} generation")
+        transaction_id = tagged_u64(request["transaction_id"], f"P4 acknowledgement {index} transaction")
+        issue_boundary = tagged_u64(request["issue_boundary"], f"P4 acknowledgement {index} issue")
+        first_block = tagged_u64(request["first_block"], f"P4 acknowledgement {index} block")
+        due_boundary = tagged_u64(request["due_boundary"], f"P4 acknowledgement {index} due")
+        completion_boundary = tagged_u64(request["completion_boundary"],
+                                         f"P4 acknowledgement {index} completion")
+        descriptor = tagged_bytes(request["descriptor"], f"P4 acknowledgement {index} descriptor", 24)
+        descriptor_hash = tagged_hash(request["descriptor_sha256"],
+                                      f"P4 acknowledgement {index} descriptor hash")
+        payload_hash = tagged_hash(request["payload_sha256"],
+                                   f"P4 acknowledgement {index} payload hash")
+        effective = tagged_hash(page["sha256"], f"P4 acknowledgement {index} effective page")
+        base_bytes = tagged_u64(base["byte_count"], f"P4 acknowledgement {index} base bytes")
+        base_hash = tagged_hash(base["sha256"], f"P4 acknowledgement {index} base hash")
+        page_block = tagged_u64(page["first_block"], f"P4 acknowledgement {index} page block")
+        page_offset = tagged_u64(page["byte_offset"], f"P4 acknowledgement {index} page offset")
+        pair = identity_pair_link({name: link[name] for name in
+                                   ("completion_ordinal", "completion_record_sha256",
+                                    "issue_ordinal", "issue_record_sha256")},
+                                  f"P4 acknowledgement {index} transcript link")
+        issue_ordinal, completion_ordinal = pair["issue"], pair["completion"]
+        if (acknowledgement["schema"] != "cadr-m7-effective-page-identity-evidence-v4" or
+                acknowledgement["profile"] != IDENTITY_PROFILE or
+                acknowledgement["disposition"] != "IDENTITY_ACK" or
+                acknowledgement_ordinal != index or generation != 1 or
+                transaction_id != request_id or issue_ordinal + 1 != completion_ordinal or
+                completion_ordinal >= record_count or request_id <= previous_request or
+                issue_ordinal <= previous_completion_ordinal or
+                issue_boundary < previous_completion_boundary or block_count != 1 or
+                block_bytes != 1024 or host_status != 0 or
+                due_boundary < issue_boundary or completion_boundary < due_boundary or
+                unpack_from("<QQII", descriptor) != (transaction_id, first_block, 1, 1024) or
+                sha256(descriptor) != descriptor_hash or payload_hash != effective or
+                base_bytes != IDENTITY_SELECTED_BASE_BYTES or base_hash != IDENTITY_SELECTED_BASE_SHA256 or
+                page_block != first_block or page_offset != first_block * 1024 or
+                page_byte_count != 1024 or page["source"] not in ("base", "overlay") or
+                (first_block == 1) != (page["source"] == "overlay") or
+                page_offset + 1024 > base_bytes or before != after or before["generation"] != 1 or
+                link["schema"] != "CDRM6HS1" or
+                tagged_hash(link["sha256"], f"P4 acknowledgement {index} transcript hash") !=
+                sha256(transcript_raw) or
+                tagged_hash(link["artifact_set_sha256"],
+                            f"P4 acknowledgement {index} artifact set") != transcript_raw[24:56].hex()):
+            raise BrowserConformanceError("P4 identity acknowledgement ordering differs")
+        issue, completion = records[issue_ordinal], records[completion_ordinal]
+        candidate_tuple = (issue["actor"], completion["actor"], issue["operation"],
+                           completion["operation"], issue["boundary"], completion["boundary"],
+                           issue["due"], completion["due"], issue["generation"],
+                           completion["generation"], issue["request"], completion["request"],
+                           issue["first_block"], completion["first_block"],
+                           issue["overlay_generation"], completion["overlay_generation"])
+        if (candidate_tuple !=
+                (1, 2, 2, 2, issue_boundary, completion_boundary, due_boundary, due_boundary,
+                 generation, generation, request_id, request_id, first_block, first_block, 1, 1) or
+                issue["block_count"] != 1 or issue["block_bytes"] != 1024 or
+                issue["descriptor_bytes"] != 24 or issue["payload_bytes"] != 1024 or
+                issue["completion_bytes"] != 0 or issue["descriptor_sha256"] != descriptor_hash or
+                issue["payload_sha256"] != effective or issue["completion_sha256"] != IDENTITY_EMPTY_SHA256 or
+                completion["completion_sha256"] != IDENTITY_EMPTY_SHA256 or
+                sha256(issue["bytes"]) != pair["issue_hash"] or
+                sha256(completion["bytes"]) != pair["completion_hash"]):
+            raise BrowserConformanceError("P4 identity acknowledgement transcript link differs")
+        if (tagged_hash(rereads["pre_success_sha256"], "P4 pre-success reread") != effective or
+                tagged_hash(rereads["post_completion_sha256"], "P4 post-completion reread") != effective):
+            raise BrowserConformanceError("P4 identity target rereads differ")
+        expected_root = hashlib.sha256(b"CDRM4OVERLAY1\0" + bytes.fromhex(base_hash) +
+                                       (1).to_bytes(8, "little") + (1).to_bytes(8, "little") +
+                                       bytes.fromhex(arm["initial_commit"]["page_sha256"])).hexdigest()
+        if before["root"] != expected_root:
+            raise BrowserConformanceError("P4 identity media root differs")
+        arm_records = exact_keys(link["arm_records"],
+                                 ["base_read", "comparison_read", "initial_commit"],
+                                 f"P4 acknowledgement {index} arm links")
+        arm_links = {name: identity_pair_link(arm_records[name], f"P4 arm {name}")
+                     for name in ("initial_commit", "comparison_read", "base_read")}
+        if {name: (link["issue"], link["completion"]) for name, link in arm_links.items()} != {
+                "initial_commit": (0, 1), "comparison_read": (2, 3), "base_read": (4, 5)}:
+            raise BrowserConformanceError("P4 identity arm is not the opening transcript prefix")
+        if selected_arm is None:
+            selected_arm, selected_arm_links = arm["raw"], arm_links
+        elif arm["raw"] != selected_arm or arm_links != selected_arm_links:
+            raise BrowserConformanceError("P4 identity arm differs across the collection")
+        for name, operation, expected in (("initial_commit", 2, arm["initial_commit"]),
+                                          ("comparison_read", 1, arm["comparison_read"]),
+                                          ("base_read", 1, arm["base_read"])):
+            arm_link = arm_links[name]
+            arm_issue, arm_completion = records[arm_link["issue"]], records[arm_link["completion"]]
+            descriptor_bytes = (struct_pack("<QQII", expected["transaction_id"],
+                                             expected["first_block"], 1, 1024) if operation == 2 else
+                                struct_pack("<QII", expected["first_block"], 1, 1024))
+            expected_descriptor_hash = sha256(descriptor_bytes)
+            if (sha256(arm_issue["bytes"]) != arm_link["issue_hash"] or
+                    sha256(arm_completion["bytes"]) != arm_link["completion_hash"] or
+                    arm_issue["actor"] != 1 or arm_completion["actor"] != 2 or
+                    arm_issue["operation"] != operation or arm_completion["operation"] != operation or
+                    arm_issue["boundary"] != expected["issue_boundary"] or
+                    arm_completion["boundary"] != expected["completion_boundary"] or
+                    arm_issue["generation"] != expected["generation"] or
+                    arm_issue["request"] != expected["request_id"] or
+                    arm_issue["first_block"] != expected["first_block"] or
+                    arm_issue["due"] != expected["completion_boundary"] or
+                    arm_completion["due"] != expected["completion_boundary"] or
+                    arm_issue["block_count"] != 1 or arm_issue["block_bytes"] != 1024 or
+                    arm_issue["descriptor_bytes"] != (24 if operation == 2 else 16) or
+                    arm_issue["payload_bytes"] != (1024 if operation == 2 else 0) or
+                    arm_issue["completion_bytes"] != (0 if operation == 2 else 1024) or
+                    arm_issue["overlay_generation"] != (0 if operation == 2 else 1) or
+                    arm_completion["overlay_generation"] != 1 or
+                    arm_issue["descriptor_sha256"] != expected_descriptor_hash or
+                    arm_issue["payload_sha256"] !=
+                    (expected["page_sha256"] if operation == 2 else IDENTITY_EMPTY_SHA256) or
+                    arm_completion["completion_sha256"] !=
+                    (IDENTITY_EMPTY_SHA256 if operation == 2 else expected["page_sha256"])):
+                raise BrowserConformanceError("P4 identity arm transcript link differs")
+        arm_ordinals = {ordinal for arm_link in arm_links.values()
+                        for ordinal in (arm_link["issue"], arm_link["completion"])}
+        if (len(arm_ordinals) != 6 or max(arm_ordinals) >= issue_ordinal or
+                issue_ordinal in used_candidate_records or completion_ordinal in used_candidate_records or
+                issue_ordinal in arm_ordinals or completion_ordinal in arm_ordinals):
+            raise BrowserConformanceError("P4 identity transcript pairs overlap")
+        used_candidate_records.update((issue_ordinal, completion_ordinal))
+        preceding = acknowledgement["preceding_read"]
+        prior_is_read = issue_ordinal >= 2 and records[issue_ordinal - 2]["operation"] == 1
+        if (preceding is None) == prior_is_read:
+            raise BrowserConformanceError("P4 preceding read provenance is incomplete")
+        if preceding is not None:
+            preceding = exact_keys(preceding, ["completion_boundary", "first_block", "generation",
+                                                "issue_boundary", "page_sha256", "request_id"],
+                                   f"P4 acknowledgement {index} preceding read")
+            if issue_ordinal < 2:
+                raise BrowserConformanceError("P4 preceding read is not adjacent")
+            read_issue = transcript_raw[64 + (issue_ordinal - 2) * 256:
+                                        64 + (issue_ordinal - 1) * 256]
+            read_completion = transcript_raw[64 + (issue_ordinal - 1) * 256:
+                                             64 + issue_ordinal * 256]
+            read_request = tagged_u64(preceding["request_id"], "P4 preceding read request")
+            read_generation = tagged_u64(preceding["generation"], "P4 preceding read generation")
+            read_block = tagged_u64(preceding["first_block"], "P4 preceding read block")
+            read_issue_boundary = tagged_u64(preceding["issue_boundary"],
+                                             "P4 preceding read issue")
+            read_completion_boundary = tagged_u64(preceding["completion_boundary"],
+                                                  "P4 preceding read completion")
+            read_hash = tagged_hash(preceding["page_sha256"], "P4 preceding read page")
+            if (unpack_from("<QIIQ", read_issue, 0) !=
+                    (issue_ordinal - 2, 1, 1, read_issue_boundary) or
+                    unpack_from("<QIIQ", read_completion, 0) !=
+                    (issue_ordinal - 1, 2, 1, read_completion_boundary) or
+                    unpack_from("<Q", read_issue, 32)[0] != read_generation or
+                    unpack_from("<Q", read_issue, 40)[0] != read_request or
+                    unpack_from("<Q", read_issue, 80)[0] != read_block or
+                    read_completion[168:200].hex() != read_hash or
+                    issue_ordinal - 2 in used_candidate_records or
+                    issue_ordinal - 1 in used_candidate_records or
+                    issue_ordinal - 2 in arm_ordinals or issue_ordinal - 1 in arm_ordinals):
+                raise BrowserConformanceError("P4 preceding read differs from its adjacent transcript")
+            used_candidate_records.update((issue_ordinal - 2, issue_ordinal - 1))
+        if index == 0 and (request_id, transaction_id, first_block, issue_boundary,
+                           due_boundary, completion_boundary, effective, page["source"]) != \
+                (135, 135, 1299, 1_366_722, 1_366_722, 1_366_722,
+                 IDENTITY_SELECTED_PAGE_SHA256, "base"):
+            raise BrowserConformanceError("P4 identity first acknowledgement is not selected")
+        previous_request = request_id
+        previous_completion_ordinal = completion_ordinal
+        previous_completion_boundary = completion_boundary
+    first = exact_keys(stream["first"], ["boundary", "first_block", "generation",
+                                         "request_id", "transaction_id"], "P4 identity first tuple")
+    first_values = {name: str(tagged_u64(first[name], f"P4 first {name}")) for name in first}
+    first_ack = stream["acknowledgements"][0]["request"]
+    expected_first = {"boundary": first_ack["issue_boundary"]["u64"],
+                      "first_block": first_ack["first_block"]["u64"],
+                      "generation": first_ack["generation"]["u64"],
+                      "request_id": first_ack["request_id"]["u64"],
+                      "transaction_id": first_ack["transaction_id"]["u64"]}
+    if first_values != expected_first or first_values != summary["first"] or first_values != {
+            "boundary": "1366722", "first_block": "1299", "generation": "1",
+            "request_id": "135", "transaction_id": "135"}:
+        raise BrowserConformanceError("P4 identity first tuple differs from its summary")
+
+
 def validate_p4_manifest(value: dict[str, Any], raw: bytes,
                          session: Path | None = None) -> dict[str, Any]:
     """Validate the complete closed P4 schema and optionally rehash every sidecar."""
     exact_keys(value, ["artifacts", "comparison", "m6_release_record", "native", "native_inputs",
                        "outcome", "patches", "portable", "prepared", "runtime_execution_performed",
                        "schedule", "schema", "session", "source", "summary", "target"], "P4 manifest")
-    if (value["schema"] != "cadr-m7-frame-conformance-result-v1" or
+    if (value["schema"] != "cadr-m7-frame-conformance-result-v2" or
             value["target"] != P5_TARGET or value["outcome"] != "identical" or
             value["runtime_execution_performed"] is not True):
         raise BrowserConformanceError("P4 manifest is not a successful M7-P4 result")
@@ -314,7 +742,8 @@ def validate_p4_manifest(value: dict[str, Any], raw: bytes,
     for name, (_path, identity) in native_files.items():
         file_identity(identity, f"P4 native {name}")
     exact_keys(value["portable"], ["cdrdisp_file", "contemporaneous_adapter_observation",
-                                    "effective_page_identity", "framebuffer_checkpoint", "module", "ready_file",
+                                    "effective_page_identity", "effective_page_identity_file",
+                                    "framebuffer_checkpoint", "host_transcript_file", "module", "ready_file",
                                     "session_evidence", "session_id", "termination",
                                     "witness_file", "worker", "worker_closure",
                                     "worker_log_file"], "P4 portable")
@@ -329,16 +758,22 @@ def validate_p4_manifest(value: dict[str, Any], raw: bytes,
     if termination != {"pending_requests": 0, "terminated": True}:
         raise BrowserConformanceError("P4 portable worker did not terminate cleanly")
     identity = exact_keys(value["portable"]["effective_page_identity"],
-                          ["acknowledgement_sha256", "boundary", "disposition",
-                           "first_block", "request_id"],
+                          ["collection_sha256", "count", "disposition", "first",
+                           "host_transcript_sha256", "profile", "schema"],
                           "P4 effective-page identity")
-    digest(identity["acknowledgement_sha256"],
-           "P4 effective-page identity acknowledgement")
-    if identity != {
-            "acknowledgement_sha256": identity["acknowledgement_sha256"],
-            "boundary": "1366722", "disposition": "IDENTITY_ACK",
-            "first_block": "1299", "request_id": "135"}:
-        raise BrowserConformanceError("P4 effective-page identity is not the selected acknowledgement")
+    exact_keys(identity["first"], ["boundary", "first_block", "generation",
+                                   "request_id", "transaction_id"], "P4 identity first tuple")
+    digest(identity["collection_sha256"], "P4 effective-page identity collection")
+    digest(identity["host_transcript_sha256"], "P4 effective-page host transcript")
+    if (identity["schema"] != "cadr-m7-effective-page-identity-stream-v1" or
+            identity["profile"] !=
+            "CADR-WEB-303/ABI1.5/protocol-v5/C-M7-P4-EFFECTIVE-PAGE-IDENTITY-v2" or
+            identity["disposition"] != "IDENTITY_ACK_STREAM" or
+            not isinstance(identity["count"], int) or isinstance(identity["count"], bool) or
+            not 1 <= identity["count"] <= 1024 or identity["first"] != {
+                "generation": "1", "request_id": "135", "transaction_id": "135",
+                "first_block": "1299", "boundary": "1366722"}):
+        raise BrowserConformanceError("P4 effective-page identity is not the selected stream")
     file_identity(value["portable"]["module"], "P4 portable module")
     worker = file_identity(value["portable"]["worker"], "P4 portable worker")
     closure = exact_keys(value["portable"]["worker_closure"],
@@ -394,6 +829,13 @@ def validate_p4_manifest(value: dict[str, Any], raw: bytes,
     ready = file_identity(value["portable"]["ready_file"], "P4 ready", "portable/ready.json")
     worker_log = file_identity(value["portable"]["worker_log_file"], "P4 worker log",
                                "portable/worker.ndjson")
+    identity_file = file_identity(value["portable"]["effective_page_identity_file"],
+                                  "P4 identity stream", IDENTITY_PATH)
+    transcript_file = file_identity(value["portable"]["host_transcript_file"],
+                                    "P4 host transcript", HOST_TRANSCRIPT_PATH)
+    if (identity_file["sha256"] != identity["collection_sha256"] or
+            transcript_file["sha256"] != identity["host_transcript_sha256"]):
+        raise BrowserConformanceError("P4 identity sidecars differ from their summary")
     exact_keys(value["comparison"], ["file", "m6_witness_sample_sha256", "native_capture_sha256",
                                       "native_raw_words_sha256", "portable_raw_words_sha256",
                                       "portable_record_sha256"], "P4 comparison")
@@ -434,8 +876,13 @@ def validate_p4_manifest(value: dict[str, Any], raw: bytes,
                 ("portable/witness.cdrm6i1", witness, "P4 witness"),
                 ("portable/ready.json", ready, "P4 ready"),
                 ("portable/worker.ndjson", worker_log, "P4 worker log"),
+                (IDENTITY_PATH, identity_file, "P4 identity stream"),
+                (HOST_TRANSCRIPT_PATH, transcript_file, "P4 host transcript"),
                 ("comparison.json", comparison_file, "P4 comparison")):
             rehash_p4_sidecar(session, path, identity, label)
+        validate_identity_stream((session / IDENTITY_PATH).read_bytes(),
+                                 (session / HOST_TRANSCRIPT_PATH).read_bytes(),
+                                 value["portable"]["effective_page_identity"])
     return {"manifest": value, "manifest_sha256": sha256(raw), "frame": frame}
 
 

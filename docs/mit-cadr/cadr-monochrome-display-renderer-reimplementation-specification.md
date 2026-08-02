@@ -3,7 +3,7 @@ type: Reimplementation Specification
 title: CADR-WEB-303 ABI 1.5 monochrome display and browser renderer reimplementation specification
 description: A release-bounded contract for transferring, validating, rendering, and testing the System 303 monochrome framebuffer without claiming an unrecorded native Listener-pixel oracle.
 tags: [mit-cadr, lm-3, system-303, webassembly, display, framebuffer, renderer, reimplementation]
-timestamp: 2026-08-02T07:09:28-04:00
+timestamp: 2026-08-02T10:02:00-04:00
 ---
 
 # CADR-WEB-303 ABI 1.5 monochrome display and browser renderer reimplementation specification
@@ -353,6 +353,13 @@ a historical CADR distinction.
 
 [`run-cadr-m7-frame-conformance.mjs`](../../scripts/run-cadr-m7-frame-conformance.mjs) is the P4 campaign entrypoint. It requires a fresh explicit `--execute` invocation, and the subordinate native-capture CLI independently requires the same explicit authority and treats `captured` as its sole successful runtime result. The campaign requires an M7 prepared/build closure, a native configuration, and a new 0700 ignored session below `build/cadr-oracle/`. Before starting the child it constructs the native expectation from the parent-generated session and disk IDs, pinned release source/schedule/artifact/native-input records, tracked patch and support bytes, prepared-tree/build markers, and a fresh executable hash. It materializes the native half as exactly `native/frame.cdrm7n1`, `native/capture.ndjson`, `native/idle.bin`, and newline-free canonical `native/metadata.json`, all 0600. The parent independently parses and hashes those outputs, waits for the child `close` event so both pipes have drained, records its exit code and signal, and requires the stdout and file metadata to equal the parent expectation exactly. It then creates a separate protocol-v5 worker and writes the portable half as exactly `portable/frame.cdrdisp1`, `portable/witness.cdrm6i1`, `portable/ready.json`, and `portable/worker.ndjson`, all 0600. The ready record and every worker-log response bind the actual portable session identity; the native result retains both its session and private-disk instance identities. Only `comparison.json` and canonical `manifest.json` appear at the session root. Validation requires the native capture, portable checkpoint, comparison, and summary redundant hashes all to name the same fresh receipts. Its hashes-only summary binds both Fossil pins, M6 release digest, M6/M7 patch and support hashes, prepared-tree and executable identities, five artifacts and native hosts input, canonical schedule/transcript, the session and disk identities, private-disk before/after identities, Wasm identity, the private staged worker closure, contemporaneous adapter-file observations, completed Form-C boundary, witness/raw-frame/`CDRDISP1` hashes, and clean native-process/worker termination with no pending work. The adapter observations name files present at execution time; they are not a claim that those files produced the already-built Wasm module. Producing-source closure remains a reproducible release-build obligation. It rejects an existing result name, changed disk, stale/partial boundary, missing worker termination, or a substitution of any binding. This is harness evidence only, not a P4 runtime result before an operator completes the campaign.
 
+The v2 portable layout extends the four files named above with private 0600
+`portable/effective-page-identity.json` and
+`portable/host-transcript.cdrm6hs1` sidecars. The manifest hashes both and
+records stream schema, profile, disposition, count, collection/transcript
+hashes, and the exact first tuple. This additive sentence supersedes the older
+four-file inventory in the preceding implementation-history paragraph.
+
 ### 4. Screenshot and publication boundary
 
 An image rendered from the M7 raw comparator is an oracle by-product, not automatically a publishable screenshot. If a visual is needed to support a substantive historical claim, reproduce the selected state through the CADR Xvfb computer-use harness and complete the repository's per-image four-factor rights review. A selected asset belongs only in `docs/assets/mit-cadr-screenshots/` with its copyright basis, attribution/no-endorsement notice, exact session and artifact provenance, input sequence, dimensions, PNG and pixel hashes, and shutdown status. Otherwise retain the image only in the ignored session tree and leave the prose without a decorative screenshot.
@@ -364,9 +371,9 @@ The current M6 release remains immutable. `0003`, the frame-witness executable, 
 ### 6. M7 effective-page identity acknowledgement companion
 
 The additive, default-disabled profile
-`CADR-WEB-303/ABI1.5/protocol-v5/C-M7-P4-EFFECTIVE-PAGE-IDENTITY-v1`
-recognizes one later write whose bytes already equal an effective in-range
-1,024-byte disk page, without mutating that page or inventing a second M4
+`CADR-WEB-303/ABI1.5/protocol-v5/C-M7-P4-EFFECTIVE-PAGE-IDENTITY-v2`
+recognizes an ordered bounded stream of later writes whose bytes already equal effective in-range
+1,024-byte disk pages, without mutating those pages or inventing a second M4
 commit. It is not a general CADR disk protocol claim.
 
 The production M7 checkpoint wrapper supplies the exact policy to a dedicated
@@ -380,18 +387,21 @@ all three completed boot requests, their boundaries and page hashes, and the
 quiet record. It neither writes a page nor changes M4 staging, generation,
 root, dirty, or persistence state.
 
-An armed companion accepts at most one non-replay write only when its descriptor
-is exactly one in-range 1,024-byte block, transaction ID equals request ID, and
-its `(generation, request ID)` is newer than the initial commit. It compares
+An armed companion accepts the first non-replay write only when it is the exact
+v1 request-135 anchor. It then remains streaming. Every member has generation
+`1`, an exactly one-block in-range descriptor, transaction ID equal to request
+ID, and identity newer than the global completed-host-request high-water,
+including intervening reads. It compares
 LBA 1 with the effective overlay and every other LBA with an overflow-safe
 bounded base read. Exact replay of the initial LBA-1 descriptor and payload has
 precedence and remains M4 replay; same-ID descriptor or payload changes fail.
-Successful delivery produces only an internal candidate. M6 then rereads the
-effective page from the trusted service and validates the adjacent issue and
+The service rereads the target before success and after completion. Successful
+delivery produces only an internal candidate. M6 validates the adjacent issue and
 completion records in the serialized `CDRM6HS1` transcript before it constructs
-the public `IDENTITY_ACK`.
+the public `IDENTITY_ACK`. Optional immediately preceding successful one-block
+read provenance is retained only when its transcript pair is exactly adjacent.
 
-That v3 receipt binds the selected base, full arm, request LBA and bounds,
+Candidate schema v3 and acknowledgement schema v4 bind the selected base, full arm, request LBA and bounds,
 generation/request/transaction identities, descriptor and payload hashes,
 issue/due/completion boundaries, host status, effective source, unchanged
 overlay generation/root, and transcript plus record digests. The record excludes
@@ -402,22 +412,33 @@ base byte count and hash. The validator independently bounds the page and
 derives the canonical overlay root from that base plus the initial committed
 LBA-1 page; receipt-provided base and root values are not authorities. Each of
 the three arm operations must have exactly one matching `CDRM6HS1`
-issue/completion pair, distinct from the candidate pair.
+issue/completion pair, distinct from the candidate pair. M6 then validates the
+whole zero-based ordered collection as stream schema v1 with disposition
+`IDENTITY_ACK_STREAM`; request IDs, boundaries, and transcript ordinals must
+increase, and the first tuple remains request `135`.
 
-Changed, stale, malformed, or out-of-range input, a second candidate, any
-selected M4 fault, short or throwing reread, completion failure, detach, or
-forged receipt/transcript produces no acknowledgement and does not fall back to
+Changed, stale, malformed, or out-of-range input, acknowledgement-member replay,
+any selected M4
+fault, short or throwing reread, post-completion drift, completion failure,
+detach/reset, high-water regression, or exhaustion beyond 1,024 total host
+transactions, or a forged receipt/transcript poisons the stream and produces
+no acknowledgement. It does not fall back to
 staging, committing, generating a root, persisting, or creating a sparse
 overlay.
 
-Selected P4 requires exactly one non-null acknowledgement for generation `1`,
+Selected P4 requires a nonempty stream whose first acknowledgement is generation `1`,
 request and transaction `135`, LBA `1299`, issue/due/completion boundary
 `1366722`, effective-page SHA-256
 `ba1b1cc2228edbe5028760e47687c6889023fc72221bd5c5f5be85c4cfbb6a00`,
 selected-base SHA-256
 `bb16e46ad81decfe1efe691d36b6aa4ce3fd4ffb82474365de3520989d397cb5`,
-and unchanged overlay generation `1`. The campaign execution receipt includes
-the canonical acknowledgement digest. These are selected compatibility
+and unchanged overlay generation `1`. The P4 manifest summary records schema,
+profile, disposition, count, collection and transcript hashes, and the exact
+first tuple. The fast execution receipt binds both
+`effective_page_identity_stream_sha256` and
+`effective_page_identity_stream_count`. The exact committed request-1 LBA-1
+descriptor-and-payload replay remains the sole replay exception, including
+after streaming begins; it creates no acknowledgement member. These are selected compatibility
 requirements derived from retained request evidence, not proof that the new
 acknowledgement path has completed a real P4 run. `M7-EPI-UNIT` remains
 synthetic unit evidence; no new P4 campaign was run, and `M7-P4`, `M7-P5`, and
@@ -445,6 +466,16 @@ quiet arm, receipt hooks, and transcript binding. Ordinary M6 explicitly
 discards a caller-supplied M7 policy. This source repair is not a P4 closure:
 a fresh signed receipt cycle and successful long run remain required.
 
+The later ignored session `m7-p4-6db56e8355ca42c9b9975896b766bf1c`
+established a second adjacent member: successful request `134` read LBA
+`187956`, request `135` acknowledged identical LBA `1299`, successful request
+`136` read LBA `187957`, and request `137` attempted identical LBA `1300` but
+retained legacy host status `1` before terminal status `16`. The two page hashes
+were `ba1b1cc2228edbe5028760e47687c6889023fc72221bd5c5f5be85c4cfbb6a00`
+and `566dc7dd89247cf44f8784741c4400ca28b25d69b836fbfb8ff67729b34d6f1a`.
+This is direct runtime evidence for a second member, not evidence of the full
+future stream length. It motivated v2 and does not close P4.
+
 The selected arm is additionally pinned to generation/request/transaction/LBA
 tuples `(1,1,1,1)`, `(1,2,0,1)`, and `(1,3,0,0)` for initial commit,
 comparison read, and base read respectively, plus the exact reason-1 quiet
@@ -461,6 +492,12 @@ The run MUST exercise and capture both an ordinary fit viewport and fullscreen e
 Retain raw screenshot bytes, PNG and decoded-pixel hashes, browser automation log, fullscreen entry/result, and exit result in the ignored session tree. Any selected image for `docs/assets/mit-cadr-screenshots/` additionally requires the repository's per-image rights review and catalog provenance. This campaign closes `M7-P5`; `C-M7` closes only when both `M7-P4` and `M7-P5` are closed.
 
 [`run-cadr-m7-browser-conformance.py`](../../scripts/run-cadr-m7-browser-conformance.py) is the P5 entrypoint. It binds the manifest session ID to the supplied directory basename and revalidates the complete closed P4 schema, including unchanged private disk, clean native/oracle/portable termination, session evidence, every redundant checkpoint hash, and fresh hashes of all nine P4 sidecars. It independently parses the rehashed fixed-size `CDRM7N1`, types every header field, and derives BOW from the uint32 TV mode before accepting the manifest capture identity. Before starting its server it snapshots the exact `CDRDISP1`, generated HTML, production JavaScript, renderer, and CSS bytes. GET and HEAD share one explicit loopback allowlist with `Cache-Control: no-store`; every other repository path returns 404, and no request rereads changing repository assets or falls back to `m7-synthetic-record.mjs`. On explicit `--execute`, it requires nonempty hashed Chromium and Xvfb command identities and the reviewed Chromium 150 profile, creates a new 0700 ignored session and a fresh 0600 Xauthority cookie, passes that cookie to Xvfb with `-auth`, and exposes `XAUTHORITY` only to Chromium. It starts headed Chromium on isolated 1920-by-1200 Xvfb with `devicePixelRatio = 1`, and binds the served host, renderer, and CSS snapshots by exact path and hash in the closed result. It independently recalculates integral fit, validates and retains integral canvas/stage/source-clip bounds, proves the source placement from stage origin plus letterbox offsets, verifies canvas backing and computed CSS dimensions, pixelated/no-smoothing policy, full source-frame pixel rectangles, and decoded ordinary/fullscreen PNG hashes. It requires a 767px zero-fit result. Fullscreen entry and exit are trusted host-control clicks and both must succeed; denial, a fallback message, fractional coordinate, cacheable frame route, missing full-frame capture, or failed exit invalidates the campaign. Raw captures and logs remain 0600 ignored session payloads. No P5 browser run has yet been performed.
+
+For v2, P5 additionally rehashes and validates the complete identity stream and
+`CDRM6HS1` sidecars, bringing the P4 sidecar count to eleven. It never serves
+either evidence sidecar: both GET and HEAD remain outside the explicit
+allowlist and return 404. This source behavior is unit-tested but has not yet
+produced a P5 runtime result.
 
 ## Artifact boundary and sources
 
