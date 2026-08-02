@@ -67,7 +67,7 @@ exec guix shell clang-toolchain lld -- sh -eu -c '
     profile_sources="core/cadr_display.c"
   fi
   if test "$profile" = m7-devid; then
-    extra_defines="-DCADR_M5_WASM -DCADR_M6_DEVID_WASM -DCADR_M7_WASM -DCADR_M7_CORE"
+    extra_defines="-DCADR_M5_WASM -DCADR_M6_DEVID_WASM -DCADR_M7_WASM -DCADR_M7_CORE -DCADR_M7_DEVID_WASM"
     profile_sources="core/cadr_m6_disk_evidence.c core/cadr_m6_fast_run.c core/cadr_display.c"
   fi
   if test "$profile" = m9; then

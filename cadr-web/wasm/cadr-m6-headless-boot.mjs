@@ -13,6 +13,8 @@ import {
   CADR_STATUS_NOT_READY,
   createM4BlockRangeService,
 } from "./cadr-m4-block-service.mjs";
+import { CADR_STATUS_UNIMPLEMENTED_DEVICE,
+  parseCadrM7UnimplementedDiagnostic } from "./cadr-m7-devid-failure.mjs";
 
 export const CADR_M6_SCHEMA = "CDRM6BOOT1";
 export const CADR_M6_READY_CONTRACT =
@@ -496,6 +498,23 @@ function responseDigest(response, field) {
   return bytes !== null && bytes.byteLength === 32 ? bytes.slice() : null;
 }
 
+async function terminalUnimplementedDiagnostic(response, boundary, status, required) {
+  if (status !== CADR_STATUS_UNIMPLEMENTED_DEVICE) return null;
+  const bytes = bytesOf(response?.unimplementedDiagnostic);
+  const suppliedDigest = responseDigest(response, "unimplementedDiagnosticDigest");
+  if (bytes === null && suppliedDigest === null && required !== true) return null;
+  const parsed = bytes === null ? null : parseCadrM7UnimplementedDiagnostic(bytes);
+  if (parsed === null || suppliedDigest === null || parsed.boundary !== boundary ||
+      !sameBytes(await sha256(bytes), suppliedDigest)) {
+    throw new TypeError("terminal status 13 lacks its exact CDRM7U1 source diagnostic");
+  }
+  return Object.freeze({ schema: "cadr-m7-unimplemented-device-v1",
+    site: parsed.site, siteName: parsed.siteName, direction: parsed.direction,
+    address: parsed.address, value: parsed.value, result: parsed.result,
+    status: parsed.status, boundary: parsed.boundary,
+    microinstructions: parsed.microinstructions, wireSha256: suppliedDigest.slice() });
+}
+
 async function collectEvidence(client, context) {
   let state = null;
   let machine = context.lastMachineInfo;
@@ -538,6 +557,9 @@ async function collectEvidence(client, context) {
     outstandingRequest: context.outstandingRequest,
     machineInfo: machine,
     runFraming: context.lastRunFraming,
+    ...(context.terminalUnimplementedDevice === null ? {} : {
+      unimplementedDevice: context.terminalUnimplementedDevice,
+    }),
     transcriptCount: context.transcript.length,
     lastHostTransactions:
       context.transcript.slice(-context.lastTransactionLimit),
@@ -550,13 +572,20 @@ async function failResult(client, context, reason, phase, status) {
     serializeM6HostTranscript(
       context.transcript, context.preflight.artifactSetSha256);
   const hostTranscriptSha256 = await sha256(hostTranscript);
+  const evidence = await collectEvidence(client, context);
+  if (context.requireM7DevidFailureDiagnostic === true &&
+      (status === CADR_STATUS_UNIMPLEMENTED_DEVICE) !==
+        ((evidence.unimplementedDevice ?? null) !== null)) {
+    throw new TypeError("status-13 failure diagnostic identity is inconsistent");
+  }
   return {
     outcome: "failed",
     runEvidence: context.runEvidence,
     preflight: publicPreflight(context.preflight),
     transcriptTail: context.transcript.slice(-context.lastTransactionLimit),
     report: failure(reason, phase, status,
-      { ...await collectEvidence(client, context), hostTranscriptSha256 }),
+      { schemaVersion: (evidence.unimplementedDevice ?? null) === null ? 1 : 2,
+        ...evidence, hostTranscriptSha256 }),
   };
 }
 
@@ -1767,6 +1796,9 @@ async function runM6HeadlessBootInternal(config, testReady = null) {
     outstandingRequest: null,
     lastMachineInfo: null,
     terminalStateDigest: null,
+    terminalUnimplementedDevice: null,
+    requireM7DevidFailureDiagnostic:
+      config.requireM7DevidFailureDiagnostic === true,
     terminalQueueDigest: null,
     lastRunFraming: null,
     transcript: [],
@@ -1930,6 +1962,9 @@ async function runM6HeadlessBootInternal(config, testReady = null) {
         }
         context.terminalQueueDigest = responseDigest(batch, "queueDigest");
         context.terminalStateDigest = responseDigest(batch, "coreStateDigest");
+        context.terminalUnimplementedDevice = await terminalUnimplementedDiagnostic(
+          batch, context.boundary, batch.terminalStatus,
+          context.requireM7DevidFailureDiagnostic);
         context.lastRunFraming = Object.freeze({
           operation: "run-digest-batch-m5",
           requestedClockSlots: requested,
@@ -2332,7 +2367,10 @@ async function runM6Ready4FastInternal(config, testReady = null) {
   const fastSlots = config.fastSlots ?? CADR_M6_FAST_RUN_MAX_SLOTS;
   const context = {
     boundary: 0n, lifecycle: "NEW", outstandingRequest: null, lastMachineInfo: null,
-    terminalStateDigest: null, terminalQueueDigest: null, lastRunFraming: null,
+    terminalStateDigest: null, terminalQueueDigest: null,
+    terminalUnimplementedDevice: null, lastRunFraming: null,
+    requireM7DevidFailureDiagnostic:
+      config.requireM7DevidFailureDiagnostic === true,
     transcript: [], preflight: null, checkpointChain: await sha256(
       new TextEncoder().encode("CDRM6FASTCHAIN1\0")), checkpointCount: 0,
     hostWaitChain: await sha256(new TextEncoder().encode("CDRM6FASTHOSTWAIT1\0")),
@@ -2470,6 +2508,9 @@ async function runM6Ready4FastInternal(config, testReady = null) {
       context.checkpointChain = await appendM6FastCheckpoint(context.checkpointChain,
         context.checkpointCount++, fast.bytes, stateDigest, queueDigest);
       context.terminalStateDigest = stateDigest; context.terminalQueueDigest = queueDigest;
+      context.terminalUnimplementedDevice = await terminalUnimplementedDiagnostic(
+        response, context.boundary, fast.terminalStatus,
+        context.requireM7DevidFailureDiagnostic);
       if (fast.reason === 4) {
         return failResult(config.client, context, "terminal-machine-status", "run", fast.terminalStatus);
       }
@@ -2711,6 +2752,9 @@ const M6_FAILURE_RUN_REPORT_KEYS = Object.freeze([
   "outstandingRequest", "machineInfo", "transcriptCount",
   "lastHostTransactions", "hostTranscriptSha256", "runFraming",
 ]);
+const M6_FAILURE_RUN_REPORT_V2_KEYS = Object.freeze([
+  ...M6_FAILURE_RUN_REPORT_KEYS, "unimplementedDevice",
+]);
 
 function failureDigest(value, label, nullable = false) {
   if (value === null && nullable) return null;
@@ -2920,15 +2964,54 @@ function normalizeFailureRunEvidence(value) {
   });
 }
 
+function normalizeUnimplementedDevice(value, reportBoundary) {
+  exactKeys(value, ["schema", "site", "siteName", "direction", "address", "value",
+    "result", "status", "boundary", "microinstructions", "wireSha256"],
+  "M7-DEVID unimplemented-device diagnostic");
+  const names = Object.freeze(new Map([[1, "physical-bus-read"],
+    [2, "physical-bus-write"], [3, "guarded-bus-read"],
+    [4, "guarded-bus-write"], [5, "iob-device-service"],
+    [255, "core-unclassified"]]));
+  const expectedDirection = [1, 3].includes(value.site) ? 1 :
+    ([2, 4].includes(value.site) ? 2 : 0);
+  if (value.schema !== "cadr-m7-unimplemented-device-v1" ||
+      names.get(value.site) !== value.siteName || value.direction !== expectedDirection ||
+      value.status !== CADR_STATUS_UNIMPLEMENTED_DEVICE ||
+      !unsigned32(value.address) || !unsigned32(value.value) ||
+      !unsigned32(value.result) || !unsigned64(value.boundary) ||
+      !unsigned64(value.microinstructions) || value.boundary !== reportBoundary ||
+      (value.direction === 0 &&
+        (value.address !== 0 || value.value !== 0 || value.result !== 0)) ||
+      (value.direction === 1 && value.value !== 0) ||
+      (value.direction === 2 && value.result !== 0)) {
+    throw new TypeError("M7-DEVID unimplemented-device diagnostic is malformed");
+  }
+  return Object.freeze({ schema: value.schema, site: value.site,
+    siteName: value.siteName, direction: value.direction, address: value.address,
+    value: value.value, result: value.result, status: value.status,
+    boundary: failureU64(value.boundary, "M7-DEVID diagnostic boundary"),
+    microinstructions: failureU64(value.microinstructions,
+      "M7-DEVID diagnostic microinstructions"),
+    wireSha256: failureDigest(value.wireSha256,
+      "M7-DEVID diagnostic wire digest") });
+}
+
 function normalizeFailureReport(value, transcriptTail) {
   if (value === null || typeof value !== "object" || Array.isArray(value) ||
-      value.schema !== CADR_M6_SCHEMA || value.schemaVersion !== 1 ||
+      value.schema !== CADR_M6_SCHEMA || ![1, 2].includes(value.schemaVersion) ||
       value.outcome !== "failed" || typeof value.reason !== "string" ||
       value.reason.length === 0 || typeof value.phase !== "string" ||
       value.phase.length === 0 || !unsigned32(value.status)) {
     throw new TypeError("M6 failure report has an invalid identity");
   }
+  if (value.schemaVersion === 2 &&
+      value.status !== CADR_STATUS_UNIMPLEMENTED_DEVICE) {
+    throw new TypeError("M6 failure schema version does not match terminal status");
+  }
   if (value.phase === "preflight") {
+    if (value.schemaVersion !== 1) {
+      throw new TypeError("M6 preflight failure cannot use a run-only schema version");
+    }
     exactKeys(value, M6_FAILURE_PREFLIGHT_REPORT_KEYS, "M6 preflight failure report");
     if (typeof value.detail !== "string" || typeof value.mutationStarted !== "boolean" ||
         value.mutationStarted !== false) {
@@ -2945,7 +3028,8 @@ function normalizeFailureReport(value, transcriptTail) {
       mutationStarted: value.mutationStarted,
     });
   }
-  exactKeys(value, M6_FAILURE_RUN_REPORT_KEYS, "M6 run failure report");
+  exactKeys(value, value.schemaVersion === 2 ? M6_FAILURE_RUN_REPORT_V2_KEYS :
+    M6_FAILURE_RUN_REPORT_KEYS, "M6 run failure report");
   const transactions = normalizeFailureTranscript(
     value.lastHostTransactions, "M6 failure report.lastHostTransactions");
   if (canonicalJson(transactions) !== canonicalJson(transcriptTail)) {
@@ -2956,6 +3040,9 @@ function normalizeFailureReport(value, transcriptTail) {
       typeof value.lifecycle !== "string" || value.lifecycle.length === 0) {
     throw new TypeError("M6 run failure report has invalid bounded state");
   }
+  const boundary = failureU64(value.boundary, "M6 failure boundary");
+  const unimplementedDevice = value.schemaVersion === 2 ?
+    normalizeUnimplementedDevice(value.unimplementedDevice, value.boundary) : null;
   return Object.freeze({
     schema: value.schema,
     schemaVersion: value.schemaVersion,
@@ -2963,7 +3050,7 @@ function normalizeFailureReport(value, transcriptTail) {
     reason: value.reason,
     phase: value.phase,
     status: value.status,
-    boundary: failureU64(value.boundary, "M6 failure boundary"),
+    boundary,
     lifecycle: value.lifecycle,
     cdrstate5Sha256: failureDigest(value.cdrstate5Sha256,
       "M6 failure CDRSTATE5 digest", true),
@@ -2976,6 +3063,7 @@ function normalizeFailureReport(value, transcriptTail) {
     lastHostTransactions: transactions,
     hostTranscriptSha256: failureDigest(value.hostTranscriptSha256,
       "M6 failure host transcript digest"),
+    ...(unimplementedDevice === null ? {} : { unimplementedDevice }),
   });
 }
 
@@ -3015,7 +3103,16 @@ export function canonicalM6FailureDiagnostic(value) {
 }
 
 export function serializeM6FailureDiagnostic(value) {
-  return new TextEncoder().encode(canonicalJson(canonicalM6FailureDiagnostic(value)));
+  return captureM6FailureDiagnostic(value).bytes;
+}
+
+/* Keep the normalized object and its canonical bytes in one observation so
+ * profile-specific consumers cannot validate one raw view and serialize a
+ * later, drifting view. */
+export function captureM6FailureDiagnostic(value) {
+  const canonical = canonicalM6FailureDiagnostic(value);
+  return Object.freeze({ canonical,
+    bytes: new TextEncoder().encode(canonicalJson(canonical)) });
 }
 
 async function serializeM6ReadyConformanceInternal(value, production) {

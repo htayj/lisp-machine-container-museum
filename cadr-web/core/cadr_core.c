@@ -24,6 +24,24 @@
 #define CADR_MAX_ARTIFACT_STREAM_CHUNK_BYTES UINT64_C(1048576)
 typedef cadr_artifact_stream_sha256 cadr_sha256_context;
 
+#if defined(CADR_M7_DEVID_WASM)
+void cadr_m7_devid_note_unimplemented(
+    cadr_machine_state *state, uint32_t site, uint32_t direction,
+    uint32_t address, uint32_t value, uint32_t result)
+{
+    cadr_m7_devid_failure_state *diagnostic;
+    if (state == NULL) return;
+    diagnostic = &state->m7_devid_failure;
+    if (diagnostic->valid != 0U) return;
+    diagnostic->valid = 1U;
+    diagnostic->site = site;
+    diagnostic->direction = direction;
+    diagnostic->address = address;
+    diagnostic->value = value;
+    diagnostic->result = result;
+}
+#endif
+
 #if defined(CADR_M11_CORE)
 /* The identity is local-only and never exported as a capability.  It merely
  * makes stale audio cursors fail closed across a reconstructed machine. */
@@ -663,6 +681,11 @@ static cadr_status cadr_guarded_bus_read(cadr_machine_state *state,
     }
     if (value != NULL) *value = 0U;
     state->events.unexpected_bus_operation = 1U;
+#if defined(CADR_M7_DEVID_WASM)
+    cadr_m7_devid_note_unimplemented(state,
+        CADR_M7_DEVID_FAILURE_SITE_GUARDED_BUS_READ,
+        CADR_M7_DEVID_FAILURE_DIRECTION_READ, paddr, 0U, 0U);
+#endif
     cadr_m3_native_observer_bus(state, "read", paddr, 0U, 0U);
     return CADR_STATUS_UNIMPLEMENTED_DEVICE;
 }
@@ -703,6 +726,11 @@ static cadr_status cadr_guarded_bus_write(cadr_machine_state *state,
         return status;
     }
     state->events.unexpected_bus_operation = 1U;
+#if defined(CADR_M7_DEVID_WASM)
+    cadr_m7_devid_note_unimplemented(state,
+        CADR_M7_DEVID_FAILURE_SITE_GUARDED_BUS_WRITE,
+        CADR_M7_DEVID_FAILURE_DIRECTION_WRITE, paddr, value, 0U);
+#endif
     cadr_m3_native_observer_bus(state, "write", paddr, value, 0U);
     return CADR_STATUS_UNIMPLEMENTED_DEVICE;
 }
@@ -1912,6 +1940,10 @@ cadr_status cadr_machine_run(cadr_machine *machine,
         machine->state.trace.last_slot_inhibited =
             machine->state.cpu.inhibit != 0U ? 1U : 0U;
         machine->state.events.unexpected_bus_operation = 0U;
+#if defined(CADR_M7_DEVID_WASM)
+        (void)memset(&machine->state.m7_devid_failure, 0,
+                     sizeof(machine->state.m7_devid_failure));
+#endif
         cadr_canonical_slot_begin(&machine->state);
         cadr_processor_memory_step_with_bus(&machine->state, &guarded_bus);
         cadr_canonical_slot_end(&machine->state);
@@ -1942,6 +1974,13 @@ cadr_status cadr_machine_run(cadr_machine *machine,
             ((machine->state.clock_slots_completed - UINT64_C(1)) &
              UINT64_C(0xffff)) == 0U) {
             status = cadr_iob_device_service(&machine->state);
+#if defined(CADR_M7_DEVID_WASM)
+            if (status == CADR_STATUS_UNIMPLEMENTED_DEVICE) {
+                cadr_m7_devid_note_unimplemented(&machine->state,
+                    CADR_M7_DEVID_FAILURE_SITE_IOB_DEVICE_SERVICE,
+                    CADR_M7_DEVID_FAILURE_DIRECTION_NONE, 0U, 0U, 0U);
+            }
+#endif
             if (status != CADR_STATUS_OK) break;
         }
         machine->state.trace.instruction_ordinal =
@@ -1969,6 +2008,15 @@ cadr_status cadr_machine_run(cadr_machine *machine,
         } else if (machine->state.cpu.halted != 0U) {
             machine->state.events.persistent_status = CADR_STATUS_HALTED;
         }
+#if defined(CADR_M7_DEVID_WASM)
+        if (machine->state.events.persistent_status ==
+                CADR_STATUS_UNIMPLEMENTED_DEVICE &&
+            machine->state.m7_devid_failure.valid == 0U) {
+            cadr_m7_devid_note_unimplemented(&machine->state,
+                CADR_M7_DEVID_FAILURE_SITE_CORE_UNCLASSIFIED,
+                CADR_M7_DEVID_FAILURE_DIRECTION_NONE, 0U, 0U, 0U);
+        }
+#endif
         status = cadr_trace_engine_record_boundary(&machine->state,
                                                    boundary_flags);
         if (status == CADR_STATUS_OK) {

@@ -255,6 +255,24 @@ async function testFullM7ControlFlowUsesFrozenReleaseBinding() {
   assert.equal(result.comparison.m6_witness_sample_sha256.length, 64);
 
   await assert.rejects(runM7CheckpointedM6BootForTest({
+    nativeCapture: nativeRecord(), m6DiskEvidencePolicy: true,
+    client: new CheckpointClient({
+      boundary: BOUNDARY - 1n, batches: [1], frame: portableRecord(),
+    }),
+  }, async config => {
+    assert.equal(config.requireM7DevidFailureDiagnostic, true,
+      "ordinary M7-DEVID propagates its strict diagnostic policy into M6");
+    return { outcome: "failed", preflight: null, runEvidence: null,
+      transcriptTail: [], report: {
+        schema: "CDRM6BOOT1", schemaVersion: 1, outcome: "failed",
+        reason: "terminal-machine-status", phase: "preflight", status: 13,
+        detail: "legacy status-13 receipt without M7-DEVID evidence",
+        mutationStarted: false,
+      } };
+  }), /required M7-DEVID diagnostic/,
+  "ordinary M7-DEVID rejects a canonical legacy status-13 downgrade");
+
+  await assert.rejects(runM7CheckpointedM6BootForTest({
     nativeCapture: nativeRecord(), client: new CheckpointClient({
       boundary: BOUNDARY - 1n, batches: [1], frame: portableRecord(),
     }),

@@ -94,7 +94,18 @@ const runnerSource = await readFile(new URL(
   "../scripts/run-cadr-m7-p4-fast-differential.mjs", import.meta.url), "utf8");
 const authorityRootSource = await readFile(new URL(
   "../scripts/cadr-m7-p4-authority-root.mjs", import.meta.url), "utf8");
+const M7_DEVID_DIAGNOSTIC_O2 = Object.freeze({
+  sha256: "c9bc9156c2b5a5fdedf14d9a10adaf98864927d4a72b97ad622e4162a2305482",
+  bytes: 122177,
+});
+assert.match(authorityRootSource, new RegExp(
+  `const M7_P4_FIXED_MODULE_SHA256 =\\s*"${M7_DEVID_DIAGNOSTIC_O2.sha256}";`));
+assert.match(authorityRootSource, new RegExp(
+  `const M7_P4_FIXED_MODULE_BYTES = ${M7_DEVID_DIAGNOSTIC_O2.bytes};`));
 assert.match(runnerSource, /--precommit/);
+assert.match(runnerSource,
+  /const CLOSED_O2_SCRIPT[\s\S]*?-DCADR_M7_DEVID_WASM \\/,
+  "the authoritative P4 compiler enables the diagnostic-bearing M7-DEVID profile");
 assert.doesNotMatch(runnerSource,
   /spawn\(["'](?:git|guix|tar|sh)["']/,
   "the direct M7 P4 command has no ambient tool launch primitive");
@@ -471,6 +482,13 @@ class FastClient {
 
 const wasm = new Uint8Array(await readFile(resolve(
   ROOT, "cadr-web/build/cadr-web-m7-devid-O2.wasm")));
+assert.equal(wasm.byteLength, M7_DEVID_DIAGNOSTIC_O2.bytes,
+  "the closed M7-DEVID O2 builder output retains its fixed byte count");
+assert.equal(createHash("sha256").update(wasm).digest("hex"), M7_DEVID_DIAGNOSTIC_O2.sha256,
+  "the authority root pins the exact closed M7-DEVID O2 builder output");
+assert.ok(WebAssembly.Module.exports(new WebAssembly.Module(wasm)).some(
+  entry => entry.name === "cadr_wasm_m7_unimplemented_diagnostic"),
+"the fixed O2 builder output exports the strict M7-DEVID diagnostic boundary");
 const authorityPaths = [...new Set([
   ...M7_P4_FAST_REQUIRED_AUTHORITIES,
   "cadr-web/core/cadr_core.c",
@@ -655,6 +673,55 @@ async function completeFastBoot({ client, checkpointCount, resultTransform } = {
     return resultTransform === undefined ? result : resultTransform(result);
   });
 }
+
+function status13Failure() {
+  return Object.freeze({ outcome: "failed",
+    preflight: { profileId: "CADR-WEB-303", artifactSetSha256: H(1),
+      artifacts: [1, 2, 4, 5, 3].map((kind, index) =>
+        ({ kind, byteCount: BigInt(index + 1), sha256: H(index + 2) })) },
+    runEvidence: { sessionId: "m7-p4-status13", privateDiskInstanceId: "status13-disk",
+      privateDiskBaseSha256: H(9) },
+    transcriptTail: [],
+    report: { schema: "CDRM6BOOT1", schemaVersion: 2, outcome: "failed",
+      reason: "terminal-machine-status", phase: "run", status: 13,
+      boundary: 1352885n, lifecycle: "FAILED", cdrstate5Sha256: H(10),
+      cdrm5q1Sha256: H(11), outstandingRequest: null, machineInfo: null,
+      transcriptCount: 0, lastHostTransactions: [], hostTranscriptSha256: H(12),
+      runFraming: { operation: "run-digest-batch-m5", requestedClockSlots: 4096,
+        returnedBoundaryCount: 1559, terminalStatus: 13, preCallBoundary: 1351325n,
+        cachedLastCompleteBoundary: 1352885n, postCallAttemptedBoundary: null },
+      unimplementedDevice: { schema: "cadr-m7-unimplemented-device-v1", site: 4,
+        siteName: "guarded-bus-write", direction: 2, address: 0o76543,
+        value: 0x12345678, result: 0, status: 13, boundary: 1352885n,
+        microinstructions: 1263000n, wireSha256: H(13) },
+    },
+  });
+}
+
+async function runEarlyFailure(result) {
+  return runM7Ready4FastCheckpointedBootForTest({ client: new FastClient(),
+    nativeCapture: nativeRecord(), moduleIdentity,
+    ready: { releaseRecord: frozenRelease }, fastSlots: SLOTS,
+    requireM7DevidFailureDiagnostic: true }, async () => result);
+}
+
+await assert.rejects(runEarlyFailure(status13Failure()), error => {
+  if (error?.name !== "CadrM7UnderlyingM6Failure" || error.checkpoint !== null ||
+      !(error.m6FailureDiagnostic instanceof Uint8Array)) return false;
+  const report = JSON.parse(new TextDecoder().decode(error.m6FailureDiagnostic)).failure.report;
+  return report.status === 13 && report.schemaVersion === 2 &&
+    report.unimplementedDevice?.siteName === "guarded-bus-write";
+}, "a pre-Form-C status-13 result preserves its complete canonical diagnostic");
+
+const downgradedStatus13 = structuredClone(status13Failure());
+delete downgradedStatus13.report.unimplementedDevice;
+downgradedStatus13.report.schemaVersion = 1;
+await assert.rejects(runEarlyFailure(downgradedStatus13), /required M7-DEVID diagnostic/,
+  "a malformed status-13 result cannot bypass Form-C by posing as a failure receipt");
+
+await assert.rejects(runEarlyFailure({ outcome: "ready4" }),
+  /READY4 completed without a Form-C/,
+  "only a successful READY4 result must supply the exact Form-C checkpoint");
 
 const complete = await completeFastBoot();
 assert.equal(complete.target, CADR_M7_READY4_FAST_TARGET);

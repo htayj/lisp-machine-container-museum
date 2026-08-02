@@ -46,8 +46,8 @@ export const M7_P4_KEYRING_BYTES = 918;
 export const M7_P4_SIGNATURE_POLICY =
   "gpgv-validsig-v4-ed25519-sha512-subkey-997e-primary-3ea3-v1";
 const M7_P4_FIXED_MODULE_SHA256 =
-  "a3537ccaa6e8c953060f2354c8f8678734fdd583e2bf635afc52a247bf42f986";
-const M7_P4_FIXED_MODULE_BYTES = 121138;
+  "c9bc9156c2b5a5fdedf14d9a10adaf98864927d4a72b97ad622e4162a2305482";
+const M7_P4_FIXED_MODULE_BYTES = 122177;
 
 function fail(message) {
   throw new TypeError(`M7 P4 authority supervisor: ${message}`);

@@ -13,6 +13,9 @@
 #if defined(CADR_M6_DEVID_WASM)
 #include "cadr_m6_disk_evidence.h"
 #endif
+#if defined(CADR_M7_DEVID_WASM)
+#include "cadr_m7_devid_failure.h"
+#endif
 #include "cadr_memory_state.h"
 #include "cadr_scheduler_state.h"
 #include "cadr_trace_state.h"
@@ -33,6 +36,9 @@ typedef struct cadr_machine_state {
 #if defined(CADR_M6_DEVID_WASM)
     /* M6-DEVID1 only.  The frozen M4 machine layout ends at disk_evidence. */
     cadr_m6_disk_evidence_state m6_disk_evidence;
+#endif
+#if defined(CADR_M7_DEVID_WASM)
+    cadr_m7_devid_failure_state m7_devid_failure;
 #endif
     cadr_scheduler_state scheduler;
     uint64_t clock_slots_completed;

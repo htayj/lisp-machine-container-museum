@@ -11,6 +11,8 @@ import { CadrM12ProtocolSubhandler, CADR_M12_STATUS_OK,
   CADR_M12_STATUS_DEBUG_STOP,
   CADR_M12_STATUS_LIMIT_REACHED,
   CADR_M12_CONFIG_SNAPSHOT_BYTES } from "./cadr-m12-debugger.mjs";
+import { parseCadrM7UnimplementedDiagnostic } from
+  "./cadr-m7-devid-failure.mjs";
 
 /*
  * CADR-WEB versioned dedicated-worker protocols.
@@ -139,6 +141,7 @@ let pendingBoundaryDigest = false;
 let lastFailureEvidence = null;
 let diagnosticModule = false;
 let m6DevidModule = false;
+let m7DevidDiagnosticModule = false;
 let m8KeyboardProtocol = null;
 let m9PointerProtocol = null;
 let m11AudioProtocol = null;
@@ -371,6 +374,7 @@ function coreIsRunning(e) {
 function discardWorkerState() {
   instance = null; mediaBusy = false; mediaDirty = false;
   mediaSnapshotBlocked = false; mediaOverlayGeneration = 0n;
+  diagnosticModule = false; m6DevidModule = false; m7DevidDiagnosticModule = false;
   m8KeyboardProtocol = null; m9PointerProtocol = null;
   m11AudioProtocol = null; m12DebuggerProtocol = null;
 }
@@ -807,20 +811,51 @@ function failureEvidence(e, status) {
       if ((e.cadr_wasm_state_v5_failure_digest() >>> 0) === CADR_STATUS_OK) {
         const coreStateDigest = new Uint8Array(e.memory.buffer, pointer, 32).slice();
         const diskEvidence = m6DevidFailureSummary(e);
+        const unimplemented = m7UnimplementedFailure(e, status);
+        if (status === CADR_STATUS_UNIMPLEMENTED_DEVICE &&
+            m7DevidDiagnosticModule && unimplemented === null) {
+          return null;
+        }
         lastFailureEvidence = { lastCompleteBoundary: coreClockBoundary(e) ?? 0n,
           queueDigest: queueDigest.buffer, coreStateDigest: coreStateDigest.buffer,
-          ...(diskEvidence ?? {}) };
+          ...(diskEvidence ?? {}), ...(unimplemented ?? {}) };
         return { lastCompleteBoundary: lastFailureEvidence.lastCompleteBoundary,
           queueDigest: lastFailureEvidence.queueDigest.slice(0),
           coreStateDigest: lastFailureEvidence.coreStateDigest.slice(0),
           ...(diskEvidence === null ? {} : {
             diskEvidenceSummary: diskEvidence.diskEvidenceSummary.slice(0),
             diskEvidenceSummaryDigest: diskEvidence.diskEvidenceSummaryDigest.slice(0),
+          }), ...(unimplemented === null ? {} : {
+            unimplementedDiagnostic: unimplemented.unimplementedDiagnostic.slice(0),
+            unimplementedDiagnosticDigest:
+              unimplemented.unimplementedDiagnosticDigest.slice(0),
           }) };
       }
     }
   }
   return null;
+}
+
+function m7UnimplementedFailure(e, status) {
+  if (status !== CADR_STATUS_UNIMPLEMENTED_DEVICE) return null;
+  if (!m7DevidDiagnosticModule ||
+      typeof e.cadr_wasm_m7_unimplemented_diagnostic !== "function") return null;
+  const result = transferResult(e,
+    e.cadr_wasm_m7_unimplemented_diagnostic() >>> 0, "diagnostic");
+  if (result.status !== CADR_STATUS_OK) return null;
+  const diagnostic = new Uint8Array(result.diagnostic);
+  if (parseCadrM7UnimplementedDiagnostic(diagnostic) === null) return null;
+  return { unimplementedDiagnostic: diagnostic.buffer,
+    unimplementedDiagnosticDigest: sha256Fixed(diagnostic).buffer };
+}
+
+function failureTransferables(failed) {
+  if (failed === null) return [];
+  return [failed.queueDigest, failed.coreStateDigest,
+    ...(failed.diskEvidenceSummary === undefined ? [] :
+      [failed.diskEvidenceSummary, failed.diskEvidenceSummaryDigest]),
+    ...(failed.unimplementedDiagnostic === undefined ? [] :
+      [failed.unimplementedDiagnostic, failed.unimplementedDiagnosticDigest])];
 }
 
 function sameBytes(left, right) {
@@ -1125,9 +1160,7 @@ function schedulerResult(e, id, op, status, totals = null) {
   response(id, op, status, { lifecycle: workerLifecycle,
     completedSlots: meta === null ? 0n : meta[0],
     microinstructionsExecuted: meta === null ? 0n : meta[1], ...(failed ?? {}) },
-  failed === null ? [] : [failed.queueDigest, failed.coreStateDigest,
-    ...(failed.diskEvidenceSummary === undefined ? [] :
-      [failed.diskEvidenceSummary, failed.diskEvidenceSummaryDigest])]);
+  failureTransferables(failed));
 }
 
 async function handle(request) {
@@ -1142,6 +1175,8 @@ async function handle(request) {
     m6DevidModule = request.m6DiskEvidencePolicy === true &&
       typeof instance.exports.cadr_wasm_m6_disk_evidence_summary === "function" &&
       typeof instance.exports.cadr_wasm_run_until_event_m6 === "function";
+    m7DevidDiagnosticModule = request.m6DiskEvidencePolicy === true &&
+      typeof instance.exports.cadr_wasm_m7_unimplemented_diagnostic === "function";
     m8KeyboardProtocol = new CadrM8KeyboardProtocolSubhandler();
     m9PointerProtocol = new CadrM9PointerProtocolSubhandler();
     m11AudioProtocol = protocolVersion === CADR_M12_PROTOCOL_VERSION ?
@@ -1726,9 +1761,7 @@ async function handle(request) {
       terminalStatus: batch.terminalStatus, boundaryPendingHost: batch.boundaryPendingHost,
       lifecycle: workerLifecycle,
       digests: bytes.buffer, ...(failed ?? {}) },
-    failed === null ? [bytes.buffer] : [bytes.buffer, failed.queueDigest,
-      failed.coreStateDigest, ...(failed.diskEvidenceSummary === undefined ? [] :
-        [failed.diskEvidenceSummary, failed.diskEvidenceSummaryDigest])]);
+    failed === null ? [bytes.buffer] : [bytes.buffer, ...failureTransferables(failed)]);
     await applyDeferredControls();
   } else if (op === "run-until-event-m6") {
     if (!m6DevidModule || !unsigned32(request.clockSlots) ||
@@ -1787,9 +1820,8 @@ async function handle(request) {
       outstandingRequestId: parsed.outstandingRequestId,
       lifecycle: workerLifecycle,
       ...(failure ?? {}),
-    }, failure === null ? [fastRun.buffer] : [fastRun.buffer, failure.queueDigest,
-      failure.coreStateDigest, ...(failure.diskEvidenceSummary === undefined ? [] :
-        [failure.diskEvidenceSummary, failure.diskEvidenceSummaryDigest])]);
+  }, failure === null ? [fastRun.buffer] :
+    [fastRun.buffer, ...failureTransferables(failure)]);
     await applyDeferredControls();
   } else if (op === "boundary-digests") {
     const result = outputDigests(e);
@@ -2308,6 +2340,12 @@ async function receive(event) {
        (WebAssembly.Module.exports(request.module).some(
          entry => entry.name === "cadr_wasm_run_until_event_m6") !==
         (request.m6DiskEvidencePolicy === true))) ||
+      (request.op === "instantiate" &&
+       request.module instanceof WebAssembly.Module &&
+       (WebAssembly.Module.exports(request.module).some(
+         entry => entry.name === "cadr_wasm_m7_unimplemented_diagnostic") !==
+        (request.version === CADR_M7_PROTOCOL_VERSION &&
+         request.m6DiskEvidencePolicy === true))) ||
       (request.op === "instantiate" &&
        request.m6DiskEvidencePolicy === true &&
        (!isM6DevidProtocolVersion(request.version) ||

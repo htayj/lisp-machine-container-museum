@@ -7,8 +7,8 @@
 import {
   CADR_M6_FORM_C,
   CADR_M6_RELEASE_RECORD_SHA256,
+  captureM6FailureDiagnostic,
   runM6HeadlessBoot,
-  serializeM6FailureDiagnostic,
 } from "./cadr-m6-headless-boot.mjs";
 import {
   CADR_DISPLAY_ACTIVE_WORDS,
@@ -40,8 +40,8 @@ function required(condition, message) {
 }
 
 export class CadrM7UnderlyingM6Failure extends Error {
-  constructor(result, checkpoint) {
-    const diagnostic = serializeM6FailureDiagnostic({
+  constructor(result, checkpoint, requireM7DevidFailureDiagnostic = false) {
+    const conformance = {
       schema: "cadr-m6-wasm-ready-conformance-v1",
       outcome: "failed",
       completed_runs: 0,
@@ -52,8 +52,18 @@ export class CadrM7UnderlyingM6Failure extends Error {
         run_evidence: result?.runEvidence ?? null,
         transcript_tail: result?.transcriptTail ?? [],
       },
-    });
-    const report = result.report;
+    };
+    /* Canonicalize first, then apply the profile-specific strengthening to
+     * the normalized receipt.  Legacy M6 may report status 13 in schema v1;
+     * an M7-DEVID wrapper must instead retain the bounded v2 diagnostic. */
+    const captured = captureM6FailureDiagnostic(conformance);
+    const report = captured.canonical.failure.report;
+    if (requireM7DevidFailureDiagnostic === true && report.status === 13 &&
+        (report.schemaVersion !== 2 || report.unimplementedDevice === undefined)) {
+      throw new TypeError(
+        "M7 frame checkpoint: status-13 failure lacks its required M7-DEVID diagnostic");
+    }
+    const diagnostic = captured.bytes;
     const boundary = report.boundary ?? "preflight";
     super("M7 frame checkpoint: underlying frozen M6 boot did not reach READY " +
       `(${report.reason}; phase=${report.phase}; status=${report.status}; ` +
@@ -347,9 +357,12 @@ export class CadrM7CBoundaryClient {
 
 async function runM7CheckpointedM6BootInternal({ nativeCapture, ...config }, runBoot) {
   const client = new CadrM7CBoundaryClient(config.client, nativeCapture);
-  const result = await runBoot({ ...config, client });
+  const requireM7DevidFailureDiagnostic = config.m6DiskEvidencePolicy === true;
+  const result = await runBoot({ ...config, client,
+    requireM7DevidFailureDiagnostic });
   if (result?.outcome !== "ready") {
-    throw new CadrM7UnderlyingM6Failure(result, client.checkpoint);
+    throw new CadrM7UnderlyingM6Failure(
+      result, client.checkpoint, requireM7DevidFailureDiagnostic);
   }
   required(client.checkpoint !== null, "M6 reached READY without an M7 C checkpoint");
   const releaseRecordSha256 = bytesOf(result.releaseRecordSha256);

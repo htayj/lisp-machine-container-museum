@@ -53,6 +53,12 @@ void cadr_canonical_write_u32(cadr_machine_state *state, uint32_t family,
                               uint32_t index, uint32_t old_value,
                               uint32_t new_value);
 
+#if defined(CADR_M7_DEVID_WASM)
+void cadr_m7_devid_note_unimplemented(
+    cadr_machine_state *state, uint32_t site, uint32_t direction,
+    uint32_t address, uint32_t value, uint32_t result);
+#endif
+
 /* State-only integration seams used by atomic snapshot restore. */
 cadr_status cadr_canonical_rebuild(cadr_machine_state *state);
 cadr_status cadr_boundary_digest_state(

@@ -30,6 +30,7 @@ import {
 } from "./cadr-display-renderer.mjs";
 import {
   CADR_M7_FORM_C_BOUNDARY,
+  CadrM7UnderlyingM6Failure,
   compareM7FrameCheckpoint,
   parseCdrM7N1,
 } from "./cadr-m7-frame-checkpoint.mjs";
@@ -48,6 +49,7 @@ export const CADR_M7_READY4_FAST_BUILD_ARGV = Object.freeze([
 export const CADR_M7_READY4_FAST_WORKER_TRANSITIVE_MODULES = Object.freeze([
   "cadr-web/wasm/cadr-display-renderer.mjs",
   "cadr-web/wasm/cadr-m5-batch.mjs",
+  "cadr-web/wasm/cadr-m7-devid-failure.mjs",
   "cadr-web/wasm/cadr-m8-keyboard.mjs",
   "cadr-web/wasm/cadr-m8-m9-campaign.mjs",
   "cadr-web/wasm/cadr-m8-m9-deactivation.mjs",
@@ -654,6 +656,15 @@ async function runM7Ready4FastCheckpointedBootInternal(config, runBoot) {
   const bridge = new CadrM7Ready4FastBoundaryClient(config.client, config.nativeCapture);
   const m6 = snapshotProtocolData(await runBoot({ ...config, client: bridge,
     fastSlots: CADR_M6_FAST_RUN_MAX_SLOTS }), "M7 READY4 result");
+  /* A canonical failed M6 result is evidence, including a pre-Form-C
+   * status-13 diagnostic.  Serialize it before the READY-only Form-C
+   * requirement so the P4 wrapper preserves its exact bounded failure
+   * receipt.  CadrM7UnderlyingM6Failure canonicalizes fail-closed, so a
+   * malformed or noncanonical failed result cannot use this escape path. */
+  if (m6?.outcome === "failed") {
+    throw new CadrM7UnderlyingM6Failure(
+      m6, bridge.checkpoint, config.requireM7DevidFailureDiagnostic === true);
+  }
   required(bridge.checkpoint !== null,
     "READY4 completed without a Form-C CDRM6I1/CDRDISP1 checkpoint");
   const evidence = await validateReady4Result(m6, bridge, frozenRelease);
@@ -680,7 +691,8 @@ async function runM7Ready4FastCheckpointedBootInternal(config, runBoot) {
 
 /** Execute the selected M7-DEVID/READY4 differential path with private inputs. */
 export async function runM7Ready4FastCheckpointedBoot(config) {
-  return runM7Ready4FastCheckpointedBootInternal(config, runM6Ready4Fast);
+  return runM7Ready4FastCheckpointedBootInternal({ ...config,
+    requireM7DevidFailureDiagnostic: true }, runM6Ready4Fast);
 }
 
 /** Test seam: it preserves all M7 ordering and evidence checks. */

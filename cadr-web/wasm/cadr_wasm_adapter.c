@@ -14,6 +14,9 @@
 #include "cadr_m6_disk_evidence.h"
 #include "cadr_m6_fast_run.h"
 #endif
+#if defined(CADR_M7_DEVID_WASM)
+#include "cadr_m7_devid_failure.h"
+#endif
 #include "cadr_host_api.h"
 #include "cadr_machine.h"
 #include "cadr_bus_device.h"
@@ -924,6 +927,41 @@ uint32_t cadr_wasm_m6_disk_evidence_summary(void)
         return status == CADR_STATUS_OK ? CADR_STATUS_HOST_FAILURE : status;
     }
     cadr_wasm_meta_result(written, 0U);
+    return CADR_STATUS_OK;
+}
+#endif
+
+#if defined(CADR_M7_DEVID_WASM)
+CADR_WASM_EXPORT("cadr_wasm_m7_unimplemented_diagnostic")
+uint32_t cadr_wasm_m7_unimplemented_diagnostic(void)
+{
+    const cadr_m7_devid_failure_state *diagnostic;
+    if (cadr_wasm_machine == NULL) return CADR_STATUS_NOT_READY;
+    diagnostic = &cadr_wasm_machine->state.m7_devid_failure;
+    if (cadr_wasm_machine->state.events.persistent_status !=
+            CADR_STATUS_UNIMPLEMENTED_DEVICE || diagnostic->valid != 1U ||
+        diagnostic->site == CADR_M7_DEVID_FAILURE_SITE_NONE ||
+        diagnostic->site > CADR_M7_DEVID_FAILURE_SITE_CORE_UNCLASSIFIED ||
+        diagnostic->direction > CADR_M7_DEVID_FAILURE_DIRECTION_WRITE) {
+        return CADR_STATUS_NOT_READY;
+    }
+    if (cadr_wasm_input_reserve(CADR_M7_DEVID_FAILURE_RECORD_BYTES) == 0U) {
+        return CADR_STATUS_NO_MEMORY;
+    }
+    (void)memset(cadr_wasm_input, 0, CADR_M7_DEVID_FAILURE_RECORD_BYTES);
+    (void)memcpy(cadr_wasm_input, "CDRM7U1", 7U);
+    cadr_wasm_put32(cadr_wasm_input + 8U, 1U);
+    cadr_wasm_put32(cadr_wasm_input + 12U, diagnostic->site);
+    cadr_wasm_put32(cadr_wasm_input + 16U, diagnostic->direction);
+    cadr_wasm_put32(cadr_wasm_input + 20U, CADR_STATUS_UNIMPLEMENTED_DEVICE);
+    cadr_wasm_put32(cadr_wasm_input + 24U, diagnostic->address);
+    cadr_wasm_put32(cadr_wasm_input + 28U, diagnostic->value);
+    cadr_wasm_put32(cadr_wasm_input + 32U, diagnostic->result);
+    cadr_wasm_put64(cadr_wasm_input + 40U,
+                    cadr_wasm_machine->state.clock_slots_completed);
+    cadr_wasm_put64(cadr_wasm_input + 48U,
+                    cadr_wasm_machine->state.cpu.microinstructions_executed);
+    cadr_wasm_meta_result(CADR_M7_DEVID_FAILURE_RECORD_BYTES, 0U);
     return CADR_STATUS_OK;
 }
 #endif

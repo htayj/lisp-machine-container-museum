@@ -50,6 +50,9 @@ uint32_t cadr_wasm_boot_media_observation(void);
 uint32_t cadr_wasm_disk_evidence(void);
 #if defined(CADR_M6_DEVID_WASM)
 uint32_t cadr_wasm_m6_disk_evidence_summary(void);
+#if defined(CADR_M7_DEVID_WASM)
+uint32_t cadr_wasm_m7_unimplemented_diagnostic(void);
+#endif
 uint32_t cadr_wasm_run_until_event_m6(uint32_t clock_slots);
 #endif
 uint32_t cadr_wasm_machine_info(void);

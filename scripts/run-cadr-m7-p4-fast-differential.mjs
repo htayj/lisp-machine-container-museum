@@ -367,7 +367,7 @@ function moduleExports(wasmBytes) {
   const names = new Set(WebAssembly.Module.exports(module).map(entry => entry.name));
   for (const name of ["cadr_wasm_boot_witness", "cadr_wasm_display_full",
     "cadr_wasm_display_update", "cadr_wasm_m6_disk_evidence_summary",
-    "cadr_wasm_run_until_event_m6"]) {
+    "cadr_wasm_run_until_event_m6", "cadr_wasm_m7_unimplemented_diagnostic"]) {
     if (!names.has(name)) fail(`staged m7-devid Wasm lacks ${name}`);
   }
   for (const name of ["cadr_wasm_m9_input_deliver", "cadr_wasm_m12_debug_state"]) {
@@ -661,6 +661,7 @@ clang --target=wasm32-unknown-unknown -std=c11 -O2 -ffreestanding \
   -Wall -Wextra -Werror -Wpedantic -Wconversion -Wshadow -Wstrict-prototypes \
   -Wmissing-prototypes -Wformat=2 -fno-builtin -fno-stack-protector \
   -DCADR_M5_WASM -DCADR_M6_DEVID_WASM -DCADR_M7_WASM -DCADR_M7_CORE \
+  -DCADR_M7_DEVID_WASM \
   -fno-fast-math -fno-strict-overflow -fvisibility=hidden -nostdinc \
   -Iwasm/include -Iinclude -Icore -Icore/usim-port -Itrace \
   wasm/cadr_wasm_runtime.c wasm/cadr_wasm_adapter.c \

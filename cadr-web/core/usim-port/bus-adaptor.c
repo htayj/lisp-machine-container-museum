@@ -4,6 +4,7 @@
 #include "cadr_state_v2.h"
 #include "cadr_trace_engine.h"
 #include "cadr_disk_evidence.h"
+#include "cadr_machine.h"
 #if defined(CADR_M6_DEVID_WASM)
 #include "cadr_m6_disk_evidence.h"
 #endif
@@ -205,6 +206,13 @@ cadr_status cadr_bus_read32(cadr_machine_state *const state, const uint32_t padd
                                    error_before) != CADR_STATUS_OK) {
         return CADR_STATUS_GUEST_FAULT;
     }
+#if defined(CADR_M7_DEVID_WASM)
+    if (status == CADR_STATUS_UNIMPLEMENTED_DEVICE) {
+        cadr_m7_devid_note_unimplemented(state,
+            CADR_M7_DEVID_FAILURE_SITE_PHYSICAL_BUS_READ,
+            CADR_M7_DEVID_FAILURE_DIRECTION_READ, paddr, 0U, *out_value);
+    }
+#endif
     cadr_m3_native_observer_bus(state, "read", paddr, 0U, *out_value);
     return status;
 }
@@ -234,6 +242,13 @@ cadr_status cadr_bus_write32(cadr_machine_state *const state, const uint32_t pad
                                    error_before) != CADR_STATUS_OK) {
         return CADR_STATUS_GUEST_FAULT;
     }
+#if defined(CADR_M7_DEVID_WASM)
+    if (status == CADR_STATUS_UNIMPLEMENTED_DEVICE) {
+        cadr_m7_devid_note_unimplemented(state,
+            CADR_M7_DEVID_FAILURE_SITE_PHYSICAL_BUS_WRITE,
+            CADR_M7_DEVID_FAILURE_DIRECTION_WRITE, paddr, value, 0U);
+    }
+#endif
     cadr_m3_native_observer_bus(state, "write", paddr, value, 0U);
     return status;
 }
