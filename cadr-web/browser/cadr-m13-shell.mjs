@@ -864,11 +864,13 @@ export class CadrM13Shell {
   #pending = new Map(); #terminal = false; #state = "NEW"; #releaseTarget; #releaseControl; #guestSurface; #statusSink;
   #workerDetach = []; #timeoutMs; #setTimeout; #clearTimeout; #wasmCompiler; #capturedPointerId = null; #ingressEnabled = true;
   #releaseIngress = null; #restoreIngress = null; #neutralInputConfirmed = false;
-  #ingressGeneration = 0; #restoreIngressPromise = null;
+  #ingressGeneration = 0; #restoreIngressPromise = null; #neutralInputPromise = null;
   #lastStatus = null; #m10Controller = null; #m10Bridge = null;
   #audioBoundary = null; #audioEventTail = Promise.resolve();
   #baseMediaBinding = null; #selectedBootArtifacts = null; #mediaMounted = false;
   #selectedWasmSha256 = null; #bootstrapped = false; #adoptedBaseImportId = null; #m10Ready = false;
+  #workerOwnership; #onWorkerLoss; #terminalLossPromise; #resolveTerminalLoss;
+  #lossGeneration = 0; #terminalLoss = null; #requestCanonicalizer; #sha256Function;
 
   constructor({ worker, storage = null, sessionRandom = undefined, releaseTarget = null, releaseControl = null,
     guestSurface = null, statusSink = null, releaseIngress = null, restoreIngress = null, timeoutMs = 10000,
@@ -876,10 +878,21 @@ export class CadrM13Shell {
     clearTimeoutFn = globalThis.clearTimeout.bind(globalThis), m10Controller = null, m10BridgeFactory = null,
     baseMediaBinding = null, selectedBootArtifacts: configuredBootArtifacts = null,
     selectedWasmSha256 = null, audioBoundary = null, audioFactory = null,
-    wasmCompiler = globalThis.WebAssembly?.compile.bind(globalThis.WebAssembly), initialId = 1 } = {}) {
+    wasmCompiler = globalThis.WebAssembly?.compile.bind(globalThis.WebAssembly), initialId = 1,
+    workerOwnership = "shell", onWorkerLoss = null,
+    requestCanonicalizer = canonicalizeCadrM13Request, sha256Function = sha256Hex } = {}) {
     invariant(worker !== null && typeof worker === "object" && typeof worker.postMessage === "function", "M13 shell needs a dedicated worker");
     invariant(typeof timeoutMs === "number" && timeoutMs > 0, "worker timeout must be positive");
+    invariant(workerOwnership === "shell" || workerOwnership === "external",
+      "M13 worker ownership policy is invalid");
+    invariant(onWorkerLoss === null || typeof onWorkerLoss === "function",
+      "M13 worker-loss reporter must be a function");
+    invariant(typeof requestCanonicalizer === "function" && typeof sha256Function === "function",
+      "M13 request canonicalizer and SHA-256 function are required");
     this.#worker = worker; this.#storage = storage === null ? null : (storage instanceof CadrM13StorageBoundary ? storage : new CadrM13StorageBoundary(storage));
+    this.#workerOwnership = workerOwnership; this.#onWorkerLoss = onWorkerLoss;
+    this.#requestCanonicalizer = requestCanonicalizer; this.#sha256Function = sha256Function;
+    this.#terminalLossPromise = new Promise(resolve => { this.#resolveTerminalLoss = resolve; });
     invariant(Number.isSafeInteger(initialId) && initialId >= 1 && initialId <= MAX_U32, "initial v8 request ID is invalid"); this.#expectedId = initialId;
     this.#sessionId = randomSession(sessionRandom); this.#releaseTarget = releaseTarget; this.#releaseControl = releaseControl;
     invariant(releaseIngress === null || typeof releaseIngress === "function",
@@ -962,7 +975,13 @@ export class CadrM13Shell {
     try { this.#guestSurface?.blur?.(); } catch { /* no DOM authority required */ }
     try { this.#releaseControl?.focus?.(); } catch { /* focus failure does not re-enable input */ }
     if (!releaseFenceFailed) this.announce("CADR guest input released; guest neutralization is pending");
-    if (!this.#terminal) void this.#bestEffortNeutralize(cause, generation);
+    if (!this.#terminal) {
+      const neutral = this.#bestEffortNeutralize(cause, generation);
+      this.#neutralInputPromise = neutral;
+      void neutral.finally(() => {
+        if (this.#neutralInputPromise === neutral) this.#neutralInputPromise = null;
+      });
+    }
     return Object.freeze({ released: true, guestNeutralization: "pending" });
   }
 
@@ -981,19 +1000,34 @@ export class CadrM13Shell {
   }
 
   async #bestEffortNeutralize(cause, generation) {
-    if (this.#terminal) return;
+    if (this.#terminal) return false;
     const id = this.#nextInternalRequestId();
     const request = { version: CADR_M13_LOWER_PROTOCOL_VERSION, id, op: "pointer-neutralize", cause: "capture-loss" };
     try {
       const lower = await this.#postLower(request, { external: null, timeoutMs: 250 });
-      if (this.#terminal || generation !== this.#ingressGeneration) return;
+      if (this.#terminal || generation !== this.#ingressGeneration) return false;
       if (lower.status !== CADR_M13_STATUS.OK) throw new Error("neutralization was rejected");
       this.#neutralInputConfirmed = true;
+      return true;
     }
     catch {
-      if (this.#terminal || generation !== this.#ingressGeneration) return;
+      if (this.#terminal || generation !== this.#ingressGeneration) return false;
       this.#state = "FAILED"; this.announce(`CADR guest input release could not be confirmed (${cause})`);
+      return false;
     }
+  }
+
+  /* Resolve only when the current release generation's private worker
+   * neutralization has been accepted.  Production composition must await this
+   * seam before presenting PAUSED as rearmable; polling restoreInputIngress()
+   * before the acknowledgement would otherwise turn an ordinary race into a
+   * terminal application failure. */
+  async awaitInputNeutralization() {
+    const generation = this.#ingressGeneration;
+    const pending = this.#neutralInputPromise;
+    if (pending !== null) await pending;
+    return !this.#terminal && generation === this.#ingressGeneration &&
+      this.#neutralInputConfirmed === true;
   }
 
   /* A release cannot be undone by focus or an ordinary frame.  The one shell
@@ -1056,17 +1090,22 @@ export class CadrM13Shell {
 
   async submit(candidate) {
     if (this.#terminal) throw new M13AdmissionError("M13 session is terminal");
+    const generation = this.#lossGeneration;
     let common;
     try { common = validateCommon(candidate, this.#sessionId); }
     catch (error) {
       /* No response may invent an unreadable or wrong session/id. */
-      this.#terminal = true; this.#state = "FAILED"; this.releaseInput("malformed-common-envelope");
+      this.#terminal = true; this.#state = "FAILED";
+      this.#recordTerminalLoss("malformed-common-envelope", CADR_M13_STATUS.INVALID_REQUEST);
+      this.releaseInput("malformed-common-envelope");
       throw error;
     }
     if (common.id !== this.#expectedId) return this.#terminalResponse(common, CADR_M13_STATUS.PROTOCOL_VIOLATION);
     this.#expectedId = common.id === MAX_U32 ? null : common.id + 1;
     try {
-      const canonical = await canonicalizeCadrM13Request(candidate, { sessionId: this.#sessionId });
+      const canonical = await this.#runLive(
+        () => this.#requestCanonicalizer(candidate, { sessionId: this.#sessionId }), generation);
+      this.#assertLive(generation);
       const schema = CADR_M13_OPERATION_SCHEMAS[canonical.request.op];
       if (schema.internal) throw new M13AdmissionError("internal M13 operation cannot be caller-issued");
       if (CADR_M13_INGRESS_OPERATIONS.has(canonical.request.op) && !this.#ingressEnabled) {
@@ -1076,15 +1115,49 @@ export class CadrM13Shell {
       const field = schema.body; const bodyBytes = field === undefined ? 0 : canonical.request[field].byteLength;
       this.#ledger.reserve(common.id, { metadataBytes: canonical.metadataBytes, bodyBytes, streaming: schema.streaming === true });
       let result;
-      try { result = await this.#dispatch(canonical.request, schema); }
+      try {
+        const dispatched = this.#dispatch(canonical.request, schema, generation);
+        result = schema.shell === true || schema.mediaMount === true ? await Promise.race([dispatched,
+          this.#terminalLossPromise.then(loss => { throw new M13AdmissionError(loss.reason,
+            { status: schema.mediaMount === true ? CADR_M13_STATUS.WORKER_LOST : loss.status }); })]) : await dispatched;
+      }
       finally { this.#ledger.release(common.id); }
       return this.#completePublicResponse(common, result);
     } catch (error) {
       const result = error instanceof M13AdmissionError ?
-        response(common, error.status, { reason: shellReason(error.status) }) :
+        response(common, error.status, { reason: error.message },
+          { terminal: error.status === CADR_M13_STATUS.WORKER_LOST || error.status === CADR_M13_STATUS.PROTOCOL_VIOLATION }) :
         response(common, CADR_M13_STATUS.HOST_FAILURE, { reason: shellReason(CADR_M13_STATUS.HOST_FAILURE) });
       return this.#completePublicResponse(common, result);
     }
+  }
+
+  #assertLive(generation) {
+    if (!this.#terminal && generation === this.#lossGeneration) return;
+    const loss = this.#terminalLoss ?? Object.freeze({ reason: "worker-lost", status: CADR_M13_STATUS.WORKER_LOST });
+    throw new M13AdmissionError(loss.reason, { status: loss.status });
+  }
+
+  #recordTerminalLoss(reason, status) {
+    if (this.#terminalLoss !== null) return this.#terminalLoss;
+    this.#lossGeneration += 1;
+    this.#terminalLoss = Object.freeze({ reason, status, generation: this.#lossGeneration });
+    this.#resolveTerminalLoss?.(this.#terminalLoss); this.#resolveTerminalLoss = null;
+    return this.#terminalLoss;
+  }
+
+  async #awaitLive(value, generation) {
+    this.#assertLive(generation);
+    const result = await Promise.race([Promise.resolve(value),
+      this.#terminalLossPromise.then(loss => { throw new M13AdmissionError(loss.reason, { status: loss.status }); })]);
+    this.#assertLive(generation);
+    return result;
+  }
+
+
+  #runLive(operation, generation) {
+    this.#assertLive(generation);
+    return this.#awaitLive(operation(), generation);
   }
 
   #completePublicResponse(request, result) {
@@ -1094,13 +1167,15 @@ export class CadrM13Shell {
      * disposition instead of relabelling worker loss as clean exhaustion. */
     if (!this.#terminal) {
       this.#terminal = true; this.#state = "TERMINATED";
-      try { this.#worker.terminate?.(); } catch { /* process disposal is best effort */ }
+      this.#recordTerminalLoss("session-terminated", CADR_M13_STATUS.WORKER_LOST);
+      this.#terminateOwnedWorker();
     }
     return terminalizeResponse(result);
   }
 
-  async #dispatch(request, schema) {
-    if (schema.mediaMount === true) return this.#mountPublicBaseMedia(request);
+  async #dispatch(request, schema, generation) {
+    this.#assertLive(generation);
+    if (schema.mediaMount === true) return this.#mountPublicBaseMedia(request, generation);
     if (schema.shell) {
       invariant(this.#storage !== null, "M13 storage boundary is not configured", { status: CADR_M13_STATUS.NOT_READY });
       try {
@@ -1117,7 +1192,7 @@ export class CadrM13Shell {
           invariant(this.#mediaMounted && this.#m10Controller !== null,
             "M13 M10 reopen requires selected media mount", { status: CADR_M13_STATUS.NOT_READY });
         }
-        const result = await this.#storage.invoke(request.op, request);
+        const result = await this.#runLive(() => this.#storage.invoke(request.op, request), generation);
         if (this.#selectedMediaConfigured() && request.op === "base-import-finish") {
           assertSelectedBaseImportResult(result);
           this.#adoptedBaseImportId = request.importId;
@@ -1135,8 +1210,9 @@ export class CadrM13Shell {
       if (this.#audioBoundary === null || !["audio-open", "audio-pause", "audio-resume"].includes(request.op)) {
         return response(request, CADR_M13_STATUS.NOT_READY, { reason: "not-ready" });
       }
-      const result = request.op === "audio-open" ? await this.#audioBoundary.open(request.rendererProfile) :
-        (request.op === "audio-pause" ? await this.#audioBoundary.pause() : await this.#audioBoundary.resume());
+      const result = await this.#runLive(() => request.op === "audio-open" ?
+        this.#audioBoundary.open(request.rendererProfile) :
+        (request.op === "audio-pause" ? this.#audioBoundary.pause() : this.#audioBoundary.resume()), generation);
       const status = result?.status ?? CADR_M13_STATUS.HOST_FAILURE;
       return response(request, status, status === CADR_M13_STATUS.OK ? { audio: result.audio } :
         { reason: shellReason(status) });
@@ -1146,19 +1222,25 @@ export class CadrM13Shell {
         invariant(!this.#bootstrapped && !this.#mediaMounted,
           "M13 selected media worker is already bootstrapped", { status: CADR_M13_STATUS.NOT_READY });
       }
-      const observed = await sha256Hex(request.wasmBytes);
+      const observed = await this.#runLive(() => this.#sha256Function(request.wasmBytes), generation);
       if (observed !== request.wasmSha256) return response(request, 2, { reason: "invalid-request" });
       if (this.#selectedMediaConfigured() && observed !== this.#selectedWasmSha256) {
         return response(request, CADR_M13_STATUS.INVALID_REQUEST, { reason: "invalid-request" });
       }
       try {
         invariant(typeof this.#wasmCompiler === "function", "Wasm compiler is unavailable", { status: CADR_M13_STATUS.NOT_READY });
-        const module = await this.#wasmCompiler(request.wasmBytes.slice(0));
+        const module = await this.#runLive(() => this.#wasmCompiler(request.wasmBytes.slice(0)), generation);
         const lower = await this.#postLower({ version: CADR_M13_LOWER_PROTOCOL_VERSION,
-          id: this.#nextInternalRequestId(), op: "instantiate", module, sessionId: this.#sessionId }, { external: request });
+          id: this.#nextInternalRequestId(generation), op: "instantiate", module, sessionId: this.#sessionId },
+        { external: request, generation });
         if (lower.status === CADR_M13_STATUS.OK && this.#selectedMediaConfigured()) this.#bootstrapped = true;
         return response(request, lower.status, lower.remainder, { terminal: request.id === MAX_U32 || lower.status === 24 || lower.status === 25 });
-      } catch { return response(request, CADR_M13_STATUS.HOST_FAILURE, { reason: "host-failure" }); }
+      } catch (error) {
+        const status = error instanceof M13AdmissionError ? error.status : CADR_M13_STATUS.HOST_FAILURE;
+        return response(request, status,
+          { reason: error instanceof M13AdmissionError ? error.message : "host-failure" },
+          { terminal: status === CADR_M13_STATUS.WORKER_LOST || status === CADR_M13_STATUS.PROTOCOL_VIOLATION });
+      }
     }
     if (this.#selectedMediaConfigured()) {
       invariant(this.#mediaMounted && this.#m10Ready,
@@ -1167,13 +1249,14 @@ export class CadrM13Shell {
       assertSelectedM10Ready(this.#m10Controller);
     }
     const lowerOp = LOWER_OPERATION[request.op] ?? request.op;
-    const lower = Object.create(null); lower.version = CADR_M13_LOWER_PROTOCOL_VERSION; lower.id = this.#nextInternalRequestId(); lower.op = lowerOp;
+    const lower = Object.create(null); lower.version = CADR_M13_LOWER_PROTOCOL_VERSION;
+    lower.id = this.#nextInternalRequestId(generation); lower.op = lowerOp;
     for (const [key, value] of Object.entries(request)) if (!COMMON_FIELDS.includes(key)) lower[key] = value;
     try {
-      const result = await this.#postLower(lower, { external: request });
+      const result = await this.#postLower(lower, { external: request, generation });
       if (result.status === 21) return this.#terminalResponse(request, CADR_M13_STATUS.PROTOCOL_VIOLATION);
       if (result.status === 8 && this.#m10Bridge !== null) {
-        const failure = await this.#serviceM10WaitingRequest(request);
+        const failure = await this.#serviceM10WaitingRequest(request, generation);
         if (failure !== null) return failure;
       }
       const terminal = request.id === MAX_U32 || result.status === CADR_M13_STATUS.WORKER_LOST || result.status === CADR_M13_STATUS.PROTOCOL_VIOLATION;
@@ -1188,7 +1271,8 @@ export class CadrM13Shell {
     return this.#baseMediaBinding !== null && this.#selectedBootArtifacts !== null;
   }
 
-  async #mountPublicBaseMedia(request) {
+  async #mountPublicBaseMedia(request, generation) {
+    this.#assertLive(generation);
     if (!this.#selectedMediaConfigured() || this.#m10Controller === null ||
         typeof this.#m10Controller.status !== "function") {
       return response(request, CADR_M13_STATUS.NOT_READY, { reason: "not-ready" });
@@ -1196,14 +1280,15 @@ export class CadrM13Shell {
     if (!this.#bootstrapped || this.#mediaMounted || this.#adoptedBaseImportId !== request.importId) {
       return response(request, CADR_M13_STATUS.NOT_READY, { reason: "not-ready" });
     }
-    const mounted = await this.#mountSelectedMedia(request.importId);
+    const mounted = await this.#mountSelectedMedia(request.importId, generation);
     return response(request, mounted.status,
       mounted.status === CADR_M13_STATUS.OK ? { result: mounted.result } :
         { reason: shellReason(mounted.status) },
       { terminal: mounted.status === CADR_M13_STATUS.WORKER_LOST });
   }
 
-  async #mountSelectedMedia(importId) {
+  async #mountSelectedMedia(importId, generation) {
+    this.#assertLive(generation);
     if (this.#mediaMounted || this.#baseMediaBinding === null ||
         this.#selectedBootArtifacts === null) {
       return Object.freeze({ status: CADR_M13_STATUS.NOT_READY, result: null });
@@ -1219,37 +1304,38 @@ export class CadrM13Shell {
         const input = artifact.bytes.slice(0);
         lowerMutationIssued = true;
         let lower = await this.#postLower({ version: CADR_M13_LOWER_PROTOCOL_VERSION,
-          id: this.#nextInternalRequestId(), op: "input", bytes: input },
-        { external: null });
+          id: this.#nextInternalRequestId(generation), op: "input", bytes: input },
+        { external: null, generation });
         if (lower.status !== CADR_M13_STATUS.OK) throw new M13AdmissionError(
           "selected boot-artifact input was rejected", { status: lower.status });
         lowerMutationIssued = true;
         lower = await this.#postLower({ version: CADR_M13_LOWER_PROTOCOL_VERSION,
-          id: this.#nextInternalRequestId(), op: "import", artifactKind: artifact.kind,
-          byteCount: artifact.bytes.byteLength }, { external: null });
+          id: this.#nextInternalRequestId(generation), op: "import", artifactKind: artifact.kind,
+          byteCount: artifact.bytes.byteLength }, { external: null, generation });
         if (lower.status !== CADR_M13_STATUS.OK) throw new M13AdmissionError(
           "selected boot-artifact import was rejected", { status: lower.status });
       }
       lowerMutationIssued = true;
       let lower = await this.#postLower({ version: CADR_M13_LOWER_PROTOCOL_VERSION,
-        id: this.#nextInternalRequestId(), op: "stream-begin", artifactKind: 3,
-        byteCount: BigInt(CADR_M13_BASE_BYTES) }, { external: null });
+        id: this.#nextInternalRequestId(generation), op: "stream-begin", artifactKind: 3,
+        byteCount: BigInt(CADR_M13_BASE_BYTES) }, { external: null, generation });
       if (lower.status !== CADR_M13_STATUS.OK) throw new M13AdmissionError(
         "selected base stream was rejected", { status: lower.status });
       for (let firstBlock = 0; firstBlock < CADR_M13_BASE_BLOCKS;) {
         const blockCount = Math.min(1024, CADR_M13_BASE_BLOCKS - firstBlock);
-        const body = await this.#baseMediaBinding.readMountRange(firstBlock, blockCount);
+        const body = await this.#runLive(
+          () => this.#baseMediaBinding.readMountRange(firstBlock, blockCount), generation);
         lowerMutationIssued = true;
         lower = await this.#postLower({ version: CADR_M13_LOWER_PROTOCOL_VERSION,
-          id: this.#nextInternalRequestId(), op: "stream-chunk",
-          offset: BigInt(firstBlock) * 1024n, bytes: body.buffer }, { external: null });
+          id: this.#nextInternalRequestId(generation), op: "stream-chunk",
+          offset: BigInt(firstBlock) * 1024n, bytes: body.buffer }, { external: null, generation });
         if (lower.status !== CADR_M13_STATUS.OK) throw new M13AdmissionError(
           "selected base stream chunk was rejected", { status: lower.status });
         firstBlock += blockCount;
       }
       lowerMutationIssued = true;
       lower = await this.#postLower({ version: CADR_M13_LOWER_PROTOCOL_VERSION,
-        id: this.#nextInternalRequestId(), op: "stream-finish" }, { external: null });
+        id: this.#nextInternalRequestId(generation), op: "stream-finish" }, { external: null, generation });
       if (lower.status !== CADR_M13_STATUS.OK) throw new M13AdmissionError(
         "selected base stream did not verify", { status: lower.status });
       this.#baseMediaBinding.finishMount(); this.#mediaMounted = true;
@@ -1267,7 +1353,10 @@ export class CadrM13Shell {
     }
   }
 
-  #nextInternalRequestId() { const value = this.#workerId; this.#workerId = value === 0x7fffffff ? 1 : value + 1; return value; }
+  #nextInternalRequestId(generation = this.#lossGeneration) {
+    this.#assertLive(generation);
+    const value = this.#workerId; this.#workerId = value === 0x7fffffff ? 1 : value + 1; return value;
+  }
   async #submitM10Internal(candidate) {
     const fields = descriptorRecord(candidate, "M10 bridge request", {
       allowed: ["op", "operation", "hostStatus", "generation", "requestId", "bytes"], required: ["op"], maximumKeys: 6,
@@ -1289,9 +1378,9 @@ export class CadrM13Shell {
     const result = await this.#postLower(lower, { external: null });
     return Object.freeze({ status: result.status, ...result.remainder });
   }
-  async #serviceM10WaitingRequest(request) {
+  async #serviceM10WaitingRequest(request, generation) {
     try {
-      const outcome = await this.#m10Bridge.serviceOnce();
+      const outcome = await this.#runLive(() => this.#m10Bridge.serviceOnce(), generation);
       if (outcome?.serviced !== true) return this.#terminalResponse(request, CADR_M13_STATUS.PROTOCOL_VIOLATION);
       return null;
     } catch {
@@ -1302,37 +1391,54 @@ export class CadrM13Shell {
   #m10UncertainFailure(request) {
     if (!this.#terminal) {
       this.#terminal = true; this.#state = "FAILED"; this.releaseInput("m10-in-doubt");
+      this.#recordTerminalLoss("m10-in-doubt", CADR_M13_STATUS.HOST_FAILURE);
       for (const [id, pending] of this.#pending) {
         this.#pending.delete(id); this.#clearTimeout(pending.timer);
         pending.reject(new M13AdmissionError("M10 durable state is uncertain", { status: CADR_M13_STATUS.HOST_FAILURE }));
       }
-      try { this.#worker.terminate?.(); } catch { /* process disposal is best effort */ }
+      try { this.#onWorkerLoss?.(Object.freeze({ reason: "m10-in-doubt", status: CADR_M13_STATUS.HOST_FAILURE })); }
+      catch { /* reporting cannot reopen terminal authority */ }
+      this.#terminateOwnedWorker();
       this.announce("CADR durable state is uncertain; volatile state lost");
     }
     return response(request, CADR_M13_STATUS.HOST_FAILURE,
       { reason: shellReason(CADR_M13_STATUS.HOST_FAILURE) }, { terminal: true });
   }
-  #postLower(request, { external, timeoutMs = this.#timeoutMs }) {
-    return new Promise((resolve, reject) => {
+  #postLower(request, { external, timeoutMs = this.#timeoutMs, generation = this.#lossGeneration }) {
+    const pendingResult = new Promise((resolve, reject) => {
+      try { this.#assertLive(generation); }
+      catch (error) { reject(error); return; }
       const timer = this.#setTimeout(() => { this.#pending.delete(request.id); reject(new Error("lower worker response timeout")); }, timeoutMs);
       this.#pending.set(request.id, { expectedOp: request.op, external, resolve, reject, timer });
       /* Browser structured clone canonically exposes ordinary records.  Send a
        * fresh ordinary own-property envelope instead of relying on a browser's
        * treatment of an internal null-prototype helper object; no caller object
        * or caller buffer is used here. */
-      try { this.#worker.postMessage({ ...request }); }
+      try { this.#assertLive(generation); this.#worker.postMessage({ ...request }); }
       catch (error) { this.#pending.delete(request.id); this.#clearTimeout(timer); reject(error); }
     });
+    return this.#awaitLive(pendingResult, generation);
   }
   #onWorkerMessage(value) {
     if (value?.type === "cadr-event") {
       if (this.#audioBoundary === null) { this.#workerLost("unexpected-worker-event", true); return; }
-      this.#audioEventTail = this.#audioEventTail.then(async () => {
+      const generation = this.#lossGeneration;
+      const acceptance = this.#audioEventTail.then(async () => {
         if (this.#terminal) return;
-        if (!await this.#audioBoundary.acceptWorkerEvent(value, this.#sessionId)) {
+        if (!await this.#runLive(() => this.#audioBoundary.acceptWorkerEvent(value, this.#sessionId), generation)) {
           this.#workerLost("malformed-audio-event", true);
         }
-      }, () => this.#workerLost("malformed-audio-event", true));
+      });
+      /* A worker error can advance the loss generation while the audio
+       * boundary is still accepting this event.  #runLive then rejects with
+       * the already-recorded terminal cause.  Attach this consumer in the
+       * same task so that expected fence rejection is never temporarily
+       * unhandled; only a failure from a still-live handler may create a new
+       * malformed-event terminal transition. */
+      this.#audioEventTail = acceptance.catch(() => {
+        if (this.#terminal || generation !== this.#lossGeneration) return;
+        this.#workerLost("malformed-audio-event", true);
+      });
       return;
     }
     const id = value?.id; const pending = this.#pending.get(id);
@@ -1351,15 +1457,27 @@ export class CadrM13Shell {
     }
   }
   #terminalResponse(request, status) { this.#workerLost(status === 25 ? "protocol-violation" : "worker-lost", status === 25); return response(request, status, { reason: shellReason(status) }, { terminal: true }); }
-  #workerLost(reason, protocol = false) {
+  #terminateOwnedWorker(requested = true) {
+    if (!requested || this.#workerOwnership !== "shell") return;
+    try { this.#worker.terminate?.(); } catch { /* termination is best effort */ }
+  }
+  #workerLost(reason, protocol = false, terminateWorker = true, notify = true) {
     if (this.#terminal) return;
     this.#audioBoundary?.closeForWorkerLoss();
-    this.#terminal = true; this.#state = "FAILED"; this.releaseInput(reason);
-    for (const [id, pending] of this.#pending) { this.#pending.delete(id); this.#clearTimeout(pending.timer); pending.reject(new M13AdmissionError(reason, { status: protocol ? 25 : 24 })); }
-    try { this.#worker.terminate?.(); } catch { /* termination is best effort */ }
+    const status = protocol ? CADR_M13_STATUS.PROTOCOL_VIOLATION : CADR_M13_STATUS.WORKER_LOST;
+    this.#terminal = true; this.#state = "FAILED"; this.#recordTerminalLoss(reason, status); this.releaseInput(reason);
+    for (const [id, pending] of this.#pending) { this.#pending.delete(id); this.#clearTimeout(pending.timer); pending.reject(new M13AdmissionError(reason, { status })); }
+    if (notify) {
+      try { this.#onWorkerLoss?.(Object.freeze({ reason, status })); }
+      catch { /* reporting cannot reopen terminal authority */ }
+    }
+    this.#terminateOwnedWorker(terminateWorker === true);
     this.announce(protocol ? "CADR worker protocol failure; volatile state lost" : "CADR worker lost; volatile state lost");
   }
-  dispose() { for (const detach of this.#workerDetach.splice(0)) detach?.(); this.#workerLost("shell-disposed"); }
+  dispose({ terminateWorker = true } = {}) {
+    for (const detach of this.#workerDetach.splice(0)) detach?.();
+    this.#workerLost("shell-disposed", false, terminateWorker === true, false);
+  }
 }
 
 /** Build DOM controls without assigning historical key meanings to host keys. */

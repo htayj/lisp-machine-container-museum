@@ -2,7 +2,7 @@
 type: concept
 title: CADR-WEB-303 browser hardening and accessibility reimplementation specification
 description: A release-bounded M13 contract for hostile host inputs, resource ceilings, offline execution, worker failure, and accessible controls around an unmodified CADR framebuffer.
-timestamp: 2026-08-02T09:53:41-04:00
+timestamp: 2026-08-02T12:13:23-04:00
 ---
 
 # CADR-WEB-303 browser hardening and accessibility reimplementation specification
@@ -43,6 +43,25 @@ M10 boundary is an authority-minimising adapter, not a new durable-store claim.
 The current source and Chromium probes exercise bounded portions of `M13-F01`,
 `M13-F02`, `M13-F04`, `M13-F05a`, `M13-F06`/`F07`, `M13-F08`--`M13-F13`, and
 `M13-F15`/`F15b`.
+
+`cadr-m13-production-app.mjs` now adds the deliberately narrow P1 composition
+layer. It is a source/synthetic coordinator above exactly one existing
+`CadrM13Shell`, exactly one injected dedicated worker, and the caller-supplied
+existing M10 controller. Its reducer accepts only
+`UNCONFIGURED -> RECEIPT_ACCEPTED -> INPUTS_SELECTED -> BOOTSTRAPPING ->
+BASE_IMPORTING -> MEDIA_MOUNTED -> M10_CLEAN -> PAUSED -> RUNNING`, with the
+ordinary `RUNNING <-> PAUSED` loop and `STOPPED`; `FAILED`, `IN_DOUBT`, and
+`RECOVERY_REQUIRED` are absorbing fences. The coordinator serializes the one
+public v8 request-ID sequence and does not construct the old v6/v7 browser
+channel, a storage backend, a second worker, or a replacement shell. Its
+inert HTML page states only that no machine or media is configured. Synthetic
+tests cover the reducer, one-worker/one-ID ownership, exact request-field
+admission, startup neutral-readiness ordering, release and layout cancellation,
+partial-construction cleanup, stop ordering, failure classification, stale
+replies, resume single-flight, honest pending-mount state, every absorbing
+public-API fence, and a recursive transitive no-network/module-closure scan. This is not selected-media
+runtime, export/restore, browser, accessibility, offline, `C-M13`, or M14
+evidence.
 
 The ABI1.11 source now also contains the exact `CDRM11O1` and `CDRPCM1`
 validators, an eight-record M13 Worklet queue, and a private worker-owned
@@ -272,8 +291,11 @@ browser shell ---- validated commands ----> dedicated worker ---- fixed Wasm ins
     +---- M10 origin-private overlay transaction owner and recovery authority
 ```
 
-- The shell MUST own DOM events, accessibility, file selection, status, and worker
-  lifetime. It never obtains a mutable view of Wasm linear memory.
+- The shell MUST own DOM events, accessibility, file selection, status, and the
+  worker protocol. A standalone shell owns worker lifetime by default. The P1
+  composition instead selects the shell's explicit externally-owned policy and
+  is the sole worker terminator; the two modes cannot both terminate. Neither
+  mode obtains a mutable view of Wasm linear memory.
 - The worker MUST be the only guest-state authority. It accepts one closed protocol
   version and one active session identity.
 - The immutable-base reader MUST return copied ranges. No guest write path receives a
@@ -286,6 +308,120 @@ browser shell ---- validated commands ----> dedicated worker ---- fixed Wasm ins
 Objects crossing a boundary are treated as untrusted bytes or closed records.
 JavaScript object identity, prototypes, getters, and inherited properties are not
 part of a wire contract.
+
+### P1 production-composition ownership and lifecycle
+
+P1 is an inferred host composition policy. It reuses the public v8 shell rather
+than duplicating its message grammar, M10 bridge, M11 audio boundary, or M8/M9
+ingress channel. The P1 receipt schema is
+`cadr-m13-production-p1-receipt-v1`; it accepts only this page's exact profile and
+`disposition:"source-only"`. It is not an M14 receipt and carries no release,
+selected-media, or provenance authority.
+
+One `CadrM13ProductionApp` owns the ordered public request queue and allocates
+every public v8 ID once, beginning at one. The shell remains the sole lower-worker
+boundary and may make its own private, validated lower requests. P1 must never
+attach `createCadrM8M9WorkerChannel`, post a raw v6/v7 request, create a second
+worker, replace a worker, construct an M10 backend, or expose a generic request
+method. Its only guest ingress method is the existing shell through the following
+closed M8/M9 operation names: keyboard down/up/focus-lost/drain/state and pointer
+motion/down/up/neutralize/warp/state/drain.
+
+P1 freezes an explicit field allowlist for every operation it can issue. The
+operation name is a separate coordinator argument; operation fields cannot
+contain `type`, `version`, `sessionId`, `id`, `op`, or any other field outside
+that operation's schema. Admission rejects arrays, inherited prototypes,
+accessors without invoking them, symbol keys, and extra fields before selection
+state, FIFO insertion, or request-ID allocation changes. The copied operation
+fields are placed into the request first and the immutable coordinator-owned v8
+authority fields are written last. Thus, for example, keyboard fields cannot
+replace their operation with reset, debugger, audio, base-import, or M10 work.
+The shell still performs the normative scalar, byte, and lower-protocol semantic
+validation after this composition-specific authority check.
+
+The source-only selected-input recipe is exact and ordered: admitted Wasm byte/hash
+pair; `base-import-begin`, zero or more `base-import-chunk`, and
+`base-import-finish`; `base-media-mount`; and `m10-reopen`. Completion of base
+import leaves the reducer in `BASE_IMPORTING` while the public mount request is
+pending; only its successful response permits `MEDIA_MOUNTED`. It then requires the
+caller-owned M10 controller to report exactly `CLEAN`, `open:true`,
+`readOnly:false` before cold power-on, boot, visible handshake, and pause. The
+result is not exposed as `PAUSED` until the shell's explicit
+`awaitInputNeutralization()` seam confirms the current release generation. This
+is still not a boot/runtime claim. A `resume` calls the shell's existing restore
+gate: it requires a fresh full frame, clean M10 status, and that same neutral-input
+acknowledgement. P1 keeps its input gate closed until the subsequent
+`machine-start` succeeds for the same coordinator generation.
+
+Resume is one coordinator single-flight. Duplicate calls made while `PAUSED`,
+including a call reentrant from the shell restore callback, receive the same
+promise and cannot issue a second full-frame restore or `machine-start`. The
+shell independently applies the same single-flight rule to its real
+`restoreInputIngress()` operation.
+
+Layout change, visible Release Input, and ordinary pause first synchronously close
+the P1 gate, detach its supplied ingress owner, and invoke the shell's existing
+release fence; only then can the queued machine pause run. The transition from
+`RUNNING` to `PAUSED` waits for both the current neutral acknowledgement and the
+lower machine-pause reply. A request or reply made stale by that intentional
+generation advance is a harmless cancellation; it cannot fail-stop the new
+paused generation or re-arm input.
+
+Stop first applies the same ingress fence, then synchronously pauses/fences
+supplied audio, debugger, and storage handles. The app retains direct ownership
+of an immediate, exactly-once worker disposer; shell disposal can detach its
+listeners without terminating that worker a second time. A worker returned before
+a shell factory throws, returns an incompatible object, or reentrantly stops the
+app is therefore terminated once. A stop or failure advances the coordinator
+generation, and a queued or late reply cannot start a machine or re-arm input.
+An invalid selected-input recipe is rejected before selection state changes. Any
+unexpected reducer event, bad receipt, nonzero reply, or missing clean M10 state
+fail-closes; an M10 recovery status becomes
+`RECOVERY_REQUIRED` and an ambiguous host failure becomes `IN_DOUBT`.
+Every transition into a reducer-produced terminal state immediately uses the
+same synchronous cleanup path. `FAILED`, `IN_DOUBT`, and `RECOVERY_REQUIRED`
+then absorb every reducer event and every public app method without another ID,
+request, state object, resource action, or worker termination.
+
+The shell constructor's default `workerOwnership:"shell"` preserves standalone
+worker-loss behavior. P1 supplies `workerOwnership:"external"` together with a
+closed loss callback that reports the original `worker-error`,
+`worker-messageerror`, or protocol cause and status. In this mode the shell
+fences ingress, rejects its lower pending requests, and reports loss but never
+terminates; P1 fences ingress and every optional handle before its one direct
+termination. Shell-local base-import, mount, and M10-reopen dispatch races a
+private terminal-loss signal, so a worker event settles even when the injected
+storage method remains pending.
+
+Every public submit captures the current shell loss generation before
+canonicalization. Canonicalization, request-body hashing, Wasm compilation,
+audio preparation, shell-local storage calls, M10 service, and each selected
+mount preparation await race the same terminal-loss signal and recheck that
+generation after settlement. Internal request-ID allocation is generation
+guarded. `#postLower` independently checks immediately before pending
+registration and again immediately before `postMessage`, and its eventual
+response races terminal loss as well. Consequently an asynchronous continuation
+released after worker loss or coordinator disposal cannot allocate another lower
+ID, mutate shell adoption state, or post instantiate/worker work. Stop or invalid
+Release Input may first issue the already-specified synchronous best-effort
+neutralization; no delayed operation posts after the ensuing terminal cleanup.
+The serialized audio-event tail attaches its rejection consumer in the same
+worker-message task. A pending audio acceptance invalidated by `error` or
+`messageerror` consumes the already-recorded generation-fence rejection; only a
+handler failure while the shell is still live can select `malformed-audio-event`.
+Thus the original worker-loss cause remains authoritative and the abandoned tail
+cannot surface as an unhandled rejection or trigger a second termination.
+
+Worker disappearance is a volatile startup failure (`FAILED`) before
+`M10_CLEAN`, including during instantiate, base import, mount, and M10 reopen. A
+clean running controller also yields `FAILED`; `IN_DOUBT` is used only when the
+existing M10 controller itself reports `IN_DOUBT`, while a post-clean controller
+report of `RECOVERY_REQUIRED` retains that distinct fence. Status 7 alone is not
+evidence that durable state advanced.
+
+P1 leaves the E27 test adapter test-only. It neither promotes that adapter nor
+claims a real selected-media mount, changed guest write, durable reopen, pinned
+export, paused/reset restore, browser activity, no-network closure, or release.
 
 ## Closed host-message envelope and v8 migration
 
@@ -1246,6 +1382,7 @@ separate artifact with separate UI, policy, tests, and manifest.
 | `M13-F14` | regression | Run every available lower conformance test through M12 under the M13 shell, including M11 renderer/Worklet gates when implemented | no lower-profile semantic regression; an unclosed lower gate keeps C-M13 open |
 | `M13-F15` | audio browser | Test first-user-gesture autoplay success/denial, pause/resume, eight-record high water, worklet partial/stale acknowledgements, `processorerror`, context/device loss, worker crash, and a fresh consumer epoch | no invented acknowledgement/silence or guest-time advance; deterministic M11 backpressure and stale-ack fencing hold |
 | `M13-F15b` | audio deadline/reducer | With a controllable monotonic clock and browser-task harness, test an ack immediately before and at `2000.000` ms; admit every pairwise tie and the four-way due-deadline/ack/pause/device-error tie within one open turn in every admission order; then place every equal-timestamp pair in separate browser tasks in both task orders; admit an event synchronously before watermark closure and reentrantly after closure; test equal deadlines, late old-epoch replies after pause/timeout/resume, and high water before expiry | within one closed turn sort is exactly timestamp then device-error, pause, deadline, ack, then ordinal; across tasks the first committed reducer turn wins and no later priority is retroactive; exactly one response follows commit; pre-boundary ack is accepted once, boundary ack loses to the promoted deadline, pause cancels rather than suspends, oldest equal deadline wins, post-watermark work moves to the next turn, late replies are fenced, and only a new user-activated epoch can replay the unacknowledged head |
+| `M13-P1-01` | source/synthetic composition | Exercise every reducer state and illegal transition plus every public method against each absorbing state; attack every common authority field and operation schema with extra fields, accessors, inherited prototypes, and reset/debugger/audio operation substitution; run real-shell neutral-ready and duplicate/reentrant restore races; inject `error` and `messageerror` while audio-event acceptance is pending in standalone and externally owned shells; delay the media-mount response; reply before and after release/layout generation changes; inject clean/recovery/ambiguous M10 states; throw, return incompatibility, and stop reentrantly during factories; delay `machine-start` across stop; assert exact cleanup order independently; and recursively inspect every transitive P1 module for direct network/worker construction | rejected input/recipe fields consume no ID or state transition; exactly one injected worker and shell, one monotonic public v8 ID series, mount is not published early, resume is single-flight, neutral readiness and input fence precede `PAUSED`, pending audio loss settles without an unhandled rejection and retains its original cause, intentional stale input is cancelled without failure, partial acquisition terminates its worker exactly once, every terminal state is absorbing, handles are fenced before disposal, and no stale generation re-arms input; this is not a browser or selected-media result |
 
 Fuzzing uses a fixed seed corpus plus recorded crashing inputs. A passing fuzz
 duration is necessary evidence, not a proof that all inputs are safe. The local F03
@@ -1264,6 +1401,7 @@ and policy-harness facts. Neither report substitutes for the other.
 | `TODO-RUNTIME-M13-05` | Complete worker-crash injection at every named operation and M10 `IN_DOUBT` reopen/reread path | saved-versus-volatile recovery claim |
 | `TODO-RUNTIME-M13-06` | Complete automated and manual keyboard/screen-reader workflow in each supported browser | accessibility claim |
 | `TODO-RUNTIME-M13-07` | Extend the selected ABI1.11 worker/shell/real-Worklet probe from empty-core plus labelled downstream fixtures to guest-generated `%BEEP`; cover successful partial acknowledgement/greater-than-512 repump, autoplay denial, processor/context/worker loss, and backpressure against the selected core. | selected audio boundary |
+| `TODO-RUNTIME-M13-P1-01` | In a fresh disposable browser origin, compose P1 with one real dedicated v8 worker, the existing clean M10 controller, and a synthetic admitted byte recipe; record startup, layout-release, stop, and delayed-reply traces without selected media. Then keep selected-media, export/restore, no-network, and release conclusions on their existing separate gates. | browser realization of the P1 ownership/fencing policy only |
 | `TODO-RUNTIME-M14-REPEAT-01` | M14 independently reproduces the final package and aggregates the M13 report with its browser matrix | CW4 release, not C-M13 |
 
 ## Exit gate
