@@ -10,7 +10,7 @@
  */
 import { spawn } from "node:child_process";
 import { createHash } from "node:crypto";
-import { chmod, lstat, mkdir, mkdtemp, open, readFile, readdir, realpath, rm, rmdir, unlink, writeFile } from "node:fs/promises";
+import { constants as FS, chmod, lstat, mkdir, mkdtemp, open, opendir, readFile, readdir, realpath, rm, rmdir, unlink, writeFile } from "node:fs/promises";
 import { Socket } from "node:net";
 import { pathToFileURL, fileURLToPath } from "node:url";
 import { dirname, resolve } from "node:path";
@@ -150,7 +150,48 @@ function exactOneLine(value, label) {
 function closedEnvironment(extra = {}) {
   return Object.freeze({ HOME: "/var/empty", LANG: "C", LC_ALL: "C", TZ: "UTC",
     GIT_CONFIG_NOSYSTEM: "1", GIT_CONFIG_GLOBAL: "/dev/null",
-    GIT_NO_REPLACE_OBJECTS: "1", ...extra });
+    GIT_NO_REPLACE_OBJECTS: "1", GIT_NO_LAZY_FETCH: "1", GIT_PAGER: "",
+    PAGER: "", GIT_EXTERNAL_DIFF: "", GIT_ASKPASS: "/bin/false",
+    SSH_ASKPASS: "/bin/false", GIT_SSH_COMMAND: "/bin/false", ...extra });
+}
+
+const M7_P4_HERMETIC_GIT_CONFIG = Object.freeze([
+  "-c", "core.hooksPath=/dev/null", "-c", "core.fsmonitor=false",
+  "-c", "diff.external=", "-c", "interactive.diffFilter=",
+  "-c", "pager.config=false", "-c", "pager.status=false",
+  "-c", "protocol.file.allow=never", "-c", "protocol.ext.allow=never",
+]);
+
+const M7_P4_ALLOWED_LOCAL_CONFIG = Object.freeze(new Map([
+  ["core.repositoryformatversion", "0"], ["core.filemode", "true"],
+  ["core.bare", "false"], ["core.logallrefupdates", "true"],
+]));
+
+function validateProductionRepositoryConfig(bytes) {
+  const raw = Buffer.from(bytes);
+  if (raw.byteLength > 64 * 1024 || (raw.byteLength > 0 && raw.at(-1) !== 0)) {
+    fail("production repository config inventory is malformed or oversized");
+  }
+  const seen = new Set();
+  for (const record of raw.toString("utf8").split("\0").slice(0, -1)) {
+    const separator = record.indexOf("\n");
+    if (separator < 1) fail("production repository config inventory is malformed");
+    const key = record.slice(0, separator); const value = record.slice(separator + 1);
+    if (seen.has(key) || M7_P4_ALLOWED_LOCAL_CONFIG.get(key) !== value) {
+      fail(`production repository config is not hermetic (${key})`);
+    }
+    seen.add(key);
+  }
+  if (seen.size !== M7_P4_ALLOWED_LOCAL_CONFIG.size ||
+      [...M7_P4_ALLOWED_LOCAL_CONFIG.keys()].some(key => !seen.has(key))) {
+    fail("production repository config omits its exact minimal core identity");
+  }
+  return Object.freeze([...seen].sort());
+}
+
+/** Test seam for the production-only local repository config allowlist. */
+export function validateM7P4ProductionRepositoryConfigForTest(bytes) {
+  return validateProductionRepositoryConfig(bytes);
 }
 
 async function runDescriptor(fd, args, cwd, extraEnvironment = {}, maxStdoutBytes = null) {
@@ -275,6 +316,236 @@ async function verifyLineage(git, head) {
   }
   if (!floorReached) fail("signed HEAD does not descend from the pinned lineage floor");
   if (pending.length !== 0) fail("signed HEAD ancestry exceeds the bounded policy");
+}
+
+function commitParents(commitBytes, expectedCommit, label) {
+  const bytes = Buffer.from(commitBytes);
+  if (!/^[0-9a-f]{40}$/.test(expectedCommit) ||
+      gitObjectId("commit", bytes) !== expectedCommit) {
+    fail(`${label} commit object hash differs`);
+  }
+  const text = bytes.toString("utf8");
+  if (!Buffer.from(text, "utf8").equals(bytes)) fail(`${label} commit is not exact UTF-8`);
+  const header = text.split("\n\n", 1)[0]; const parents = [];
+  for (const line of header.split("\n")) {
+    const match = /^parent ([0-9a-f]{40})$/.exec(line);
+    if (match !== null) parents.push(match[1]);
+  }
+  return Object.freeze(parents);
+}
+
+function requireImmediateLauncherParent(releaseBytes, releaseCommit, sourceCommit) {
+  if (!/^[0-9a-f]{40}$/.test(sourceCommit ?? "")) fail("receipt lacks commit-A identity");
+  const parents = commitParents(releaseBytes, releaseCommit, "release B");
+  if (parents.length !== 1 || parents[0] !== sourceCommit) {
+    fail("release B does not have receipt source A as its exact single immediate parent");
+  }
+  return sourceCommit;
+}
+
+/** Test seam for exact A-to-B parent policy; signature policy remains separate. */
+export function validateM7P4ImmediateLauncherParentForTest(
+  releaseBytes, releaseCommit, sourceCommit) {
+  return requireImmediateLauncherParent(releaseBytes, releaseCommit, sourceCommit);
+}
+
+async function readInitialNamespaceMap(path, label) {
+  const handle = await open(path, FS.O_RDONLY | FS.O_NOFOLLOW);
+  try {
+    const before = await handle.stat(); const bytes = await handle.readFile();
+    const after = await handle.stat();
+    if (!before.isFile() || before.dev !== after.dev || before.ino !== after.ino ||
+        before.size !== after.size || bytes.byteLength > 4096 ||
+        (after.size !== 0 && bytes.byteLength !== after.size)) {
+      fail(`${label} changed while its descriptor was read`);
+    }
+    const text = bytes.toString("ascii");
+    const match = /^\s*([0-9]+)\s+([0-9]+)\s+([0-9]+)\s*\n$/.exec(text);
+    if (match === null || match[1] !== "0" || match[2] !== "0" ||
+        match[3] !== "4294967295") {
+      fail(`${label} is not the complete initial-user-namespace identity map`);
+    }
+    return Object.freeze({ inside: match[1], outside: match[2], length: match[3],
+      sha256: sha256(bytes) });
+  } finally { await handle.close(); }
+}
+
+async function validateInitialUserNamespace(paths) {
+  const selfHandle = await open(paths.selfNamespace, FS.O_RDONLY);
+  const initHandle = await open(paths.initNamespace, FS.O_RDONLY);
+  try {
+    const [self, init, uidMap, gidMap] = await Promise.all([
+      selfHandle.stat(), initHandle.stat(),
+      readInitialNamespaceMap(paths.uidMap, "uid_map"),
+      readInitialNamespaceMap(paths.gidMap, "gid_map"),
+    ]);
+    if (!self.isFile() || !init.isFile() || self.dev !== init.dev || self.ino !== init.ino) {
+      fail("authority is not in PID 1's initial user namespace");
+    }
+    return Object.freeze({ namespace: Object.freeze({ dev: self.dev, ino: self.ino }),
+      uid_map: uidMap, gid_map: gidMap });
+  } finally { await Promise.allSettled([selfHandle.close(), initHandle.close()]); }
+}
+
+/** Test-only pathname injection; production always uses the four fixed /proc paths. */
+export async function validateM7P4InitialUserNamespaceForTest(paths) {
+  return validateInitialUserNamespace(paths);
+}
+
+function validateTrustedDirectory(info, expectedUid, label) {
+  if (!info.isDirectory() || info.uid !== expectedUid || (info.mode & 0o022) !== 0) {
+    fail(`${label} is not an owner-pinned, non-writable directory`);
+  }
+  return Object.freeze({ dev: info.dev, ino: info.ino, uid: info.uid,
+    gid: info.gid, mode: info.mode & 0o7777 });
+}
+
+function validateTrustedRegularFile(info, expectedUid, label) {
+  if (!info.isFile() || info.uid !== expectedUid || (info.mode & 0o022) !== 0) {
+    fail(`${label} is not an owner-pinned, non-writable regular file`);
+  }
+  return Object.freeze({ dev: info.dev, ino: info.ino, uid: info.uid,
+    gid: info.gid, mode: info.mode & 0o7777, bytes: info.size });
+}
+
+const FORBIDDEN_GIT_DEPENDENCIES = Object.freeze(new Set([
+  ".git/commondir", ".git/info/grafts", ".git/modules",
+  ".git/objects/info/alternates", ".git/objects/info/http-alternates", ".gitmodules",
+]));
+
+async function pinTrustedCheckoutTree(checkoutDescriptorPath, expectedUid,
+  { maxEntries = 100000, maxDepth = 128, openDirectoryForTest = undefined } = {}) {
+  if (!Number.isSafeInteger(maxEntries) || maxEntries < 1 || maxEntries > 100000 ||
+      !Number.isSafeInteger(maxDepth) || maxDepth < 1 || maxDepth > 128) {
+    fail("checkout dependency traversal limits exceed production policy");
+  }
+  if (openDirectoryForTest !== undefined && typeof openDirectoryForTest !== "function") {
+    fail("checkout test directory enumerator is invalid");
+  }
+  const openDirectory = openDirectoryForTest ?? (path => opendir(path, { bufferSize: 1 }));
+  const directoryHandles = []; const identities = [];
+  const rootHandle = await open(checkoutDescriptorPath,
+    FS.O_RDONLY | FS.O_DIRECTORY | FS.O_NOFOLLOW);
+  const pending = [{ handle: rootHandle, relative: "", depth: 0 }];
+  let entries = 0;
+  try {
+    while (pending.length > 0) {
+      const selected = pending.pop();
+      if (selected.depth > maxDepth) {
+        fail("root-owned checkout dependency closure exceeds its bounded policy");
+      }
+      const directory = selected.handle;
+      directoryHandles.push(directory);
+      identities.push(Object.freeze({ path: selected.relative || ".",
+        ...validateTrustedDirectory(await directory.stat(), expectedUid,
+          `checkout tree ${selected.relative || "."}`) }));
+      const enumeration = await openDirectory(`/proc/self/fd/${directory.fd}`);
+      if (enumeration === null || typeof enumeration !== "object" ||
+          typeof enumeration.read !== "function" || typeof enumeration.close !== "function") {
+        fail("checkout directory enumerator is invalid");
+      }
+      try {
+        for (;;) {
+          /* `Dir.read` with bufferSize 1 admits at most one name at a time.
+           * The selected global entry cap is checked before that name is put
+           * in pending state or opened as a child descriptor. */
+          const entry = await enumeration.read();
+          if (entry === null) break;
+          const name = entry.name;
+          if (typeof name !== "string") fail("checkout directory entry has no name");
+          if (name === "." || name === ".." || name.includes("/") || name.includes("\0")) {
+            fail("checkout tree contains an unsafe directory entry");
+          }
+          if (entries >= maxEntries) {
+            fail("root-owned checkout dependency closure exceeds its bounded policy");
+          }
+          entries += 1;
+          const relative = selected.relative === "" ? name : `${selected.relative}/${name}`;
+          if (FORBIDDEN_GIT_DEPENDENCIES.has(relative)) {
+            fail(`checkout uses forbidden external or nested Git dependency ${relative}`);
+          }
+          const childPath = `/proc/self/fd/${directory.fd}/${name}`;
+          let child;
+          try { child = await open(childPath,
+            FS.O_RDONLY | FS.O_NOFOLLOW | FS.O_NONBLOCK); }
+          catch (error) {
+            if (["ELOOP", "ENXIO", "ENODEV", "EOPNOTSUPP"].includes(error?.code)) {
+              fail(`checkout tree entry ${relative} is a symlink or special file`);
+            }
+            throw error;
+          }
+          const info = await child.stat();
+          if (info.isDirectory()) {
+            pending.push({ handle: child, relative, depth: selected.depth + 1 });
+          } else {
+            try { identities.push(Object.freeze({ path: relative,
+              ...validateTrustedRegularFile(info, expectedUid,
+                `checkout tree ${relative}`) })); }
+            finally { await child.close(); }
+          }
+        }
+      } finally {
+        await enumeration.close();
+      }
+    }
+    const paths = new Set(identities.map(identity => identity.path));
+    if (!paths.has(".git") || !paths.has(".git/objects")) {
+      fail("checkout lacks an in-tree Git directory and object store");
+    }
+    return Object.freeze({ directoryHandles,
+      identities: Object.freeze(identities.sort((left, right) =>
+        left.path.localeCompare(right.path))) });
+  } catch (error) {
+    await Promise.allSettled([...directoryHandles, ...pending.map(item => item.handle)]
+      .map(handle => handle.close())); throw error;
+  }
+}
+
+async function openTrustedCheckoutWalk(checkout, trustRoot, expectedUid) {
+  const selected = resolve(checkout); const root = resolve(trustRoot);
+  if (selected !== checkout || root !== trustRoot ||
+      (selected !== root && !selected.startsWith(`${root === "/" ? "" : root}/`))) {
+    fail("checkout is not an absolute normalized descendant of its trust root");
+  }
+  const suffix = selected === root ? "" : selected.slice(root === "/" ? 1 : root.length + 1);
+  const components = suffix === "" ? [] : suffix.split("/");
+  if (components.some(component => component === "" || component === "." || component === "..")) {
+    fail("checkout contains an unsafe path component");
+  }
+  const handles = []; const identities = [];
+  try {
+    let current = await open(root, FS.O_RDONLY | FS.O_DIRECTORY | FS.O_NOFOLLOW);
+    handles.push(current); identities.push(validateTrustedDirectory(
+      await current.stat(), expectedUid, "checkout trust root"));
+    for (const [index, component] of components.entries()) {
+      const next = await open(`/proc/self/fd/${current.fd}/${component}`,
+        FS.O_RDONLY | FS.O_DIRECTORY | FS.O_NOFOLLOW);
+      handles.push(next); current = next;
+      identities.push(validateTrustedDirectory(await current.stat(), expectedUid,
+        `checkout ancestor ${index + 1}`));
+    }
+    return Object.freeze({ handles, identities: Object.freeze(identities),
+      checkout: `/proc/self/fd/${current.fd}` });
+  } catch (error) {
+    await Promise.allSettled(handles.map(handle => handle.close())); throw error;
+  }
+}
+
+/** Test seam rooted below a fixture; production is unconditionally rooted at /. */
+export async function validateM7P4CheckoutAncestorsForTest(
+  checkout, trustRoot, expectedUid = process.getuid()) {
+  const walk = await openTrustedCheckoutWalk(checkout, trustRoot, expectedUid);
+  try { return walk.identities; }
+  finally { await Promise.allSettled(walk.handles.map(handle => handle.close())); }
+}
+
+/** Test seam for the complete in-tree Git/worktree ownership closure. */
+export async function validateM7P4CheckoutTreeForTest(
+  checkout, expectedUid = process.getuid(), limits = undefined) {
+  const closure = await pinTrustedCheckoutTree(resolve(checkout), expectedUid, limits);
+  try { return closure.identities; }
+  finally { await Promise.allSettled(
+    closure.directoryHandles.map(handle => handle.close())); }
 }
 
 function tarFiles(tarBytes) {
@@ -569,16 +840,33 @@ export async function validateM7P4InstalledLauncherReceiptForTest(value) {
   return validateInstalledLauncherReceipt(frozenCanonicalCopy(value));
 }
 
-async function selectSignedSnapshot(gitRecord, gpgvRecord, keyringRecord, checkout) {
+async function selectSignedSnapshot(gitRecord, gpgvRecord, keyringRecord, checkout, domain) {
   const git = (args, maxStdoutBytes = null) => runDescriptor(gitRecord.fd,
-    ["--no-replace-objects", "-c", "core.hooksPath=/dev/null", ...args], checkout,
+    ["--no-replace-objects", ...M7_P4_HERMETIC_GIT_CONFIG, ...args], checkout,
     {}, maxStdoutBytes);
+  if (domain === "production") {
+    validateProductionRepositoryConfig(await git(
+      ["config", "--local", "--null", "--list", "--no-includes"], 64 * 1024));
+  }
   const head = exactOneLine(await git(["rev-parse", "--verify", "HEAD^{commit}"]),
     "root-selected signed HEAD");
   const tree = exactOneLine(await git(["rev-parse", `${head}^{tree}`]),
     "root-selected source tree");
   if (!/^[0-9a-f]{40}$/.test(head) || !/^[0-9a-f]{40}$/.test(tree)) {
     fail("root-selected Git object identity is invalid");
+  }
+  const [gitDirectory, commonDirectory, configuredWorktree, worktreeConfig] =
+    await Promise.all([
+      git(["rev-parse", "--git-dir"]), git(["rev-parse", "--git-common-dir"]),
+      git(["config", "--local", "--default=__ABSENT__", "--get", "core.worktree"]),
+      git(["config", "--local", "--default=__ABSENT__", "--get",
+        "extensions.worktreeConfig"]),
+    ]);
+  if (exactOneLine(gitDirectory, "Git directory") !== ".git" ||
+      exactOneLine(commonDirectory, "Git common directory") !== ".git" ||
+      exactOneLine(configuredWorktree, "configured worktree") !== "__ABSENT__" ||
+      exactOneLine(worktreeConfig, "worktree-config extension") !== "__ABSENT__") {
+    fail("checkout uses an external Git directory, common directory, or worktree");
   }
   if (String(await git(["status", "--porcelain=v1", "--untracked-files=all"])).trim() !== "") {
     fail("root-owned checkout is not clean");
@@ -606,8 +894,8 @@ async function selectSignedSnapshot(gitRecord, gpgvRecord, keyringRecord, checko
     let receipt;
     try { receipt = JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(receiptFile.bytes)); }
     catch { fail("release launcher receipt is not UTF-8 JSON"); }
-    const sourceCommit = receipt.source_commit;
-    if (!/^[0-9a-f]{40}$/.test(sourceCommit ?? "")) fail("receipt lacks commit-A identity");
+    const sourceCommit = requireImmediateLauncherParent(
+      commitBytes, head, receipt.source_commit);
     const sourceCommitBytes = await git(["cat-file", "commit", sourceCommit]);
     const sourceSigned = parseSignedCommit(sourceCommitBytes, sourceCommit);
     const sourceSignature = await verifySignature(gpgvRecord, keyringRecord, sourceSigned);
@@ -664,7 +952,8 @@ async function constructAuthority({ expectedClosure, git, guix, gpgv, keyring, c
         Array.isArray(expected.bindings))) {
       fail("privileged launcher did not supply the independently identified P4 closure");
     }
-    const snapshot = await selectSignedSnapshot(gitRecord, gpgvRecord, keyringRecord, checkout);
+    const snapshot = await selectSignedSnapshot(
+      gitRecord, gpgvRecord, keyringRecord, checkout, domain);
     programCapture = domain === "production" ?
       await captureSignedProgram(snapshot.launcherSource ?? snapshot) :
       (process.env.M7_TEST_FAIL_SETUP === "pin-after-connect" ?
@@ -786,7 +1075,7 @@ export async function main() {
   }
   const socket = new Socket({ fd: 3, readable: true, writable: true });
   socket.setEncoding("utf8");
-  let acceptedHandles = []; let root = null;
+  let acceptedHandles = []; let root = null; let checkoutWalk = null;
   try {
   const domain = process.argv[2] === "--serve-inherited" ? "production" : "test";
   let launcherEntry = null;
@@ -799,6 +1088,14 @@ export async function main() {
   }
   if (domain === "production" && (process.getuid?.() !== 0 || process.geteuid?.() !== 0)) {
     fail("production authority requires the privileged launcher identity");
+  }
+  if (domain === "production") {
+    await validateInitialUserNamespace({ selfNamespace: "/proc/self/ns/user",
+      initNamespace: "/proc/1/ns/user", uidMap: "/proc/self/uid_map",
+      gidMap: "/proc/self/gid_map" });
+    checkoutWalk = await openTrustedCheckoutWalk(resolve(process.cwd()), "/", 0);
+    const checkoutTree = await pinTrustedCheckoutTree(checkoutWalk.checkout, 0);
+    checkoutWalk.handles.push(...checkoutTree.directoryHandles);
   }
   acceptedHandles = await Promise.all(
     [4, 5, 6, 7, 8, 9].map(fd => open(`/proc/self/fd/${fd}`, "r")));
@@ -827,7 +1124,8 @@ export async function main() {
     fail("synthetic setup failure after fd9 validation");
   }
   root = await constructAuthority({ expectedClosure, git, guix, gpgv, keyring,
-    checkout: process.cwd(), fixedModule, fixedModuleIdentity: moduleRecord.identity }, domain);
+    checkout: checkoutWalk?.checkout ?? process.cwd(), fixedModule,
+    fixedModuleIdentity: moduleRecord.identity }, domain);
   if (inspectM7P4AuthorityRootForTest(root).domain !== domain) {
     fail("IPC authority domain mismatch");
   }
@@ -929,6 +1227,9 @@ export async function main() {
       if (record !== undefined && !record.closed) await closeM7P4AuthorityRootForTest(root);
     }
     await Promise.allSettled(acceptedHandles.map(handle => handle.close()));
+    if (checkoutWalk !== null) {
+      await Promise.allSettled(checkoutWalk.handles.map(handle => handle.close()));
+    }
   }
 }
 

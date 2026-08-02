@@ -43,7 +43,11 @@ import { captureM7P4SignedArchiveForTest, closeM7P4AuthorityRootForTest,
   M7_P4_MAX_SOURCE_BYTES, isM7P4UstarHeaderPathRepresentableForTest,
   inspectM7P4AuthorityRootForTest,
   openM7P4AuthorityRootForTest, revalidateM7P4GuixEndpointForTest,
-  validateM7P4InstalledLauncherReceiptForTest } from
+  validateM7P4CheckoutAncestorsForTest, validateM7P4CheckoutTreeForTest,
+  validateM7P4ImmediateLauncherParentForTest,
+  validateM7P4InitialUserNamespaceForTest,
+  validateM7P4InstalledLauncherReceiptForTest,
+  validateM7P4ProductionRepositoryConfigForTest } from
   "../scripts/cadr-m7-p4-authority-root.mjs";
 import { canonicalJson } from "../scripts/run-cadr-m6-devid-o2-canary.mjs";
 
@@ -121,6 +125,168 @@ assert.throws(() => execFileSync(process.execPath,
   [resolve(ROOT, "scripts/cadr-m7-p4-authority-root.mjs"), "--serve-inherited-test"],
   { cwd: ROOT, stdio: "pipe" }), /Command failed/,
 "the synthetic topology also rejects omitted inherited descriptors");
+
+{
+  const fixture = await mkdtemp(resolve(tmpdir(), "cadr-m7-root-preflight-test-"));
+  try {
+    const actualNamespace = await validateM7P4InitialUserNamespaceForTest({
+      selfNamespace: "/proc/self/ns/user", initNamespace: "/proc/self/ns/user",
+      uidMap: "/proc/self/uid_map", gidMap: "/proc/self/gid_map" });
+    assert.ok(actualNamespace.namespace.dev > 0 && actualNamespace.namespace.ino > 0,
+      "the host exposes user namespace descriptors with stable fstat identity semantics");
+    assert.deepEqual([actualNamespace.uid_map.inside, actualNamespace.uid_map.outside,
+      actualNamespace.uid_map.length], ["0", "0", "4294967295"],
+    "this host's actual uid_map is the complete initial range");
+    const namespace = resolve(fixture, "initial-user-namespace");
+    const otherNamespace = resolve(fixture, "other-user-namespace");
+    const uidMap = resolve(fixture, "uid_map"); const gidMap = resolve(fixture, "gid_map");
+    await writeFile(namespace, "namespace\n"); await writeFile(otherNamespace, "other\n");
+    await writeFile(uidMap, "         0          0 4294967295\n");
+    await writeFile(gidMap, "0 0 4294967295\n");
+    const initial = await validateM7P4InitialUserNamespaceForTest({
+      selfNamespace: namespace, initNamespace: namespace, uidMap, gidMap });
+    assert.equal(initial.namespace.ino, (await stat(namespace)).ino,
+      "the initial-user-namespace seam retains the descriptor identity");
+    await assert.rejects(validateM7P4InitialUserNamespaceForTest({
+      selfNamespace: namespace, initNamespace: otherNamespace, uidMap, gidMap }),
+    /PID 1's initial user namespace/,
+    "uid 0 in a distinct user namespace is rejected");
+    await writeFile(uidMap, "0 1000 1\n");
+    await assert.rejects(validateM7P4InitialUserNamespaceForTest({
+      selfNamespace: namespace, initNamespace: namespace, uidMap, gidMap }),
+    /complete initial-user-namespace identity map/,
+    "a remapped uid 0 range is rejected");
+
+    const trust = resolve(fixture, "trusted-root");
+    const parent = resolve(trust, "parent"); const checkout = resolve(parent, "checkout");
+    await mkdir(checkout, { recursive: true });
+    await chmod(trust, 0o700); await chmod(parent, 0o700); await chmod(checkout, 0o700);
+    const ancestors = await validateM7P4CheckoutAncestorsForTest(
+      checkout, trust, process.getuid());
+    assert.equal(ancestors.length, 3,
+      "descriptor walk pins its trust root, each ancestor, and the checkout");
+    await chmod(parent, 0o722);
+    await assert.rejects(validateM7P4CheckoutAncestorsForTest(
+      checkout, trust, process.getuid()), /non-writable directory/,
+    "a group/other-writable checkout ancestor is rejected");
+    await chmod(parent, 0o700);
+    await assert.rejects(validateM7P4CheckoutAncestorsForTest(
+      checkout, trust, process.getuid() + 1), /owner-pinned/,
+    "an ancestor owned by a different uid is rejected");
+    const linked = resolve(trust, "linked-checkout"); await symlink(checkout, linked);
+    await assert.rejects(validateM7P4CheckoutAncestorsForTest(
+      linked, trust, process.getuid()), /ELOOP|symbolic link|not a directory/i,
+    "a symlink checkout component is rejected by the descriptor walk");
+
+    const tree = resolve(fixture, "tree-checkout");
+    await mkdir(resolve(tree, ".git/objects/info"), { recursive: true });
+    await writeFile(resolve(tree, ".git/HEAD"), "ref: refs/heads/main\n", { mode: 0o600 });
+    await writeFile(resolve(tree, "tracked.txt"), "tracked\n", { mode: 0o600 });
+    for (const directory of [tree, resolve(tree, ".git"), resolve(tree, ".git/objects"),
+      resolve(tree, ".git/objects/info")]) await chmod(directory, 0o700);
+    assert.ok((await validateM7P4CheckoutTreeForTest(tree, process.getuid()))
+      .some(identity => identity.path === ".git/objects"),
+    "complete checkout validation retains the in-tree object-store descriptor");
+    await chmod(resolve(tree, ".git/HEAD"), 0o622);
+    await assert.rejects(validateM7P4CheckoutTreeForTest(tree, process.getuid()),
+      /non-writable regular file/,
+    "group/other-writable Git metadata is rejected");
+    await chmod(resolve(tree, ".git/HEAD"), 0o600);
+    await writeFile(resolve(tree, ".git/objects/info/alternates"), "/untrusted/objects\n",
+      { mode: 0o600 });
+    await assert.rejects(validateM7P4CheckoutTreeForTest(tree, process.getuid()),
+      /forbidden external or nested Git dependency/,
+    "Git alternates are rejected instead of recursively trusting an external object store");
+    await unlink(resolve(tree, ".git/objects/info/alternates"));
+    await symlink("tracked.txt", resolve(tree, "tracked-link"));
+    await assert.rejects(validateM7P4CheckoutTreeForTest(tree, process.getuid()),
+      /symlink or special file/,
+    "symlinks are rejected throughout the retained checkout dependency closure");
+    await unlink(resolve(tree, "tracked-link"));
+    const fifo = resolve(tree, "blocking-fifo");
+    execFileSync("/usr/bin/mkfifo", [fifo]);
+    const fifoStarted = Date.now();
+    await assert.rejects(validateM7P4CheckoutTreeForTest(tree, process.getuid()),
+      /non-writable regular file|symlink or special file/,
+    "a FIFO is rejected without blocking the descriptor-safe checkout traversal");
+    assert.ok(Date.now() - fifoStarted < 2000,
+      "O_NONBLOCK prevents an unknown FIFO entry from hanging authority selection");
+    await unlink(fifo);
+    await assert.rejects(validateM7P4CheckoutTreeForTest(
+      tree, process.getuid(), { maxEntries: 2, maxDepth: 128 }),
+    /exceeds its bounded policy/,
+    "the entry immediately beyond the selected traversal cap is refused before opening");
+
+    /* This reader emits one name per read.  The fourth is a FIFO: the tree
+     * pin must refuse on the exact global cap after four reads, without asking
+     * for another name or opening that excess special entry.  A materializing
+     * readdir(...).sort() implementation cannot satisfy this reader contract. */
+    const boundedTree = resolve(fixture, "bounded-enumeration");
+    await mkdir(boundedTree);
+    for (const name of ["safe-one", "safe-two", "safe-three"]) {
+      await writeFile(resolve(boundedTree, name), `${name}\n`, { mode: 0o600 });
+    }
+    const excessFifo = resolve(boundedTree, "must-not-open-fifo");
+    execFileSync("/usr/bin/mkfifo", [excessFifo]);
+    const boundedNames = ["safe-one", "safe-two", "safe-three", "must-not-open-fifo"];
+    let directoryFactoryCalls = 0; let directoryReadCalls = 0; let directoryCloseCalls = 0;
+    await assert.rejects(validateM7P4CheckoutTreeForTest(
+      boundedTree, process.getuid(), {
+        maxEntries: 3, maxDepth: 128,
+        openDirectoryForTest: async path => {
+          assert.match(path, /^\/proc\/self\/fd\/[0-9]+$/);
+          directoryFactoryCalls += 1;
+          return {
+            read: async () => {
+              directoryReadCalls += 1;
+              return directoryReadCalls <= boundedNames.length ?
+                { name: boundedNames[directoryReadCalls - 1] } : null;
+            },
+            close: async () => { directoryCloseCalls += 1; },
+          };
+        },
+      }), /exceeds its bounded policy/,
+    "streaming enumeration refuses the first excess name before opening its FIFO");
+    assert.equal(directoryFactoryCalls, 1);
+    assert.equal(directoryReadCalls, 4,
+      "the bounded reader retains only three admitted names and one refusal probe");
+    assert.equal(directoryCloseCalls, 1,
+      "the one-at-a-time directory reader closes on partial traversal failure");
+  } finally { await rm(fixture, { recursive: true, force: true }); }
+}
+
+{
+  const minimal = Buffer.from("core.repositoryformatversion\n0\0core.filemode\ntrue\0" +
+    "core.bare\nfalse\0core.logallrefupdates\ntrue\0");
+  assert.deepEqual(validateM7P4ProductionRepositoryConfigForTest(minimal),
+    ["core.bare", "core.filemode", "core.logallrefupdates", "core.repositoryformatversion"],
+  "production accepts only its exact minimal local Git configuration");
+  await assert.rejects(async () => validateM7P4ProductionRepositoryConfigForTest(
+    Buffer.concat([minimal, Buffer.from("core.fsmonitor\n/usr/bin/id\0")])),
+  /not hermetic \(core.fsmonitor\)/,
+  "production rejects a repository-local fsmonitor command");
+}
+
+{
+  const sourceA = "a".repeat(40); const other = "b".repeat(40);
+  const rawCommit = parents => Buffer.from(`tree ${"c".repeat(40)}\n${
+    parents.map(parent => `parent ${parent}\n`).join("")}author Test <test@example.invalid> 0 +0000\n` +
+    `committer Test <test@example.invalid> 0 +0000\n\nrelease\n`);
+  const oid = bytes => createHash("sha1").update(Buffer.from(`commit ${bytes.byteLength}\0`))
+    .update(bytes).digest("hex");
+  const immediate = rawCommit([sourceA]);
+  assert.equal(validateM7P4ImmediateLauncherParentForTest(
+    immediate, oid(immediate), sourceA), sourceA,
+  "release B accepts receipt source A only as its sole immediate parent");
+  const descendant = rawCommit([other]);
+  assert.throws(() => validateM7P4ImmediateLauncherParentForTest(
+    descendant, oid(descendant), sourceA), /exact single immediate parent/,
+  "a non-immediate descendant cannot reuse an older receipt source");
+  const merge = rawCommit([sourceA, other]);
+  assert.throws(() => validateM7P4ImmediateLauncherParentForTest(
+    merge, oid(merge), sourceA), /exact single immediate parent/,
+  "a merge release cannot satisfy the exact A-to-B policy");
+}
 
 function nativeRecord() {
   const activeWords = 23_112;
@@ -691,6 +857,13 @@ execFileSync("git", ["clone", "--no-local", "--no-checkout", ROOT, authorityChec
 });
 execFileSync("git", ["checkout", "--detach", "HEAD"], { cwd: authorityCheckout,
   stdio: "ignore" });
+const fsmonitorMarker = resolve(authorityDirectory, "fsmonitor-ran");
+const fsmonitorHelper = resolve(authorityDirectory, "fsmonitor-helper.sh");
+await writeFile(fsmonitorHelper, `#!/bin/sh\n/usr/bin/touch '${fsmonitorMarker}'\nexit 1\n`,
+  { mode: 0o700 });
+execFileSync("git", ["config", "core.fsmonitor", fsmonitorHelper], {
+  cwd: authorityCheckout, stdio: "ignore",
+});
 const expectedClosurePath = resolve(authorityDirectory, "expected-closure.json");
 const keyringPath = resolve(authorityDirectory, "trusted-keyring.gpg");
 await writeFile(expectedClosurePath, canonicalJson({ token: "closed-p4" }));
@@ -705,6 +878,8 @@ const trustedAuthorityRoot = await openM7P4AuthorityRootForTest({
   expectedClosure: expectedClosureHandle, git: gitHandle, guix: guixHandle,
   gpgv: gpgvHandle, keyring: keyringHandle, checkout: authorityCheckout,
 });
+await assert.rejects(readFile(fsmonitorMarker), /ENOENT/,
+  "authority selection disables a repository-configured fsmonitor executable");
 const fixedModulePath = resolve(authorityDirectory, "fixed-module.json");
 await writeFile(fixedModulePath, canonicalJson({
   schema: "cadr-m7-fixed-module-identity-test-v1", module_sha256: wasmIdentity.sha256,
@@ -1284,6 +1459,28 @@ await closeM7P4AuthorityRootForTest(trustedAuthorityRoot);
 assert.throws(() => selectM7P4FrozenExpectedClosure(trustedAuthorityRoot),
   /live privileged capability/,
   "a closed root capability cannot be replayed after its descriptors are released");
+execFileSync("git", ["config", "--unset", "core.fsmonitor"], {
+  cwd: authorityCheckout, stdio: "ignore",
+});
+execFileSync("git", ["restore", "--worktree", "."], { cwd: authorityCheckout,
+  stdio: "ignore" });
+execFileSync("git", ["config", "user.name", "M7 test"], { cwd: authorityCheckout });
+execFileSync("git", ["config", "user.email", "m7-test@example.invalid"],
+  { cwd: authorityCheckout });
+execFileSync("git", ["config", "user.signingkey", "3EA36B492D7E76450D2C59267B55A97A62F6D6C0"],
+  { cwd: authorityCheckout });
+await writeFile(resolve(authorityCheckout, "signed-non-immediate-descendant.txt"),
+  "must not reuse commit-A receipt\n");
+execFileSync("git", ["add", "signed-non-immediate-descendant.txt"],
+  { cwd: authorityCheckout });
+execFileSync("git", ["commit", "-q", "-S", "-m", "signed non-immediate descendant"],
+  { cwd: authorityCheckout });
+await assert.rejects(openM7P4AuthorityRootForTest({
+  expectedClosure: await open(expectedClosurePath), git: await open("/usr/bin/git"),
+  guix: await open("/usr/local/bin/guix"), gpgv: await open("/usr/bin/gpgv"),
+  keyring: await open(keyringPath), checkout: authorityCheckout,
+}), /exact single immediate parent/,
+"a validly signed non-immediate descendant cannot reuse release B's commit-A receipt");
 await rm(authorityDirectory, { recursive: true, force: true });
 
 {
@@ -1298,6 +1495,10 @@ await rm(authorityDirectory, { recursive: true, force: true });
       await readFile(resolve(ROOT, "scripts/build-cadr-m7-p4-launcher.scm")));
     await writeFile(resolve(scripts, "cadr-m7-p4-authority-root.mjs"),
       await readFile(resolve(ROOT, "scripts/cadr-m7-p4-authority-root.mjs")));
+    await writeFile(resolve(scripts, "cadr-m7-p4-host-supervisor.mjs"),
+      await readFile(resolve(ROOT, "scripts/cadr-m7-p4-host-supervisor.mjs")));
+    await writeFile(resolve(scripts, "cadr-m7-p4-host-dropper.c"),
+      await readFile(resolve(ROOT, "scripts/cadr-m7-p4-host-dropper.c")));
     const executableFixture = resolve(scripts, "signed-executable-mode-fixture.mjs");
     await writeFile(executableFixture, "#!/usr/bin/env node\nprocess.exit(0);\n");
     await chmod(executableFixture, 0o755);
