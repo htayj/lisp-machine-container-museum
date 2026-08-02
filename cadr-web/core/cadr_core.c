@@ -673,6 +673,18 @@ static cadr_status cadr_guarded_bus_read(cadr_machine_state *state,
     if (paddr >= UINT32_C(017377774) && paddr <= UINT32_C(017377777)) {
         return cadr_bus_read32(state, paddr, value);
     }
+#if defined(CADR_M7_CORE)
+    /*
+     * CDRM7U1's boot PROM reads this exact physical word to decide whether
+     * the keyboard has selected a cold or warm boot.  The normal bus route
+     * maps it to IOB CSR (Unibus 0764112), which is already modeled by
+     * cadr_iob_read.  Do not widen this to an IOB range: M3 retains its
+     * source-bounded prefix and all other accesses remain fail closed.
+     */
+    if (paddr == UINT32_C(017772045)) {
+        return cadr_bus_read32(state, paddr, value);
+    }
+#endif
     if (paddr == UINT32_C(017377400)) {
         if (value != NULL) *value = 0U;
         cadr_bus_set_xbus_nxm(state);

@@ -1,7 +1,10 @@
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
+import { createHash } from "node:crypto";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { readFile } from "node:fs/promises";
-import { resolve } from "node:path";
+import { tmpdir } from "node:os";
+import { join, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { Worker } from "node:worker_threads";
 import {
@@ -20,6 +23,85 @@ import { systemdCommand, validateResultEnvelope } from
 
 const root = resolve(fileURLToPath(new URL("..", import.meta.url)));
 const launcher = resolve(root, "scripts/run-cadr-m7-devid-o2-canary.mjs");
+
+function gitBytes(cwd, args, input = undefined) {
+  return execFileSync("git", args, { cwd, encoding: null, input });
+}
+
+function gitText(cwd, args) {
+  return gitBytes(cwd, args).toString("utf8").trim();
+}
+
+function productionPayload(repo, base, candidate, paths) {
+  return gitBytes(repo, ["diff", "--no-ext-diff", "--no-renames", base,
+    candidate, "--", ...paths]);
+}
+
+function replayPayload(repo, base, payload) {
+  const replay = mkdtempSync(join(tmpdir(), "cadr-m7-payload-replay-"));
+  gitBytes(undefined, ["clone", "--quiet", "--no-local", repo, replay]);
+  gitBytes(replay, ["checkout", "--quiet", "--detach", base]);
+  gitBytes(replay, ["apply", "--check", "--whitespace=error", "-"], payload);
+  gitBytes(replay, ["apply", "--whitespace=error", "-"], payload);
+  gitBytes(replay, ["add", "--all"]);
+  gitBytes(replay, ["-c", "user.name=payload regression",
+    "-c", "user.email=payload-regression@example.invalid", "commit", "-m", "replay"]);
+  return replay;
+}
+
+/* The receipt's raw textual payload must have exactly the bytes production
+ * recomputes from its base/candidate tree and selected path set.  In
+ * particular, appending a separately generated new-file patch after tracked
+ * changes is valid Git input but is not the canonical tree-order diff. */
+{
+  const repo = mkdtempSync(join(tmpdir(), "cadr-m7-payload-order-"));
+  let canonicalReplay = null;
+  let legacyReplay = null;
+  try {
+    gitBytes(repo, ["init", "--quiet"]);
+    gitBytes(repo, ["config", "user.name", "payload regression"]);
+    gitBytes(repo, ["config", "user.email", "payload-regression@example.invalid"]);
+    writeFileSync(join(repo, "alpha.txt"), "base alpha\n");
+    writeFileSync(join(repo, "omega.txt"), "base omega\n");
+    gitBytes(repo, ["add", "--all"]);
+    gitBytes(repo, ["commit", "--quiet", "-m", "base"]);
+    const base = gitText(repo, ["rev-parse", "HEAD"]);
+
+    writeFileSync(join(repo, "alpha.txt"), "candidate alpha\n");
+    writeFileSync(join(repo, "middle.txt"), "candidate middle\n");
+    writeFileSync(join(repo, "omega.txt"), "candidate omega\n");
+    gitBytes(repo, ["add", "--all"]);
+    gitBytes(repo, ["commit", "--quiet", "-m", "candidate"]);
+    const candidate = gitText(repo, ["rev-parse", "HEAD"]);
+    const paths = ["omega.txt", "middle.txt", "alpha.txt"];
+    const rawPayload = productionPayload(repo, base, candidate, paths);
+
+    canonicalReplay = replayPayload(repo, base, rawPayload);
+    const canonicalCandidate = gitText(canonicalReplay, ["rev-parse", "HEAD"]);
+    const reconstructed = productionPayload(canonicalReplay, base,
+      canonicalCandidate, paths);
+    assert.deepEqual(reconstructed, rawPayload,
+      "raw payload bytes must equal the production reconstruction");
+    assert.equal(createHash("sha256").update(reconstructed).digest("hex"),
+      createHash("sha256").update(rawPayload).digest("hex"));
+
+    const legacyPayload = Buffer.concat(paths.map(path => productionPayload(repo,
+      base, candidate, [path])));
+    legacyReplay = replayPayload(repo, base, legacyPayload);
+    const legacyCandidate = gitText(legacyReplay, ["rev-parse", "HEAD"]);
+    const legacyReconstructed = productionPayload(legacyReplay, base,
+      legacyCandidate, paths);
+    assert.notDeepEqual(legacyReconstructed, legacyPayload,
+      "a manually appended patch ordering must not masquerade as production output");
+    assert.notEqual(createHash("sha256").update(legacyReconstructed).digest("hex"),
+      createHash("sha256").update(legacyPayload).digest("hex"));
+  } finally {
+    if (canonicalReplay !== null) rmSync(canonicalReplay, { recursive: true, force: true });
+    if (legacyReplay !== null) rmSync(legacyReplay, { recursive: true, force: true });
+    rmSync(repo, { recursive: true, force: true });
+  }
+}
+
 assert.match(execFileSync(process.execPath, [launcher, "--help"], { encoding: "utf8" }),
   /--m7-patch PAYLOAD\.patch/);
 assert.throws(() => parseM7Invocation([]), /No M7-DEVID canary is implicit/);
@@ -45,6 +127,12 @@ assert.doesNotThrow(() => assertSelectiveM7Patch([
   "scripts/run-cadr-m7-frame-conformance.mjs",
   "scripts/build-cadr-m7-devid-o2-canary-manifest.mjs",
 ]));
+assert.doesNotThrow(() => assertSelectiveM7Patch([
+  "docs/mit-cadr/cadr-browser-webassembly-implementation-roadmap.md",
+]), "the bounded M7 repair may record its evidence in the roadmap");
+assert.doesNotThrow(() => assertSelectiveM7Patch([
+  "scripts/cadr-m7-p4-authority-root.mjs",
+]), "the fixed P4 authority may be repinned to the rebuilt M7-DEVID O2 module");
 const p4Source = await readFile(resolve(root,
   "scripts/run-cadr-m7-frame-conformance.mjs"), "utf8");
 assert.match(p4Source, /cadr-web-m7-devid-\$\{options\.variant\}\.wasm/,

@@ -141,7 +141,7 @@ export function parseM7Invocation(argv) {
 
 export function assertSelectiveM7Patch(paths) {
   if (!Array.isArray(paths) || paths.length === 0) throw new Error("selective M7 patch is empty");
-  const allowed = /^(?:cadr-web\/(?:Makefile|core\/(?:cadr_(?:core|state(?:_v[2345])?|display|m6_(?:disk_evidence|fast_run))\.[ch]|usim-port\/(?:bus-adaptor|disk-controller)\.c)|wasm\/(?:build-wasm\.sh|cadr-worker\.js|cadr-m6-headless-boot\.mjs|cadr-m4-block-service\.mjs|cadr_wasm_(?:adapter|runtime)\.[ch])|tests\/test_cadr_m[67]_[a-z0-9_]+\.c)|scripts\/(?:run-cadr-m6-devid-o2-canary(?:-stage|-systemd)?|run-cadr-m7-devid-o2-canary(?:-stage)?|run-cadr-m7-frame-conformance|build-cadr-m7-devid-o2-canary-manifest)\.mjs|tests\/test_cadr_m[67]_[a-z0-9_]+\.mjs)$/;
+  const allowed = /^(?:cadr-web\/(?:Makefile|core\/(?:cadr_(?:core|state(?:_v[2345])?|display|m6_(?:disk_evidence|fast_run))\.[ch]|usim-port\/(?:bus-adaptor|disk-controller)\.c)|wasm\/(?:build-wasm\.sh|cadr-worker\.js|cadr-m6-headless-boot\.mjs|cadr-m4-block-service\.mjs|cadr_wasm_(?:adapter|runtime)\.[ch])|tests\/test_cadr_m[67]_[a-z0-9_]+\.c)|docs\/mit-cadr\/cadr-browser-webassembly-implementation-roadmap\.md|scripts\/(?:cadr-m7-p4-authority-root|run-cadr-m6-devid-o2-canary(?:-stage|-systemd)?|run-cadr-m7-devid-o2-canary(?:-stage)?|run-cadr-m7-frame-conformance|build-cadr-m7-devid-o2-canary-manifest)\.mjs|tests\/test_cadr_m[67]_[a-z0-9_]+\.mjs)$/;
   const outside = paths.filter(path => !allowed.test(path));
   if (outside.length !== 0) throw new Error(`selective M7 patch changes an unapproved path: ${outside.join(", ")}`);
 }

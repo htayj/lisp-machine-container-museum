@@ -186,6 +186,9 @@ build/test_cadr_m7_profile_isolation: tests/test_cadr_m7_profile_isolation.c $(L
 build/test_cadr_m7_devid_failure: tests/test_cadr_m7_devid_failure.c $(CORE_SOURCES) core/cadr_m6_disk_evidence.c $(CORE_HEADERS) | build
 	$(CC) $(CPPFLAGS) $(CFLAGS) -DCADR_M3_TESTING -DCADR_M6_DEVID_WASM -DCADR_M7_DEVID_WASM -o $@ $< $(CORE_SOURCES) core/cadr_m6_disk_evidence.c
 
+build/test_cadr_m7_iob_csr_route: tests/test_cadr_m7_iob_csr_route.c $(M7_CORE_SOURCES) $(CORE_HEADERS) host/cadr_m3_native_observer.c host/cadr_m3_native_observer_sink.h | build
+	$(CC) $(CPPFLAGS) $(CFLAGS) -DCADR_M7_CORE -DCADR_M3_TESTING -DCADR_M3_NATIVE_OBSERVER -o $@ $< host/cadr_m3_native_observer.c $(M7_CORE_SOURCES)
+
 build/test_cadr_m9_input_bridge: tests/test_cadr_m9_input_bridge.c $(M9_LIBRARY) $(CORE_HEADERS) | build
 	$(CC) $(CPPFLAGS) $(CFLAGS) -DCADR_M7_CORE -DCADR_M9_CORE -o $@ $< $(M9_LIBRARY)
 
@@ -381,10 +384,11 @@ m6-devid-wasm: m6-release-validation build/test_cadr_m2_public build/test_cadr_m
 m6-diagnostic-receipt-unit:
 	guix shell node -- node ../tests/test_cadr_m6_diagnostic_worker.mjs
 
-m7-unit: build/test_cadr_m7_display build/test_cadr_m7_profile_isolation build/test_cadr_m7_devid_failure build/cadr-m7-frame-fixture $(M5_WASM_O0) $(M6_DEVID_WASM_O0) $(M7_WASM_O0) $(M7_WASM_O2) $(M7_DEVID_WASM_O0) $(M7_DEVID_WASM_O2)
+m7-unit: build/test_cadr_m7_display build/test_cadr_m7_profile_isolation build/test_cadr_m7_devid_failure build/test_cadr_m7_iob_csr_route build/cadr-m7-frame-fixture $(M5_WASM_O0) $(M6_DEVID_WASM_O0) $(M7_WASM_O0) $(M7_WASM_O2) $(M7_DEVID_WASM_O0) $(M7_DEVID_WASM_O2)
 	./build/test_cadr_m7_display
 	./build/test_cadr_m7_profile_isolation
 	./build/test_cadr_m7_devid_failure
+	./build/test_cadr_m7_iob_csr_route
 	@if $(NM) -g --defined-only $(LIBRARY) | grep -Eq 'cadr_(machine_)?display'; then \
 		echo "M7 display symbols leaked into the pre-M7 library" >&2; exit 1; \
 	fi

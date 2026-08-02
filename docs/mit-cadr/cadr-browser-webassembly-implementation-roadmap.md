@@ -3,7 +3,7 @@ type: Implementation Roadmap
 title: MIT CADR System 303 browser and WebAssembly implementation roadmap
 description: A milestone-complete plan for porting the pinned System 303 CADR emulator to a deterministic, locally persistent, browser-hosted WebAssembly machine.
 tags: [mit-cadr, lm-3, system-303, webassembly, browser, emulator, roadmap]
-timestamp: 2026-08-01T20:55:00-04:00
+timestamp: 2026-08-02T01:30:03-04:00
 ---
 
 # MIT CADR System 303 browser and WebAssembly implementation roadmap
@@ -809,6 +809,23 @@ M7-plus-continuation intervention check, but it is not an ordinary final receipt
 and does not close the long Form-C native/portable identity or
 browser-presentation prongs of `C-M7`.
 
+Later source-grounded failure observation, 2026-08-02: the retained P4 session
+`m7-p4-6d768e3efc634183aba025c9a13f109b`, bound to M6 report
+`137b28193d13b6b6f7a1fd473da4e91baf9ba085597a2899f768657adfc374ac`,
+reached boundary `1352885` and microinstruction `1262797` before its
+CDRM7U1 site-3 guarded-bus read rejected physical word `017772045` with a zero
+result. The pinned [System 46 PROM source](https://github.com/mietek/mit-cadr-system-software/blob/8e978d7d1704096a63edd4386a3b8326a2e584af/src/lcadr/ucadr.683#L2200-L2211)
+reads that exact physical word, branches cold when bit 5 is clear, and then reads
+the keyboard data word to distinguish RETURN from RUBOUT. The CADR bus formula
+maps the physical word to IOB CSR `0764112`; the selected maintained
+[`usim` `iob.c`](https://tumbleweed.nu/r/usim/file?ci=330d8248ec2e12af071e287920e681600f75df9ffd854aada5f8a64c9adad64d&name=iob.c&ln=222-228)
+returns the CSR latch at that address, and the pinned [System 46 IOB
+description](https://github.com/mietek/mit-cadr-system-software/blob/8e978d7d1704096a63edd4386a3b8326a2e584af/src/lmdoc/iob.9#L35-L50)
+defines CSR bit 5 as Keyboard Ready. The narrowly selected compatibility repair
+therefore admits only that M7 physical **read** through the pre-existing bus/IOB
+route. It does not admit an IOB range or a write, keeps the M3 prefix fail-closed,
+and does not close either M7 runtime prong.
+
 ### M8 — Implement complete keyboard input
 
 Deliverables:
@@ -1209,4 +1226,4 @@ M15 and M16 never block the offline museum release.
 - [TV window-system specification](tv-window-system-reimplementation-specification.md)
 - Pinned `usim` modules under repository `l/usim/`
 
-Last verified: 2026-07-30.
+Last verified: 2026-08-02.

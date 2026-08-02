@@ -74,6 +74,15 @@ int main(void)
         return 1;
     }
     value = UINT32_MAX;
+    /* M7's PROM-only IOB CSR probe is not admitted by the M3 profile. */
+    if (cadr_m3_test_guarded_bus_read(state, UINT32_C(017772045), &value) !=
+            CADR_STATUS_UNIMPLEMENTED_DEVICE ||
+        value != 0U || state->events.unexpected_bus_operation != 1U) {
+        free(state);
+        return 1;
+    }
+    state->events.unexpected_bus_operation = 0U;
+    value = UINT32_MAX;
     if (cadr_m3_test_guarded_bus_read(state, UINT32_C(017377404), &value) !=
             CADR_STATUS_UNIMPLEMENTED_DEVICE ||
         value != 0U || state->events.unexpected_bus_operation != 1U) {
