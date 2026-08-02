@@ -17,6 +17,7 @@ import {
 } from "../cadr-web/browser/cadr-m13-shell.mjs";
 
 const session = "12".repeat(32);
+const SYNTHETIC_WASM_SHA256 = "6e340b9cffb37a989ca544e6bb780a2c78901d3fb33738768511a30617afa01d";
 assert.equal(CADR_M13_PROFILE, "CADR-WEB-303/ABI1.10/protocol-v8/M13-HARDENING-v2");
 const request = (id, op, fields = {}) => ({
   type: "cadr-request", version: CADR_M13_PROTOCOL_VERSION, sessionId: session, id, op, ...fields,
@@ -59,19 +60,55 @@ class MountStageFailureWorker extends FakeWorker {
   }
 }
 
+class MountStageTransportWorker extends FakeWorker {
+  constructor({ fault, failOperation, failOrdinal = 1 } = {}) {
+    super(); this.fault = fault; this.failOperation = failOperation;
+    this.failOrdinal = failOrdinal; this.operationOrdinals = new Map();
+  }
+  postMessage(value) {
+    this.requests.push(value);
+    const ordinal = (this.operationOrdinals.get(value.op) ?? 0) + 1;
+    this.operationOrdinals.set(value.op, ordinal);
+    if (value.op === this.failOperation && ordinal === this.failOrdinal) {
+      if (this.fault === "timeout") return;
+      queueMicrotask(() => {
+        if (this.fault === "malformed") {
+          this.emit("message", { data: {
+            type: "cadr-response", version: 7, id: value.id, op: value.op,
+            status: 0, ok: false,
+          } });
+        } else {
+          this.emit(this.fault, { error: new Error(`injected ${this.fault}`) });
+        }
+      });
+      return;
+    }
+    queueMicrotask(() => this.emit("message", { data: {
+      type: "cadr-response", version: 7, id: value.id, op: value.op,
+      status: 0, ok: true, lifecycle: "PAUSED",
+    } }));
+  }
+}
+
 /* The production binding hashes real 1 MiB ranges.  The fault matrix below
  * only needs to reach every shell emission ordinal, so this in-memory subclass
  * preserves its canonical range state machine while avoiding 258 copies times
  * 258 injected failures.  It is not used as base-identity evidence. */
 class MountFailureBinding extends CadrM13BaseMediaBinding {
-  #state = "IDLE"; #nextBlock = 0; #body = new Uint8Array(1); #readOrdinal = 0;
+  #state = "IDLE"; #nextBlock = 0; #body = new Uint8Array(1); #readOrdinal = 0; #boundary;
   #failReadOrdinal; #failFinish;
   constructor({ failReadOrdinal = null, failFinish = false } = {}) {
-    super({ storage: new CadrM13StorageBoundary({
+    const boundary = new CadrM13StorageBoundary({
+      async beginBaseImport() { return Object.freeze({ importId: 1, nextOffset: 0n }); },
+      async appendBaseImport() { throw new Error("fault binding does not append public bytes"); },
+      async finishBaseImport() { return selectedBaseImportResult(); },
       async readBaseRange() { throw new Error("fault binding never reads storage"); },
-    }) });
+      async reopenDisk() { return Object.freeze({}); },
+    });
+    super({ storage: boundary }); this.#boundary = boundary;
     this.#failReadOrdinal = failReadOrdinal; this.#failFinish = failFinish;
   }
+  get boundary() { return this.#boundary; }
   get state() { return this.#state; }
   beginMount() { assert.equal(this.#state, "IDLE"); this.#state = "MOUNTING"; this.#nextBlock = 0; }
   abortMount() { this.#state = "IDLE"; this.#nextBlock = 0; }
@@ -90,12 +127,62 @@ class MountFailureBinding extends CadrM13BaseMediaBinding {
   }
 }
 
-function makeMountFailureShell(worker, binding) {
-  return new CadrM13Shell({ worker, baseMediaBinding: binding,
-    selectedBootArtifacts: [
-      { kind: 1, bytes: new ArrayBuffer(854) }, { kind: 2, bytes: new ArrayBuffer(20480) },
-      { kind: 4, bytes: new ArrayBuffer(3130) }, { kind: 5, bytes: new ArrayBuffer(83270) },
-    ], sessionRandom: () => Uint8Array.from({ length: 32 }, () => 0x12) });
+function selectedBootArtifactsFixture() {
+  return [
+    { kind: 1, bytes: new ArrayBuffer(854) }, { kind: 2, bytes: new ArrayBuffer(20480) },
+    { kind: 4, bytes: new ArrayBuffer(3130) }, { kind: 5, bytes: new ArrayBuffer(83270) },
+  ];
+}
+
+function makeMountFailureShell(worker, binding, { timeoutMs = 10000, initialId = 1 } = {}) {
+  return new CadrM13Shell({ worker, storage: binding.boundary,
+    baseMediaBinding: binding, m10Controller: fakeM10Controller(),
+    m10BridgeFactory: () => Object.freeze({ async serviceOnce() { throw new Error("not reached"); } }),
+    selectedBootArtifacts: selectedBootArtifactsFixture(),
+    selectedWasmSha256: SYNTHETIC_WASM_SHA256,
+    wasmCompiler: async () => Object.freeze({}),
+    sessionRandom: () => Uint8Array.from({ length: 32 }, () => 0x12),
+    timeoutMs, initialId });
+}
+
+function selectedBaseImportResult() {
+  return Object.freeze({ role: "system-303-base", byteCount: 269562880n,
+    sha256: "bb16e46ad81decfe1efe691d36b6aa4ce3fd4ffb82474365de3520989d397cb5",
+    blockBytes: 1024, blockCount: 263245 });
+}
+
+function fakeM10Controller({ isOpen = false } = {}) {
+  let open = isOpen;
+  return Object.freeze({
+    get state() { return open ? "CLEAN" : "RECOVERY_REQUIRED"; },
+    status: () => Object.freeze({ state: open ? "CLEAN" : "RECOVERY_REQUIRED", open,
+      readOnly: !open }),
+    setOpen: value => { open = value === true; },
+    async commitWrites() { throw new Error("not reached"); },
+    async readBlock() { throw new Error("not reached"); },
+    async invalidateAfterAmbiguousGuest() { throw new Error("not reached"); },
+  });
+}
+
+async function requestHash(value) {
+  return [...new Uint8Array(await crypto.subtle.digest("SHA-256", value))].map(
+    byte => byte.toString(16).padStart(2, "0")).join("");
+}
+
+async function preparePublicSelectedMediaMount(shell, { startId = 1 } = {}) {
+  const wasmBytes = Uint8Array.of(0).buffer;
+  let reply = await shell.submit(request(startId, "bootstrap", {
+    wasmBytes, wasmSha256: await requestHash(wasmBytes),
+  }));
+  assert.equal(reply.status, 0, "synthetic v8 bootstrap must precede selected mount");
+  reply = await shell.submit(request(startId + 1, "base-import-begin", {
+    role: "system-303-base", byteCount: 269562880,
+    sha256: "bb16e46ad81decfe1efe691d36b6aa4ce3fd4ffb82474365de3520989d397cb5",
+  }));
+  assert.equal(reply.status, 0);
+  reply = await shell.submit(request(startId + 2, "base-import-finish", { importId: 1 }));
+  assert.equal(reply.status, 0, "storage fixture adopts only the selected synthetic identity");
+  return startId + 3;
 }
 
 const shell = new CadrM13Shell({ worker: new FakeWorker(), sessionRandom: () => Uint8Array.from({ length: 32 }, () => 0x12) });
@@ -196,8 +283,20 @@ schedulerShell.dispose();
  * verified page reader to the C-M10 constructor.  This fake lower peer is a
  * grammar/order test; the Chromium composition probe exercises real v7/Wasm. */
 const mountedRangeCalls = [];
+const mountedImportCalls = [];
 let mountedSourceMutated = false;
+const mountedM10 = fakeM10Controller();
 const mountedBoundary = new CadrM13StorageBoundary({
+  async beginBaseImport(value) {
+    mountedImportCalls.push("begin");
+    assert.equal(value.role, "system-303-base");
+    return Object.freeze({ importId: 1, nextOffset: 0n });
+  },
+  async appendBaseImport() { mountedImportCalls.push("chunk"); throw new Error("this synthetic fixture does not retain 269 MiB"); },
+  async finishBaseImport(value) {
+    mountedImportCalls.push("finish");
+    assert.equal(value.importId, 1); return selectedBaseImportResult();
+  },
   async readBaseRange(value) {
     mountedRangeCalls.push(value);
     const result = new Uint8Array(value.blockCount * 1024);
@@ -207,32 +306,112 @@ const mountedBoundary = new CadrM13StorageBoundary({
     }
     return Object.freeze({ bytes: result.buffer });
   },
+  async reopenDisk(value) {
+    assert.equal(value.createIfMissing, true); mountedM10.setOpen(true);
+    return Object.freeze({ mounted: "synthetic" });
+  },
 });
 const mountedBinding = new CadrM13BaseMediaBinding({ storage: mountedBoundary });
 const mountedWorker = new FakeWorker();
-const mountedShell = new CadrM13Shell({ worker: mountedWorker,
+assert.throws(() => new CadrM13Shell({ worker: new FakeWorker(),
+  baseMediaBinding: mountedBinding, selectedBootArtifacts: selectedBootArtifactsFixture(),
+  selectedWasmSha256: SYNTHETIC_WASM_SHA256,
+  sessionRandom: () => Uint8Array.from({ length: 32 }, () => 0x12) }), /one storage boundary/,
+"selected constructor must receive the already-bound storage capability");
+const mountedShell = new CadrM13Shell({ worker: mountedWorker, storage: mountedBoundary,
   baseMediaBinding: mountedBinding,
-  selectedBootArtifacts: [
-    { kind: 1, bytes: new ArrayBuffer(854) },
-    { kind: 2, bytes: new ArrayBuffer(20480) },
-    { kind: 4, bytes: new ArrayBuffer(3130) },
-    { kind: 5, bytes: new ArrayBuffer(83270) },
-  ], sessionRandom: () => Uint8Array.from({ length: 32 }, () => 0x12) });
+  m10Controller: mountedM10,
+  m10BridgeFactory: () => Object.freeze({ async serviceOnce() { throw new Error("not reached"); } }),
+  selectedBootArtifacts: selectedBootArtifactsFixture(),
+  selectedWasmSha256: SYNTHETIC_WASM_SHA256,
+  wasmCompiler: async () => Object.freeze({}),
+  sessionRandom: () => Uint8Array.from({ length: 32 }, () => 0x12) });
+assert.equal(Object.hasOwn(CADR_M13_OPERATION_SCHEMAS, "base-media-mount"), true);
 assert.equal(Object.hasOwn(CADR_M13_OPERATION_SCHEMAS, "machine-base-media-mount"), false);
-reply = await mountedShell.submit(request(1, "machine-base-media-mount", { importId: 9 }));
-assert.equal(reply.status, CADR_M13_STATUS.INVALID_REQUEST);
-const mount = await mountedShell.mountSelectedMediaWitness(9);
+reply = await mountedShell.submit(request(1, "base-media-mount", { importId: 1 }));
+assert.equal(reply.status, CADR_M13_STATUS.NOT_READY);
+reply = await mountedShell.submit(request(2, "base-import-begin", {
+  role: "system-303-base", byteCount: 269562880,
+  sha256: "bb16e46ad81decfe1efe691d36b6aa4ce3fd4ffb82474365de3520989d397cb5",
+}));
+assert.equal(reply.status, CADR_M13_STATUS.NOT_READY);
+reply = await mountedShell.submit(request(3, "base-import-chunk", {
+  importId: 1, offset: 0n, bytes: Uint8Array.of(1).buffer,
+  chunkSha256: await requestHash(Uint8Array.of(1)),
+}));
+assert.equal(reply.status, CADR_M13_STATUS.NOT_READY);
+reply = await mountedShell.submit(request(4, "base-import-finish", { importId: 1 }));
+assert.equal(reply.status, CADR_M13_STATUS.NOT_READY);
+assert.deepEqual(mountedImportCalls, [], "no selected import method runs before bootstrap");
+const wrongWasm = Uint8Array.of(1).buffer;
+reply = await mountedShell.submit(request(5, "bootstrap", {
+  wasmBytes: wrongWasm, wasmSha256: await requestHash(wrongWasm),
+}));
+assert.equal(reply.status, CADR_M13_STATUS.INVALID_REQUEST,
+  "a self-consistent but non-selected Wasm module is not bootstrap authority");
+assert.equal(mountedWorker.requests.length, 0, "wrong selected Wasm identity never reaches instantiate");
+let nextPublicId = await preparePublicSelectedMediaMount(mountedShell, { startId: 6 });
+reply = await mountedShell.submit(request(nextPublicId, "m10-reopen", {
+  diskUuid: "01".repeat(16), baseSha256: "bb16e46ad81decfe1efe691d36b6aa4ce3fd4ffb82474365de3520989d397cb5",
+  profileSha256: "02".repeat(32), artifactSetSha256: "03".repeat(32), createIfMissing: true,
+}));
+assert.equal(reply.status, CADR_M13_STATUS.NOT_READY,
+  "selected M10 must not reopen before the public media mount");
+nextPublicId += 1;
+reply = await mountedShell.submit(request(nextPublicId, "machine-cold-power-on"));
+assert.equal(reply.status, CADR_M13_STATUS.NOT_READY,
+  "selected worker must not cold-power before the public media/M10 mount");
+nextPublicId += 1;
+reply = await mountedShell.submit(request(nextPublicId, "base-media-mount", { importId: 2 }));
+assert.equal(reply.status, CADR_M13_STATUS.NOT_READY,
+  "only the exact adopted public import ID may mount selected media");
+nextPublicId += 1;
+reply = await mountedShell.submit(request(nextPublicId, "base-media-mount", { importId: 1 }));
+assert.equal(reply.status, 0); const mount = reply.result;
 assert.equal(mount.baseBytes, 269562880);
 assert.equal(mountedBinding.state, "MOUNTED");
 assert.equal(mountedRangeCalls.length, Math.ceil(269562880 / (1024 * 1024)));
-assert.deepEqual(mountedWorker.requests.slice(0, 8).map(value => value.op),
+for (let index = 0; index < mountedRangeCalls.length; index += 1) {
+  assert.equal(mountedRangeCalls[index].firstBlock, index * 1024);
+  assert.equal(mountedRangeCalls[index].blockCount,
+    Math.min(1024, CADR_M13_BASE_BLOCKS - index * 1024));
+}
+assert.deepEqual({ firstBlock: mountedRangeCalls.at(-1).firstBlock,
+  blockCount: mountedRangeCalls.at(-1).blockCount },
+{ firstBlock: 263168, blockCount: 77 });
+assert.equal(mountedWorker.requests[0].op, "instantiate");
+assert.deepEqual(mountedWorker.requests.slice(1, 9).map(value => value.op),
   ["input", "import", "input", "import", "input", "import", "input", "import"]);
-assert.equal(mountedWorker.requests[8].op, "stream-begin");
+assert.equal(mountedWorker.requests[9].op, "stream-begin");
 assert.equal(mountedWorker.requests.at(-1).op, "stream-finish");
-assert.deepEqual([...await mountedBinding.readBlock(17)], new Array(1024).fill(17));
+const mountRangeCount = mountedRangeCalls.length;
+for (let chunkIndex = 0; chunkIndex < mountRangeCount; chunkIndex += 1) {
+  const firstBlock = chunkIndex * 1024;
+  const block = await mountedBinding.readBlock(firstBlock);
+  assert.equal(block.byteLength, 1024);
+  assert.equal(block[0], firstBlock & 255);
+  const revalidation = mountedRangeCalls[mountRangeCount + chunkIndex];
+  assert.equal(revalidation.firstBlock, firstBlock);
+  assert.equal(revalidation.blockCount,
+    Math.min(1024, CADR_M13_BASE_BLOCKS - firstBlock));
+}
+assert.deepEqual({ firstBlock: mountedRangeCalls.at(-1).firstBlock,
+  blockCount: mountedRangeCalls.at(-1).blockCount },
+{ firstBlock: 263168, blockCount: 77 },
+"the final retained witness revalidates its exact 77-block containing range");
 assert.equal(mountedBinding.verifiedBaseIdentity().byteLength, 32);
+nextPublicId += 1;
+reply = await mountedShell.submit(request(nextPublicId, "m10-reopen", {
+  diskUuid: "01".repeat(16), baseSha256: "bb16e46ad81decfe1efe691d36b6aa4ce3fd4ffb82474365de3520989d397cb5",
+  profileSha256: "02".repeat(32), artifactSetSha256: "03".repeat(32), createIfMissing: true,
+}));
+assert.equal(reply.status, 0, "public M10 reopen follows the selected public media mount");
+nextPublicId += 1;
+reply = await mountedShell.submit(request(nextPublicId, "machine-cold-power-on"));
+assert.equal(reply.status, 0);
 mountedSourceMutated = true;
-await assert.rejects(() => mountedBinding.readBlock(17), /changed after v7 verification/);
+await assert.rejects(() => mountedBinding.readBlock(CADR_M13_BASE_BLOCKS - 1),
+  /changed after v7 verification/);
 mountedShell.dispose();
 
 /* The selected-media mount is an internal witness seam, but its lower v7
@@ -250,7 +429,10 @@ for (const [failOperation, failOrdinal] of mountFailureStages) {
   const worker = new MountStageFailureWorker({ failOperation, failOrdinal });
   const binding = new MountFailureBinding();
   const failedShell = makeMountFailureShell(worker, binding);
-  await assert.rejects(() => failedShell.mountSelectedMediaWitness(1), /selected-media witness mount failed/);
+  const mountId = await preparePublicSelectedMediaMount(failedShell);
+  reply = await failedShell.submit(request(mountId, "base-media-mount", { importId: 1 }));
+  assert.equal(reply.status, CADR_M13_STATUS.WORKER_LOST);
+  assert.equal(reply.terminal, true);
   assert.equal(failedShell.state, "FAILED", `${failOperation}:${failOrdinal} must terminally fail the shell`);
   assert.equal(worker.terminated, true, `${failOperation}:${failOrdinal} must discard the worker`);
   assert.equal(binding.state, "IDLE", `${failOperation}:${failOrdinal} must discard retained mount state`);
@@ -263,7 +445,10 @@ for (const [failOperation, failOrdinal] of mountFailureStages) {
 for (let failReadOrdinal = 1; failReadOrdinal <= Math.ceil(CADR_M13_BASE_BLOCKS / 1024); failReadOrdinal += 1) {
   const worker = new FakeWorker(); const binding = new MountFailureBinding({ failReadOrdinal });
   const failedShell = makeMountFailureShell(worker, binding);
-  await assert.rejects(() => failedShell.mountSelectedMediaWitness(1), /selected-media witness mount failed/);
+  const mountId = await preparePublicSelectedMediaMount(failedShell);
+  reply = await failedShell.submit(request(mountId, "base-media-mount", { importId: 1 }));
+  assert.equal(reply.status, CADR_M13_STATUS.WORKER_LOST);
+  assert.equal(reply.terminal, true);
   assert.equal(failedShell.state, "FAILED", `base read ${failReadOrdinal} must terminally fail the shell`);
   assert.equal(worker.terminated, true, `base read ${failReadOrdinal} must discard the worker`);
   assert.equal(binding.state, "IDLE", `base read ${failReadOrdinal} must discard retained mount state`);
@@ -271,8 +456,35 @@ for (let failReadOrdinal = 1; failReadOrdinal <= Math.ceil(CADR_M13_BASE_BLOCKS 
 {
   const worker = new FakeWorker(); const binding = new MountFailureBinding({ failFinish: true });
   const failedShell = makeMountFailureShell(worker, binding);
-  await assert.rejects(() => failedShell.mountSelectedMediaWitness(1), /selected-media witness mount failed/);
+  const mountId = await preparePublicSelectedMediaMount(failedShell);
+  reply = await failedShell.submit(request(mountId, "base-media-mount", { importId: 1 }));
+  assert.equal(reply.status, CADR_M13_STATUS.WORKER_LOST);
+  assert.equal(reply.terminal, true);
   assert.equal(failedShell.state, "FAILED"); assert.equal(worker.terminated, true);
+  assert.equal(binding.state, "IDLE");
+}
+
+/* Browser transport failures and malformed replies are terminal after the
+ * first lower mount mutation, at artifact, stream-open, early/final range,
+ * and stream-finish boundaries.  Timeout is kept short and synthetic here. */
+for (const [fault, failOperation, failOrdinal] of [
+  ["malformed", "input", 1],
+  ["error", "import", 4],
+  ["messageerror", "stream-begin", 1],
+  ["timeout", "stream-chunk", 1],
+  ["malformed", "stream-chunk", Math.ceil(CADR_M13_BASE_BLOCKS / 1024)],
+  ["error", "stream-finish", 1],
+]) {
+  const worker = new MountStageTransportWorker({ fault, failOperation, failOrdinal });
+  const binding = new MountFailureBinding();
+  const failedShell = makeMountFailureShell(worker, binding, { timeoutMs: 5 });
+  const mountId = await preparePublicSelectedMediaMount(failedShell);
+  reply = await failedShell.submit(request(mountId, "base-media-mount", { importId: 1 }));
+  assert.equal(reply.status, CADR_M13_STATUS.WORKER_LOST,
+    `${fault}:${failOperation}:${failOrdinal} maps to terminal worker loss`);
+  assert.equal(reply.terminal, true);
+  assert.equal(failedShell.state, "FAILED");
+  assert.equal(worker.terminated, true);
   assert.equal(binding.state, "IDLE");
 }
 
@@ -284,6 +496,32 @@ const finalShell = new CadrM13Shell({ worker: finalWorker, initialId: 0xffffffff
 reply = await finalShell.submit(request(0xffffffff, "keyboard-state"));
 assert.equal(reply.status, 0); assert.equal(reply.terminal, true); assert.equal(finalWorker.terminated, true);
 await assert.rejects(() => finalShell.submit(request(1, "keyboard-state")), /terminal/);
+
+/* Maximum-ID terminalization is centralized above operation dispatch: it is
+ * true for a mount precondition result, successful mount, and mount failure,
+ * and each outcome closes its session. */
+{
+  const worker = new FakeWorker();
+  const shell = new CadrM13Shell({ worker, initialId: 0xffffffff,
+    sessionRandom: () => Uint8Array.from({ length: 32 }, () => 0x12) });
+  reply = await shell.submit(request(0xffffffff, "base-media-mount", { importId: 1 }));
+  assert.equal(reply.status, CADR_M13_STATUS.NOT_READY); assert.equal(reply.terminal, true);
+  assert.equal(shell.state, "TERMINATED"); assert.equal(worker.terminated, true);
+  await assert.rejects(() => shell.submit(request(1, "keyboard-state")), /terminal/);
+}
+for (const fail of [false, true]) {
+  const worker = fail ? new MountStageFailureWorker({ failOperation: "stream-finish" }) : new FakeWorker();
+  const binding = new MountFailureBinding();
+  const shell = makeMountFailureShell(worker, binding, { initialId: 0xfffffffc });
+  const mountId = await preparePublicSelectedMediaMount(shell, { startId: 0xfffffffc });
+  assert.equal(mountId, 0xffffffff);
+  reply = await shell.submit(request(mountId, "base-media-mount", { importId: 1 }));
+  assert.equal(reply.status, fail ? CADR_M13_STATUS.WORKER_LOST : CADR_M13_STATUS.OK);
+  assert.equal(reply.terminal, true);
+  assert.equal(shell.state, fail ? "FAILED" : "TERMINATED");
+  assert.equal(worker.terminated, true);
+  await assert.rejects(() => shell.submit(request(1, "keyboard-state")), /terminal/);
+}
 
 /* The M12-only lower status 21 has no v8 mapping and is therefore a terminal
  * protocol violation, rather than an accidental new public status code. */

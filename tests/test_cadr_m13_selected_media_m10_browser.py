@@ -1,4 +1,4 @@
-"""Chromium proof of the selected M12/v7 media mount and M10 bridge.
+"""Chromium probe of the public v8 selected-media/M10 mount and bridge.
 
 The selected System 303 inputs are untracked local preservation inputs.  This
 server exposes their exact fixed identities only for this disposable test and
@@ -9,6 +9,7 @@ from __future__ import annotations
 
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import os
+import hashlib
 from pathlib import Path
 from threading import Thread
 from urllib.parse import urlsplit
@@ -29,6 +30,7 @@ SMALL = {
     "/l/sys/ubin/ucadr.sym": ROOT / "l" / "sys" / "ubin" / "ucadr.sym",
 }
 SELECTED_WASM = BUILD / "cadr-web-m12-O2.wasm"
+SELECTED_WASM_SHA256 = "42e1e7d37ac1b1cc3dabf5b22a38bc81702c1b1f45b6da8bf31f0ddb249a40e0"
 CSP = ("default-src 'none'; script-src 'self' 'wasm-unsafe-eval'; worker-src 'self'; "
        "connect-src 'self'; object-src 'none'; base-uri 'none'; form-action 'none'; "
        "frame-ancestors 'none'")
@@ -92,6 +94,15 @@ class Handler(BaseHTTPRequestHandler):
         return
 
 
+class CadrM13SelectedMediaSourceWiringTest(unittest.TestCase):
+    def test_selected_factory_passes_its_existing_storage_boundary(self) -> None:
+        """Runs without licensed media and catches the constructor regression."""
+        source = (BROWSER / "cadr-m13-selected-media-m10-browser.mjs").read_text()
+        constructor = source.split("const shell = new CadrM13Shell({", 1)[1].split("});", 1)[0]
+        self.assertRegex(constructor, r"\bworker\s*,\s*storage\s*,\s*baseMediaBinding:")
+        self.assertIn("selectedWasmSha256: SELECTED_WASM_SHA256", constructor)
+
+
 class CadrM13SelectedMediaM10BrowserTest(unittest.TestCase):
     @classmethod
     def setUpClass(cls) -> None:
@@ -102,6 +113,14 @@ class CadrM13SelectedMediaM10BrowserTest(unittest.TestCase):
         missing = [str(path) for path in required if not path.is_file()]
         if missing:
             raise RuntimeError("selected-media browser witness needs local inputs: " + ", ".join(missing))
+        if hashlib.sha256(SELECTED_WASM.read_bytes()).hexdigest() != SELECTED_WASM_SHA256:
+            raise RuntimeError("selected-media browser witness Wasm identity differs")
+        digest = hashlib.sha256()
+        with BASE.open("rb") as source:
+            for chunk in iter(lambda: source.read(1024 * 1024), b""):
+                digest.update(chunk)
+        if digest.hexdigest() != "bb16e46ad81decfe1efe691d36b6aa4ce3fd4ffb82474365de3520989d397cb5":
+            raise RuntimeError("selected-media browser witness base identity differs")
         cls.server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
         cls.thread = Thread(target=cls.server.serve_forever, daemon=True)
         cls.thread.start(); cls.origin = f"http://127.0.0.1:{cls.server.server_port}"
@@ -127,6 +146,11 @@ class CadrM13SelectedMediaM10BrowserTest(unittest.TestCase):
                 "Selected M12 media mount and M10 host-request probe passed.")
             self.assertEqual(result["bootstrapStatus"], 0)
             self.assertEqual(result["mountStatus"], 0)
+            self.assertEqual(result["baseImport"]["beginStatus"], 0)
+            self.assertEqual(result["baseImport"]["chunkCount"], 258)
+            self.assertEqual(result["baseImport"]["finishStatus"], 0)
+            self.assertEqual(result["baseImport"]["mountStatus"], 0)
+            self.assertEqual(result["baseImport"]["m10ReopenStatus"], 0)
             self.assertEqual(result["baseBindingState"], "MOUNTED")
             self.assertEqual(result["coldStatus"], 0); self.assertEqual(result["bootStatus"], 0)
             self.assertEqual(result["visibilityStatus"], 0); self.assertEqual(result["startStatus"], 0)
@@ -158,7 +182,7 @@ class CadrM13SelectedMediaM10BrowserTest(unittest.TestCase):
             self.assertEqual(result["profileSha256"],
                              "58ea88164b0156f8dbcd83f172d0e2b3e641f44575aa1473793745b97a7efdf6")
             self.assertEqual(result["artifactSetSha256"],
-                             "c3dafc6a6ed9ddb440e0f61db5f111503925bdf115494b4777f6eb9c0e9f8e12")
+                             "deddd6ff5bc626c1d62b354a28e757a638b6f824915df9b0c783fed5ebfc482a")
             self.assertEqual(result["forbiddenRunOperations"], [])
             self.assertIn("scheduler-run-v7-slice", result["lowerOperations"])
             self.assertNotIn("scheduler-run", result["lowerOperations"])

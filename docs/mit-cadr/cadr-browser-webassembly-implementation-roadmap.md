@@ -3,7 +3,7 @@ type: Implementation Roadmap
 title: MIT CADR System 303 browser and WebAssembly implementation roadmap
 description: A milestone-complete plan for porting the pinned System 303 CADR emulator to a deterministic, locally persistent, browser-hosted WebAssembly machine.
 tags: [mit-cadr, lm-3, system-303, webassembly, browser, emulator, roadmap]
-timestamp: 2026-08-02T04:23:41-04:00
+timestamp: 2026-08-02T04:29:35-04:00
 ---
 
 # MIT CADR System 303 browser and WebAssembly implementation roadmap
@@ -1086,16 +1086,23 @@ Deliverables:
 Exit gate `C-M13`: malformed host inputs cannot write outside their overlay, mutate
 the immutable base, issue network traffic, or wedge the page without a bounded stop.
 
-Implementation status, 2026-07-30: committed evidence E23 through E26 loads the
-selected M12 O2 Wasm in the real worker, exercises a bounded synthetic M10
-composition, dispatches a synthetic M4 write through the real M13 shell/M10
-controller seam, and boots selected base media to the first real host wait at tick
-1,029,735. The selected-media witness services one base-equivalent block-1 write;
-it reports `durable:true, changed:false`, creates no overlay page, and a fresh
-controller rereads the same base bytes. These are bounded worker, dispatch, and
-selected-base observations. They do not prove changed-overlay persistence, a
-complete composed M8--M12 workflow, final accessibility, or the full F06/F07 failure
-algebra, so `C-M13` remains open.
+Implementation status, 2026-08-02: the tracked source now promotes the former
+selected-media setup seam to public v8 `base-media-mount`. The operation is fenced
+behind the selected adopted import ID, v8 bootstrap, one same-boundary range binding,
+the four selected artifacts, an exact factory-owned selected-Wasm digest, and clean
+M10 reopen; selected import calls are rejected before bootstrap. Its synthetic contract matrix
+checks every lower mutation/read/adoption failure position and terminally discards a
+partially mutated worker, while the production binding test covers all 258 retained
+and revalidated range indexes including the final 77-block range. Maximum public ID
+terminalization is common to mount success, precondition rejection, and worker-loss
+failure. The selected browser harness has been rewritten to send
+the public import/mount/reopen sequence, but this source change has not yet been run
+against the private selected inputs. E23 through E26 remain narrower historical
+evidence: they load selected M12 O2 Wasm, exercise synthetic M10 composition and
+dispatch, and record the earlier private selected-media run to its first no-change
+block-1 write and clean reopen. They do not prove current public-path execution,
+changed-overlay persistence, a complete composed M8--M12 workflow, final
+accessibility, or the full F06/F07 failure algebra, so `C-M13` remains open.
 
 ### M14 — Reproducible museum release
 

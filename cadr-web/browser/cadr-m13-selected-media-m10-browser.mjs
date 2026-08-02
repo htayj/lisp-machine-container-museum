@@ -1,8 +1,8 @@
 /*
- * Browser-only composition witness for the selected M12/v7 worker, verified
- * System 303 media ingress, and real C-M10 IndexedDB bridge.  Its sources are
- * fixed local preservation inputs; no media bytes are bundled or tracked by
- * this probe.
+ * Browser-only public-v8 composition probe for the selected M12/v7 worker,
+ * verified System 303 media ingress, and real C-M10 IndexedDB bridge. Its
+ * sources are fixed local preservation inputs; no media bytes are bundled or
+ * tracked by this probe.
  */
 import {
   CADR_M13_PROTOCOL_VERSION,
@@ -18,6 +18,7 @@ import { CADR_M10_BASE_SHA256 } from "../wasm/cadr-m10-persistence.mjs";
 const BASE_BYTES = 269562880;
 const BASE_BLOCKS = 263245;
 const BASE_SHA256 = "bb16e46ad81decfe1efe691d36b6aa4ce3fd4ffb82474365de3520989d397cb5";
+const SELECTED_WASM_SHA256 = "42e1e7d37ac1b1cc3dabf5b22a38bc81702c1b1f45b6da8bf31f0ddb249a40e0";
 const status = document.querySelector("#cadr-m13-selected-media-m10-status");
 const text = new TextEncoder();
 
@@ -110,6 +111,11 @@ async function selectedBaseRange(firstBlock, blockCount) {
   return body;
 }
 
+function selectedBaseImportResult() {
+  return Object.freeze({ role: "system-303-base", byteCount: BigInt(BASE_BYTES),
+    sha256: BASE_SHA256, blockBytes: 1024, blockCount: BASE_BLOCKS });
+}
+
 function request(shell, id, op, fields = {}) {
   return Object.freeze({ type: "cadr-request", version: CADR_M13_PROTOCOL_VERSION,
     sessionId: shell.sessionId, id, op, ...fields });
@@ -122,7 +128,36 @@ async function run() {
     Object.freeze({ kind: artifact.kind, bytes: artifact.bytes })));
   const wasmBytes = await bytesFrom(wasmUrl);
   const identities = await selectedWitnessIdentities(wasmBytes, selectedArtifacts);
+  let controller = null;
+  let importOpen = false;
+  let importNextOffset = 0;
   const storage = new CadrM13StorageBoundary({
+    async beginBaseImport(value) {
+      if (value.role !== "system-303-base" || value.byteCount !== BASE_BYTES ||
+          value.sha256 !== BASE_SHA256 || importOpen) {
+        throw new Error("M13 selected-base import begin differs from its fixed profile");
+      }
+      importOpen = true; importNextOffset = 0;
+      return Object.freeze({ importId: 1, nextOffset: 0n });
+    },
+    async appendBaseImport(value) {
+      const expected = await selectedBaseRange(Math.floor(importNextOffset / 1024),
+        value.bytes.byteLength / 1024);
+      if (!importOpen || value.importId !== 1 || value.offset !== BigInt(importNextOffset) ||
+          !same(new Uint8Array(value.bytes), new Uint8Array(expected)) ||
+          value.chunkSha256 !== await sha256(value.bytes)) {
+        throw new Error("M13 selected-base import chunk differs from its fixed range");
+      }
+      importNextOffset += value.bytes.byteLength;
+      return Object.freeze({ importId: 1, nextOffset: BigInt(importNextOffset),
+        acceptedBytes: value.bytes.byteLength });
+    },
+    async finishBaseImport(value) {
+      if (!importOpen || value.importId !== 1 || importNextOffset !== BASE_BYTES) {
+        throw new Error("M13 selected-base import did not receive the complete fixed image");
+      }
+      importOpen = false; return selectedBaseImportResult();
+    },
     async readBaseRange(value) {
       if (value.importId !== 1 || !Number.isSafeInteger(value.firstBlock) ||
           !Number.isSafeInteger(value.blockCount) || value.blockCount < 1 ||
@@ -130,6 +165,16 @@ async function run() {
         throw new Error("M13 selected-base request is outside its fixed binding");
       }
       return Object.freeze({ bytes: await selectedBaseRange(value.firstBlock, value.blockCount) });
+    },
+    async reopenDisk(value) {
+      if (controller === null || value.createIfMissing !== true ||
+          value.diskUuid !== hex(binding.diskUuid) || value.baseSha256 !== BASE_SHA256 ||
+          value.profileSha256 !== hex(binding.profileSha256) ||
+          value.artifactSetSha256 !== hex(binding.artifactSetSha256)) {
+        throw new Error("M13 selected M10 reopen differs from its mounted binding");
+      }
+      await controller.open({ initialize: true });
+      return Object.freeze({ mounted: "selected-m10-controller" });
     },
   });
   const baseBinding = new CadrM13BaseMediaBinding({ storage });
@@ -152,15 +197,16 @@ async function run() {
     return postLower(...argumentsValue);
   };
   let replacements = 0;
-  const controller = createCadrM10Controller({ backend, binding,
+  controller = createCadrM10Controller({ backend, binding,
     readBasePage: firstBlock => baseBinding.readBlock(Number(firstBlock)),
     readBaseIdentity: async () => baseBinding.verifiedBaseIdentity(),
     replaceWorker: async () => { replacements += 1; worker.terminate(); },
   });
   const serviced = [];
   let reopenedController = null;
-  const shell = new CadrM13Shell({ worker, baseMediaBinding: baseBinding,
-    selectedBootArtifacts: bootArtifacts, m10Controller: controller,
+  const shell = new CadrM13Shell({ worker, storage, baseMediaBinding: baseBinding,
+    selectedBootArtifacts: bootArtifacts, selectedWasmSha256: SELECTED_WASM_SHA256,
+    m10Controller: controller,
     m10BridgeFactory: options => {
       const bridge = createCadrM10WorkerDiskBridge(options);
       return Object.freeze({ async serviceOnce() {
@@ -172,26 +218,57 @@ async function run() {
       wasmBytes, wasmSha256: await sha256(wasmBytes),
     }));
     if (bootstrap.status !== 0) throw new Error(`selected Wasm bootstrap failed (${bootstrap.status})`);
-    const mount = await shell.mountSelectedMediaWitness(1);
+    let nextId = 2;
+    const importBegin = await shell.submit(request(shell, nextId++, "base-import-begin", {
+      role: "system-303-base", byteCount: BASE_BYTES, sha256: BASE_SHA256,
+    }));
+    if (importBegin.status !== 0 || importBegin.result?.importId !== 1) {
+      throw new Error("public selected-base import did not begin");
+    }
+    let importChunks = 0;
+    for (let firstBlock = 0; firstBlock < BASE_BLOCKS;) {
+      const blockCount = Math.min(1024, BASE_BLOCKS - firstBlock);
+      const bytes = await selectedBaseRange(firstBlock, blockCount);
+      const append = await shell.submit(request(shell, nextId++, "base-import-chunk", {
+        importId: 1, offset: BigInt(firstBlock) * 1024n, bytes,
+        chunkSha256: await sha256(bytes),
+      }));
+      if (append.status !== 0) throw new Error(`public selected-base import chunk failed (${append.status})`);
+      firstBlock += blockCount; importChunks += 1;
+    }
+    const importFinish = await shell.submit(request(shell, nextId++, "base-import-finish", { importId: 1 }));
+    if (importFinish.status !== 0) throw new Error(`public selected-base import finish failed (${importFinish.status})`);
+    const mounted = await shell.submit(request(shell, nextId++, "base-media-mount", { importId: 1 }));
+    if (mounted.status !== 0) throw new Error(`public selected media mount failed (${mounted.status})`);
+    const mount = mounted.result;
     if (baseBinding.state !== "MOUNTED" || mount.baseBytes !== BASE_BYTES ||
         mount.baseSha256 !== BASE_SHA256 ||
         !same(baseBinding.verifiedBaseIdentity(), CADR_M10_BASE_SHA256)) {
       throw new Error("selected media witness mount did not reach MOUNTED");
     }
-    /* The M10 controller may only bind its selected base identity after the
-     * witness retained the v7-accepted per-range verification records. */
-    await controller.open({ initialize: true });
-    const cold = await shell.submit(request(shell, 2, "machine-cold-power-on"));
-    const boot = await shell.submit(request(shell, 3, "machine-boot"));
+    /* A public M10 reopen follows the v7-verified base mount. The storage
+     * adapter owns the selected controller, but no caller storage capability
+     * crosses the v8 port. */
+    const reopened = await shell.submit(request(shell, nextId++, "m10-reopen", {
+      diskUuid: hex(binding.diskUuid), baseSha256: BASE_SHA256,
+      profileSha256: hex(binding.profileSha256), artifactSetSha256: hex(binding.artifactSetSha256),
+      createIfMissing: true,
+    }));
+    if (reopened.status !== 0 || controller.status().state !== "CLEAN" ||
+        controller.status().readOnly) {
+      throw new Error("public selected M10 reopen did not create a clean writable session");
+    }
+    const cold = await shell.submit(request(shell, nextId++, "machine-cold-power-on"));
+    const boot = await shell.submit(request(shell, nextId++, "machine-boot"));
     if ([cold, boot].some(result => result.status !== 0)) {
       throw new Error("selected worker refused the mounted cold-boot sequence");
     }
-    const visibility = await shell.submit(request(shell, 4, "machine-visibility", { hidden: false }));
-    const start = await shell.submit(request(shell, 5, "machine-start"));
+    const visibility = await shell.submit(request(shell, nextId++, "machine-visibility", { hidden: false }));
+    const start = await shell.submit(request(shell, nextId++, "machine-start"));
     if ([visibility, start].some(result => result.status !== 0)) {
       throw new Error("selected worker refused the required M5 visibility/start sequence");
     }
-    let hostWaits = 0; let batches = 0; let nextId = 6;
+    let hostWaits = 0; let batches = 0;
     let waitSlice = null; let waitSliceIndex = -1;
     for (; batches < 300 && hostWaits === 0; batches += 1, nextId += 1) {
       const result = await shell.submit(request(shell, nextId, "machine-run", {
@@ -244,6 +321,9 @@ async function run() {
       controllerState: reopenedController.state, replacementCount: reopenReplacements,
     });
     return Object.freeze({ bootstrapStatus: bootstrap.status, mountStatus: 0,
+      baseImport: Object.freeze({ beginStatus: importBegin.status, chunkCount: importChunks,
+        finishStatus: importFinish.status, mountStatus: mounted.status,
+        m10ReopenStatus: reopened.status }),
       baseBindingState: baseBinding.state, coldStatus: cold.status, bootStatus: boot.status,
       visibilityStatus: visibility.status, startStatus: start.status,
       batches, hostWaits,

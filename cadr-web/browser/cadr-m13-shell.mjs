@@ -186,6 +186,10 @@ export const CADR_M13_OPERATION_SCHEMAS = Object.freeze({
   "base-import-begin": operationSchema(["role", "byteCount", "sha256"], { shell: true }),
   "base-import-chunk": operationSchema(["importId", "offset", "bytes", "chunkSha256"], { shell: true, body: "bytes", streaming: true }),
   "base-import-finish": operationSchema(["importId"], { shell: true }),
+  /* This is the public v8 transition from an already adopted exact base to
+   * the selected v7 artifact ingress.  It owns no pathname, Blob, File, or
+   * storage key; importId names only the shell's adopted candidate. */
+  "base-media-mount": operationSchema(["importId"], { mediaMount: true }),
   "base-range-read": operationSchema(["importId", "firstBlock", "blockCount"], { shell: true }),
   "m10-reopen": operationSchema(["diskUuid", "baseSha256", "profileSha256", "artifactSetSha256", "createIfMissing"], { shell: true }),
   "m10-writer-open": operationSchema(["sessionToken"], { shell: true }),
@@ -260,6 +264,10 @@ function validateOperationFields(op, source) {
       output.importId = u32(output.importId, "importId", { nonzero: true }); output.offset = u64(output.offset, "offset");
       output.bytes = bytes(output.bytes, "base chunk", { min: 1, max: CADR_M13_MAX_STREAM_WINDOW_BYTES });
       output.chunkSha256 = hex(output.chunkSha256, 64, "chunkSha256"); break;
+    case "base-import-finish":
+      output.importId = u32(output.importId, "importId", { nonzero: true }); break;
+    case "base-media-mount":
+      output.importId = u32(output.importId, "importId", { nonzero: true }); break;
     case "base-range-read":
       output.importId = u32(output.importId, "importId", { nonzero: true }); output.firstBlock = u32(output.firstBlock, "firstBlock");
       output.blockCount = u32(output.blockCount, "blockCount", { nonzero: true });
@@ -527,6 +535,13 @@ function response(request, status, tail = Object.create(null), { terminal = fals
   return Object.freeze(result);
 }
 
+function terminalizeResponse(value) {
+  if (value.terminal === true) return value;
+  const result = Object.assign(Object.create(null), value);
+  result.terminal = true;
+  return Object.freeze(result);
+}
+
 function shellReason(status) {
   return Object.freeze({
     [CADR_M13_STATUS.INVALID_REQUEST]: "invalid-request", [CADR_M13_STATUS.STALE]: "stale",
@@ -657,6 +672,11 @@ export class CadrM13BaseMediaBinding {
   get state() { return this.#phase; }
   get importId() { return this.#importId; }
 
+  /* The shell must never finish an import in one capability and then read its
+   * nominal import ID through another.  This identity check intentionally
+   * reveals neither a backing-store key nor the backing-store object. */
+  usesStorage(storage) { return storage === this.#storage; }
+
   beginMount(importId) {
     invariant(this.#phase === "IDLE", "M13 base media is already mounted");
     this.#importId = u32(importId, "M13 base import ID", { nonzero: true });
@@ -769,18 +789,47 @@ function selectedBootArtifacts(value) {
   return Object.freeze(result);
 }
 
+/* The storage implementation owns streaming/import persistence.  The v8 shell
+ * owns the transition that makes its returned import ID eligible for the v7
+ * selected-media mount, and verifies that it is the one fixed profile rather
+ * than a merely successful arbitrary import. */
+function assertSelectedBaseImportResult(value) {
+  const fields = descriptorRecord(value, "M13 selected base import result", {
+    allowed: ["role", "byteCount", "sha256", "blockBytes", "blockCount"],
+    required: ["role", "byteCount", "sha256", "blockBytes", "blockCount"],
+    maximumKeys: 5,
+  });
+  invariant(fields.role === "system-303-base" && u64(fields.byteCount, "M13 selected base byte count") === BigInt(CADR_M13_BASE_BYTES) &&
+    hex(fields.sha256, 64, "M13 selected base SHA-256") === CADR_M13_BASE_SHA256 &&
+    u32(fields.blockBytes, "M13 selected base block bytes") === 1024 &&
+    u32(fields.blockCount, "M13 selected base block count") === CADR_M13_BASE_BLOCKS,
+  "M13 completed base import is not the selected System 303 base", { status: CADR_M13_STATUS.INVALID_REQUEST });
+}
+
+function assertSelectedM10Ready(controller) {
+  invariant(controller !== null && typeof controller.status === "function",
+    "M13 selected media has no M10 controller status", { status: CADR_M13_STATUS.NOT_READY });
+  const fields = descriptorRecord(controller.status(), "M13 selected M10 controller status", {
+    allowed: ["state", "open", "readOnly"], required: ["state", "open", "readOnly"], maximumKeys: 3,
+  });
+  invariant(fields.state === "CLEAN" && fields.open === true && fields.readOnly === false,
+    "M13 selected M10 controller is not a clean writable session", { status: CADR_M13_STATUS.NOT_READY });
+}
+
 export class CadrM13Shell {
   #worker; #storage; #ledger = new CadrM13AdmissionLedger(); #sessionId; #expectedId = 1; #workerId = 1;
   #pending = new Map(); #terminal = false; #state = "NEW"; #releaseTarget; #releaseControl; #guestSurface; #statusSink;
   #workerDetach = []; #timeoutMs; #setTimeout; #clearTimeout; #wasmCompiler; #capturedPointerId = null; #ingressEnabled = true;
   #lastStatus = null; #m10Controller = null; #m10Bridge = null;
   #baseMediaBinding = null; #selectedBootArtifacts = null; #mediaMounted = false;
+  #selectedWasmSha256 = null; #bootstrapped = false; #adoptedBaseImportId = null; #m10Ready = false;
 
   constructor({ worker, storage = null, sessionRandom = undefined, releaseTarget = null, releaseControl = null,
     guestSurface = null, statusSink = null, timeoutMs = 10000,
     setTimeoutFn = globalThis.setTimeout.bind(globalThis),
     clearTimeoutFn = globalThis.clearTimeout.bind(globalThis), m10Controller = null, m10BridgeFactory = null,
     baseMediaBinding = null, selectedBootArtifacts: configuredBootArtifacts = null,
+    selectedWasmSha256 = null,
     wasmCompiler = globalThis.WebAssembly?.compile.bind(globalThis.WebAssembly), initialId = 1 } = {}) {
     invariant(worker !== null && typeof worker === "object" && typeof worker.postMessage === "function", "M13 shell needs a dedicated worker");
     invariant(typeof timeoutMs === "number" && timeoutMs > 0, "worker timeout must be positive");
@@ -801,10 +850,12 @@ export class CadrM13Shell {
     }
     if (baseMediaBinding !== null || configuredBootArtifacts !== null) {
       invariant(baseMediaBinding instanceof CadrM13BaseMediaBinding &&
-        configuredBootArtifacts !== null,
-      "M13 selected media needs both its base binding and boot artifacts");
+        configuredBootArtifacts !== null && this.#storage !== null &&
+        baseMediaBinding.usesStorage(this.#storage) && selectedWasmSha256 !== null,
+      "M13 selected media needs one storage boundary, its base binding, boot artifacts, and selected Wasm identity");
       this.#baseMediaBinding = baseMediaBinding;
       this.#selectedBootArtifacts = selectedBootArtifacts(configuredBootArtifacts);
+      this.#selectedWasmSha256 = hex(selectedWasmSha256, 64, "M13 selected Wasm SHA-256");
     }
     this.#workerDetach.push(attach(worker, "message", event => this.#onWorkerMessage(event?.data ?? event)));
     this.#workerDetach.push(attach(worker, "error", () => this.#workerLost("worker-error")));
@@ -868,36 +919,83 @@ export class CadrM13Shell {
       let result;
       try { result = await this.#dispatch(canonical.request, schema); }
       finally { this.#ledger.release(common.id); }
-      /* A normal final public ID is a clean terminal exhaustion boundary.  A
-       * lower worker loss or protocol violation has already made the shell
-       * FAILED; do not overwrite that failure with a false clean termination. */
-      if (common.id === MAX_U32 && !this.#terminal) {
-        this.#terminal = true; this.#state = "TERMINATED";
-        try { this.#worker.terminate?.(); } catch { /* process disposal is best effort */ }
-      }
-      return result;
+      return this.#completePublicResponse(common, result);
     } catch (error) {
-      if (error instanceof M13AdmissionError) return response(common, error.status, { reason: shellReason(error.status) });
-      return response(common, CADR_M13_STATUS.HOST_FAILURE, { reason: shellReason(CADR_M13_STATUS.HOST_FAILURE) });
+      const result = error instanceof M13AdmissionError ?
+        response(common, error.status, { reason: shellReason(error.status) }) :
+        response(common, CADR_M13_STATUS.HOST_FAILURE, { reason: shellReason(CADR_M13_STATUS.HOST_FAILURE) });
+      return this.#completePublicResponse(common, result);
     }
   }
 
+  #completePublicResponse(request, result) {
+    if (request.id !== MAX_U32) return result;
+    /* ID exhaustion is terminal for every correlated public result, including
+     * shell-local validation/precondition results.  Preserve a prior FAILED
+     * disposition instead of relabelling worker loss as clean exhaustion. */
+    if (!this.#terminal) {
+      this.#terminal = true; this.#state = "TERMINATED";
+      try { this.#worker.terminate?.(); } catch { /* process disposal is best effort */ }
+    }
+    return terminalizeResponse(result);
+  }
+
   async #dispatch(request, schema) {
+    if (schema.mediaMount === true) return this.#mountPublicBaseMedia(request);
     if (schema.shell) {
       invariant(this.#storage !== null, "M13 storage boundary is not configured", { status: CADR_M13_STATUS.NOT_READY });
-      try { const result = await this.#storage.invoke(request.op, request); return response(request, 0, { result }); }
+      try {
+        if (this.#selectedMediaConfigured() &&
+            ["base-import-begin", "base-import-chunk", "base-import-finish"].includes(request.op)) {
+          invariant(this.#bootstrapped,
+            "M13 selected base import requires successful worker bootstrap",
+          { status: CADR_M13_STATUS.NOT_READY });
+          invariant(!this.#mediaMounted,
+            "M13 selected media permits no replacement import in this worker session",
+          { status: CADR_M13_STATUS.NOT_READY });
+        }
+        if (this.#selectedMediaConfigured() && request.op === "m10-reopen") {
+          invariant(this.#mediaMounted && this.#m10Controller !== null,
+            "M13 M10 reopen requires selected media mount", { status: CADR_M13_STATUS.NOT_READY });
+        }
+        const result = await this.#storage.invoke(request.op, request);
+        if (this.#selectedMediaConfigured() && request.op === "base-import-finish") {
+          assertSelectedBaseImportResult(result);
+          this.#adoptedBaseImportId = request.importId;
+          this.#m10Ready = false;
+        }
+        if (this.#selectedMediaConfigured() && request.op === "m10-reopen") {
+          assertSelectedM10Ready(this.#m10Controller);
+          this.#m10Ready = true;
+        }
+        return response(request, 0, { result });
+      }
       catch (error) { const status = error instanceof M13AdmissionError ? error.status : CADR_M13_STATUS.HOST_FAILURE; return response(request, status, { reason: shellReason(status) }); }
     }
     if (schema.composite) return response(request, CADR_M13_STATUS.NOT_READY, { reason: "not-ready" });
     if (request.op === "bootstrap") {
+      if (this.#selectedMediaConfigured()) {
+        invariant(!this.#bootstrapped && !this.#mediaMounted,
+          "M13 selected media worker is already bootstrapped", { status: CADR_M13_STATUS.NOT_READY });
+      }
       const observed = await sha256Hex(request.wasmBytes);
       if (observed !== request.wasmSha256) return response(request, 2, { reason: "invalid-request" });
+      if (this.#selectedMediaConfigured() && observed !== this.#selectedWasmSha256) {
+        return response(request, CADR_M13_STATUS.INVALID_REQUEST, { reason: "invalid-request" });
+      }
       try {
         invariant(typeof this.#wasmCompiler === "function", "Wasm compiler is unavailable", { status: CADR_M13_STATUS.NOT_READY });
         const module = await this.#wasmCompiler(request.wasmBytes.slice(0));
         const lower = await this.#postLower({ version: 7, id: this.#nextInternalRequestId(), op: "instantiate", module }, { external: request });
+        if (lower.status === CADR_M13_STATUS.OK && this.#selectedMediaConfigured()) this.#bootstrapped = true;
         return response(request, lower.status, lower.remainder, { terminal: request.id === MAX_U32 || lower.status === 24 || lower.status === 25 });
       } catch { return response(request, CADR_M13_STATUS.HOST_FAILURE, { reason: "host-failure" }); }
+    }
+    if (this.#selectedMediaConfigured()) {
+      invariant(this.#mediaMounted && this.#m10Ready,
+        "M13 guest operation requires mounted media and a clean M10 session",
+      { status: CADR_M13_STATUS.NOT_READY });
+      assertSelectedM10Ready(this.#m10Controller);
     }
     const lowerOp = LOWER_OPERATION[request.op] ?? request.op;
     const lower = Object.create(null); lower.version = 7; lower.id = this.#nextInternalRequestId(); lower.op = lowerOp;
@@ -917,18 +1015,23 @@ export class CadrM13Shell {
     }
   }
 
-  /* This is a deliberately private composition-witness setup seam.  It is not
-   * in CADR_M13_OPERATION_SCHEMAS and must never consume or manufacture a v8
-   * request ID.  A public M13 boot uses the documented base-import/M10 path;
-   * the selected-media probe uses this method only to drive preserved local
-   * bytes through the pre-existing v7 artifact verifier. */
-  async mountSelectedMediaWitness(importId) {
-    if (this.#terminal) throw new M13AdmissionError("M13 session is terminal");
-    const result = await this.#mountSelectedMedia(u32(importId, "M13 witness base import ID", { nonzero: true }));
-    if (result.status !== CADR_M13_STATUS.OK) {
-      throw new M13AdmissionError("M13 selected-media witness mount failed", { status: result.status });
+  #selectedMediaConfigured() {
+    return this.#baseMediaBinding !== null && this.#selectedBootArtifacts !== null;
+  }
+
+  async #mountPublicBaseMedia(request) {
+    if (!this.#selectedMediaConfigured() || this.#m10Controller === null ||
+        typeof this.#m10Controller.status !== "function") {
+      return response(request, CADR_M13_STATUS.NOT_READY, { reason: "not-ready" });
     }
-    return result.result;
+    if (!this.#bootstrapped || this.#mediaMounted || this.#adoptedBaseImportId !== request.importId) {
+      return response(request, CADR_M13_STATUS.NOT_READY, { reason: "not-ready" });
+    }
+    const mounted = await this.#mountSelectedMedia(request.importId);
+    return response(request, mounted.status,
+      mounted.status === CADR_M13_STATUS.OK ? { result: mounted.result } :
+        { reason: shellReason(mounted.status) },
+      { terminal: mounted.status === CADR_M13_STATUS.WORKER_LOST });
   }
 
   async #mountSelectedMedia(importId) {
