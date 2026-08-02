@@ -3,7 +3,7 @@ type: Implementation Roadmap
 title: MIT CADR System 303 browser and WebAssembly implementation roadmap
 description: A milestone-complete plan for porting the pinned System 303 CADR emulator to a deterministic, locally persistent, browser-hosted WebAssembly machine.
 tags: [mit-cadr, lm-3, system-303, webassembly, browser, emulator, roadmap]
-timestamp: 2026-07-30T07:32:05-04:00
+timestamp: 2026-08-01T20:55:00-04:00
 ---
 
 # MIT CADR System 303 browser and WebAssembly implementation roadmap
@@ -691,6 +691,43 @@ an unchanged base disk, and verified unit/root cleanup. The private receipt is
 This closes the named continuation canary only. It does not supply READY4, a
 Listener-ready semantic marker, or the three clean boots required by
 `CW1-BOOT`; those M6 exit-gate obligations remain open.
+
+Selected-image negative production observation, 2026-08-02 UTC: one execution
+of the pinned-Node supervisor at repository commit
+`8519fc3de65f8aba98a67842d1340c1374cc58a0` produced the canonical
+`cadr-m6-selected-image-negative-supervised-v3` receipt
+`selected-image-negative-8519fc3-20260802T005017Z.json`. The receipt is 9,575
+bytes with SHA-256
+`5159e672660285dcb252db65a325cb40c38037dd494f0607074ee520565cef0b`;
+its accounting and effective-policy SHA-256 values are respectively
+`f527a583b35abf1f61f3ffc0e7a629afa8fbec3a0d0daf476ca27b3d7a3a5833`
+and
+`a85b39ec4234494ffe7c353b1ac1b0c211f955cdf04b739502e2dfc809b97625`.
+The supervised record sets `transient_unit_absent`, `source_stage_removed`, and
+`private_root_removed` to true, records equal before/after base identities, and
+sets `guest_execution_attempted`, `wasm_build_attempted`, and
+`worker_constructed` to false with `materialized_image_bytes` zero. This closes
+only the production wrong-image, truncated-image, pre-mutation negative
+sub-obligation.
+It is not READY4 or `CW1-BOOT`; the required three actual boots remain open.
+
+Implementation evidence for this supervisor is pinned to systemd v261.1 commit
+[`eff9446d505d62c075bed37d606860b38cfe51fb`](https://github.com/systemd/systemd/commit/eff9446d505d62c075bed37d606860b38cfe51fb).
+Its `systemd-run` implementation resolves the executable before transient-unit
+bus dispatch and serializes the resulting path plus literal argument vector
+([`run.c` lines 2863--2888](https://github.com/systemd/systemd/blob/eff9446d505d62c075bed37d606860b38cfe51fb/src/run/run.c#L2863-L2888),
+[`run.c` lines 1395--1439](https://github.com/systemd/systemd/blob/eff9446d505d62c075bed37d606860b38cfe51fb/src/run/run.c#L1395-L1439)).
+Disabling environment expansion selects `ExecStartEx` and records the
+`no-env-expand` execution flag
+([`run.c` lines 1215--1223](https://github.com/systemd/systemd/blob/eff9446d505d62c075bed37d606860b38cfe51fb/src/run/run.c#L1215-L1223)).
+`systemctl show` renders an exited status without a signal suffix and a signaled
+status as number/name
+([`systemctl-show.c` lines 1535--1559](https://github.com/systemd/systemd/blob/eff9446d505d62c075bed37d606860b38cfe51fb/src/systemctl/systemctl-show.c#L1535-L1559));
+the pinned signal formatter spells every realtime signal `RTMIN+N`
+([`signal-util.c` lines 148--161](https://github.com/systemd/systemd/blob/eff9446d505d62c075bed37d606860b38cfe51fb/src/basic/signal-util.c#L148-L161)).
+The selected validator profile is intentionally nonportable: on its Linux
+x86-64/glibc ABI it accepts realtime numbers 34 through 64 only as
+`RTMIN+0` through `RTMIN+30`, not the inverse parser's `RTMAX` aliases.
 
 ### M7 — Render the CADR display
 
