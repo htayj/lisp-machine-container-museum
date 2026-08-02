@@ -15,14 +15,17 @@ import { deriveSelectedImageNegativeViews, readCanonicalSelectedImageRelease,
   M6_SELECTED_IMAGE_AUTHORITY_FILES,
   M6_SELECTED_IMAGE_PINNED_NODE,
   M6_SELECTED_IMAGE_STATIC_LAUNCHER_IDENTITY,
+  readSelectedImageNegativeFailure, selectedImageNegativeFailure,
   selectedImageLauncherSourceBinding,
   selectedImageSystemdClientsSourceBinding,
-  selectedImageNegativeEffectiveEnvironment } from
+  selectedImageNegativeEffectiveEnvironment,
+  validateSelectedImageNegativeFailure } from
   "../scripts/cadr-m6-selected-image-negative-evidence.mjs";
 import { executeSelectedImageNegative, parseSelectedImageNegativeArguments,
   verifySelectedImageNegativeSupervision } from
   "../scripts/run-cadr-m6-selected-image-negative.mjs";
 import { parseSelectedImageNegativeSystemdArguments,
+  createSelectedImageFailureOutputCollector,
   closePinnedSelectedImageStagedExecutionClosure,
   executeSelectedImageNegativeSystemd,
   buildSelectedImageGuixAuthority,
@@ -1089,36 +1092,238 @@ function syntheticAuthority(stage) {
   });
 }
 
+const absentRecovery =
+  "LoadState=not-found\nTransient=no\nFragmentPath=\nType=\n";
+function orderedRefusalCapture(initial, calls) {
+  let original = true;
+  return async (...args) => {
+    calls.push(args);
+    const argv = args[1];
+    if (original) { original = false; return initial; }
+    return { code: 0, signal: null, failure: null,
+      stdout: Buffer.from(absentRecovery), stderr: Buffer.alloc(0) };
+  };
+}
+
 {
   const calls = [];
+  let refusal = null;
+  await assert.rejects(() => startSelectedImageNegativeUnit(command, {
+    captureFn: orderedRefusalCapture({ code: 1, signal: null, failure: null,
+      stdout: Buffer.from("systemd-run diagnostic\n"),
+      stderr: Buffer.from("Unknown assignment: RefuseProperty\n") }, calls),
+  }), error => {
+    refusal = error.refusalEvidence;
+    return error.ambiguousDispatch === true;
+  });
+  assert.equal(calls.length, 2,
+    "a completed refusal is followed by exact unit-state recovery");
+  assert.equal(calls[0][0], "/usr/bin/systemd-run");
+  assert.equal(calls[0][1].includes("--job-mode=fail"), true,
+    "the original StartTransientUnit explicitly uses fail job mode");
+  assert.deepEqual(refusal, {
+    absence_proof: null,
+    child_output_possible: true,
+    client: "pinned-systemd-run-via-peer-connector",
+    code: 1, signal: null, spawn_error: null,
+    dispatch_terminality: "unknown-after-client-start",
+    stage: "completed-client-nonzero",
+    stderr: { byte_count: "35", diagnostic_byte_count: "35",
+      diagnostic_sha256: sha256(Buffer.from("Unknown assignment: RefuseProperty\n")),
+      diagnostic_text: "Unknown assignment: RefuseProperty\n",
+      overflow: false,
+      retained_byte_count: "35",
+      retained_sha256: sha256(Buffer.from("Unknown assignment: RefuseProperty\n")),
+      sha256: sha256(Buffer.from("Unknown assignment: RefuseProperty\n")),
+      truncated: false },
+    stdout: { byte_count: "23", diagnostic_byte_count: "23",
+      diagnostic_sha256: sha256(Buffer.from("systemd-run diagnostic\n")),
+      diagnostic_text: "systemd-run diagnostic\n", overflow: false,
+      retained_byte_count: "23",
+      retained_sha256: sha256(Buffer.from("systemd-run diagnostic\n")),
+      sha256: sha256(Buffer.from("systemd-run diagnostic\n")),
+      truncated: false },
+    unit: command.unit,
+  });
+
+  const envelope = selectedImageNegativeFailure(
+    "selected-image-negative-systemd-failed", "aa".repeat(32), refusal);
+  assert.deepEqual(validateSelectedImageNegativeFailure(envelope), envelope);
+  const failurePath = resolve(directory, "bounded-refusal.failure.json");
+  await writeCanonicalNoReplace(failurePath, envelope);
+  assert.deepEqual((await readSelectedImageNegativeFailure(failurePath)).value,
+    envelope, "tracked failure reader accepts the canonical bounded record");
+  await writeFile(failurePath, `${canonicalJson(envelope)}\n`);
+  await assert.rejects(() => readSelectedImageNegativeFailure(failurePath),
+    /canonical/, "tracked failure reader rejects noncanonical trailing bytes");
+  await rm(failurePath);
+
+  for (const mutate of [
+    value => { value.refusal.code = 0; },
+    value => { value.refusal.child_output_possible = false; },
+    value => { value.refusal.absence_proof = { FragmentPath: "",
+      LoadState: "not-found", Transient: "no", Type: "",
+      ordering: "connector-process-not-spawned-v1" }; },
+    value => { value.refusal.stderr.sha256 = "x".repeat(64); },
+    value => { value.refusal.stderr.byte_count = "34"; },
+    value => { value.refusal.stderr.diagnostic_sha256 = "0".repeat(64); },
+    value => { value.refusal.stderr.retained_byte_count = "34"; },
+    value => { value.refusal.stderr.retained_sha256 = "0".repeat(64); },
+    value => { value.refusal.stderr.truncated = true; },
+    value => { value.refusal.stderr.diagnostic_text = "x".repeat(2049); },
+  ]) {
+    const changed = structuredClone(envelope); mutate(changed);
+    assert.throws(() => validateSelectedImageNegativeFailure(changed),
+      /refusal|stdout|stderr|absence|result/,
+    "malformed refusal evidence is rejected");
+  }
+}
+
+for (const testCase of [
+  { label: "signal", result: { code: null, signal: "SIGTERM", failure: null,
+    stdout: Buffer.alloc(0), stderr: Buffer.from("terminated\n") },
+  stage: "completed-client-signal" },
+  { label: "spawn", result: { code: null, signal: null,
+    failure: new Error("connector spawn failed"), stdout: Buffer.alloc(0),
+    stderr: Buffer.alloc(0) }, stage: "connector-spawn-failure" },
+  { label: "oversized", result: { code: 2, signal: null, failure: null,
+    stdout: Buffer.alloc(70000, 0x61), stderr: Buffer.alloc(0) },
+  stage: "completed-client-nonzero" },
+  { label: "non-UTF8", result: { code: 3, signal: null, failure: null,
+    stdout: Buffer.from([0xff, 0xfe]), stderr: Buffer.alloc(0) },
+  stage: "completed-client-nonzero" },
+  { label: "incomplete-UTF8", result: { code: 3, signal: null, failure: null,
+    stdout: Buffer.from([0xe2]), stderr: Buffer.alloc(0) },
+  stage: "completed-client-nonzero" },
+]) {
+  const calls = [];
+  let refusal = null;
+  await assert.rejects(() => startSelectedImageNegativeUnit(command, {
+    captureFn: orderedRefusalCapture(testCase.result, calls),
+  }), error => { refusal = error.refusalEvidence;
+    return testCase.label === "spawn" ? error.absenceProved :
+      error.ambiguousDispatch; });
+  assert.equal(refusal.stage, testCase.stage, `${testCase.label} stage differs`);
+  assert.equal(refusal.child_output_possible, testCase.label !== "spawn");
+  assert.equal(calls.length, testCase.label === "signal" ? 1 : 2);
+  assert.equal(calls.some(([, args]) => args.includes("stop")), false,
+    `${testCase.label} does not clean an absent unit`);
+  if (testCase.label === "oversized") {
+    assert.equal(refusal.stdout.byte_count, "70000");
+    assert.equal(refusal.stdout.truncated, true);
+    assert.equal(Buffer.byteLength(refusal.stdout.diagnostic_text), 2048);
+    assert.equal(refusal.stdout.sha256, sha256(testCase.result.stdout));
+  }
+  if (["non-UTF8", "incomplete-UTF8"].includes(testCase.label)) {
+    assert.equal(refusal.stdout.diagnostic_text, null);
+  }
+  if (testCase.label === "spawn") {
+    assert.deepEqual(refusal.spawn_error,
+      { message: "connector spawn failed", name: "Error" });
+  }
+}
+
+{
+  const collector = createSelectedImageFailureOutputCollector();
+  const first = Buffer.alloc(1048576, 0x61);
+  const last = Buffer.from("b");
+  collector.add(first); collector.add(last);
+  const captured = collector.finish();
+  assert.equal(captured.bytes.length, 65536,
+    "the real streaming collector retains only its bounded prefix");
+  assert.deepEqual(captured.identity, {
+    byte_count: null, overflow: true,
+    sha256: sha256(Buffer.concat([first, last])),
+  }, "the real streaming counter has an explicit overflow disposition");
+  let refusal;
+  await assert.rejects(() => startSelectedImageNegativeUnit(command, {
+    captureFn: orderedRefusalCapture({ code: 4, signal: null, failure: null,
+      stdout: captured.bytes, stdoutIdentity: captured.identity,
+      stderr: Buffer.alloc(0) }, []),
+  }), error => { refusal = error.refusalEvidence;
+    return error.ambiguousDispatch === true; });
+  assert.equal(refusal.stdout.overflow, true);
+  assert.equal(refusal.stdout.byte_count, null);
+  assert.equal(refusal.stdout.truncated, true);
+  assert.equal(Buffer.byteLength(refusal.stdout.diagnostic_text), 2048);
+  assert.deepEqual(validateSelectedImageNegativeFailure(
+    selectedImageNegativeFailure("selected-image-negative-systemd-failed",
+      "ab".repeat(32), refusal)).refusal.stdout, refusal.stdout);
+}
+
+{
+  const complete = Buffer.concat([
+    Buffer.alloc(65535, 0x61), Buffer.from("€"),
+  ]);
+  let refusal;
+  await assert.rejects(() => startSelectedImageNegativeUnit(command, {
+    captureFn: orderedRefusalCapture({ code: 5, signal: null, failure: null,
+      stdout: complete.subarray(0, 65536),
+      stdoutIdentity: { byte_count: String(complete.length), overflow: false,
+        sha256: sha256(complete) }, stderr: Buffer.alloc(0) }, []),
+  }), error => { refusal = error.refusalEvidence;
+    return error.ambiguousDispatch === true; });
+  assert.notEqual(refusal.stdout.diagnostic_text, null,
+    "a retained 64 KiB prefix ending mid-codepoint is not called malformed UTF-8");
+  assert.equal(Buffer.byteLength(refusal.stdout.diagnostic_text), 2048);
+}
+
+{
+  const calls = [];
+  let refusal;
   await assert.rejects(() => startSelectedImageNegativeUnit(command, {
     captureFn: async (...args) => {
       calls.push(args);
-      if (calls.length === 1) {
-        return { code: 1, signal: null, failure: null,
-          stdout: Buffer.alloc(0), stderr: Buffer.alloc(0) };
-      }
+      if (calls.length === 1) return { code: null, signal: "SIGKILL",
+        failure: null, stdout: Buffer.alloc(0), stderr: Buffer.alloc(0) };
+      // This deliberately models a late commit becoming visible only on a
+      // fresh connection.  Sound code must never open that connection and
+      // mistake an early absence observation for terminal manager ordering.
       return { code: 0, signal: null, failure: null,
-        stdout: Buffer.from("LoadState=not-found\nTransient=no\nFragmentPath=\nType=\n"),
-        stderr: Buffer.alloc(0) };
+        stdout: Buffer.from([
+          "LoadState=loaded", "Transient=yes", "Type=exec",
+          `FragmentPath=${command.fragmentPath}`,
+          `ExecStart={ path=${command.execStart[0]} ; argv[]=${command.execStart.join(" ")} ; ignore_errors=no ; start_time=[n/a] ; stop_time=[n/a] ; pid=123 ; code=(null) ; status=0/0 }`,
+          "",
+        ].join("\n")), stderr: Buffer.alloc(0) };
     },
-  }), /refused/);
-  assert.equal(calls.length, 2,
-    "a creation refusal proves the unique unit name absent");
-  assert.equal(calls[0][0], "/usr/bin/systemd-run");
-  assert.deepEqual(calls[1][1].slice(-1),
-    ["--property=LoadState,Transient,FragmentPath,Type,ExecStart"],
-    "ambiguous recovery queries the exact service type and command record");
+  }), error => { refusal = error.refusalEvidence;
+    return error.ambiguousDispatch === true && error.preserveStage === true; });
+  assert.equal(calls.length, 1,
+    "a signaled dispatch performs no unsound cross-connection absence check");
+  assert.equal(refusal.absence_proof, null);
+  assert.equal(refusal.child_output_possible, true);
+  assert.equal(refusal.dispatch_terminality, "unknown-after-client-start");
+}
+
+{
+  const calls = [];
+  await assert.rejects(() => startSelectedImageNegativeUnit(command, {
+    captureFn: async (_program, args) => {
+      calls.push(args);
+      if (calls.length === 1) return { code: 6, signal: null, failure: null,
+        stdout: Buffer.alloc(0), stderr: Buffer.alloc(0) };
+      return { code: 0, signal: null, failure: null,
+        stdout: Buffer.from([
+          "LoadState=loaded", "Transient=yes", "Type=exec",
+          `FragmentPath=${command.fragmentPath}`,
+          "ExecStart={ path=/coincident ; argv[]=/coincident ; ignore_errors=no ; start_time=[n/a] ; stop_time=[n/a] ; pid=1 ; code=(null) ; status=0/0 }",
+          "",
+        ].join("\n")), stderr: Buffer.alloc(0) };
+    },
+  }), error => error?.preserveStage === true &&
+    /unverified exact unit state/.test(error.message));
+  assert.equal(calls.some(([, args]) =>
+    args.includes("stop") || args.includes("reset-failed")), false,
+  "a mismatched coincident exact-name unit is never cleaned or owned");
 }
 
 for (const ambiguous of [
   { code: 1, signal: null, failure: null },
-  { code: null, signal: "SIGKILL", failure: null },
-  { code: null, signal: null, failure: new Error("client reply lost") },
 ]) {
   let call = 0;
   const recovered = await startSelectedImageNegativeUnit(command, {
-    captureFn: async () => {
+    captureFn: async (_program, args) => {
       if (call++ === 0) return { ...ambiguous,
         stdout: Buffer.alloc(0), stderr: Buffer.alloc(0) };
       return { code: 0, signal: null, failure: null,
@@ -1198,15 +1403,21 @@ for (const shown of [
     ""].join("\n"),
   null,
 ]) {
+  let initialDispatch = true;
   await assert.rejects(() => startSelectedImageNegativeUnit(command, {
-    captureFn: async (program) => program === "/usr/bin/systemd-run" ?
-      { code: null, signal: "SIGTERM", failure: null,
-        stdout: Buffer.alloc(0), stderr: Buffer.alloc(0) } :
-      shown === null ?
+    captureFn: async (_program, args) => {
+      if (initialDispatch) {
+        initialDispatch = false;
+        return { code: 1, signal: null, failure: null,
+          stdout: Buffer.alloc(0), stderr: Buffer.alloc(0) };
+      }
+      return shown === null ?
         { code: null, signal: null, failure: new Error("manager query lost"),
           stdout: Buffer.alloc(0), stderr: Buffer.alloc(0) } :
         { code: 0, signal: null, failure: null,
-          stdout: Buffer.from(shown), stderr: Buffer.alloc(0) },
+          stdout: Buffer.from(shown), stderr: Buffer.alloc(0) };
+    },
+    delayFn: async () => undefined,
   }), error => error?.preserveStage === true,
   "wrong-identity or unqueryable ambiguous unit never grants cleanup ownership");
 }
@@ -1258,8 +1469,8 @@ for (const shown of [
         captureFn: async (program, args, options) => {
           invocations.push({ program, args, options });
           if (invocations.length === 1) {
-            return { code: null, signal: null,
-              failure: new Error("reply lost"), stdout: Buffer.alloc(0),
+            return { code: 1, signal: null,
+              failure: null, stdout: Buffer.alloc(0),
               stderr: Buffer.alloc(0) };
           }
           return { code: 0, signal: null, failure: null,
@@ -1306,11 +1517,12 @@ for (const shown of [
         captureFn: async (...args) => {
           if (calls++ === 0) return captureFn(...args);
           return { code: 0, signal: null, failure: null,
-            stdout: Buffer.from(
-              "LoadState=not-found\nTransient=no\nFragmentPath=\nType=\n"),
-            stderr: Buffer.alloc(0) };
+            stdout: Buffer.from(absentRecovery), stderr: Buffer.alloc(0) };
         },
-      }), /client failure/);
+      }), error => error?.ambiguousDispatch === true &&
+        /client failure/.test(error.cause?.message ?? ""));
+      assert.equal(calls, 1,
+        "unknown thrown dispatch does not open a recovery connection");
       assert.deepEqual(await verifySelectedImageSystemdClients(clients),
         clients.identity,
       "post-validation completes after synchronous throws and rejections");
@@ -1342,7 +1554,7 @@ for (const shown of [
   const recoverable = await testSystemdClients();
   try {
     let calls = 0;
-    const recovered = await startSelectedImageNegativeUnit(command, {
+    await assert.rejects(() => startSelectedImageNegativeUnit(command, {
       clients: recoverable,
       captureFn: async () => {
         if (calls++ === 0) {
@@ -1358,9 +1570,9 @@ for (const shown of [
             "",
           ].join("\n")), stderr: Buffer.alloc(0) };
       },
-    });
-    assert.equal(recovered, command.unit,
-      "a post-success validation failure recovers exact ownership through the independently retained systemctl");
+    }), error => error?.ambiguousDispatch === true);
+    assert.equal(calls, 1,
+      "a post-success validation failure remains ambiguous without a second connection");
   } finally {
     await closeSelectedImageSystemdClients(recoverable).catch(() => undefined);
   }
@@ -1458,9 +1670,9 @@ for (const shown of [
       }),
     closePinned: async () => { closed = true; },
     removeStage: async () => { removed = true; },
-  }), /could not be recovered/);
-  assert.equal(dispatchCalls, 2,
-    "successful dispatch followed by failed post-check attempts exact recovery");
+  }), /no ordered completion proof/);
+  assert.equal(dispatchCalls, 1,
+    "unknown dispatch preserves stage without cross-connection recovery");
   assert.equal(closed, true,
     "parent-only staged descriptors are released even when unit ownership is ambiguous");
   assert.equal(removed, false);

@@ -17,7 +17,7 @@ export const M6_SELECTED_IMAGE_NEGATIVE_RUN_SCHEMA =
 export const M6_SELECTED_IMAGE_NEGATIVE_SUPERVISED_SCHEMA =
   "cadr-m6-selected-image-negative-supervised-v3";
 export const M6_SELECTED_IMAGE_NEGATIVE_FAILURE_SCHEMA =
-  "cadr-m6-selected-image-negative-failure-v1";
+  "cadr-m6-selected-image-negative-failure-v2";
 export const M6_SELECTED_IMAGE_NEGATIVE_TARGET =
   "CADR-WEB-303/ABI1.4/protocol-v4/M6-DEVID1";
 export const M6_SELECTED_IMAGE_RELATIVE_PATH =
@@ -919,11 +919,156 @@ export async function writeCanonicalNoReplace(path, value, mode = 0o600) {
   }
 }
 
-export function selectedImageNegativeFailure(reason, diagnostic) {
+function validateFailureOutput(value, label) {
+  exactKeys(value, ["byte_count", "diagnostic_byte_count",
+    "diagnostic_sha256", "diagnostic_text", "overflow", "sha256",
+    "retained_byte_count", "retained_sha256", "truncated"], label);
+  if (typeof value.overflow !== "boolean" ||
+      (!value.overflow &&
+        !/^(?:0|[1-9][0-9]*)$/.test(value.byte_count ?? "")) ||
+      (value.overflow && value.byte_count !== null) ||
+      (!value.overflow && BigInt(value.byte_count) > 1048576n) ||
+      !/^[0-9a-f]{64}$/.test(value.sha256 ?? "") ||
+      !/^(?:0|[1-9][0-9]*)$/.test(value.retained_byte_count ?? "") ||
+      BigInt(value.retained_byte_count) > 65536n ||
+      !/^[0-9a-f]{64}$/.test(value.retained_sha256 ?? "") ||
+      typeof value.truncated !== "boolean" ||
+      (value.diagnostic_text !== null &&
+        (typeof value.diagnostic_text !== "string" ||
+         Buffer.byteLength(value.diagnostic_text) > 2048 ||
+         value.diagnostic_text.includes("\u0000")))) {
+    throw new TypeError(`${label} is invalid`);
+  }
+  if (value.truncated !== (value.overflow ||
+      BigInt(value.byte_count) > 65536n)) {
+    throw new TypeError(`${label} truncation marker differs`);
+  }
+  const expectedRetained = value.truncated ? "65536" : value.byte_count;
+  if (value.retained_byte_count !== expectedRetained ||
+      (!value.truncated && value.retained_sha256 !== value.sha256)) {
+    throw new TypeError(`${label} retained prefix identity differs`);
+  }
+  if (value.diagnostic_text === null) {
+    if (value.diagnostic_byte_count !== null ||
+        value.diagnostic_sha256 !== null ||
+        (!value.overflow && value.byte_count === "0")) {
+      throw new TypeError(`${label} null diagnostic identity differs`);
+    }
+  } else {
+    const bytes = Buffer.from(value.diagnostic_text);
+    if (value.diagnostic_byte_count !== String(bytes.length) ||
+        value.diagnostic_sha256 !== sha256Hex(bytes)) {
+      throw new TypeError(`${label} diagnostic identity differs`);
+    }
+    if (!value.overflow && BigInt(value.byte_count) <= 2048n) {
+      if (value.diagnostic_byte_count !== value.byte_count ||
+          value.diagnostic_sha256 !== value.sha256 || value.truncated) {
+        throw new TypeError(`${label} fully retained identity differs`);
+      }
+    } else if (bytes.length < 2045 || bytes.length > 2048) {
+      throw new TypeError(`${label} diagnostic is not the maximal UTF-8 prefix`);
+    }
+  }
+  return Object.freeze({ ...value });
+}
+
+export function validateSelectedImageNegativeRefusal(value) {
+  exactKeys(value, ["absence_proof", "child_output_possible", "client",
+    "code", "dispatch_terminality", "signal", "spawn_error", "stage",
+    "stderr", "stdout", "unit"],
+  "selected-image negative refusal evidence");
+  const stages = new Set(["connector-spawn-failure", "completed-client-signal",
+    "completed-client-nonzero"]);
+  if (!stages.has(value.stage) ||
+      value.client !== "pinned-systemd-run-via-peer-connector" ||
+      typeof value.child_output_possible !== "boolean" ||
+      !/^cadr-m6-selected-image-negative-[0-9a-f]{32}\.service$/.test(
+        value.unit ?? "")) {
+    throw new TypeError("selected-image negative refusal profile differs");
+  }
+  if (value.stage === "completed-client-nonzero") {
+    if (!Number.isSafeInteger(value.code) || value.code <= 0 ||
+        value.code > 255 || value.signal !== null || value.spawn_error !== null) {
+      throw new TypeError("selected-image negative nonzero client result differs");
+    }
+  } else if (value.stage === "completed-client-signal") {
+    if (value.code !== null || !/^SIG[A-Z0-9]+$/.test(value.signal ?? "") ||
+        value.spawn_error !== null) {
+      throw new TypeError("selected-image negative signaled client result differs");
+    }
+  } else {
+    if (value.code !== null || value.signal !== null ||
+        value.spawn_error === null || typeof value.spawn_error !== "object") {
+      throw new TypeError("selected-image negative connector spawn result differs");
+    }
+    exactKeys(value.spawn_error, ["message", "name"],
+      "selected-image negative connector spawn error");
+    for (const field of ["name", "message"]) {
+      if (typeof value.spawn_error[field] !== "string" ||
+          Buffer.byteLength(value.spawn_error[field]) > 512 ||
+          value.spawn_error[field].includes("\u0000")) {
+        throw new TypeError("selected-image negative connector spawn error is invalid");
+      }
+    }
+  }
+  const preChild = value.stage === "connector-spawn-failure";
+  if (preChild) {
+    exactKeys(value.absence_proof,
+      ["FragmentPath", "LoadState", "Transient", "Type", "ordering"],
+    "selected-image negative refusal absence proof");
+    if (value.absence_proof.LoadState !== "not-found" ||
+        value.absence_proof.Transient !== "no" ||
+        value.absence_proof.FragmentPath !== "" ||
+        value.absence_proof.Type !== "" ||
+        value.absence_proof.ordering !==
+          "connector-process-not-spawned-v1") {
+      throw new TypeError("selected-image negative refusal absence is unproved");
+    }
+  }
+  if (preChild !== (value.dispatch_terminality === "pre-child-spawn-failure") ||
+      preChild === value.child_output_possible ||
+      (preChild ? value.absence_proof === null :
+        value.absence_proof !== null) ||
+      (!preChild && value.dispatch_terminality !==
+        "unknown-after-client-start")) {
+    throw new TypeError("selected-image negative refusal ordering differs");
+  }
+  return Object.freeze({ ...value,
+    absence_proof: value.absence_proof === null ? null :
+      Object.freeze({ ...value.absence_proof }),
+    spawn_error: value.spawn_error === null ? null :
+      Object.freeze({ ...value.spawn_error }),
+    stdout: validateFailureOutput(value.stdout,
+      "selected-image negative refusal stdout"),
+    stderr: validateFailureOutput(value.stderr,
+      "selected-image negative refusal stderr") });
+}
+
+export function validateSelectedImageNegativeFailure(value) {
+  exactKeys(value, ["diagnostic_sha256", "outcome", "reason", "refusal",
+    "schema"], "selected-image negative failure");
+  if (value.schema !== M6_SELECTED_IMAGE_NEGATIVE_FAILURE_SCHEMA ||
+      value.outcome !== "failed" || !/^[a-z0-9-]{1,64}$/.test(value.reason ?? "")) {
+    throw new TypeError("selected-image negative failure profile differs");
+  }
+  digest(value.diagnostic_sha256, "selected-image negative diagnostic");
+  return Object.freeze({ ...value, refusal: value.refusal === null ? null :
+    validateSelectedImageNegativeRefusal(value.refusal) });
+}
+
+export function selectedImageNegativeFailure(reason, diagnostic,
+  refusal = null) {
   if (!/^[a-z0-9-]{1,64}$/.test(reason)) {
     throw new TypeError("selected-image negative failure reason is invalid");
   }
   digest(diagnostic, "selected-image negative diagnostic");
-  return Object.freeze({ schema: M6_SELECTED_IMAGE_NEGATIVE_FAILURE_SCHEMA,
-    outcome: "failed", reason, diagnostic_sha256: diagnostic });
+  return validateSelectedImageNegativeFailure({
+    schema: M6_SELECTED_IMAGE_NEGATIVE_FAILURE_SCHEMA,
+    outcome: "failed", reason, diagnostic_sha256: diagnostic, refusal });
+}
+
+export async function readSelectedImageNegativeFailure(path, label =
+  "selected-image negative failure") {
+  return readSelectedImageNegativeRecord(path, label,
+    validateSelectedImageNegativeFailure);
 }

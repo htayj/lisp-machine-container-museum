@@ -6,7 +6,7 @@
  * receipt containing identities only.
  */
 import { spawn } from "node:child_process";
-import { randomBytes } from "node:crypto";
+import { createHash, randomBytes } from "node:crypto";
 import { constants, watch } from "node:fs";
 import { chmod, lstat, mkdir, mkdtemp, open, readFile, realpath, rm, stat,
   writeFile } from
@@ -42,6 +42,9 @@ const DIRECT_RELATIVE = "scripts/run-cadr-m6-selected-image-negative.mjs";
 const RELEASE_RELATIVE = "cadr-web/oracle/cadr-m6-release-record.json";
 const UNIT_PREFIX = "cadr-m6-selected-image-negative-";
 const RUNTIME_SECONDS = 600;
+const CAPTURE_OUTPUT_LIMIT = 65536;
+const FAILURE_TEXT_LIMIT = 2048;
+const FAILURE_OUTPUT_COUNT_LIMIT = 1048576;
 const SYSTEMD_CLIENT_PATHS = Object.freeze({
   busctl: "/usr/bin/busctl",
   systemdRun: "/usr/bin/systemd-run",
@@ -127,6 +130,37 @@ export function parseSelectedImageNegativeSystemdArguments(argv) {
   return Object.freeze(result);
 }
 
+export function createSelectedImageFailureOutputCollector() {
+  const state = { chunks: [], count: 0, hash: createHash("sha256"),
+    overflow: false, retained: 0 };
+  return Object.freeze({
+    add(value) {
+      const bytes = Buffer.from(value);
+      state.hash.update(bytes);
+      if (!state.overflow) {
+        if (bytes.length > FAILURE_OUTPUT_COUNT_LIMIT - state.count) {
+          state.overflow = true;
+        } else state.count += bytes.length;
+      }
+      const remaining = CAPTURE_OUTPUT_LIMIT - state.retained;
+      if (remaining > 0) {
+        const kept = bytes.subarray(0, remaining);
+        state.chunks.push(kept); state.retained += kept.length;
+      }
+    },
+    finish() {
+      return Object.freeze({
+        bytes: Buffer.concat(state.chunks),
+        identity: Object.freeze({
+          byte_count: state.overflow ? null : String(state.count),
+          overflow: state.overflow,
+          sha256: state.hash.digest("hex"),
+        }),
+      });
+    },
+  });
+}
+
 function capture(command, args, options = {}) {
   return new Promise(resolveRun => {
     const { controlPeerConnector = null, controlPeer = null,
@@ -158,14 +192,116 @@ function capture(command, args, options = {}) {
     const child = spawn(boundCommand, boundArgs, {
       stdio: ["ignore", "pipe", "pipe"], ...childOptions,
     });
-    const stdout = []; const stderr = [];
-    child.stdout.on("data", value => stdout.push(value));
-    child.stderr.on("data", value => stderr.push(value));
-    child.once("error", failure => resolveRun({ code: null, signal: null, failure,
-      stdout: Buffer.concat(stdout), stderr: Buffer.concat(stderr) }));
-    child.once("exit", (code, signal) => resolveRun({ code, signal, failure: null,
-      stdout: Buffer.concat(stdout), stderr: Buffer.concat(stderr) }));
+    const stdout = createSelectedImageFailureOutputCollector();
+    const stderr = createSelectedImageFailureOutputCollector();
+    child.stdout.on("data", value => stdout.add(value));
+    child.stderr.on("data", value => stderr.add(value));
+    let settled = false;
+    const finish = (code, signal, failure) => {
+      if (settled) return; settled = true;
+      const capturedStdout = stdout.finish();
+      const capturedStderr = stderr.finish();
+      resolveRun({ code, signal, failure,
+        stdout: capturedStdout.bytes, stderr: capturedStderr.bytes,
+        stdoutIdentity: capturedStdout.identity,
+        stderrIdentity: capturedStderr.identity });
+    };
+    let spawnFailure = null;
+    child.once("error", failure => { spawnFailure = failure; });
+    child.once("close", (code, signal) => finish(
+      spawnFailure === null ? code : null,
+      spawnFailure === null ? signal : null, spawnFailure));
   });
+}
+
+function boundedUtf8(bytes, limit = FAILURE_TEXT_LIMIT, complete = false) {
+  const end = Math.min(bytes.length, limit);
+  try {
+    // Streaming decode rejects malformed complete sequences but deliberately
+    // withholds an incomplete final code point.  That is exactly the boundary
+    // distinction needed when the retained or diagnostic prefix cuts UTF-8.
+    return new TextDecoder("utf-8", { fatal: true }).decode(
+      bytes.subarray(0, end), { stream: !(complete && end === bytes.length) });
+  } catch { return null; }
+}
+
+function boundedFailureText(value) {
+  const bytes = Buffer.from(String(value ?? ""));
+  return boundedUtf8(bytes, 512, true) ?? "invalid-error-text";
+}
+
+function refusalOutput(result, name) {
+  const bytes = result?.[name];
+  if (!Buffer.isBuffer(bytes)) {
+    throw new TypeError(`selected-image refused ${name} is not bytes`);
+  }
+  const supplied = result?.[`${name}Identity`];
+  let byteCount; let digest; let overflow = false;
+  if (supplied !== undefined) {
+    if (typeof supplied?.overflow !== "boolean" ||
+        (!supplied.overflow &&
+          !/^(?:0|[1-9][0-9]*)$/.test(supplied?.byte_count ?? "")) ||
+        (supplied.overflow && supplied.byte_count !== null) ||
+        !/^[0-9a-f]{64}$/.test(supplied?.sha256 ?? "") ||
+        (!supplied.overflow &&
+          BigInt(supplied.byte_count) < BigInt(bytes.length)) ||
+        bytes.length > CAPTURE_OUTPUT_LIMIT) {
+      throw new TypeError(`selected-image refused ${name} identity is invalid`);
+    }
+    byteCount = supplied.byte_count; digest = supplied.sha256;
+    overflow = supplied.overflow;
+  } else {
+    byteCount = String(bytes.length); digest = sha256Hex(bytes);
+  }
+  const fullyRetained = !overflow &&
+    BigInt(byteCount) === BigInt(bytes.length);
+  const diagnosticText = boundedUtf8(bytes, FAILURE_TEXT_LIMIT,
+    fullyRetained);
+  const diagnosticBytes = diagnosticText === null ? null :
+    Buffer.from(diagnosticText);
+  return Object.freeze({ byte_count: byteCount,
+    diagnostic_byte_count: diagnosticBytes === null ? null :
+      String(diagnosticBytes.length),
+    diagnostic_sha256: diagnosticBytes === null ? null :
+      sha256Hex(diagnosticBytes),
+    diagnostic_text: diagnosticText, overflow, sha256: digest,
+    retained_byte_count: String(bytes.length),
+    retained_sha256: sha256Hex(bytes),
+    truncated: overflow || BigInt(byteCount) > BigInt(CAPTURE_OUTPUT_LIMIT) });
+}
+
+function selectedImageRefusalEvidence(command, result, absence) {
+  if (!command.args.includes("--no-block") ||
+      command.args.some(value => ["--pipe", "--pty", "--pty-late", "--wait"]
+        .includes(value))) {
+    throw new TypeError(
+      "selected-image refusal diagnostic is not isolated from child output");
+  }
+  let stage; let spawnError = null;
+  if (result.failure !== null) {
+    stage = "connector-spawn-failure";
+    spawnError = Object.freeze({
+      name: boundedFailureText(result.failure?.name ?? "Error"),
+      message: boundedFailureText(result.failure?.message ?? result.failure),
+    });
+  } else if (result.signal !== null) stage = "completed-client-signal";
+  else if (Number.isSafeInteger(result.code) && result.code > 0) {
+    stage = "completed-client-nonzero";
+  } else {
+    throw new TypeError("selected-image refusal result is not classifiable");
+  }
+  const preChild = stage === "connector-spawn-failure";
+  return Object.freeze({ absence_proof: absence === null ? null :
+    Object.freeze({ FragmentPath: absence.FragmentPath,
+      LoadState: absence.LoadState, Transient: absence.Transient,
+      Type: absence.Type, ordering: "connector-process-not-spawned-v1" }),
+  child_output_possible: !preChild,
+  client: "pinned-systemd-run-via-peer-connector",
+  code: result.code, signal: result.signal, spawn_error: spawnError, stage,
+  dispatch_terminality: preChild ? "pre-child-spawn-failure" :
+    "unknown-after-client-start",
+  stderr: refusalOutput(result, "stderr"),
+  stdout: refusalOutput(result, "stdout"), unit: command.unit });
 }
 
 function portableMode(metadata) {
@@ -991,6 +1127,7 @@ export function selectedImageNegativeSystemdCommand(childArguments,
   }
   const unit = `${UNIT_PREFIX}${nonce}.service`;
   const args = ["--user", "--no-block", "--service-type=exec", `--unit=${unit}`,
+    "--job-mode=fail",
     `--property=RuntimeMaxSec=${RUNTIME_SECONDS}s`, "--property=TimeoutStopSec=30s",
     "--property=MemoryMax=536870912", "--property=MemorySwapMax=0",
     "--property=CPUQuota=100%", "--property=TasksMax=32", "--property=UMask=0077",
@@ -1206,9 +1343,49 @@ async function waitForResult(unit, clients) {
   throw new Error("selected-image negative systemd worker exceeded bounded observation");
 }
 
-/* Returning a unit name is the ownership commit.  A systemd-run refusal has
- * no owned unit, so cleanup must never issue stop/reset against a coincident
- * pre-existing name. */
+function classifyRecoveredSelectedImageUnit(command, shown) {
+  const text = shown.stdout.toString("utf8");
+  try {
+    const state = parseExactSelectedImageSystemdShow(text, RECOVERY_PROPERTIES,
+      "ambiguous-recovery");
+    if (state.LoadState !== "loaded" || state.Transient !== "yes" ||
+        state.FragmentPath !== command.fragmentPath || state.Type !== "exec") {
+      return Object.freeze({ kind: "mismatch", state });
+    }
+    try {
+      validateSelectedImageNegativeExecStart(state.ExecStart,
+        command.execStart);
+      return Object.freeze({ kind: "original", state });
+    } catch { return Object.freeze({ kind: "mismatch", state }); }
+  } catch (loadedParseError) {
+    try {
+      const state = parseExactSelectedImageSystemdShow(text,
+        ABSENT_RECOVERY_PROPERTIES, "ambiguous-absence");
+      if (state.LoadState === "not-found" && state.Transient === "no" &&
+          state.FragmentPath === "" && state.Type === "") {
+        return Object.freeze({ kind: "absent", state });
+      }
+    } catch { /* Preserve the loaded parse failure below. */ }
+    throw loadedParseError;
+  }
+}
+
+async function showRecoveredSelectedImageUnit(command, clients, captureFn) {
+  const shown = await captureSystemdClientOrTestSeam(clients, "systemctl",
+    ["--user", "--no-pager", "show", command.unit,
+      `--property=${RECOVERY_PROPERTIES.join(",")}`], captureFn);
+  if (shown.code !== 0 || shown.signal !== null || shown.failure !== null) {
+    throw new Error("selected-image exact-unit recovery query failed");
+  }
+  return classifyRecoveredSelectedImageUnit(command, shown);
+}
+
+/* Returning a unit name is the ownership commit.  A completed nonzero may be
+ * a local refusal, a manager error reply, or a transport loss after dispatch;
+ * therefore only an already visible exact ExecStart grants ownership, while
+ * observed absence remains nonterminal.  A Node spawn error created no
+ * connector process.  Signals and thrown post-dispatch errors likewise
+ * preserve the stage without absence or cleanup claims. */
 export async function startSelectedImageNegativeUnit(command,
   { captureFn = capture, clients = null } = {}) {
   let started = null; let dispatchFailure = null;
@@ -1223,67 +1400,64 @@ export async function startSelectedImageNegativeUnit(command,
       started.failure === null) {
     return command.unit;
   }
-  let shown;
-  try {
-    shown = await captureSystemdClientOrTestSeam(clients, "systemctl",
-      ["--user", "--no-pager", "show", command.unit,
-        `--property=${RECOVERY_PROPERTIES.join(",")}`], captureFn);
-  } catch (error) {
+  if (dispatchFailure !== null) {
     const failure = new Error(
-      "ambiguous systemd-run outcome could not be recovered with retained systemctl",
-    { cause: dispatchFailure ?? error });
+      "ambiguous systemd-run dispatch has no ordered completion proof",
+    { cause: dispatchFailure ?? undefined });
+    failure.preserveStage = true;
+    failure.ambiguousDispatch = true;
+    throw failure;
+  }
+  if (started.signal !== null) {
+    const failure = new Error(
+      "signaled systemd-run dispatch has unknown terminality");
+    failure.preserveStage = true;
+    failure.ambiguousDispatch = true;
+    failure.refusalEvidence = selectedImageRefusalEvidence(command, started,
+      null);
+    throw failure;
+  }
+  try {
+    const recovered = await showRecoveredSelectedImageUnit(command, clients,
+      captureFn);
+    if (recovered.kind === "original" && started.failure === null) {
+      return command.unit;
+    }
+    if (recovered.kind === "absent") {
+      const refusalEvidence = selectedImageRefusalEvidence(command, started,
+        started.failure === null ? null : recovered.state);
+      if (started.failure === null) {
+        throw Object.assign(new Error(
+          "nonzero systemd-run dispatch has unknown terminality"),
+        { ambiguousDispatch: true, preserveStage: true, refusalEvidence });
+      }
+      throw Object.assign(new Error(
+        "connector process was not spawned and exact unit absence was proved"),
+      { absenceProved: true, refusalEvidence });
+    }
+    throw new Error("selected-image exact unit name has mismatched identity");
+  } catch (error) {
+    if (error?.absenceProved === true || error?.preserveStage === true) {
+      throw error;
+    }
+    const failure = new Error(
+      "completed systemd-run refusal has an unverified exact unit state",
+    { cause: error });
     failure.preserveStage = true;
     failure.recoveryFailure = error;
     throw failure;
   }
-  if (shown.code === 0 && shown.signal === null && shown.failure === null) {
-    try {
-      const text = shown.stdout.toString("utf8");
-      let state;
-      try {
-        state = parseExactSelectedImageSystemdShow(text, RECOVERY_PROPERTIES,
-          "ambiguous-recovery");
-      } catch (loadedParseError) {
-        const absent = parseExactSelectedImageSystemdShow(text,
-          ABSENT_RECOVERY_PROPERTIES, "ambiguous-absence");
-        if (absent.LoadState !== "not-found" || absent.Transient !== "no" ||
-            absent.FragmentPath !== "" || absent.Type !== "") {
-          throw loadedParseError;
-        }
-        if (dispatchFailure !== null) {
-          dispatchFailure.absenceProved = true;
-          throw dispatchFailure;
-        }
-        throw Object.assign(new Error(
-          "systemd-run refused selected-image negative worker and unit absence was proved"),
-        { absenceProved: true });
-      }
-      if (state.LoadState === "loaded" && state.Transient === "yes" &&
-          state.FragmentPath === command.fragmentPath && state.Type === "exec") {
-        validateSelectedImageNegativeExecStart(state.ExecStart,
-          command.execStart);
-        return command.unit;
-      }
-    } catch (error) {
-      if (error?.absenceProved === true) throw error;
-    }
-  }
-  const failure = new Error(
-    "ambiguous systemd-run outcome has an absent-or-wrong-identity unit");
-  if (dispatchFailure !== null) failure.cause = dispatchFailure;
-  failure.preserveStage = true;
-  throw failure;
 }
 
 export async function stopAndRemoveSelectedImageNegativeUnit(unit, clients,
   { captureFn = capture, delayFn = async milliseconds =>
     new Promise(resolveDelay => setTimeout(resolveDelay, milliseconds)) } = {}) {
-  await captureSystemdClient(clients, "systemctl",
+  await captureSystemdClientOrTestSeam(clients, "systemctl",
     ["--user", "--no-pager", "stop", unit], captureFn);
-  await captureSystemdClient(clients, "systemctl",
+  await captureSystemdClientOrTestSeam(clients, "systemctl",
     ["--user", "--no-pager", "reset-failed", unit], captureFn);
   for (let attempt = 0; attempt < 30; attempt += 1) {
-    const left = await captureSystemdClient(clients, "systemctl",
+    const left = await captureSystemdClientOrTestSeam(clients, "systemctl",
       ["--user", "--no-pager", "show", unit,
         `--property=${ABSENCE_PROPERTIES.join(",")}`], captureFn);
     if (left.code === 0 && left.signal === null && left.failure === null) {
@@ -2281,7 +2455,8 @@ export async function executeSelectedImageNegativeSystemd(options,
       selectedImageNegativeFailure(cleanupFailures.length === 0 ?
         "selected-image-negative-systemd-failed" :
         "selected-image-negative-systemd-cleanup-failed",
-      sha256Hex(Buffer.from(String(authoritative?.message ?? authoritative)))))
+      sha256Hex(Buffer.from(String(authoritative?.message ?? authoritative))),
+      error?.refusalEvidence ?? authoritative?.refusalEvidence ?? null))
       .catch(() => undefined);
     throw authoritative;
   }
