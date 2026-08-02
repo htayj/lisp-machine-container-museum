@@ -7,22 +7,31 @@
  */
 import { spawnSync } from "node:child_process";
 import { createHash, randomUUID } from "node:crypto";
-import { lstat, readFile, readdir, realpath, stat, writeFile } from "node:fs/promises";
+import { constants as FS } from "node:fs";
+import { lstat, open, readFile, readdir, realpath, stat, writeFile } from "node:fs/promises";
 import { basename, dirname, extname, isAbsolute, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { CADR_M8_PHYSICAL_KEYS, cadrM8KeyForCode } from "../cadr-web/wasm/cadr-m8-keyboard.mjs";
 import { buildCadrM8M9Campaign, serializeCadrM8M9NativeScript } from "../cadr-web/wasm/cadr-m8-m9-campaign.mjs";
 import { encodeCadrM9Edge32 } from "../cadr-web/wasm/cadr-m9-pointer.mjs";
+import { CADR_M6_DEVID_POLICY_ID, CADR_M6_DEVID_PROFILE,
+  CADR_M6_READY4_CONTRACT, appendM6FastCheckpoint, appendM6FastHostWait,
+  canonicalM6ReadyWitness, canonicalM6ReadyWitnessV4, parseM6DevidSummary,
+  parseM6FastRunRecord, parseM6ZeroLatencyHostTranscript } from
+  "../cadr-web/wasm/cadr-m6-headless-boot.mjs";
 import {
   CADR_M8_M9_DIRECT_AUTHORITIES,
   CADR_M8_M9_DIRECT_DIRTY_POLICY,
   assertCadrM8M9ProvenanceJoin,
   collectCadrM8M9ProvenanceJoin,
 } from "./cadr-m8-m9-provenance-join.mjs";
+import { CADR_M8_M9_CAPTURED_PYTHON_BOOTSTRAP_SHA256 } from
+  "./run-cadr-m8-m9-input-conformance.mjs";
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const HARNESS = resolve(ROOT, "scripts/cadr-computer-use.sh");
 const DIRECT_RESULT_ROOT = resolve(ROOT, "build/cadr-oracle");
+const RELEASE_PATH = resolve(ROOT, "cadr-web/oracle/cadr-m6-release-record.json");
 const IS_MAIN = resolve(process.argv[1] ?? "") === fileURLToPath(import.meta.url);
 let prepared = resolve(ROOT, "build/cadr-oracle/m8-m9-x11-prepared-v4");
 const browserManifests = { O0: null, O2: null };
@@ -231,6 +240,41 @@ function decimal(value, label, { zero = true } = {}) {
       (!zero && value === "0")) fail(`${label} is not a canonical unsigned decimal`);
   return value;
 }
+function immutableAncestry(value, label) {
+  if (!Array.isArray(value) || value.length < 1) {
+    fail(`${label} ancestry is absent`);
+  }
+  const uids = new Set([
+    ...(typeof process.getuid === "function" ? [process.getuid()] : []),
+    ...(typeof process.geteuid === "function" ? [process.geteuid()] : []),
+  ]);
+  const groups = new Set([
+    ...(typeof process.getgroups === "function" ? process.getgroups() : []),
+    ...(typeof process.getgid === "function" ? [process.getgid()] : []),
+    ...(typeof process.getegid === "function" ? [process.getegid()] : []),
+  ]);
+  for (const component of value) {
+    exactKeys(component, ["reference", "uid", "gid", "mode", "device",
+      "inode"], `${label} component`);
+    if (typeof component.reference !== "string" ||
+        !component.reference.startsWith("/") ||
+        typeof component.mode !== "string" ||
+        !/^[0-7]{3,4}$/.test(component.mode) ||
+        !decimal(component.uid, `${label} uid`) ||
+        !decimal(component.gid, `${label} gid`) ||
+        !decimal(component.device, `${label} device`) ||
+        !decimal(component.inode, `${label} inode`, { zero: false })) {
+      fail(`${label} component is malformed`);
+    }
+    const mode = Number.parseInt(component.mode, 8);
+    if (uids.has(Number(component.uid)) ||
+        (groups.has(Number(component.gid)) && (mode & 0o020) !== 0) ||
+        (mode & 0o002) !== 0) {
+      fail(`${label} component is mutable by the current credentials`);
+    }
+  }
+  return value;
+}
 function unsigned(value, label) {
   if (!Number.isSafeInteger(value) || value < 0) fail(`${label} is not an unsigned safe integer`);
   return value;
@@ -317,6 +361,264 @@ function canonicalJson(value) {
   return JSON.stringify(value);
 }
 function sameJson(left, right) { return canonicalJson(left) === canonicalJson(right); }
+function hexBytes(value, label) {
+  if (typeof value !== "string" || !/^[0-9a-f]*$/.test(value) || value.length % 2 !== 0) {
+    fail(`${label} is not canonical lowercase hexadecimal`);
+  }
+  return Uint8Array.from(Buffer.from(value, "hex"));
+}
+function digestReceipt(value, label) {
+  exactKeys(value, ["bytes", "sha256"], label);
+  if (value.bytes !== 32 || !digest(value.sha256, `${label}.sha256`)) {
+    fail(`${label} is not an exact digest receipt`);
+  }
+  return hexBytes(value.sha256, `${label}.sha256`);
+}
+function summaryReceipt(value, label) {
+  exactKeys(value, ["bytes", "sha256", "hex", "selected_maximum", "total_accepted",
+    "tail_event_count"], label);
+  if (value.bytes !== 512 || !digest(value.sha256, `${label}.sha256`) ||
+      typeof value.hex !== "string" || value.hex.length !== 1024 ||
+      decimal(value.selected_maximum, `${label}.selected_maximum`, { zero: false }) !== "9223372036854775807" ||
+      decimal(value.total_accepted, `${label}.total_accepted`, { zero: false }) === "0" ||
+      decimal(value.tail_event_count, `${label}.tail_event_count`) === undefined) {
+    fail(`${label} has malformed CDRM6E1 receipt fields`);
+  }
+  const bytes = hexBytes(value.hex, `${label}.hex`);
+  if (bytes.byteLength !== 512 || sha256(bytes) !== value.sha256) {
+    fail(`${label} CDRM6E1 bytes differ from the receipt hash`);
+  }
+  const parsed = parseM6DevidSummary({ wireSchema: "CDRM6E1",
+    policyId: CADR_M6_DEVID_POLICY_ID, summary: bytes,
+    summaryDigest: hexBytes(value.sha256, `${label}.sha256`) });
+  if (Buffer.from(parsed.digest).toString("hex") !== value.sha256 ||
+      parsed.selectedMaximum.toString() !== value.selected_maximum ||
+      parsed.totalAccepted.toString() !== value.total_accepted ||
+      parsed.tailEventCount.toString() !== value.tail_event_count) {
+    fail(`${label} CDRM6E1 projection differs from its bytes`);
+  }
+  return Object.freeze({ bytes, parsed });
+}
+async function expectedArtifactSetDigest(join) {
+  const profile = new TextEncoder().encode(join.selected_inputs.profile.id);
+  const artifacts = join.selected_inputs.release.artifacts;
+  const bytes = new Uint8Array(12 + profile.byteLength + artifacts.length * 44);
+  bytes.set(new TextEncoder().encode("CDRM6AR1"), 0);
+  const view = new DataView(bytes.buffer); view.setUint32(8, profile.byteLength, true);
+  bytes.set(profile, 12); let offset = 12 + profile.byteLength;
+  for (const artifact of artifacts) {
+    view.setUint32(offset, artifact.kind, true);
+    view.setBigUint64(offset + 4, BigInt(artifact.byte_count), true);
+    bytes.set(hexBytes(artifact.sha256, `artifact ${artifact.kind}.sha256`), offset + 12);
+    offset += 44;
+  }
+  return sha256(bytes);
+}
+async function readPinnedReleaseRecord(join) {
+  const path = await liveContainedPath(ROOT, RELEASE_PATH, "frozen M6 release record");
+  const before = await lstat(path, { bigint: true });
+  if (!before.isFile() || before.isSymbolicLink()) {
+    fail("frozen M6 release record is not a regular non-symlink file");
+  }
+  const handle = await open(path, FS.O_RDONLY | FS.O_NOFOLLOW);
+  let bytes;
+  try {
+    const opened = await handle.stat({ bigint: true });
+    if (!opened.isFile() || opened.dev !== before.dev || opened.ino !== before.ino) {
+      fail("frozen M6 release record changed while being opened");
+    }
+    bytes = new Uint8Array(await handle.readFile());
+    const after = await handle.stat({ bigint: true });
+    if (after.dev !== opened.dev || after.ino !== opened.ino || after.size !== opened.size) {
+      fail("frozen M6 release record changed while being read");
+    }
+  } finally { await handle.close(); }
+  const named = await lstat(path, { bigint: true });
+  if (!named.isFile() || named.isSymbolicLink() || named.dev !== before.dev ||
+      named.ino !== before.ino || named.size !== before.size) {
+    fail("frozen M6 release record pathname changed while being read");
+  }
+  const identity = Object.freeze({ path: repositoryRelativePath(path, "frozen M6 release record"),
+    bytes: bytes.byteLength, sha256: sha256(bytes) });
+  const expected = join.selected_inputs?.release;
+  if (identity.path !== expected?.path || identity.bytes !== expected?.bytes ||
+      identity.sha256 !== expected?.sha256) {
+    fail("frozen M6 release record differs from the selected provenance identity");
+  }
+  let value;
+  try { value = JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(bytes)); }
+  catch { fail("frozen M6 release record is not UTF-8 JSON"); }
+  const canonical = new TextEncoder().encode(canonicalJson(value));
+  if (canonical.byteLength !== bytes.byteLength || !canonical.every((byte, index) => byte === bytes[index])) {
+    fail("frozen M6 release record is not canonical JSON");
+  }
+  return Object.freeze({ identity, value: Object.freeze(value) });
+}
+async function validateReady4Evidence(value, join, release, label) {
+  exactKeys(value, ["schema", "outcome", "target", "contract", "boundary", "quiescent",
+    "release_record", "run_evidence", "machine_info", "quiescence", "ready3_witness",
+    "ready4_witness", "cdrm6e1", "checkpoint_chain", "host_wait_chain", "cdrstate5", "cdrm5q1",
+    "artifact_set", "host_transcript", "post_208_summary"], label);
+  if (value.schema !== "cadr-m8-m9-ready4-evidence-v1" || value.outcome !== "ready4" ||
+      value.target !== CADR_M6_DEVID_PROFILE || value.contract !== CADR_M6_READY4_CONTRACT ||
+      value.boundary !== "983990278" || value.quiescent !== true) {
+    fail(`${label} does not claim exact quiescent READY4`);
+  }
+  const ready3 = digestReceipt(value.ready3_witness, `${label}.ready3_witness`);
+  const ready4 = digestReceipt(value.ready4_witness, `${label}.ready4_witness`);
+  const state = digestReceipt(value.cdrstate5, `${label}.cdrstate5`);
+  const queue = digestReceipt(value.cdrm5q1, `${label}.cdrm5q1`);
+  const artifactSet = digestReceipt(value.artifact_set, `${label}.artifact_set`);
+  exactIdentity(value.release_record, release.identity, `${label}.release_record`);
+  exactKeys(value.run_evidence, ["session_id", "private_disk_instance_id", "private_disk_base"],
+    `${label}.run_evidence`);
+  if (!/^m6-ready4-session-[0-9a-f]{32}$/.test(value.run_evidence.session_id) ||
+      !/^m6-ready4-private-disk-[0-9a-f]{32}$/.test(value.run_evidence.private_disk_instance_id)) {
+    fail(`${label}.run_evidence lacks fresh READY4 execution identities`);
+  }
+  const base = digestReceipt(value.run_evidence.private_disk_base,
+    `${label}.run_evidence.private_disk_base`);
+  exactKeys(value.machine_info, ["lifecycle", "artifact_mask", "boundary", "microinstructions",
+    "generation", "next_request_id", "outstanding_request_id", "last_completed_request_id",
+    "persistent_status", "profile"], `${label}.machine_info`);
+  if (value.machine_info.lifecycle !== 2 || value.machine_info.artifact_mask !== 31 ||
+      value.machine_info.boundary !== "983990278" || value.machine_info.persistent_status !== 0 ||
+      value.machine_info.profile !== 1 || value.machine_info.outstanding_request_id !== "0") {
+    fail(`${label}.machine_info is not the exact READY4 running core state`);
+  }
+  for (const field of ["microinstructions", "generation", "next_request_id", "last_completed_request_id"]) {
+    decimal(value.machine_info[field], `${label}.machine_info.${field}`,
+      { zero: field === "last_completed_request_id" });
+  }
+  exactKeys(value.quiescence, ["scheduler_lifecycle", "run_active", "deferred_control_count",
+    "pending_boundary_digest", "media_busy", "media_snapshot_blocked", "visibility_initialized",
+    "hidden", "block_service_pending", "host_next_request_status"], `${label}.quiescence`);
+  if (value.quiescence.scheduler_lifecycle !== "PAUSED" || value.quiescence.run_active !== false ||
+      value.quiescence.deferred_control_count !== 0 || value.quiescence.pending_boundary_digest !== false ||
+      value.quiescence.media_busy !== false || value.quiescence.media_snapshot_blocked !== false ||
+      value.quiescence.visibility_initialized !== true || value.quiescence.hidden !== false ||
+      value.quiescence.block_service_pending !== false || value.quiescence.host_next_request_status !== 9) {
+    fail(`${label}.quiescence does not retain assertQuiescent facts`);
+  }
+  exactKeys(value.checkpoint_chain, ["count", "bytes", "sha256", "records"], `${label}.checkpoint_chain`);
+  if (!Number.isSafeInteger(value.checkpoint_chain.count) || value.checkpoint_chain.count < 1) {
+    fail(`${label}.checkpoint_chain has no fast-run links`);
+  }
+  const checkpoint = digestReceipt({ bytes: value.checkpoint_chain.bytes,
+    sha256: value.checkpoint_chain.sha256 }, `${label}.checkpoint_chain`);
+  if (!Array.isArray(value.checkpoint_chain.records) ||
+      value.checkpoint_chain.records.length !== value.checkpoint_chain.count) {
+    fail(`${label}.checkpoint_chain records do not match its count`);
+  }
+  let expectedCheckpoint = new Uint8Array(createHash("sha256").update("CDRM6FASTCHAIN1\0").digest());
+  for (const [ordinal, record] of value.checkpoint_chain.records.entries()) {
+    exactKeys(record, ["fast_run", "cdrstate5", "cdrm5q1"],
+      `${label}.checkpoint_chain.records ${ordinal}`);
+    exactKeys(record.fast_run, ["bytes", "sha256", "hex"],
+      `${label}.checkpoint_chain.records ${ordinal}.fast_run`);
+    if (record.fast_run.bytes !== 128 || typeof record.fast_run.hex !== "string" ||
+        !/^[0-9a-f]{256}$/.test(record.fast_run.hex)) {
+      fail(`${label}.checkpoint_chain.records ${ordinal} has no exact CDRM6FAST1`);
+    }
+    const fast = Buffer.from(record.fast_run.hex, "hex");
+    if (sha256(fast) !== record.fast_run.sha256 || parseM6FastRunRecord(fast).reason === 3) {
+      fail(`${label}.checkpoint_chain.records ${ordinal} is not a settled fast stop`);
+    }
+    const stateAtCheckpoint = digestReceipt(record.cdrstate5,
+      `${label}.checkpoint_chain.records ${ordinal}.cdrstate5`);
+    const queueAtCheckpoint = digestReceipt(record.cdrm5q1,
+      `${label}.checkpoint_chain.records ${ordinal}.cdrm5q1`);
+    expectedCheckpoint = await appendM6FastCheckpoint(expectedCheckpoint, ordinal,
+      fast, stateAtCheckpoint, queueAtCheckpoint);
+  }
+  if (Buffer.from(checkpoint).toString("hex") !== Buffer.from(expectedCheckpoint).toString("hex")) {
+    fail(`${label}.checkpoint_chain commitment differs from its settled materials`);
+  }
+  const finalCheckpoint = value.checkpoint_chain.records.at(-1);
+  if (finalCheckpoint?.cdrstate5?.sha256 !== value.cdrstate5.sha256 ||
+      finalCheckpoint?.cdrm5q1?.sha256 !== value.cdrm5q1.sha256) {
+    fail(`${label} terminal state/queue differ from the final settled checkpoint`);
+  }
+  exactKeys(value.host_wait_chain, ["count", "bytes", "sha256", "records"], `${label}.host_wait_chain`);
+  if (!Number.isSafeInteger(value.host_wait_chain.count) || value.host_wait_chain.count < 0) {
+    fail(`${label}.host_wait_chain has an invalid fast host-stop count`);
+  }
+  const hostWait = digestReceipt({ bytes: value.host_wait_chain.bytes,
+    sha256: value.host_wait_chain.sha256 }, `${label}.host_wait_chain`);
+  if (!Array.isArray(value.host_wait_chain.records) ||
+      value.host_wait_chain.records.length !== value.host_wait_chain.count) {
+    fail(`${label}.host_wait_chain records do not match its count`);
+  }
+  let expectedHostWait = new Uint8Array(createHash("sha256").update("CDRM6FASTHOSTWAIT1\0").digest());
+  for (const [ordinal, record] of value.host_wait_chain.records.entries()) {
+    exactKeys(record, ["bytes", "sha256", "hex"], `${label}.host_wait_chain.records ${ordinal}`);
+    if (record.bytes !== 128 || typeof record.hex !== "string" || !/^[0-9a-f]{256}$/.test(record.hex)) {
+      fail(`${label}.host_wait_chain.records ${ordinal} is not an exact CDRM6FAST1 record`);
+    }
+    const bytes = Buffer.from(record.hex, "hex");
+    if (sha256(bytes) !== record.sha256 || parseM6FastRunRecord(bytes).reason !== 3) {
+      fail(`${label}.host_wait_chain.records ${ordinal} is not a reason-3 CDRM6FAST1 record`);
+    }
+    expectedHostWait = await appendM6FastHostWait(expectedHostWait, ordinal, bytes);
+  }
+  if (Buffer.from(hostWait).toString("hex") !== Buffer.from(expectedHostWait).toString("hex")) {
+    fail(`${label}.host_wait_chain commitment differs from its exact records`);
+  }
+  exactKeys(value.host_transcript, ["bytes", "sha256", "hex"], `${label}.host_transcript`);
+  if (!Number.isSafeInteger(value.host_transcript.bytes) || value.host_transcript.bytes < 64 ||
+      !digest(value.host_transcript.sha256, `${label}.host_transcript.sha256`) ||
+      typeof value.host_transcript.hex !== "string" ||
+      value.host_transcript.hex.length !== value.host_transcript.bytes * 2 ||
+      !/^[0-9a-f]+$/.test(value.host_transcript.hex) ||
+      sha256(Buffer.from(value.host_transcript.hex, "hex")) !== value.host_transcript.sha256) {
+    fail(`${label}.host_transcript is incomplete`);
+  }
+  try {
+    await parseM6ZeroLatencyHostTranscript(Buffer.from(value.host_transcript.hex, "hex"), {
+      artifactSetSha256: artifactSet,
+      hostWaitRecords: value.host_wait_chain.records.map(record => Buffer.from(record.hex, "hex")),
+    });
+  } catch (error) {
+    fail(`${label}.host_transcript/artifact closure differs: ${error.message}`);
+  }
+  const summary = summaryReceipt(value.cdrm6e1, `${label}.cdrm6e1`);
+  exactKeys(value.post_208_summary, ["outcome", "after_input_ordinal", "cdrm6e1"], `${label}.post_208_summary`);
+  if (value.post_208_summary.outcome !== "limit-not-exceeded" ||
+      value.post_208_summary.after_input_ordinal !== 208) {
+    fail(`${label} post-208 evidence does not establish the selected limit`);
+  }
+  const post = summaryReceipt(value.post_208_summary.cdrm6e1, `${label}.post_208_summary.cdrm6e1`);
+  if (post.parsed.totalAccepted > post.parsed.selectedMaximum ||
+      post.parsed.selectedMaximum !== summary.parsed.selectedMaximum ||
+      post.parsed.totalAccepted < summary.parsed.totalAccepted) {
+    fail(`${label} post-208 CDRM6E1 exceeds its selected maximum`);
+  }
+  const expectedBase = join.selected_inputs.release.artifacts.find(item => item.kind === 3)?.sha256;
+  if (Buffer.from(base).toString("hex") !== expectedBase ||
+      Buffer.from(artifactSet).toString("hex") !== await expectedArtifactSetDigest(join)) {
+    fail(`${label} does not bind the selected artifact closure`);
+  }
+  const expectedReady3 = await canonicalM6ReadyWitness({ releaseRecord: release.value,
+    artifactSetSha256: artifactSet, privateDiskBaseSha256: base,
+    formABoundary: BigInt(M6_FROZEN.boundaries[0]), formBBoundary: BigInt(M6_FROZEN.boundaries[1]),
+    listenerIdleCBoundary: BigInt(M6_FROZEN.boundaries[2]),
+    listenerIdleSettledBoundary: BigInt(M6_FROZEN.boundaries[3]), readyBoundary: 983990278n,
+    cdrstate5Sha256: state, cdrm5q1Sha256: queue,
+    hostTranscriptSha256: hexBytes(value.host_transcript.sha256, `${label}.host_transcript.sha256`) });
+  const expectedReady4 = await canonicalM6ReadyWitnessV4({ ready3Witness: expectedReady3,
+    target: CADR_M6_DEVID_PROFILE, policyId: CADR_M6_DEVID_POLICY_ID,
+    selectedMaximum: summary.parsed.selectedMaximum,
+    cdrm6e1Sha256: hexBytes(value.cdrm6e1.sha256, `${label}.cdrm6e1.sha256`),
+    checkpointCount: value.checkpoint_chain.count,
+    checkpointChainSha256: checkpoint,
+    hostWaitCount: value.host_wait_chain.count,
+    hostWaitChainSha256: hostWait });
+  if (Buffer.from(ready3).toString("hex") !== Buffer.from(expectedReady3).toString("hex") ||
+      Buffer.from(ready4).toString("hex") !== Buffer.from(expectedReady4).toString("hex")) {
+    fail(`${label} READY3/READY4 witness differs from the selected closure`);
+  }
+  return Object.freeze({ summary, post, ready3, ready4 });
+}
 function hexSession(value, prefix, label) {
   if (typeof value !== "string" || !new RegExp(`^${prefix}-[0-9a-f]{32}$`).test(value)) {
     fail(`${label} is not a fresh ${prefix} identifier`);
@@ -354,6 +656,36 @@ function validateDirectSourceBinding(value, expectedJoin, label) {
       fail(`${label} direct-runner source authorities are not the exact ordered producer set`);
     }
     exactIdentity(identity, closure.get(path), `${label} direct-runner source ${path}`);
+  }
+}
+function validateCapturedWorkerClosure(value, expectedJoin, label) {
+  exactKeys(value, ["schema", "root", "file_count", "sha256", "files", "static_imports",
+    "execution"], label);
+  if (value.schema !== "cadr-m8-m9-worker-capture-v1" ||
+      value.root !== "cadr-web/wasm/cadr-worker.js" ||
+      value.execution !== "descriptor-captured-in-memory-vm-module-graph-v1" ||
+      !Array.isArray(value.files) || !Array.isArray(value.static_imports) ||
+      value.file_count !== value.files.length ||
+      value.sha256 !== sha256(`${canonicalJson({ files: value.files,
+        static_imports: value.static_imports })}\n`)) {
+    fail(`${label} is not an exact descriptor-captured worker module graph`);
+  }
+  const expectedFiles = new Map(expectedJoin.source_closure.files.map(file => [file.path, file]));
+  const expectedEdges = new Map(expectedJoin.source_closure.static_imports.map(edge => [edge.path, edge]));
+  const pending = [value.root]; const reached = new Set();
+  while (pending.length !== 0) {
+    const path = pending.pop();
+    if (reached.has(path)) continue;
+    reached.add(path);
+    const edge = expectedEdges.get(path);
+    if (edge === undefined) fail(`${label} root graph omits ${path}`);
+    pending.push(...edge.imports);
+  }
+  const files = [...reached].sort().map(path => expectedFiles.get(path));
+  const edges = [...reached].sort().map(path => expectedEdges.get(path));
+  if (files.some(file => file === undefined) || !sameJson(value.files, files) ||
+      !sameJson(value.static_imports, edges)) {
+    fail(`${label} differs from the selected descriptor-captured source closure`);
   }
 }
 const M6_RAW_SCHEDULE = resolve(ROOT, "scripts/cadr-m6-witness-schedule.py");
@@ -559,6 +891,272 @@ function validateNativeTranscript(identity, metadata, expectedJoin, label) {
     }
   }
 }
+
+function validateAuthorityBuildReceipt(value, expectedJoin, label) {
+  exactKeys(value, ["schema", "bytes", "sha256", "derivation", "output",
+    "independent_selection", "yama_ptrace_scope", "build_environment",
+    "source_closure", "guix_client", "authority"], label);
+  if (value.schema !== "cadr-m8-m9-python-authority-build-v1" ||
+      unsigned(value.bytes, `${label} bytes`) === 0 ||
+      !digest(value.sha256, `${label} digest`) ||
+      value.yama_ptrace_scope !== 3 ||
+      typeof value.derivation !== "string" ||
+      !/^\/gnu\/store\/[a-z0-9]+-[^/]+\.drv$/.test(value.derivation) ||
+      typeof value.output !== "string" ||
+      !/^\/gnu\/store\/[a-z0-9]+-cadr-m8-m9-python-seal-authority$/.test(value.output)) {
+    fail(`${label} profile/store selection is malformed`);
+  }
+  exactKeys(value.independent_selection, ["derivation", "output"],
+    `${label} independent selection`);
+  if (value.independent_selection.derivation !== value.derivation ||
+      value.independent_selection.output !== value.output) {
+    fail(`${label} was not independently re-evaluated`);
+  }
+  const expectedEnvironment = {
+    CADR_M8_M9_BOOTSTRAP_SOURCE: "/proc/self/fd/7",
+    CADR_M8_M9_GUARD_SOURCE: "/proc/self/fd/6",
+    CADR_M8_M9_SEAL_SOURCE: "/proc/self/fd/5",
+    LANG: "C", LC_ALL: "C", TZ: "UTC",
+  };
+  if (!sameJson(value.build_environment, expectedEnvironment)) {
+    fail(`${label} Guix environment is not closed and exact`);
+  }
+  exactKeys(value.source_closure, ["schema", "files", "sha256"],
+    `${label} source closure`);
+  const expectedRoles = new Map([
+    ["builder-wrapper", "scripts/build-cadr-m8-m9-python-authority.sh"],
+    ["builder", "scripts/build-cadr-m8-m9-python-authority.mjs"],
+    ["derivation", "scripts/cadr-m8-m9-python-seal-authority.scm"],
+    ["launcher-source", "scripts/cadr-m8-m9-python-seal-launcher.c"],
+    ["guard-source", "scripts/cadr-m8-m9-prepython-guard.c"],
+    ["bootstrap-source", "scripts/cadr-m8-m9-captured-python-bootstrap.py"],
+  ]);
+  const closureFiles = new Map(expectedJoin.source_closure.files.map(item =>
+    [item.path, item]));
+  if (value.source_closure.schema !==
+        "cadr-m8-m9-python-authority-source-closure-v1" ||
+      !Array.isArray(value.source_closure.files) ||
+      value.source_closure.files.length !== expectedRoles.size ||
+      value.source_closure.sha256 !== sha256(Buffer.from(
+        `${canonicalJson({ files: value.source_closure.files })}\n`))) {
+    fail(`${label} source closure is incomplete`);
+  }
+  for (const item of value.source_closure.files) {
+    exactKeys(item, ["role", "path", "bytes", "sha256"],
+      `${label} source`);
+    const expectedPath = expectedRoles.get(item.role);
+    const joined = closureFiles.get(item.path);
+    if (expectedPath !== item.path || joined?.bytes !== item.bytes ||
+        joined?.sha256 !== item.sha256) {
+      fail(`${label} does not bind the joined reviewed source bytes`);
+    }
+    expectedRoles.delete(item.role);
+  }
+  if (expectedRoles.size !== 0) fail(`${label} omits reviewed build sources`);
+  exactKeys(value.guix_client, ["path", "identity", "ancestry"],
+    `${label} Guix client`);
+  exactKeys(value.guix_client.identity,
+    ["bytes", "sha256", "device", "inode"], `${label} Guix identity`);
+  if (typeof value.guix_client.path !== "string" ||
+      !value.guix_client.path.startsWith("/gnu/store/") ||
+      unsigned(value.guix_client.identity.bytes,
+        `${label} Guix bytes`) === 0 ||
+      !digest(value.guix_client.identity.sha256,
+        `${label} Guix digest`)) {
+    fail(`${label} Guix client is incomplete`);
+  }
+  immutableAncestry(value.guix_client.ancestry, `${label} Guix client`);
+  exactKeys(value.authority, ["bootstrap", "launcher", "guard"],
+    `${label} output`);
+  exactKeys(value.authority.bootstrap,
+    ["bytes", "sha256", "device", "inode"], `${label} bootstrap`);
+  for (const field of ["launcher", "guard"]) {
+    exactKeys(value.authority[field], ["identity", "elf"],
+      `${label} ${field}`);
+    exactKeys(value.authority[field].identity,
+      ["bytes", "sha256", "device", "inode"], `${label} ${field} identity`);
+    exactKeys(value.authority[field].elf, ["elf_class", "data", "version",
+      "osabi", "type", "machine", "entry", "program_header_types",
+      "has_pt_interp", "has_pt_dynamic"], `${label} ${field} ELF`);
+  }
+  const launcherElf = value.authority.launcher.elf;
+  const guardElf = value.authority.guard.elf;
+  if (launcherElf.elf_class !== "ELF64" ||
+      launcherElf.data !== "little-endian" || launcherElf.type !== 2 ||
+      launcherElf.machine !== "x86-64" ||
+      launcherElf.has_pt_interp !== false ||
+      launcherElf.has_pt_dynamic !== false ||
+      guardElf.elf_class !== "ELF64" ||
+      guardElf.data !== "little-endian" || guardElf.type !== 3 ||
+      guardElf.machine !== "x86-64" ||
+      guardElf.has_pt_interp !== false ||
+      guardElf.has_pt_dynamic !== true) {
+    fail(`${label} launcher/guard ELF identities are nonconforming`);
+  }
+  const canonicalBuild = {
+    schema: value.schema,
+    yama_ptrace_scope: value.yama_ptrace_scope,
+    guix_client: value.guix_client,
+    build_environment: value.build_environment,
+    source_closure: value.source_closure,
+    derivation: value.derivation,
+    output: value.output,
+    authority: value.authority,
+  };
+  const bytes = Buffer.from(`${canonicalJson(canonicalBuild)}\n`);
+  if (bytes.byteLength !== value.bytes || sha256(bytes) !== value.sha256) {
+    fail(`${label} digest does not commit its canonical build result`);
+  }
+  return value;
+}
+
+const NATIVE_PYTHON_PERMIT = Object.freeze([
+  "scripts/cadr-m6-native-oracle.py",
+  "scripts/cadr-m6-witness-schedule.py",
+  "scripts/cadr-m7-native-frame-oracle.py",
+  "scripts/cadr-m8-m9-native-input-oracle.py",
+  "scripts/cadr-oracle.py", "scripts/cadr_oracle_trace.py",
+  "scripts/verify-cadr-web-profile.py",
+]);
+const PREPARED_EXECUTABLES = Object.freeze([
+  "source/usim/usim", "source/usim/usim-m8-m9-direct",
+  "source/usim/usim-m8-m9-x11-witness",
+]);
+const NATIVE_PERMIT_TAIL_ROLES = Object.freeze([
+  "isolated-native-output", "native-input-script", "native-campaign",
+  "native-configuration-input-0", "native-configuration-input-1",
+  "native-configuration-input-2", "native-configuration-input-3",
+  "native-configuration-input-4", "selected-profile",
+  "selected-configuration-template", "selected-m6-release-record",
+  "selected-m8-m9-patch", "selected-cadet-mapping",
+]);
+const BWRAP_SYNTHETIC_DEV = Object.freeze({
+  schema: "bubblewrap-synthetic-dev-v1", option: "--dev /dev",
+  entries: Object.freeze([
+    "core:symlink:/proc/kcore", "fd:symlink:/proc/self/fd",
+    "full:char:0666", "null:char:0666", "ptmx:symlink:pts/ptmx",
+    "pts:directory:0755", "pts/ptmx:char:0666", "random:char:0666",
+    "shm:directory:0755", "stderr:symlink:/proc/self/fd/2",
+    "stdin:symlink:/proc/self/fd/0", "stdout:symlink:/proc/self/fd/1",
+    "tty:char:0666", "urandom:char:0666", "zero:char:0666",
+  ]),
+});
+const STORE_ITEM_PATTERN = /^\/gnu\/store\/[a-z0-9]{32}-[^/]+$/;
+
+function validatePermitIdentity(value, { directory }, label) {
+  const fields = directory ? ["device", "inode"] :
+    ["bytes", "sha256", "device", "inode"];
+  exactKeys(value, fields, label);
+  for (const field of fields) {
+    if (field === "bytes") unsigned(value[field], `${label} bytes`);
+    else if (field === "sha256") digest(value[field], `${label} digest`);
+    else decimal(value[field], `${label} ${field}`, { zero: field !== "inode" });
+  }
+  return value;
+}
+
+function validateGuixRuntimeClosure(value, label) {
+  exactKeys(value, ["schema", "seed", "paths", "sha256"], label);
+  if (value.schema !== "cadr-m8-m9-guix-runtime-closure-v1" ||
+      !Array.isArray(value.paths) || value.paths.length === 0 ||
+      !sameJson(value.paths, [...new Set(value.paths)].sort()) ||
+      !STORE_ITEM_PATTERN.test(value.seed) || !value.paths.includes(value.seed) ||
+      value.paths.some(path => !STORE_ITEM_PATTERN.test(path))) {
+    fail(`${label} does not select one canonical Guix runtime closure`);
+  }
+  if (digest(value.sha256, `${label}.sha256`) !==
+      sha256(Buffer.from(`${canonicalJson({ seed: value.seed, paths: value.paths })}\n`))) {
+    fail(`${label} digest differs from its canonical path set`);
+  }
+  return value;
+}
+
+function validatePreparedFileClosure(value, label) {
+  exactKeys(value, ["schema", "root", "executable_paths", "files", "file_count", "sha256"], label);
+  if (value.schema !== "cadr-m8-m9-prepared-file-closure-v1" ||
+      typeof value.root !== "string" || !value.root.startsWith("/") ||
+      resolve(value.root) !== value.root || value.root.includes("\0") ||
+      !sameJson(value.executable_paths, PREPARED_EXECUTABLES) ||
+      !Array.isArray(value.files) || value.files.length === 0 ||
+      value.file_count !== value.files.length || !Number.isSafeInteger(value.file_count)) {
+    fail(`${label} is not the selected prepared-file closure`);
+  }
+  const paths = new Set(); const destinations = new Set(); let priorPath = null;
+  for (const [index, file] of value.files.entries()) {
+    exactKeys(file, ["path", "destination", "executable", "bytes", "sha256", "device", "inode"],
+      `${label} file ${index}`);
+    if (typeof file.path !== "string" || file.path.length === 0 || file.path.includes("\0") ||
+        file.path.split("/").some(part => part === "" || part === "." || part === "..") ||
+        typeof file.destination !== "string" || file.destination !== resolve(value.root, file.path) ||
+        typeof file.executable !== "boolean" ||
+        file.executable !== PREPARED_EXECUTABLES.includes(file.path) ||
+        paths.has(file.path) || destinations.has(file.destination) ||
+        (priorPath !== null && priorPath >= file.path)) {
+      fail(`${label} file ${index} is malformed or noncanonical`);
+    }
+    validatePermitIdentity({ bytes: file.bytes, sha256: file.sha256,
+      device: file.device, inode: file.inode }, { directory: false },
+    `${label} file ${index} identity`);
+    paths.add(file.path); destinations.add(file.destination); priorPath = file.path;
+  }
+  if (!PREPARED_EXECUTABLES.every(path => paths.has(path)) ||
+      digest(value.sha256, `${label}.sha256`) !==
+        sha256(Buffer.from(`${canonicalJson({ files: value.files })}\n`))) {
+    fail(`${label} differs from its canonical prepared-file receipt`);
+  }
+  return value;
+}
+
+export function validateFilesystemPermit(value, label = "filesystem permit") {
+  exactKeys(value, ["schema", "repository_root_visible", "selected_python_programs",
+    "guix_runtime_closure", "prepared_file_closure", "synthetic_dev", "mounts"], label);
+  if (value.schema !== "cadr-m8-m9-native-filesystem-permit-v1" ||
+      value.repository_root_visible !== false ||
+      !sameJson(value.selected_python_programs, NATIVE_PYTHON_PERMIT) ||
+      !sameJson(value.synthetic_dev, BWRAP_SYNTHETIC_DEV) || !Array.isArray(value.mounts)) {
+    fail(`${label} is not the selected seven-key permit-only closure`);
+  }
+  const runtimeStore = validateGuixRuntimeClosure(value.guix_runtime_closure,
+    `${label} Guix runtime closure`);
+  const prepared = validatePreparedFileClosure(value.prepared_file_closure,
+    `${label} prepared file closure`);
+  const preparedRoles = prepared.files.map(file => `prepared-file:${file.path}`);
+  const storeRoles = runtimeStore.paths.map(path =>
+    `guix-runtime-store:${path.slice("/gnu/store/".length)}`);
+  const roles = ["native-configuration", ...preparedRoles, ...storeRoles,
+    ...NATIVE_PERMIT_TAIL_ROLES];
+  if (value.mounts.length !== roles.length) {
+    fail(`${label} mount count differs from its dynamic closure groups`);
+  }
+  const destinations = new Set();
+  for (const [index, mount] of value.mounts.entries()) {
+    exactKeys(mount, ["role", "destination", "access", "type", "identity"],
+      `${label} mount ${index}`);
+    const expectedRole = roles[index];
+    const preparedIndex = preparedRoles.indexOf(expectedRole);
+    const storeIndex = storeRoles.indexOf(expectedRole);
+    const isOutput = expectedRole === "isolated-native-output";
+    const expectedFile = preparedIndex >= 0 ? prepared.files[preparedIndex] : null;
+    const expectedStore = storeIndex >= 0 ? runtimeStore.paths[storeIndex] : null;
+    if (mount.role !== expectedRole || typeof mount.destination !== "string" ||
+        !mount.destination.startsWith("/") || resolve(mount.destination) !== mount.destination ||
+        destinations.has(mount.destination) ||
+        mount.access !== (isOutput ? "read-write-output" : "read-only") ||
+        mount.type !== (isOutput || expectedStore !== null ? "directory" : "file") ||
+        (expectedFile !== null && (!sameJson(mount.identity, {
+          bytes: expectedFile.bytes, sha256: expectedFile.sha256,
+          device: expectedFile.device, inode: expectedFile.inode,
+        }) || mount.destination !== expectedFile.destination)) ||
+        (expectedStore !== null && mount.destination !== expectedStore)) {
+      fail(`${label} mount ${index} differs from its dynamic closure group`);
+    }
+    validatePermitIdentity(mount.identity, { directory: mount.type === "directory" },
+      `${label} mount ${index} identity`);
+    destinations.add(mount.destination);
+  }
+  return value;
+}
+
 function validateNativeMetadata(value, expectedJoin, script, witness, transcript, idle, label) {
   exactKeys(value, ["schema", "target", "session_id", "private_disk_instance_id", "source",
     "m6_release_record", "patches", "prepared", "runtime_provenance", "artifacts", "native_inputs",
@@ -605,13 +1203,17 @@ function validateNativeMetadata(value, expectedJoin, script, witness, transcript
   if (value.private_disk.sha256_at_start !== disk?.sha256 || value.private_disk.sha256_at_end !== disk?.sha256) {
     fail(`${label} private disk is not the selected immutable base copy`);
   }
-  exactKeys(value.runtime_provenance, ["python", "rendered_config", "private_executable", "child_argv", "child_environment"],
+  exactKeys(value.runtime_provenance, ["python", "program", "rendered_config",
+    "private_executable", "child_argv", "child_environment"],
     `${label} runtime provenance`);
-  exactKeys(value.runtime_provenance.python, ["schema", "inherited_fd", "bytes", "sha256", "device", "inode",
-    "sys_executable", "proc_self_exe", "version", "implementation"],
+  exactKeys(value.runtime_provenance.python, ["schema", "source_fd",
+    "transport", "bytes", "sha256", "device", "inode",
+    "sys_executable", "proc_self_exe", "version", "implementation",
+    "executable_ancestry", "prepython_seal"],
     `${label} Python identity`);
   const python = value.runtime_provenance.python;
-  if (python.schema !== "cadr-m8-m9-python-identity-v1" || python.inherited_fd !== 3 ||
+  if (python.schema !== "cadr-m8-m9-python-identity-v3" ||
+      python.source_fd !== 3 || python.transport !== "bwrap-ro-bind-fd" ||
       unsigned(python.bytes, `${label} Python bytes`) === 0 ||
       !digest(python.sha256, `${label} Python digest`) ||
       !decimal(python.device, `${label} Python device`) || !decimal(python.inode, `${label} Python inode`, { zero: false }) ||
@@ -621,10 +1223,122 @@ function validateNativeMetadata(value, expectedJoin, script, witness, transcript
   for (const [field, reference] of [["sys_executable", "sys-executable"], ["proc_self_exe", "proc-self-exe"]]) {
     exactKeys(python[field], ["reference", "bytes", "sha256", "device", "inode"], `${label} Python ${field}`);
     if (python[field].reference !== reference || python[field].bytes !== python.bytes ||
-        python[field].sha256 !== python.sha256 || python[field].device !== python.device ||
-        python[field].inode !== python.inode) {
-      fail(`${label} Python ${field} differs from inherited descriptor 3`);
+        python[field].sha256 !== python.sha256) {
+      fail(`${label} Python ${field} differs from the read-only bound executable`);
     }
+  }
+  immutableAncestry(python.executable_ancestry,
+    `${label} Python executable`);
+  exactKeys(python.prepython_seal, ["dumpable", "no_new_privileges",
+    "core_soft", "core_hard", "yama_ptrace_scope",
+    "authority_build_receipt", "filesystem_permit", "importer_isolation",
+    "stdlib_roots", "loader_files", "bootstrap", "launcher", "guard"],
+  `${label} pre-Python seal`);
+  if (python.prepython_seal.dumpable !== 0 ||
+      python.prepython_seal.no_new_privileges !== 1 ||
+      python.prepython_seal.core_soft !== 0 ||
+      python.prepython_seal.core_hard !== 0 ||
+      python.prepython_seal.yama_ptrace_scope !== 3) {
+    fail(`${label} pre-Python seal controls are incomplete`);
+  }
+  const authorityReceipt = validateAuthorityBuildReceipt(
+    python.prepython_seal.authority_build_receipt, expectedJoin,
+    `${label} authority build receipt`);
+  if (python.prepython_seal.yama_ptrace_scope !==
+      authorityReceipt.yama_ptrace_scope) {
+    fail(`${label} runtime Yama policy differs from the authority receipt`);
+  }
+  validateFilesystemPermit(python.prepython_seal.filesystem_permit,
+    `${label} filesystem permit`);
+  exactKeys(python.prepython_seal.importer_isolation,
+    ["sys_path", "meta_path", "path_hooks",
+      "approved_non_file_importers", "archive_paths"],
+    `${label} importer isolation`);
+  const importer = python.prepython_seal.importer_isolation;
+  if (!Array.isArray(importer.sys_path) || importer.sys_path.length < 1 ||
+      importer.sys_path.some(path => typeof path !== "string" ||
+        !path.startsWith("/") || /\.(?:zip|egg|whl)$/i.test(path)) ||
+      !sameJson(importer.meta_path, [
+        "_frozen_importlib.BuiltinImporter",
+        "_frozen_importlib.FrozenImporter",
+        "_frozen_importlib_external.PathFinder",
+      ]) ||
+      !sameJson(importer.path_hooks, [
+        "_frozen_importlib_external.FileFinder.path_hook.<locals>.path_hook_for_FileFinder",
+      ]) ||
+      !sameJson(importer.approved_non_file_importers, [
+        "_frozen_importlib.BuiltinImporter",
+        "_frozen_importlib.FrozenImporter",
+      ]) || !sameJson(importer.archive_paths, [])) {
+    fail(`${label} Python importer surface is not isolated and archive-free`);
+  }
+  for (const field of ["bootstrap", "launcher", "guard"]) {
+    exactKeys(python.prepython_seal[field],
+      ["bytes", "sha256", "device", "inode"],
+      `${label} pre-Python ${field}`);
+    if (unsigned(python.prepython_seal[field].bytes,
+        `${label} pre-Python ${field} bytes`) === 0 ||
+        !digest(python.prepython_seal[field].sha256,
+          `${label} pre-Python ${field} digest`) ||
+        !decimal(python.prepython_seal[field].device,
+          `${label} pre-Python ${field} device`) ||
+        !decimal(python.prepython_seal[field].inode,
+          `${label} pre-Python ${field} inode`, { zero: false })) {
+      fail(`${label} pre-Python ${field} identity is incomplete`);
+    }
+    const receiptIdentity = field === "bootstrap"
+      ? authorityReceipt.authority.bootstrap
+      : authorityReceipt.authority[field].identity;
+    if (!sameJson(python.prepython_seal[field], receiptIdentity)) {
+      fail(`${label} pre-Python ${field} differs from the authority receipt`);
+    }
+  }
+  if (!Array.isArray(python.prepython_seal.stdlib_roots) ||
+      python.prepython_seal.stdlib_roots.length < 1) {
+    fail(`${label} pre-Python standard-library roots are absent`);
+  }
+  for (const root of python.prepython_seal.stdlib_roots) {
+    exactKeys(root, ["path", "ancestry"],
+      `${label} standard-library root`);
+    if (typeof root.path !== "string" || !root.path.startsWith("/")) {
+      fail(`${label} standard-library root is mutable or incomplete`);
+    }
+    immutableAncestry(root.ancestry, `${label} standard-library root`);
+  }
+  if (!sameJson(python.prepython_seal.stdlib_roots.map(root => root.path),
+      importer.sys_path)) {
+    fail(`${label} Python sys.path differs from immutable stdlib roots`);
+  }
+  if (!Array.isArray(python.prepython_seal.loader_files) ||
+      python.prepython_seal.loader_files.length < 1) {
+    fail(`${label} standard-library file closure is absent`);
+  }
+  for (const file of python.prepython_seal.loader_files) {
+    exactKeys(file, ["path", "ancestry", "file"],
+      `${label} standard-library file`);
+    if (typeof file.path !== "string" || !file.path.startsWith("/")) {
+      fail(`${label} standard-library file path is malformed`);
+    }
+    immutableAncestry(file.ancestry, `${label} standard-library file`);
+    exactKeys(file.file, ["bytes", "sha256", "uid", "gid", "mode",
+      "device", "inode"], `${label} standard-library file identity`);
+    if (unsigned(file.file.bytes, `${label} standard-library file bytes`) < 0 ||
+        !digest(file.file.sha256, `${label} standard-library file digest`)) {
+      fail(`${label} standard-library file identity is incomplete`);
+    }
+  }
+  exactKeys(value.runtime_provenance.program, ["schema", "inherited_fd",
+    "transport", "bytes", "sha256", "closure_sha256"],
+    `${label} Python program identity`);
+  const program = value.runtime_provenance.program;
+  const expectedProgram = expectedJoin.native_python_closure.files.find(item =>
+    item.path === expectedJoin.native_python_closure.root);
+  if (program.schema !== "cadr-m8-m9-python-program-identity-v2" ||
+      program.inherited_fd !== 4 || program.bytes !== expectedProgram?.bytes ||
+      program.sha256 !== expectedProgram?.sha256 ||
+      program.transport !== "bwrap-ro-bind-data-from-one-shot-pipe" ||
+      program.closure_sha256 !== expectedJoin.native_python_closure.sha256) {
+    fail(`${label} Python program differs from the captured native closure root`);
   }
   exactKeys(value.runtime_provenance.rendered_config, ["bytes", "sha256"], `${label} rendered config`);
   if (unsigned(value.runtime_provenance.rendered_config.bytes, `${label} rendered config bytes`) === 0 ||
@@ -729,7 +1443,7 @@ function validateWorkerLog(identity, sessionId, consumptionBoundaries, label) {
     }
   }
   if (consumptionIndex !== 100 || !sameJson(log.slice(position).map(entry => entry.op),
-    ["pointer-state", "keyboard-down", "pointer-down", "pointer-neutralize", "keyboard-state", "pointer-state", "input-state"])) {
+    ["m6-disk-evidence-summary", "pointer-state", "keyboard-down", "pointer-down", "pointer-neutralize", "keyboard-state", "pointer-state", "input-state"])) {
     fail(`${label} has an extra, missing, or reordered shared-deactivation suffix`);
   }
   return Object.freeze({ entries: log.length - 1, operation_counts: Object.freeze(Object.fromEntries(counts)) });
@@ -952,13 +1666,14 @@ export async function browserAll100Evidence(path, expectedJoin, variant) {
   exactKeys(manifest, ["schema", "target", "outcome", "runtime_execution_performed",
     "source_binding", "provenance_join_start", "provenance_join_end", "wasm_production", "session", "campaign",
     "native", "portable", "comparison"], `browser ${variant} manifest`);
+  const release = await readPinnedReleaseRecord(expectedJoin);
   assertCadrM8M9ProvenanceJoin(manifest?.provenance_join_start, expectedJoin,
     `browser ${variant} start provenance binding`);
   assertCadrM8M9ProvenanceJoin(manifest?.provenance_join_end, expectedJoin,
     `browser ${variant} end provenance binding`);
   validateDirectSourceBinding(manifest.source_binding, expectedJoin,
     `browser ${variant} source binding`);
-  const expectedWasm = expectedJoin.m9_wasm?.[variant];
+  const expectedWasm = expectedJoin.m9_devid_wasm?.[variant];
   const expectedWorker = expectedJoin.source_closure?.files?.find(file =>
     file.path === "cadr-web/wasm/cadr-worker.js");
   const sourceWorker = manifest?.source_binding?.source_closure?.files?.find(file =>
@@ -966,8 +1681,8 @@ export async function browserAll100Evidence(path, expectedJoin, variant) {
   const production = manifest?.wasm_production;
   exactKeys(production, ["schema", "profile", "forced", "argv", "stdout_sha256", "stderr_sha256", "outputs"],
     `browser ${variant} forced Wasm production`);
-  if (manifest?.schema !== "cadr-m8-m9-input-conformance-result-v2" ||
-      manifest?.target !== "CADR-WEB-303/ABI1.8/protocol-v6/C-M8-M9-DIRECT-BOUNDARY-NON-CW2" ||
+  if (manifest?.schema !== "cadr-m8-m9-input-conformance-result-v3" ||
+      manifest?.target !== "CADR-WEB-303/ABI1.8/protocol-v6/C-M8-M9-DEVID-READY4-DIRECT-BOUNDARY-NON-CW2" ||
       manifest?.runtime_execution_performed !== true ||
       sourceWorker?.bytes !== expectedWorker?.bytes ||
       sourceWorker?.sha256 !== expectedWorker?.sha256 ||
@@ -977,14 +1692,14 @@ export async function browserAll100Evidence(path, expectedJoin, variant) {
       manifest?.portable?.worker?.path !== expectedWorker?.path ||
       manifest?.portable?.worker?.bytes !== expectedWorker?.bytes ||
       manifest?.portable?.worker?.sha256 !== expectedWorker?.sha256 ||
-      production?.schema !== "cadr-m8-m9-wasm-production-v1" ||
-      production?.profile !== "m9" || production?.forced !== true ||
+      production?.schema !== "cadr-m8-m9-wasm-production-v2" ||
+      production?.profile !== "m9-devid" || production?.forced !== true ||
       !digest(production?.stdout_sha256, `browser ${variant} forced Wasm stdout`) ||
       !digest(production?.stderr_sha256, `browser ${variant} forced Wasm stderr`) ||
       !Array.isArray(production?.argv) ||
       production.argv.join(" ") !==
-        "make -B -C cadr-web build/cadr-web-m9-O0.wasm build/cadr-web-m9-O2.wasm" ||
-      !sameJson(production?.outputs, expectedJoin.m9_wasm)) {
+        "make -B -C cadr-web build/cadr-web-m9-devid-O0.wasm build/cadr-web-m9-devid-O2.wasm" ||
+      !sameJson(production?.outputs, expectedJoin.m9_devid_wasm)) {
     fail(`browser ${variant} receipt is not a direct M8/M9 run of the staged/current closure`);
   }
   exactKeys(manifest.session, ["id", "mode"], `browser ${variant} session`);
@@ -1014,12 +1729,17 @@ export async function browserAll100Evidence(path, expectedJoin, variant) {
     return privateIdentity(contained, label);
   };
   exactKeys(manifest.campaign, ["script", "manifest"], `browser ${variant} campaign`);
-  exactKeys(manifest.native, ["session_id", "private_disk_instance_id", "oracle_process", "witness", "files", "metadata"],
+  exactKeys(manifest.native, ["session_id", "private_disk_instance_id",
+    "python_closure", "oracle_process", "witness", "files", "metadata"],
     `browser ${variant} native receipt`);
-  exactKeys(manifest.portable, ["session_id", "runtime", "module", "worker", "expected_cdrinp_file",
-    "observed_cdrinp_file", "expected_state_file", "observed_state_file", "worker_log_file",
+  if (!sameJson(manifest.native.python_closure,
+    expectedJoin.native_python_closure)) {
+    fail(`browser ${variant} native execution Python closure differs`);
+  }
+  exactKeys(manifest.portable, ["session_id", "runtime", "module", "worker", "worker_closure", "expected_cdrinp_file",
+    "wasm_execution", "observed_cdrinp_file", "expected_state_file", "observed_state_file", "worker_log_file",
     "consumption_boundaries", "shared_deactivation_file", "shared_deactivation", "termination",
-    "browser_state", "m6_ready_boundary"], `browser ${variant} portable receipt`);
+    "browser_state", "ready4"], `browser ${variant} portable receipt`);
   const [script, campaignIdentity, comparisonIdentity, expected, observed, expectedStatesIdentity,
     observedStatesIdentity, workerLogIdentity, deactivationIdentity, nativeWitnessIdentity,
     nativeMetadataIdentity, nativeCaptureIdentity, nativeIdleIdentity, nativeScriptIdentity,
@@ -1048,6 +1768,8 @@ export async function browserAll100Evidence(path, expectedJoin, variant) {
   receipt(manifest.portable.expected_state_file, expectedStatesIdentity, "portable/expected-input-states.json", `browser ${variant} expected states`);
   receipt(manifest.portable.observed_state_file, observedStatesIdentity, "portable/observed-input-states.json", `browser ${variant} observed states`);
   receipt(manifest.portable.worker_log_file, workerLogIdentity, "portable/worker.ndjson", `browser ${variant} worker log`);
+  validateCapturedWorkerClosure(manifest.portable.worker_closure, expectedJoin,
+    `browser ${variant} worker closure`);
   receipt(manifest.portable.shared_deactivation_file, deactivationIdentity, "portable/shared-deactivation.json", `browser ${variant} deactivation`);
   const campaign = jsonBytes(campaignIdentity, `browser ${variant} campaign`);
   const comparison = jsonBytes(comparisonIdentity, `browser ${variant} comparison`);
@@ -1060,8 +1782,89 @@ export async function browserAll100Evidence(path, expectedJoin, variant) {
     fail(`browser ${variant} native copied schedule sidecars differ from the root schedule`);
   }
   const witness = nativeWitness(nativeWitnessIdentity.content, rows, `browser ${variant} native witness`);
-  exactKeys(manifest.native.oracle_process, ["returncode", "signal"], `browser ${variant} native process`);
-  if (manifest.native.oracle_process.returncode !== 0 || manifest.native.oracle_process.signal !== null) {
+  exactKeys(manifest.native.oracle_process, ["returncode", "signal",
+    "bootstrap_sha256", "pipe_bundle_sha256", "launcher",
+    "prepython_authority"],
+  `browser ${variant} native process`);
+  exactKeys(manifest.native.oracle_process.launcher,
+    ["reference", "bytes", "sha256", "device", "inode"],
+    `browser ${variant} native launcher`);
+  const authority = manifest.native.oracle_process.prepython_authority;
+  exactKeys(authority, ["reference", "root", "ancestry", "build_receipt",
+    "yama_ptrace_scope", "filesystem_permit", "bootstrap", "launcher",
+    "guard"], `browser ${variant} pre-Python authority`);
+  if (authority.reference !==
+        "canonical-receipt-selected-guix-store-authority" ||
+      typeof authority.root !== "string" ||
+      !authority.root.startsWith("/gnu/store/")) {
+    fail(`browser ${variant} pre-Python authority is not immutable Guix state`);
+  }
+  validateAuthorityBuildReceipt(authority.build_receipt, expectedJoin,
+    `browser ${variant} authority build receipt`);
+  if (!sameJson(authority.build_receipt,
+      nativeMetadata.runtime_provenance.python.prepython_seal
+        .authority_build_receipt) ||
+      authority.root !== authority.build_receipt.output) {
+    fail(`browser ${variant} authority result is not independently decisive`);
+  }
+  if (authority.yama_ptrace_scope !== authority.build_receipt.yama_ptrace_scope ||
+      authority.yama_ptrace_scope !== nativeMetadata.runtime_provenance.python
+        .prepython_seal.yama_ptrace_scope) {
+    fail(`browser ${variant} outer, runtime, and receipt Yama policies differ`);
+  }
+  validateFilesystemPermit(authority.filesystem_permit,
+    `browser ${variant} outer filesystem permit`);
+  if (!sameJson(authority.filesystem_permit,
+      nativeMetadata.runtime_provenance.python.prepython_seal
+        .filesystem_permit)) {
+    fail(`browser ${variant} outer filesystem permit differs from child provenance`);
+  }
+  immutableAncestry(authority.ancestry,
+    `browser ${variant} pre-Python authority`);
+  const expectedAuthorityPaths = ["/", "/gnu", "/gnu/store", authority.root,
+    `${authority.root}/bin`,
+    `${authority.root}/bin/cadr-m8-m9-python-seal-launcher`,
+    `${authority.root}/lib`,
+    `${authority.root}/lib/cadr-m8-m9-prepython-guard.so`,
+    `${authority.root}/share`, `${authority.root}/share/cadr-m8-m9`,
+    `${authority.root}/share/cadr-m8-m9/captured-python-bootstrap.py`];
+  const authorityPaths = new Set(authority.ancestry.map(item => item.reference));
+  if (authorityPaths.size !== expectedAuthorityPaths.length ||
+      expectedAuthorityPaths.some(path => !authorityPaths.has(path))) {
+    fail(`browser ${variant} pre-Python authority descriptor closure is incomplete`);
+  }
+  for (const field of ["bootstrap", "launcher", "guard"]) {
+    exactKeys(authority[field], ["bytes", "sha256", "device", "inode"],
+      `browser ${variant} authority ${field}`);
+    if (!sameJson(authority[field],
+        nativeMetadata.runtime_provenance.python.prepython_seal[field])) {
+      fail(`browser ${variant} authority ${field} differs from child provenance`);
+    }
+    const receiptIdentity = field === "bootstrap"
+      ? authority.build_receipt.authority.bootstrap
+      : authority.build_receipt.authority[field].identity;
+    if (!sameJson(authority[field], receiptIdentity)) {
+      fail(`browser ${variant} authority ${field} differs from its receipt`);
+    }
+  }
+  if (manifest.native.oracle_process.returncode !== 0 ||
+      manifest.native.oracle_process.signal !== null ||
+      !digest(manifest.native.oracle_process.bootstrap_sha256,
+        `browser ${variant} Python bootstrap`) ||
+      manifest.native.oracle_process.bootstrap_sha256 !==
+        CADR_M8_M9_CAPTURED_PYTHON_BOOTSTRAP_SHA256 ||
+      !digest(manifest.native.oracle_process.pipe_bundle_sha256,
+        `browser ${variant} Python pipe bundle`) ||
+      manifest.native.oracle_process.launcher.reference !==
+        "root-owned-bwrap" ||
+      unsigned(manifest.native.oracle_process.launcher.bytes,
+        `browser ${variant} launcher bytes`) === 0 ||
+      !digest(manifest.native.oracle_process.launcher.sha256,
+        `browser ${variant} launcher digest`) ||
+      !decimal(manifest.native.oracle_process.launcher.device,
+        `browser ${variant} launcher device`) ||
+      !decimal(manifest.native.oracle_process.launcher.inode,
+        `browser ${variant} launcher inode`, { zero: false })) {
     fail(`browser ${variant} native process/session receipt is incomplete or nonconforming`);
   }
   hexSession(manifest.native.session_id, "native", `browser ${variant} native session`);
@@ -1152,16 +1955,26 @@ export async function browserAll100Evidence(path, expectedJoin, variant) {
     fail(`browser ${variant} keyboard-consumption sidecar is incomplete or nonconforming`);
   }
   exactKeys(manifest.portable.termination, ["pending_requests", "terminated"], `browser ${variant} portable termination`);
+  exactKeys(manifest.portable.wasm_execution, ["path", "bytes", "sha256", "device", "inode"],
+    `browser ${variant} descriptor-bound Wasm execution`);
+  if (manifest.portable.wasm_execution.path !== manifest.portable.module.path ||
+      manifest.portable.wasm_execution.bytes !== manifest.portable.module.bytes ||
+      manifest.portable.wasm_execution.sha256 !== manifest.portable.module.sha256) {
+    fail(`browser ${variant} descriptor-bound Wasm differs from the portable module receipt`);
+  }
+  decimal(manifest.portable.wasm_execution.device, `browser ${variant} Wasm descriptor device`);
+  decimal(manifest.portable.wasm_execution.inode, `browser ${variant} Wasm descriptor inode`, { zero: false });
   exactKeys(manifest.portable.browser_state, ["generation", "first_ingress_ordinal", "last_ingress_ordinal",
     "input_sequence_before", "input_sequence_after"], `browser ${variant} portable browser state`);
   if (manifest.portable.termination.pending_requests !== 0 || manifest.portable.termination.terminated !== true ||
       manifest.portable.browser_state.generation !== expectedStream.generation ||
       manifest.portable.browser_state.first_ingress_ordinal !== "1" ||
       manifest.portable.browser_state.last_ingress_ordinal !== "208" ||
-      manifest.portable.browser_state.input_sequence_after !== expectedStates.after.input_sequence ||
-      manifest.portable.m6_ready_boundary !== "983990278") {
+      manifest.portable.browser_state.input_sequence_after !== expectedStates.after.input_sequence) {
     fail(`browser ${variant} portable termination/state receipt is incomplete or nonconforming`);
   }
+  await validateReady4Evidence(manifest.portable.ready4, expectedJoin, release,
+    `browser ${variant} portable READY4 evidence`);
   exactKeys(manifest.portable.runtime, ["node", "v8", "executable", "environment"], `browser ${variant} portable runtime`);
   exactKeys(manifest.portable.runtime.executable, ["bytes", "sha256"], `browser ${variant} Node identity`);
   exactKeys(manifest.portable.runtime.environment, ["LANG", "LC_ALL", "TZ"], `browser ${variant} runtime environment`);

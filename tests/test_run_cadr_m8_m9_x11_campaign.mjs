@@ -9,16 +9,26 @@ import {
   browserAll100Evidence,
   classifyNativeCandidates,
   sourceReachability,
+  validateFilesystemPermit,
   witnessRecords,
   writeX11FailureManifest,
 } from "../scripts/run-cadr-m8-m9-x11-campaign.mjs";
-import { deriveCadrM8M9DeactivationProducer } from "../scripts/run-cadr-m8-m9-input-conformance.mjs";
+import { CADR_M8_M9_CAPTURED_PYTHON_BOOTSTRAP_SHA256,
+  authorityBuildSourceClosure, canonicalAuthorityBuildReceiptBytes, openNativeFilesystemPermit,
+  deriveCadrM8M9DeactivationProducer } from
+  "../scripts/run-cadr-m8-m9-input-conformance.mjs";
 import {
+  CADR_M8_M9_DIRECT_AUTHORITIES,
+  captureCadrM8M9WorkerClosure,
   collectCadrM8M9ProvenanceJoin,
   collectCadrM8M9StaticImportClosure,
 } from "../scripts/cadr-m8-m9-provenance-join.mjs";
 import { createHash } from "node:crypto";
 import { buildCadrM8M9Campaign, serializeCadrM8M9NativeScript } from "../cadr-web/wasm/cadr-m8-m9-campaign.mjs";
+import { CADR_M6_DEVID_POLICY_ID, CADR_M6_DEVID_PROFILE,
+  CADR_M6_READY4_CONTRACT, appendM6FastCheckpoint, appendM6FastHostWait,
+  canonicalM6ReadyWitness,
+  canonicalM6ReadyWitnessV4 } from "../cadr-web/wasm/cadr-m6-headless-boot.mjs";
 import { materializeSyntheticM6Producer } from "./fixtures/cadr-m8-m9-synthetic-m6-producer.mjs";
 
 const root = resolve(import.meta.dirname, "..");
@@ -34,8 +44,8 @@ const provisionedIntegrationRequirements = Object.freeze([
   Object.freeze({ path: "l/sys/ubin/promh.sym", kind: "file" }),
   Object.freeze({ path: "l/sys/ubin/ucadr.sym", kind: "file" }),
   Object.freeze({ path: "l/usim/disk-sys-303-0.img", kind: "file" }),
-  Object.freeze({ path: "cadr-web/build/cadr-web-m9-O0.wasm", kind: "file" }),
-  Object.freeze({ path: "cadr-web/build/cadr-web-m9-O2.wasm", kind: "file" }),
+  Object.freeze({ path: "cadr-web/build/cadr-web-m9-devid-O0.wasm", kind: "file" }),
+  Object.freeze({ path: "cadr-web/build/cadr-web-m9-devid-O2.wasm", kind: "file" }),
 ]);
 
 async function provisionedM8M9Prerequisites(rootPath) {
@@ -82,6 +92,9 @@ assert.match(source, /not-applicable-native-source-unmapped/);
 assert.doesNotMatch(source, /candidates\[0\] \?\? xkey/);
 assert.match(source, /settledWitnessCount/);
 assert.match(source, /m8-m9-x11-failure-v1/);
+assert.match(source,
+  /process\.getuid[\s\S]*process\.geteuid[\s\S]*uids\.has\(Number\(component\.uid\)\)/,
+  "result verification rejects both real- and effective-UID-owned authority ancestry");
 
 const prepared = resolve(root, `build/cadr-oracle/m8-m9-x11-prepared-test-${process.pid}`);
 const preparedRelative = relative(root, prepared).split("\\").join("/");
@@ -133,6 +146,11 @@ try {
 
   const paired = resolve(fixture, `m8-cw2-${"1".repeat(32)}`);
   const digest = value => createHash("sha256").update(value).digest("hex");
+  const canonicalJson = value => Array.isArray(value) ?
+    `[${value.map(canonicalJson).join(",")}]` :
+    value !== null && typeof value === "object" ?
+      `{${Object.keys(value).sort().map(key => `${JSON.stringify(key)}:${canonicalJson(value[key])}`).join(",")}}` :
+      JSON.stringify(value);
   async function privateDirectory(path) {
     await mkdir(path, { recursive: true, mode: 0o700 }); await chmod(path, 0o700);
   }
@@ -142,6 +160,74 @@ try {
     return bytes;
   }
   const localReceipt = (path, bytes) => ({ path, bytes: bytes.byteLength, sha256: digest(bytes) });
+
+  /* The receipt verifier must consume the exact seven-key schema emitted by
+   * the descriptor-owning producer, including variable prepared-file and
+   * Guix-runtime mount groups.  Its compact fake descriptors avoid granting
+   * this public test access to the host filesystem. */
+  const preparedRoot = "/permit/prepared";
+  const preparedPaths = ["source/usim/usim", "source/usim/usim-m8-m9-direct",
+    "source/usim/usim-m8-m9-x11-witness"];
+  const preparedFiles = preparedPaths.map((path, index) => ({ path,
+    destination: `${preparedRoot}/${path}`, executable: true, bytes: index + 1,
+    sha256: String.fromCharCode(97 + index).repeat(64), device: "1",
+    inode: String(index + 10) }));
+  const preparedReceipt = { schema: "cadr-m8-m9-prepared-file-closure-v1",
+    root: preparedRoot, executable_paths: preparedPaths, files: preparedFiles,
+    file_count: preparedFiles.length,
+    sha256: digest(Buffer.from(`${canonicalJson({ files: preparedFiles })}\n`)) };
+  const storePaths = [
+    `/gnu/store/${"a".repeat(32)}-python`,
+    `/gnu/store/${"b".repeat(32)}-python-runtime`,
+  ];
+  const runtimeStore = { schema: "cadr-m8-m9-guix-runtime-closure-v1",
+    seed: storePaths[0], paths: storePaths,
+    sha256: digest(Buffer.from(`${canonicalJson({ seed: storePaths[0], paths: storePaths })}\n`)) };
+  let nextPermitFd = 50;
+  const descriptorEntry = (destination, { directory = false, writable = false,
+    role = undefined, identity = undefined } = {}) => {
+    const fd = nextPermitFd += 1;
+    return Object.freeze({ fd, destination, directory, writable, role,
+      identity: identity ?? (directory ? { device: "1", inode: String(fd) } :
+        { bytes: 1, sha256: "f".repeat(64), device: "1", inode: String(fd) }),
+      descriptors: Object.freeze([fd]) });
+  };
+  const producerPermit = openNativeFilesystemPermit({
+    prepared: preparedRoot, nativeConfig: "/permit/native.ini", output: "/permit/output",
+    inputScript: "/permit/input-script", campaign: "/permit/campaign",
+    runtimeStore,
+  }, {
+    openEntry: (path, options) => descriptorEntry(path, options),
+    openPreparedClosure: () => Object.freeze({
+      entries: Object.freeze(preparedFiles.map(file => descriptorEntry(file.destination, {
+        role: `prepared-file:${file.path}`, identity: {
+          bytes: file.bytes, sha256: file.sha256, device: file.device, inode: file.inode,
+        },
+      }))),
+      receipt: preparedReceipt,
+    }),
+    openStoreEntries: () => Object.freeze(storePaths.map((path, index) => descriptorEntry(path, {
+      directory: true, role: `guix-runtime-store:${path.slice("/gnu/store/".length)}`,
+      identity: { device: "1", inode: String(index + 30) },
+    }))),
+    readFileSyncImpl: () => Buffer.from([
+      "[ucode]", "prommcr_filename=/permit/prom.mcr", "promsym_filename=/permit/prom.sym",
+      "mcrsym_filename=/permit/mcr.sym", "[chaos]", "hosts=/permit/hosts",
+      "[disk]", "disk0=0,/permit/disk.img",
+    ].join("\n")),
+    closeSyncImpl: () => {},
+  });
+  assert.equal(Object.keys(producerPermit.summary).length, 7,
+    "actual producer summary uses the seven-key native permit schema");
+  assert.strictEqual(validateFilesystemPermit(producerPermit.summary), producerPermit.summary,
+    "the X11 verifier accepts an unmodified producer receipt with dynamic mount groups");
+  const reorderedProducerPermit = structuredClone(producerPermit.summary);
+  [reorderedProducerPermit.mounts[1], reorderedProducerPermit.mounts[2]] =
+    [reorderedProducerPermit.mounts[2], reorderedProducerPermit.mounts[1]];
+  assert.throws(() => validateFilesystemPermit(reorderedProducerPermit),
+    /dynamic closure group|noncanonical/,
+    "the verifier rejects a reordered prepared-file group rather than accepting a role set");
+
   await privateDirectory(paired); await privateDirectory(resolve(paired, "native"));
   await privateDirectory(resolve(paired, "portable"));
   const malformedPayload = Buffer.alloc(208 * 40, 7);
@@ -213,6 +299,127 @@ try {
     /computed dynamic import/,
     "a computed import cannot silently escape the static provenance closure");
 
+  async function ready4Fixture() {
+    const digestBytes = value => new Uint8Array(Buffer.from(value, "hex"));
+    const digestReceipt = value => ({ bytes: 32, sha256: value });
+    const artifacts = join.selected_inputs.release.artifacts;
+    const profile = new TextEncoder().encode(join.selected_inputs.profile.id);
+    const artifactBytes = new Uint8Array(12 + profile.byteLength + artifacts.length * 44);
+    artifactBytes.set(new TextEncoder().encode("CDRM6AR1"), 0);
+    const artifactView = new DataView(artifactBytes.buffer);
+    artifactView.setUint32(8, profile.byteLength, true); artifactBytes.set(profile, 12);
+    let artifactOffset = 12 + profile.byteLength;
+    for (const artifact of artifacts) {
+      artifactView.setUint32(artifactOffset, artifact.kind, true);
+      artifactView.setBigUint64(artifactOffset + 4, BigInt(artifact.byte_count), true);
+      artifactBytes.set(digestBytes(artifact.sha256), artifactOffset + 12);
+      artifactOffset += 44;
+    }
+    const artifactSet = digest(artifactBytes);
+    const base = artifacts.find(item => item.kind === 3).sha256;
+    const state = "c".repeat(64); const queue = "d".repeat(64);
+    const fastRecord = ({ reason, terminalStatus, requested, completed, pre, post,
+      outstanding = 0n }) => {
+      const bytes = new Uint8Array(128); const recordView = new DataView(bytes.buffer);
+      bytes.set(new TextEncoder().encode("CDRM6FAST1"));
+      recordView.setUint32(16, 1, true); recordView.setUint32(20, 128, true);
+      recordView.setUint32(24, reason, true); recordView.setUint32(28, terminalStatus, true);
+      recordView.setUint32(32, requested, true); recordView.setBigUint64(40, completed, true);
+      recordView.setBigUint64(48, completed, true); recordView.setBigUint64(56, pre, true);
+      recordView.setBigUint64(64, post, true); recordView.setUint32(88, 0, true);
+      recordView.setUint32(92, 2, true); recordView.setBigUint64(96, outstanding, true);
+      return bytes;
+    };
+    const checkpointFast = fastRecord({ reason: 1, terminalStatus: 0, requested: 64,
+      completed: 64n, pre: 983990214n, post: 983990278n });
+    const hostWaitFast = fastRecord({ reason: 3, terminalStatus: 8, requested: 1024,
+      completed: 1n, pre: 100n, post: 101n, outstanding: 1n });
+    let checkpointBytes = digestBytes(digest(Buffer.from("CDRM6FASTCHAIN1\0")));
+    checkpointBytes = await appendM6FastCheckpoint(checkpointBytes, 0, checkpointFast,
+      digestBytes(state), digestBytes(queue));
+    const checkpoint = Buffer.from(checkpointBytes).toString("hex");
+    let hostWaitBytes = digestBytes(digest(Buffer.from("CDRM6FASTHOSTWAIT1\0")));
+    hostWaitBytes = await appendM6FastHostWait(hostWaitBytes, 0, hostWaitFast);
+    const hostWait = Buffer.from(hostWaitBytes).toString("hex");
+    const hostTranscript = new Uint8Array(64 + 2 * 256);
+    hostTranscript.set(new TextEncoder().encode("CDRM6HS1"));
+    const hostHeader = new DataView(hostTranscript.buffer);
+    hostHeader.setUint32(8, 1, true); hostHeader.setUint32(12, 64, true);
+    hostHeader.setUint32(16, 256, true); hostHeader.setUint32(20, 2, true);
+    hostTranscript.set(digestBytes(artifactSet), 24);
+    const empty = digestBytes(digest(Buffer.alloc(0)));
+    const descriptor = digestBytes(digest(Buffer.alloc(16, 0x12)));
+    const completion = digestBytes(digest(Buffer.alloc(1024, 0x34)));
+    for (let index = 0; index < 2; index += 1) {
+      const offset = 64 + index * 256;
+      const hostView = new DataView(hostTranscript.buffer, offset, 256);
+      hostView.setBigUint64(0, BigInt(index), true); hostView.setUint32(8, index + 1, true);
+      hostView.setUint32(12, 1, true); hostView.setBigUint64(16, 101n, true);
+      hostView.setBigUint64(24, 101n, true); hostView.setBigUint64(32, 1n, true);
+      hostView.setBigUint64(40, 1n, true); hostView.setUint32(48, 0, true);
+      hostView.setUint32(52, 1, true); hostView.setBigUint64(56, 16n, true);
+      hostView.setBigUint64(64, 0n, true); hostView.setBigUint64(72, 1024n, true);
+      hostView.setBigUint64(80, 0n, true); hostView.setUint32(88, 1024, true);
+      hostTranscript.set(descriptor, offset + 104); hostTranscript.set(empty, offset + 136);
+      hostTranscript.set(index === 0 ? empty : completion, offset + 168);
+    }
+    const host = digest(hostTranscript);
+    const summary = new Uint8Array(512); const view = new DataView(summary.buffer);
+    summary.set(new TextEncoder().encode("CDRM6E1"));
+    view.setUint32(8, 1, true); view.setUint32(12, 512, true);
+    view.setUint32(16, 1, true); view.setUint32(20, 1, true);
+    view.setUint32(24, 512, true); view.setUint32(28, 512, true);
+    view.setBigUint64(32, 0x7fffffffffffffffn, true);
+    view.setBigUint64(40, 513n, true); view.setBigUint64(48, 1n, true);
+    view.setBigUint64(56, 512n, true); view.setBigUint64(88, 513n, true);
+    summary.fill(0x55, 240, 272); summary.fill(0x11, 272, 304);
+    const summaryHash = digest(summary);
+    const ready3 = await canonicalM6ReadyWitness({ releaseRecord: publicRelease,
+      artifactSetSha256: digestBytes(artifactSet), privateDiskBaseSha256: digestBytes(base),
+      formABoundary: 328623243n, formBBoundary: 980313535n,
+      listenerIdleCBoundary: 982990214n, listenerIdleSettledBoundary: 983990214n,
+      readyBoundary: 983990278n, cdrstate5Sha256: digestBytes(state),
+      cdrm5q1Sha256: digestBytes(queue), hostTranscriptSha256: digestBytes(host) });
+    const ready4 = await canonicalM6ReadyWitnessV4({ ready3Witness: ready3,
+      target: CADR_M6_DEVID_PROFILE, policyId: CADR_M6_DEVID_POLICY_ID,
+      selectedMaximum: 0x7fffffffffffffffn, cdrm6e1Sha256: digestBytes(summaryHash),
+      checkpointCount: 1, checkpointChainSha256: checkpointBytes,
+      hostWaitCount: 1, hostWaitChainSha256: hostWaitBytes });
+    const summaryReceipt = () => ({ bytes: 512, sha256: summaryHash,
+      hex: Buffer.from(summary).toString("hex"), selected_maximum: "9223372036854775807",
+      total_accepted: "513", tail_event_count: "1" });
+    return { schema: "cadr-m8-m9-ready4-evidence-v1", outcome: "ready4",
+      target: CADR_M6_DEVID_PROFILE, contract: CADR_M6_READY4_CONTRACT,
+      boundary: "983990278", quiescent: true,
+      release_record: { path: join.selected_inputs.release.path,
+        bytes: join.selected_inputs.release.bytes, sha256: join.selected_inputs.release.sha256 },
+      run_evidence: { session_id: `m6-ready4-session-${"3".repeat(32)}`,
+        private_disk_instance_id: `m6-ready4-private-disk-${"4".repeat(32)}`,
+        private_disk_base: digestReceipt(base) },
+      machine_info: { lifecycle: 2, artifact_mask: 31, boundary: "983990278",
+        microinstructions: "983990278", generation: "1", next_request_id: "1",
+        outstanding_request_id: "0", last_completed_request_id: "0",
+        persistent_status: 0, profile: 1 },
+      quiescence: { scheduler_lifecycle: "PAUSED", run_active: false,
+        deferred_control_count: 0, pending_boundary_digest: false, media_busy: false,
+        media_snapshot_blocked: false, visibility_initialized: true, hidden: false,
+        block_service_pending: false, host_next_request_status: 9 },
+      ready3_witness: digestReceipt(Buffer.from(ready3).toString("hex")),
+      ready4_witness: digestReceipt(Buffer.from(ready4).toString("hex")),
+      cdrm6e1: summaryReceipt(), checkpoint_chain: { count: 1, bytes: 32, sha256: checkpoint,
+        records: [{ fast_run: { bytes: 128, sha256: digest(checkpointFast),
+          hex: Buffer.from(checkpointFast).toString("hex") },
+        cdrstate5: digestReceipt(state), cdrm5q1: digestReceipt(queue) }] },
+      host_wait_chain: { count: 1, bytes: 32, sha256: hostWait,
+        records: [{ bytes: 128, sha256: digest(hostWaitFast),
+          hex: Buffer.from(hostWaitFast).toString("hex") }] },
+      cdrstate5: digestReceipt(state), cdrm5q1: digestReceipt(queue),
+      artifact_set: digestReceipt(artifactSet), host_transcript: {
+        bytes: hostTranscript.byteLength, sha256: host, hex: Buffer.from(hostTranscript).toString("hex") },
+      post_208_summary: { outcome: "limit-not-exceeded", after_input_ordinal: 208,
+        cdrm6e1: summaryReceipt() } };
+  }
+
   async function makeDirectFixture(rootPath, variant, suffix) {
     await privateDirectory(rootPath); await privateDirectory(resolve(rootPath, "native"));
     await privateDirectory(resolve(rootPath, "portable"));
@@ -220,6 +427,11 @@ try {
     const diskId = `disk-${suffix}`; const sessionId = `m8-cw2-${suffix}`;
     assert.equal(resolve(rootPath).split("/").at(-1), sessionId,
       "fixture root is the exact fresh outer-session identifier");
+    const capturedWorker = await captureCadrM8M9WorkerClosure();
+    const workerClosure = { schema: capturedWorker.schema, root: capturedWorker.root,
+      file_count: capturedWorker.file_count, sha256: capturedWorker.sha256,
+      files: capturedWorker.files, static_imports: capturedWorker.static_imports,
+      execution: "descriptor-captured-in-memory-vm-module-graph-v1" };
     const frozenCampaign = buildCadrM8M9Campaign();
     const inputScript = Buffer.from(serializeCadrM8M9NativeScript(frozenCampaign));
     const browserCampaign = buildCadrM8M9Campaign({ generation: 1n });
@@ -288,7 +500,7 @@ try {
       workerOperations.push(operation.op, "input-state");
       if (operation.op === "keyboard-up") workerOperations.push("scheduler-start", "scheduler-run", "input-state", "scheduler-pause");
     }
-    workerOperations.push("pointer-state", "keyboard-down", "pointer-down", "pointer-neutralize", "keyboard-state", "pointer-state", "input-state");
+    workerOperations.push("m6-disk-evidence-summary", "pointer-state", "keyboard-down", "pointer-down", "pointer-neutralize", "keyboard-state", "pointer-state", "input-state");
     const workerLogBytes = await privateFile(resolve(rootPath, "portable/worker.ndjson"), Buffer.from([
       JSON.stringify({ schema: "cadr-m8-m9-portable-session-v1", session_id: portableSession }),
       ...workerOperations.map((op, index) => JSON.stringify({ session_id: portableSession,
@@ -329,6 +541,88 @@ try {
     const captureBytes = await privateFile(resolve(rootPath, "native/capture.ndjson"), syntheticProducer.transcript);
     const idleBytes = await privateFile(resolve(rootPath, "native/idle.bin"), syntheticProducer.idle);
     const witness = { schema: "CDRM8N1", record_bytes: 64, record_count: 207, sha256: digest(nativeWitnessBytes) };
+    const ancestry = paths => paths.map((reference, index) => ({
+      reference, uid: "0", gid: "0", mode: index === paths.length - 1 ? "644" : "755",
+      device: "1", inode: String(index + 1),
+    }));
+    const pythonExecutableAncestry = ancestry(
+      ["/", "/usr", "/usr/bin", "/usr/bin/python3"]);
+    pythonExecutableAncestry.at(-1).mode = "755";
+    const stdlibAncestry = ancestry(
+      ["/", "/usr", "/usr/lib", "/usr/lib/python"]);
+    stdlibAncestry.at(-1).mode = "755";
+    const stdlibFileAncestry = ancestry(
+      ["/", "/usr", "/usr/lib", "/usr/lib/python", "/usr/lib/python/os.py"]);
+    const authorityRoot =
+      "/gnu/store/bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb-cadr-m8-m9-python-seal-authority";
+    const authorityBootstrap = {
+      bytes: 1, sha256: "9".repeat(64), device: "1", inode: "1",
+    };
+    const authorityLauncher = {
+      bytes: 1, sha256: "a".repeat(64), device: "1", inode: "1",
+    };
+    const authorityGuard = {
+      bytes: 1, sha256: "b".repeat(64), device: "1", inode: "1",
+    };
+    const launcherElf = { elf_class: "ELF64", data: "little-endian",
+      version: 1, osabi: 0, type: 2, machine: "x86-64", entry: "4096",
+      program_header_types: [1], has_pt_interp: false,
+      has_pt_dynamic: false };
+    const guardElf = { elf_class: "ELF64", data: "little-endian",
+      version: 1, osabi: 0, type: 3, machine: "x86-64", entry: "0",
+      program_header_types: [1, 2], has_pt_interp: false,
+      has_pt_dynamic: true };
+    const guixAncestry = ancestry(["/", "/gnu", "/gnu/store",
+      "/gnu/store/dddddddddddddddddddddddddddddddd-guix",
+      "/gnu/store/dddddddddddddddddddddddddddddddd-guix/bin",
+      "/gnu/store/dddddddddddddddddddddddddddddddd-guix/bin/guix"]);
+    guixAncestry.at(-1).mode = "755";
+    const authorityBuild = {
+      schema: "cadr-m8-m9-python-authority-build-v1",
+      yama_ptrace_scope: 3,
+      guix_client: {
+        path: "/gnu/store/dddddddddddddddddddddddddddddddd-guix/bin/guix",
+        identity: { bytes: 1, sha256: "8".repeat(64),
+          device: "1", inode: "1" },
+        ancestry: guixAncestry,
+      },
+      build_environment: {
+        CADR_M8_M9_BOOTSTRAP_SOURCE: "/proc/self/fd/7",
+        CADR_M8_M9_GUARD_SOURCE: "/proc/self/fd/6",
+        CADR_M8_M9_SEAL_SOURCE: "/proc/self/fd/5",
+        LANG: "C", LC_ALL: "C", TZ: "UTC",
+      },
+      source_closure: authorityBuildSourceClosure(),
+      derivation:
+        "/gnu/store/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa-authority.drv",
+      output: authorityRoot,
+      authority: {
+        bootstrap: authorityBootstrap,
+        launcher: { identity: authorityLauncher, elf: launcherElf },
+        guard: { identity: authorityGuard, elf: guardElf },
+      },
+    };
+    const authorityBuildBytes =
+      canonicalAuthorityBuildReceiptBytes(authorityBuild);
+    const authorityBuildReceipt = {
+      schema: authorityBuild.schema,
+      bytes: authorityBuildBytes.byteLength,
+      sha256: digest(authorityBuildBytes),
+      derivation: authorityBuild.derivation,
+      output: authorityBuild.output,
+      independent_selection: {
+        derivation: authorityBuild.derivation,
+        output: authorityBuild.output,
+      },
+      yama_ptrace_scope: authorityBuild.yama_ptrace_scope,
+      build_environment: authorityBuild.build_environment,
+      source_closure: authorityBuild.source_closure,
+      guix_client: authorityBuild.guix_client,
+      authority: authorityBuild.authority,
+    };
+    /* Keep the reciprocal browser fixture bound to the same actual producer
+     * receipt exercised above; do not retain a hand-written obsolete shape. */
+    const filesystemPermit = structuredClone(producerPermit.summary);
     const nativeMetadata = { schema: "cadr-m8-m9-native-input-capture-v1",
       target: "CADR-WEB-303/ABI1.8/protocol-v6/C-M8-M9", session_id: nativeSession,
       private_disk_instance_id: diskId,
@@ -343,11 +637,48 @@ try {
         source_tree_sha256: join.native_x11_closure.prepared_source_tree_sha256,
         source_file_count: join.native_x11_closure.prepared_source_file_count,
         executable: structuredClone(join.native_x11_closure.build_record) },
-      runtime_provenance: { python: { schema: "cadr-m8-m9-python-identity-v1", inherited_fd: 3,
+      runtime_provenance: { python: { schema: "cadr-m8-m9-python-identity-v3",
+          source_fd: 3, transport: "bwrap-ro-bind-fd",
           bytes: 1, sha256: "a".repeat(64), device: "1", inode: "1",
           sys_executable: { reference: "sys-executable", bytes: 1, sha256: "a".repeat(64), device: "1", inode: "1" },
           proc_self_exe: { reference: "proc-self-exe", bytes: 1, sha256: "a".repeat(64), device: "1", inode: "1" },
-          version: "synthetic", implementation: "cpython" },
+          version: "synthetic", implementation: "cpython",
+          executable_ancestry: pythonExecutableAncestry,
+          prepython_seal: { dumpable: 0, no_new_privileges: 1,
+            core_soft: 0, core_hard: 0,
+            yama_ptrace_scope: 3,
+            authority_build_receipt: authorityBuildReceipt,
+            filesystem_permit: filesystemPermit,
+            importer_isolation: {
+              sys_path: ["/usr/lib/python"],
+              meta_path: ["_frozen_importlib.BuiltinImporter",
+                "_frozen_importlib.FrozenImporter",
+                "_frozen_importlib_external.PathFinder"],
+              path_hooks: [
+                "_frozen_importlib_external.FileFinder.path_hook.<locals>.path_hook_for_FileFinder",
+              ],
+              approved_non_file_importers: [
+                "_frozen_importlib.BuiltinImporter",
+                "_frozen_importlib.FrozenImporter",
+              ],
+              archive_paths: [],
+            },
+            stdlib_roots: [{ path: "/usr/lib/python", ancestry: stdlibAncestry }],
+            loader_files: [{ path: "/usr/lib/python/os.py",
+              ancestry: stdlibFileAncestry,
+              file: { bytes: 1, sha256: "c".repeat(64), uid: "0", gid: "0",
+                mode: "644", device: "1", inode: "5" } }],
+            bootstrap: authorityBootstrap,
+            launcher: authorityLauncher,
+            guard: authorityGuard } },
+        program: { schema: "cadr-m8-m9-python-program-identity-v2",
+          inherited_fd: 4,
+          transport: "bwrap-ro-bind-data-from-one-shot-pipe",
+          bytes: join.native_python_closure.files.find(item =>
+            item.path === join.native_python_closure.root).bytes,
+          sha256: join.native_python_closure.files.find(item =>
+            item.path === join.native_python_closure.root).sha256,
+          closure_sha256: join.native_python_closure.sha256 },
         rendered_config: { bytes: 1, sha256: "b".repeat(64) },
         private_executable: { sha256_at_start: join.native_x11_closure.direct_witness.sha256,
           sha256_at_exec: join.native_x11_closure.direct_witness.sha256,
@@ -379,32 +710,66 @@ try {
     const nativeFiles = [["campaign.json", nativeCampaignBytes], ["capture.ndjson", captureBytes], ["idle.bin", idleBytes],
       ["input-script.txt", nativeScriptBytes], ["input.cdrm8n1", nativeWitnessBytes], ["metadata.json", nativeMetadataBytes]]
       .map(([name, bytes]) => localReceipt(`${repoPath}/native/${name}`, bytes));
-    const directRunnerFiles = ["scripts/run-cadr-m8-m9-input-conformance.mjs",
-      "scripts/cadr-m8-m9-native-input-oracle.py", "cadr-web/wasm/cadr-m8-m9-campaign.mjs",
-      "cadr-web/wasm/cadr-m8-m9-deactivation.mjs", "cadr-web/wasm/cadr-m8-m9-transaction.mjs",
-      "cadr-web/wasm/cadr-m6-headless-boot.mjs", "cadr-web/wasm/cadr-worker.js",
-      "cadr-web/wasm/cadr-m8-keyboard.mjs", "cadr-web/wasm/cadr-m9-pointer.mjs",
-      "scripts/cadr-m8-m9-provenance-join.mjs", "cadr-web/oracle/patches/0004-m8-m9-pre-iob-input-witness.patch"].map(path =>
+    const directRunnerFiles = CADR_M8_M9_DIRECT_AUTHORITIES.map(path =>
       structuredClone(join.source_closure.files.find(item => item.path === path)));
-    const manifest = { schema: "cadr-m8-m9-input-conformance-result-v2",
-      target: "CADR-WEB-303/ABI1.8/protocol-v6/C-M8-M9-DIRECT-BOUNDARY-NON-CW2",
+    const manifest = { schema: "cadr-m8-m9-input-conformance-result-v3",
+      target: "CADR-WEB-303/ABI1.8/protocol-v6/C-M8-M9-DEVID-READY4-DIRECT-BOUNDARY-NON-CW2",
       outcome: "worker-core-payloads-identical-to-expected", runtime_execution_performed: true,
       source_binding: { schema: "cadr-m8-m9-direct-source-binding-v1",
         repository: structuredClone(join.repository), source_closure: structuredClone(join.source_closure),
         direct_runner: { revision: join.repository.candidate_commit, closure_dirty: false,
           dirty_policy: "exact file hashes and scoped status are retained; no clean-checkout claim",
           status_sha256: digest(Buffer.from("")), status: "", files: directRunnerFiles } },
-      provenance_join_start: structuredClone(join), provenance_join_end: structuredClone(join), wasm_production: { schema: "cadr-m8-m9-wasm-production-v1", profile: "m9",
-        forced: true, argv: ["make", "-B", "-C", "cadr-web", "build/cadr-web-m9-O0.wasm", "build/cadr-web-m9-O2.wasm"],
+      provenance_join_start: structuredClone(join), provenance_join_end: structuredClone(join), wasm_production: { schema: "cadr-m8-m9-wasm-production-v2", profile: "m9-devid",
+        forced: true, argv: ["make", "-B", "-C", "cadr-web", "build/cadr-web-m9-devid-O0.wasm", "build/cadr-web-m9-devid-O2.wasm"],
         stdout_sha256: "d".repeat(64), stderr_sha256: "e".repeat(64),
-        outputs: structuredClone(join.m9_wasm) }, session: { id: sessionId, mode: "0700" },
+        outputs: structuredClone(join.m9_devid_wasm) }, session: { id: sessionId, mode: "0700" },
       campaign: { script: { path: "input-script.txt", ...localReceipt("input-script.txt", scriptBytes) },
         manifest: { path: "campaign.json", ...localReceipt("campaign.json", campaignBytes) } },
       native: { session_id: nativeSession, private_disk_instance_id: diskId,
-        oracle_process: { returncode: 0, signal: null }, witness, files: nativeFiles, metadata: nativeMetadata },
+        python_closure: structuredClone(join.native_python_closure),
+        oracle_process: { returncode: 0, signal: null,
+          bootstrap_sha256: CADR_M8_M9_CAPTURED_PYTHON_BOOTSTRAP_SHA256,
+          pipe_bundle_sha256: "7".repeat(64),
+          launcher: { reference: "root-owned-bwrap", bytes: 1,
+            sha256: "8".repeat(64), device: "1", inode: "1" },
+          prepython_authority: {
+            reference: "canonical-receipt-selected-guix-store-authority",
+            root: authorityRoot,
+            ancestry: [
+              { reference: "/", uid: "0", gid: "0", mode: "755", device: "1", inode: "1" },
+              { reference: "/gnu", uid: "0", gid: "0", mode: "755", device: "1", inode: "1" },
+              { reference: "/gnu/store", uid: "944", gid: "954", mode: "1775", device: "1", inode: "2" },
+              { reference: authorityRoot,
+                uid: "944", gid: "954", mode: "555", device: "1", inode: "3" },
+              { reference: `${authorityRoot}/bin`,
+                uid: "944", gid: "954", mode: "555", device: "1", inode: "4" },
+              { reference: `${authorityRoot}/bin/cadr-m8-m9-python-seal-launcher`,
+                uid: "944", gid: "954", mode: "555", device: "1", inode: "5" },
+              { reference: `${authorityRoot}/lib`,
+                uid: "944", gid: "954", mode: "555", device: "1", inode: "6" },
+              { reference: `${authorityRoot}/lib/cadr-m8-m9-prepython-guard.so`,
+                uid: "944", gid: "954", mode: "444", device: "1", inode: "7" },
+              { reference: `${authorityRoot}/share`,
+                uid: "944", gid: "954", mode: "555", device: "1", inode: "8" },
+              { reference: `${authorityRoot}/share/cadr-m8-m9`,
+                uid: "944", gid: "954", mode: "555", device: "1", inode: "9" },
+              { reference: `${authorityRoot}/share/cadr-m8-m9/captured-python-bootstrap.py`,
+                uid: "944", gid: "954", mode: "444", device: "1", inode: "10" },
+            ],
+            build_receipt: authorityBuildReceipt,
+            yama_ptrace_scope: 3,
+            filesystem_permit: filesystemPermit,
+            bootstrap: authorityBootstrap,
+            launcher: authorityLauncher,
+            guard: authorityGuard } },
+        witness, files: nativeFiles, metadata: nativeMetadata },
       portable: { session_id: portableSession, runtime: { node: "test", v8: "test",
           executable: { bytes: 1, sha256: "1".repeat(64) }, environment: { LANG: "C", LC_ALL: "C", TZ: "UTC" } },
-        module: structuredClone(join.m9_wasm[variant]), worker: structuredClone(worker),
+        module: structuredClone(join.m9_devid_wasm[variant]),
+        wasm_execution: { ...structuredClone(join.m9_devid_wasm[variant]), device: "1", inode: "1" },
+        worker: structuredClone(worker),
+        worker_closure: structuredClone(workerClosure),
         expected_cdrinp_file: { path: "portable/expected-input.cdrinp1", ...localReceipt("portable/expected-input.cdrinp1", expectedBytes) },
         observed_cdrinp_file: { path: "portable/observed-input.cdrinp1", ...localReceipt("portable/observed-input.cdrinp1", observedBytes) },
         expected_state_file: { path: "portable/expected-input-states.json", ...localReceipt("portable/expected-input-states.json", expectedStatesBytes) },
@@ -414,7 +779,7 @@ try {
         shared_deactivation_file: { path: "portable/shared-deactivation.json", ...localReceipt("portable/shared-deactivation.json", deactivationBytes) },
         shared_deactivation: deactivationValue, termination: { pending_requests: 0, terminated: true },
         browser_state: { generation: "1", first_ingress_ordinal: "1", last_ingress_ordinal: "208",
-          input_sequence_before: 0, input_sequence_after: 208 }, m6_ready_boundary: "983990278" },
+          input_sequence_before: 0, input_sequence_after: 208 }, ready4: await ready4Fixture() },
       comparison: { path: "comparison.json", ...localReceipt("comparison.json", comparisonBytes) } };
     const manifestBytes = await privateFile(resolve(rootPath, "manifest.json"), manifest);
     return { manifestPath: resolve(rootPath, "manifest.json"), manifest, manifestBytes };
@@ -445,12 +810,182 @@ try {
   for (const [name, mutate] of [
     ["source end", manifest => { manifest.provenance_join_end.source_closure.files[0].sha256 = "0".repeat(64); }],
     ["prepared end", manifest => { manifest.provenance_join_end.native_x11_closure.build_marker.sha256 = "0".repeat(64); }],
-    ["Wasm end", manifest => { manifest.provenance_join_end.m9_wasm.O0.sha256 = "0".repeat(64); }],
+    ["Python end", manifest => { manifest.provenance_join_end.native_python_closure.files[0].sha256 = "0".repeat(64); }],
+    ["Wasm end", manifest => { manifest.provenance_join_end.m9_devid_wasm.O0.sha256 = "0".repeat(64); }],
   ]) {
     const drift = structuredClone(validO0.manifest); mutate(drift); await privateFile(validO0.manifestPath, drift);
     await assert.rejects(browserAll100Evidence(validO0.manifestPath, join, "O0"), /provenance binding differs/,
       `${name} drift between direct-run start and end rejects`);
   }
+  await privateFile(validO0.manifestPath, validO0.manifest);
+  const executionClosureDrift = structuredClone(validO0.manifest);
+  executionClosureDrift.native.python_closure.sha256 = "0".repeat(64);
+  await privateFile(validO0.manifestPath, executionClosureDrift);
+  await assert.rejects(browserAll100Evidence(validO0.manifestPath, join, "O0"),
+    /native execution Python closure differs/,
+    "native execution must bind the same captured Python closure as start/end");
+  await privateFile(validO0.manifestPath, validO0.manifest);
+  const alternateAuthority = structuredClone(validO0.manifest);
+  alternateAuthority.native.oracle_process.prepython_authority
+    .build_receipt.independent_selection.output =
+      "/gnu/store/cccccccccccccccccccccccccccccccc-cadr-m8-m9-python-seal-authority";
+  await privateFile(validO0.manifestPath, alternateAuthority);
+  await assert.rejects(browserAll100Evidence(validO0.manifestPath, join, "O0"),
+    /not independently re-evaluated/,
+    "an outer result cannot substitute a caller-selected authority output");
+  await privateFile(validO0.manifestPath, validO0.manifest);
+  for (const [name, mutate, pattern] of [
+    ["outer mode-2 Yama", value => { value.native.oracle_process.prepython_authority.yama_ptrace_scope = 2; },
+      /outer, runtime, and receipt Yama policies differ/],
+    ["runtime mode-2 Yama", value => { value.native.metadata.runtime_provenance.python.prepython_seal.yama_ptrace_scope = 2; },
+      /runtime Yama policy differs from the authority receipt|native metadata receipt is incomplete|authority build receipt digest/],
+    ["outer bootstrap", value => { value.native.oracle_process.prepython_authority.bootstrap = {
+      ...value.native.oracle_process.prepython_authority.bootstrap, sha256: "0".repeat(64) }; },
+      /authority bootstrap differs from child provenance|authority bootstrap differs from its receipt/],
+    ["outer launcher", value => { value.native.oracle_process.prepython_authority.launcher = {
+      ...value.native.oracle_process.prepython_authority.launcher, sha256: "0".repeat(64) }; },
+      /authority launcher differs from child provenance|authority launcher differs from its receipt/],
+    ["outer guard", value => { value.native.oracle_process.prepython_authority.guard = {
+      ...value.native.oracle_process.prepython_authority.guard, sha256: "0".repeat(64) }; },
+      /authority guard differs from child provenance|authority guard differs from its receipt/],
+    ["runtime bootstrap", value => { value.native.metadata.runtime_provenance.python.prepython_seal.bootstrap.sha256 = "0".repeat(64); },
+      /pre-Python bootstrap differs from the authority receipt|native metadata receipt is incomplete|authority build receipt digest/],
+    ["outer permit", value => { value.native.oracle_process.prepython_authority.filesystem_permit = {
+      ...value.native.oracle_process.prepython_authority.filesystem_permit,
+      mounts: value.native.oracle_process.prepython_authority.filesystem_permit.mounts.map(
+        (mount, index) => index === 0 ? { ...mount, destination: "/permit/substitute" } : mount) }; },
+      /outer filesystem permit differs from child provenance/],
+    ["runtime permit", value => { value.native.metadata.runtime_provenance.python.prepython_seal.filesystem_permit.mounts[0].destination = "/permit/substitute"; },
+      /filesystem permit|outer filesystem permit differs from child provenance|native metadata receipt is incomplete|authority build receipt digest/],
+  ]) {
+    const altered = structuredClone(validO0.manifest); mutate(altered);
+    await privateFile(validO0.manifestPath, altered);
+    await assert.rejects(browserAll100Evidence(validO0.manifestPath, join, "O0"), pattern,
+      `${name} authority/permit mutation rejects the offline reciprocal receipt`);
+  }
+  await privateFile(validO0.manifestPath, validO0.manifest);
+  const childImporter = structuredClone(validO0.manifest);
+  childImporter.native.metadata.runtime_provenance.python.prepython_seal
+    .importer_isolation.path_hooks.unshift("zipimport.zipimporter");
+  await privateFile(validO0.manifestPath, childImporter);
+  await assert.rejects(browserAll100Evidence(validO0.manifestPath, join, "O0"),
+    /metadata receipt is incomplete|importer surface is not isolated/,
+    "a zip/non-FileLoader importer cannot enter the final result");
+  await privateFile(validO0.manifestPath, validO0.manifest);
+  for (const [name, mutate, pattern] of [
+    ["READY4 boundary", value => { value.boundary = "983990279"; }, /exact quiescent READY4/],
+    ["READY4 target", value => { value.target = "wrong"; }, /exact quiescent READY4/],
+    ["READY4 contract", value => { value.contract = "wrong"; }, /exact quiescent READY4/],
+    ["READY4 CDRM6E1 bytes", value => { value.cdrm6e1.hex = `00${value.cdrm6e1.hex.slice(2)}`; }, /CDRM6E1|receipt hash/],
+    ["READY4 artifact evidence", value => { value.artifact_set.sha256 = "0".repeat(64); }, /artifact closure|digest/],
+    ["READY4 post-208 limit", value => { value.post_208_summary.cdrm6e1.total_accepted = "9223372036854775808"; }, /projection|exceeds|limit/],
+    ["READY4 quiescence", value => { value.quiescence.run_active = true; }, /assertQuiescent|quiescence/],
+    ["READY4 host-wait count", value => { value.host_wait_chain.count = -1; }, /host_wait_chain/],
+    ["READY4 host-wait commitment", value => { value.host_wait_chain.sha256 = "0".repeat(64); }, /host_wait_chain|digest/],
+  ]) {
+    const altered = structuredClone(validO0.manifest); mutate(altered.portable.ready4);
+    await privateFile(validO0.manifestPath, altered);
+    await assert.rejects(browserAll100Evidence(validO0.manifestPath, join, "O0"), pattern,
+      `${name} mutation rejects`);
+  }
+  await privateFile(validO0.manifestPath, validO0.manifest);
+  const recomputeHostWaitChain = bytes => {
+    const domain = Buffer.from("CDRM6FASTHOSTWAIT1\0");
+    const preimage = Buffer.alloc(domain.byteLength + 8 + 64);
+    domain.copy(preimage); preimage.writeBigUInt64LE(0n, domain.byteLength);
+    Buffer.from(digest(Buffer.from("CDRM6FASTHOSTWAIT1\0")), "hex")
+      .copy(preimage, domain.byteLength + 8);
+    Buffer.from(digest(bytes), "hex").copy(preimage, domain.byteLength + 40);
+    return digest(preimage);
+  };
+  for (const [name, mutate] of [
+    ["schema", bytes => { bytes[0] ^= 1; }],
+    ["terminal status", bytes => { bytes.writeUInt32LE(7, 28); }],
+    ["requested slots", bytes => { bytes.writeUInt32LE(0, 32); }],
+    ["boundary arithmetic", bytes => { bytes.writeBigUInt64LE(99n, 64); }],
+    ["persistent status", bytes => { bytes.writeUInt32LE(1, 88); }],
+    ["core lifecycle", bytes => { bytes.writeUInt32LE(1, 92); }],
+    ["outstanding request", bytes => { bytes.writeBigUInt64LE(0n, 96); }],
+  ]) {
+    const altered = structuredClone(validO0.manifest);
+    const record = altered.portable.ready4.host_wait_chain.records[0];
+    const bytes = Buffer.from(record.hex, "hex"); mutate(bytes);
+    record.hex = bytes.toString("hex"); record.sha256 = digest(bytes);
+    altered.portable.ready4.host_wait_chain.sha256 = recomputeHostWaitChain(bytes);
+    await privateFile(validO0.manifestPath, altered);
+    await assert.rejects(browserAll100Evidence(validO0.manifestPath, join, "O0"),
+      /CDRM6FAST1|host.wait|host_wait|zero-latency/,
+      `fully synchronized reason-3 ${name} mutation rejects`);
+  }
+  await privateFile(validO0.manifestPath, validO0.manifest);
+  const transcriptCount = structuredClone(validO0.manifest);
+  const transcriptBytes = Buffer.from(transcriptCount.portable.ready4.host_transcript.hex, "hex");
+  transcriptBytes.writeUInt32LE(1, 20);
+  transcriptCount.portable.ready4.host_transcript.hex = transcriptBytes.toString("hex");
+  transcriptCount.portable.ready4.host_transcript.sha256 = digest(transcriptBytes);
+  await privateFile(validO0.manifestPath, transcriptCount);
+  await assert.rejects(browserAll100Evidence(validO0.manifestPath, join, "O0"),
+    /host_transcript|zero-latency/, "host-wait count must equal exact issue/completion transcript pairs");
+  await privateFile(validO0.manifestPath, validO0.manifest);
+  async function expectHostTranscriptReject(label, mutate, pattern) {
+    const altered = structuredClone(validO0.manifest);
+    const bytes = Buffer.from(altered.portable.ready4.host_transcript.hex, "hex");
+    mutate(bytes);
+    altered.portable.ready4.host_transcript.hex = bytes.toString("hex");
+    altered.portable.ready4.host_transcript.sha256 = digest(bytes);
+    await privateFile(validO0.manifestPath, altered);
+    await assert.rejects(browserAll100Evidence(validO0.manifestPath, join, "O0"), pattern, label);
+    await privateFile(validO0.manifestPath, validO0.manifest);
+  }
+  await expectHostTranscriptReject("a read completion digest cannot be empty", bytes => {
+    Buffer.from(digest(Buffer.alloc(0)), "hex").copy(bytes, 64 + 256 + 168);
+  }, /host_transcript|zero-latency|block-read/);
+  await expectHostTranscriptReject("a read completion count must match its block shape", bytes => {
+    bytes.writeBigUInt64LE(1023n, 64 + 72);
+    bytes.writeBigUInt64LE(1023n, 64 + 256 + 72);
+  }, /host_transcript|zero-latency|block-read/);
+  await expectHostTranscriptReject("a block read cannot advance the overlay generation", bytes => {
+    bytes.writeBigUInt64LE(1n, 64 + 256 + 96);
+  }, /host_transcript|zero-latency|block-read/);
+  const checkpointMissing = structuredClone(validO0.manifest);
+  checkpointMissing.portable.ready4.checkpoint_chain.records = [];
+  await privateFile(validO0.manifestPath, checkpointMissing);
+  await assert.rejects(browserAll100Evidence(validO0.manifestPath, join, "O0"),
+    /checkpoint_chain/, "a checkpoint commitment without recomputation materials rejects");
+  const checkpointWitness = structuredClone(validO0.manifest);
+  const checkpointRecord = checkpointWitness.portable.ready4.checkpoint_chain.records[0];
+  const checkpointFast = Buffer.from(checkpointRecord.fast_run.hex, "hex");
+  checkpointFast.writeBigUInt64LE(1n, 72); checkpointFast.writeBigUInt64LE(1n, 80);
+  checkpointRecord.fast_run.hex = checkpointFast.toString("hex");
+  checkpointRecord.fast_run.sha256 = digest(checkpointFast);
+  const checkpointDomain = Buffer.from("CDRM6FASTCHAIN1\0");
+  const checkpointPreimage = Buffer.alloc(checkpointDomain.byteLength + 8 + 128);
+  checkpointDomain.copy(checkpointPreimage); checkpointPreimage.writeBigUInt64LE(0n, checkpointDomain.byteLength);
+  let checkpointOffset = checkpointDomain.byteLength + 8;
+  for (const value of [digest(Buffer.from("CDRM6FASTCHAIN1\0")), checkpointRecord.cdrstate5.sha256,
+    checkpointRecord.cdrm5q1.sha256, checkpointRecord.fast_run.sha256]) {
+    Buffer.from(value, "hex").copy(checkpointPreimage, checkpointOffset); checkpointOffset += 32;
+  }
+  checkpointWitness.portable.ready4.checkpoint_chain.sha256 = digest(checkpointPreimage);
+  await privateFile(validO0.manifestPath, checkpointWitness);
+  await assert.rejects(browserAll100Evidence(validO0.manifestPath, join, "O0"),
+    /READY3\/READY4 witness differs/, "outer READY4 witness binds checkpoint count and digest");
+  const hostWitness = structuredClone(validO0.manifest);
+  const hostWitnessRecord = hostWitness.portable.ready4.host_wait_chain.records[0];
+  const hostWitnessBytes = Buffer.from(hostWitnessRecord.hex, "hex");
+  hostWitnessBytes.writeUInt32LE(1023, 32);
+  hostWitnessRecord.hex = hostWitnessBytes.toString("hex");
+  hostWitnessRecord.sha256 = digest(hostWitnessBytes);
+  hostWitness.portable.ready4.host_wait_chain.sha256 = recomputeHostWaitChain(hostWitnessBytes);
+  await privateFile(validO0.manifestPath, hostWitness);
+  await assert.rejects(browserAll100Evidence(validO0.manifestPath, join, "O0"),
+    /READY3\/READY4 witness differs/, "outer READY4 witness binds host-wait count and digest");
+  await privateFile(validO0.manifestPath, validO0.manifest);
+  const wasmPathSubstitute = structuredClone(validO0.manifest);
+  wasmPathSubstitute.portable.wasm_execution.path = "cadr-web/build/cadr-web-m9-devid-O2.wasm";
+  await privateFile(validO0.manifestPath, wasmPathSubstitute);
+  await assert.rejects(browserAll100Evidence(validO0.manifestPath, join, "O0"), /descriptor-bound Wasm differs/,
+    "a substituted descriptor-bound Wasm path rejects");
   await privateFile(validO0.manifestPath, validO0.manifest);
   const wrongRoot = structuredClone(validO0.manifest); wrongRoot.session.id = `m8-cw2-${"f".repeat(32)}`;
   await privateFile(validO0.manifestPath, wrongRoot);
@@ -484,6 +1019,9 @@ try {
     metadata => { metadata.private_disk.sha256_at_end = "0".repeat(64); }, /private disk/);
   await expectNativeMetadataReject("rendered-config absence rejects the direct result",
     metadata => { metadata.runtime_provenance.rendered_config.bytes = 0; }, /rendered private config/);
+  await expectNativeMetadataReject("Python program descriptor drift rejects the direct result",
+    metadata => { metadata.runtime_provenance.program.sha256 = "0".repeat(64); },
+    /Python program differs/);
   await expectNativeMetadataReject("M6 schedule drift rejects the direct result",
     metadata => { metadata.m6_schedule.sha256 = "0".repeat(64); }, /selected M6 schedule/);
   await expectNativeMetadataReject("frozen Cadet mapping drift rejects the direct result",

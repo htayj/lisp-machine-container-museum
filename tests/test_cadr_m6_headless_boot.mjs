@@ -3,7 +3,10 @@ import { execFileSync } from "node:child_process";
 import { readFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import {
+  CADR_HOST_OPERATION_BLOCK_READ,
+  CADR_HOST_OPERATION_BLOCK_WRITE,
   CADR_HOST_RESULT_OK,
+  CADR_M4_BLOCK_BYTES,
   CADR_STATUS_NOT_READY,
   CADR_STATUS_OK,
   createM4BlockRangeService,
@@ -28,6 +31,7 @@ import {
   runSyntheticM6Ready4FastForTest,
   runSyntheticM6HeadlessBootForTest,
   runSyntheticM6HeadlessBootConformanceForTest,
+  parseM6ZeroLatencyHostTranscript,
   serializeM6FailureDiagnostic,
   serializeM6HostTranscript,
   serializeM6ReadyConformance,
@@ -130,6 +134,25 @@ function descriptor(firstBlock = 0n) {
   view.setBigUint64(0, firstBlock, true);
   view.setUint32(8, 1, true);
   view.setUint32(12, 1024, true);
+  return bytes;
+}
+
+function fastHostWait(boundary, requestId) {
+  const bytes = new Uint8Array(128);
+  bytes.set(new TextEncoder().encode("CDRM6FAST1"));
+  const view = new DataView(bytes.buffer);
+  view.setUint32(16, 1, true);
+  view.setUint32(20, 128, true);
+  view.setUint32(24, 3, true);
+  view.setUint32(28, 8, true);
+  view.setUint32(32, 1, true);
+  view.setBigUint64(40, 1n, true);
+  view.setBigUint64(48, 1n, true);
+  view.setBigUint64(56, boundary - 1n, true);
+  view.setBigUint64(64, boundary, true);
+  view.setUint32(88, 0, true);
+  view.setUint32(92, 2, true);
+  view.setBigUint64(96, requestId, true);
   return bytes;
 }
 
@@ -1343,6 +1366,99 @@ for (const mode of [
   assert.equal(
     new TextDecoder().decode(transcript.slice(0, 8)), "CDRM6HS1");
   assert.equal(new DataView(transcript.buffer).getUint32(20, true), 0);
+}
+
+{
+  /* CDRM6HS1 stores completion digests rather than completion bytes.  Exercise
+   * the operation/count and M4 overlay transition rules without relying on a
+   * particular boot fixture: a read, one commit, its exact replay, then a
+   * monotonic new write. */
+  const artifact = new Uint8Array(32).fill(0x31);
+  const empty = await digest(new Uint8Array(0));
+  const readDescriptor = await digest(new Uint8Array(16).fill(0x41));
+  const writeDescriptor = await digest(new Uint8Array(24).fill(0x42));
+  const readCompletion = await digest(new Uint8Array(CADR_M4_BLOCK_BYTES).fill(0x43));
+  const writePayload = await digest(new Uint8Array(CADR_M4_BLOCK_BYTES).fill(0x44));
+  const records = [];
+  const appendPair = ({ boundary, generation, requestId, operation, descriptorSha256,
+    requestPayloadSha256, completionByteCount, firstBlock, blockCount, blockBytes,
+    overlayBefore, overlayAfter, completionSha256 }) => {
+    const shared = { dueBoundary: boundary, generation, requestId, operation,
+      hostStatus: CADR_HOST_RESULT_OK, descriptorByteCount:
+        operation === CADR_HOST_OPERATION_BLOCK_READ ? 16n : 24n,
+      requestPayloadByteCount: operation === CADR_HOST_OPERATION_BLOCK_READ ? 0n :
+        BigInt(CADR_M4_BLOCK_BYTES), completionByteCount, descriptorSha256,
+      requestPayloadSha256, firstBlock, blockCount, blockBytes };
+    records.push({ ordinal: records.length, actor: "issue", guestBoundary: boundary,
+      overlayGeneration: overlayBefore, completionSha256: empty, ...shared });
+    records.push({ ordinal: records.length, actor: "completion", guestBoundary: boundary,
+      overlayGeneration: overlayAfter, completionSha256, ...shared });
+  };
+  appendPair({ boundary: 100n, generation: 1n, requestId: 7n,
+    operation: CADR_HOST_OPERATION_BLOCK_READ, descriptorSha256: readDescriptor,
+    requestPayloadSha256: empty, completionByteCount: BigInt(CADR_M4_BLOCK_BYTES),
+    firstBlock: 0n, blockCount: 1, blockBytes: CADR_M4_BLOCK_BYTES,
+    overlayBefore: 0n, overlayAfter: 0n, completionSha256: readCompletion });
+  appendPair({ boundary: 101n, generation: 1n, requestId: 8n,
+    operation: CADR_HOST_OPERATION_BLOCK_WRITE, descriptorSha256: writeDescriptor,
+    requestPayloadSha256: writePayload, completionByteCount: 0n, firstBlock: 1n,
+    blockCount: 1, blockBytes: CADR_M4_BLOCK_BYTES, overlayBefore: 0n,
+    overlayAfter: 1n, completionSha256: empty });
+  appendPair({ boundary: 102n, generation: 1n, requestId: 8n,
+    operation: CADR_HOST_OPERATION_BLOCK_WRITE, descriptorSha256: writeDescriptor,
+    requestPayloadSha256: writePayload, completionByteCount: 0n, firstBlock: 1n,
+    blockCount: 1, blockBytes: CADR_M4_BLOCK_BYTES, overlayBefore: 1n,
+    overlayAfter: 1n, completionSha256: empty });
+  appendPair({ boundary: 103n, generation: 1n, requestId: 9n,
+    operation: CADR_HOST_OPERATION_BLOCK_WRITE, descriptorSha256: writeDescriptor,
+    requestPayloadSha256: writePayload, completionByteCount: 0n, firstBlock: 1n,
+    blockCount: 1, blockBytes: CADR_M4_BLOCK_BYTES, overlayBefore: 1n,
+    overlayAfter: 2n, completionSha256: empty });
+  const transcript = serializeM6HostTranscript(records, artifact);
+  const waits = [fastHostWait(100n, 7n), fastHostWait(101n, 8n),
+    fastHostWait(102n, 8n), fastHostWait(103n, 9n)];
+  await parseM6ZeroLatencyHostTranscript(transcript, {
+    artifactSetSha256: artifact, hostWaitRecords: waits,
+  });
+  const malformed = () => transcript.slice();
+  const recordOffset = index => CADR_M6_HOST_TRANSCRIPT_HEADER_BYTES +
+    index * CADR_M6_HOST_TRANSCRIPT_RECORD_BYTES;
+  let altered = malformed();
+  altered.set(empty, recordOffset(1) + 168);
+  await assert.rejects(() => parseM6ZeroLatencyHostTranscript(altered, {
+    artifactSetSha256: artifact, hostWaitRecords: waits,
+  }), /block-read completion semantics/,
+  "a nonempty read completion count cannot carry the empty completion digest");
+  altered = malformed();
+  for (const index of [0, 1]) {
+    new DataView(altered.buffer, altered.byteOffset + recordOffset(index),
+      CADR_M6_HOST_TRANSCRIPT_RECORD_BYTES).setBigUint64(72, 1023n, true);
+  }
+  await assert.rejects(() => parseM6ZeroLatencyHostTranscript(altered, {
+    artifactSetSha256: artifact, hostWaitRecords: waits,
+  }), /block-read completion semantics/,
+  "a read completion count must equal the descriptor's block count and block size");
+  altered = malformed();
+  new DataView(altered.buffer, altered.byteOffset + recordOffset(1),
+    CADR_M6_HOST_TRANSCRIPT_RECORD_BYTES).setBigUint64(96, 1n, true);
+  await assert.rejects(() => parseM6ZeroLatencyHostTranscript(altered, {
+    artifactSetSha256: artifact, hostWaitRecords: waits,
+  }), /block-read completion semantics/,
+  "a read cannot advance the M4 overlay generation");
+  altered = malformed();
+  new DataView(altered.buffer, altered.byteOffset + recordOffset(3),
+    CADR_M6_HOST_TRANSCRIPT_RECORD_BYTES).setBigUint64(96, 2n, true);
+  await assert.rejects(() => parseM6ZeroLatencyHostTranscript(altered, {
+    artifactSetSha256: artifact, hostWaitRecords: waits,
+  }), /overlay commit transition/,
+  "a committed write advances exactly one overlay generation");
+  altered = malformed();
+  new DataView(altered.buffer, altered.byteOffset + recordOffset(5),
+    CADR_M6_HOST_TRANSCRIPT_RECORD_BYTES).setBigUint64(96, 2n, true);
+  await assert.rejects(() => parseM6ZeroLatencyHostTranscript(altered, {
+    artifactSetSha256: artifact, hostWaitRecords: waits,
+  }), /overlay commit transition/,
+  "a replay cannot be relabeled as a new overlay commit");
 }
 
 {

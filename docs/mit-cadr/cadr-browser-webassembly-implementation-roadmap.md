@@ -882,6 +882,29 @@ explicit native exceptions; the latter still require their own ordered chord
 campaign. The static native build and direct-core tests do not close the
 runtime gate.
 
+The M8/M9 READY4 campaign selects the additive `m9-devid` Wasm build rather
+than the ordinary M9 module. It retains the M7 display/core route and the M9
+input ABI while adding only the M6 DEVID runner and fixed evidence export; its
+O0/O2 byte identities and exact export surfaces are pinned by the M8/M9 unit
+gate. In particular, the inherited CDRM7U1 guarded physical read of `017772045`
+continues to route only to IOB CSR `0764112`; it is not replaced by an IOB
+range or a write capability. It also retains CDRM7TV1's normal-bus TV range;
+the M9 profile must route reads and writes within `017000000..017077777` to the
+TV backing store without widening either adjacent Xbus space or pre-M7 profiles.
+
+Source-A rebaseline, 2026-08-02: the four O0/O2 M9 identities below were rebuilt
+from signed M7-TV receipt head `51d5426c1691bdd00783e15fb6fd44f6ddbfff56` plus
+this M8/M9 source closure. They are deterministic build-test identities, not
+native-campaign evidence. The M8/M9 DEVID unit gate runs the inherited CSR and TV
+boundary tests compiled against the additive M9 profile before checking these bytes.
+
+| Profile | Optimization | Bytes | SHA-256 |
+| --- | --- | ---: | --- |
+| M9 ordinary | O0 | 204402 | `f65c08e50aa3440f014016adc3ae252cdf7ca626323276f7deaac338c718b9b1` |
+| M9-DEVID | O0 | 167232 | `ac32ee309ca6f10368dd3317fb31ef70c5642896eda441306169b5fe21e325d8` |
+| M9 ordinary | O2 | 182384 | `c1b4c70c20317bd156b7e79e35ea4d245f1fdde46143727f5600c0da58c09570` |
+| M9-DEVID | O2 | 122282 | `f5accbe7fa33c8208b3d5a4874a75b90c59ea4bec721741ff3b84196e762a62a` |
+
 ### M9 — Implement pointer and interactive lifecycle
 
 Deliverables:
@@ -922,9 +945,98 @@ and browser Listener/editor/window campaign retains the same logical input trace
 framebuffer checkpoints, Lisp results, and required harness provenance. The public
 preflight is `make -C cadr-web m8-m9-unit`; it is not the native/runtime oracle.
 
+Unfulfilled native-authority prerequisite, 2026-08-02: building the immutable
+captured-Python authority and starting either native campaign require the
+**host-global** Yama policy `/proc/sys/kernel/yama/ptrace_scope` to be exactly
+`3`. Mode `2` is rejected at every authority layer: Yama permits
+`CAP_SYS_PTRACE` in that mode, while this Bubblewrap design creates a child user
+namespace whose parent-namespace owner retains all child-namespace capabilities.
+Neither the child user/PID namespaces nor a fresh `/proc` mount removes that
+parent-creator relationship or independently roots a Yama decision. The outer
+host preflight, canonical builder receipt, in-child bootstrap, native runner,
+and browser/X11 receipt join all demand `3`; the in-child reread is a coherence
+check, not a substitute authority. The regression uses static and receipt
+adversaries rather than faking `/proc`.
+
+The current development host was observed at scope `1` on 2026-08-02. No sysctl was changed,
+the authority was not built or executed, and no CADR runtime was launched.
+Consequently this prerequisite and every dependent `C-M8`/`CW2-INTERACTIVE`
+runtime gate remain open. Meeting this host-policy prerequisite alone would
+authorize no compatibility claim: the isolated native and matched browser
+campaigns still have to complete and pass their evidence checks. See the
+[pointer and lifecycle specification](cadr-pointer-and-interactive-lifecycle-reimplementation-specification.md)
+for the bounded kernel evidence and inference.
+
+The authority is not selected by a caller-provided Guix store directory. Its
+canonical builder opens and hashes the exact reviewed wrapper, builder,
+derivation, launcher, guard, and bootstrap sources; opens the Guix client
+before resolving it; invokes that descriptor under a closed build environment;
+and records the derivation and output paths. The resulting receipt records the
+copied bootstrap hash, a launcher ELF64 identity with neither `PT_INTERP` nor
+`PT_DYNAMIC`, and a guard ELF64 shared-object identity with `PT_DYNAMIC` and
+no `PT_INTERP`. Before native execution, the runner independently evaluates
+the same derivation and dry-run output through the receipt-bound Guix client,
+then descriptor-walks and rehashes every selected output. The legacy
+`CADR_M8_M9_PYTHON_AUTHORITY` direct selector is rejected; a future authorized
+run must name the canonical receipt with
+`CADR_M8_M9_PYTHON_AUTHORITY_RECEIPT`.
+
+The child receipt also fixes `sys.path` to the immutable stdlib,
+platstdlib, and `lib-dynload` directories, removes archive import hooks, and
+permits only the recorded built-in, frozen, and `FileFinder` import surfaces.
+Every stdlib `FileLoader` target is descriptor-walked and hashed. Captured
+programs that request `zipimport`, directly request `__main__` or
+`sitecustomize`, use the enumerated frame/function reflection attributes, mutate
+the importer namespace, or leave that surface changed fail closed at the selected
+source-admission or exit checks.
+
+The authority bootstrap is a sealed `sitecustomize` gate, not the program's
+`__main__`. The static launcher replaces its entire environment, adds only its
+literal startup `PYTHONPATH`, and starts the sealed root pathname as CPython's
+actual script after `sitecustomize` returns. The gate validates the root and every
+helper's byte/hash identity, replaces `runpy.run_path`, `io.open_code`, and the
+built-in `compile`, `exec`, and `eval` entries, then leaves no saved original
+`compile` or `exec` object in the gate's module dictionary or a Python caller frame.
+Captured helpers are subsequently loaded by the ordinary guarded loader from their
+own validated sealed mounts. The adversarial regression attempts recovery through
+`__main__`, `sys.modules`, the startup module dictionary, a guarded-loader
+function's globals, and a caller frame; each must fail before it can run an injected
+code string.
+
+This is a narrowly bounded source-closure authority reduction, not a claim that
+arbitrary hostile Python is a generally safe sandbox. In particular, the selected
+seven reviewed sources remain trusted inputs, the filesystem/namespace/ptrace
+boundary is enforced independently, and a successful static regression cannot
+substitute for a future authorized native capture at Yama scope `3`.
+
+The selected native child begins below a new tmpfs `/` and Bubblewrap's fresh
+minimal `/dev`; it never receives a host-root or repository bind, nor even a
+repository-root environment locator. It also does not receive the whole Guix
+store. The parent obtains the selected store interpreter's recursive
+`guix gc --requisites` closure through the receipt-bound Guix descriptor,
+canonicalizes that exact store-item list, opens each item as a held directory,
+and mounts only those directories individually. The synthetic device receipt
+enumerates `null`, `full`, `zero`, `random`, `urandom`, `tty`, and `pts/ptmx`;
+the `pts` and `shm` directories; and Bubblewrap's `core`, `fd`, standard-stream,
+and `ptmx` symlinks.
+All remaining mounts are a fixed descriptor-held permit: native configuration,
+every prepared file individually, five configuration-selected media files, selected static
+profile/template/release/patch/mapping evidence, input script and campaign,
+and the one private output directory. The prepared receipt rejects symlinks,
+non-regular leaves, and execute bits outside the exact three selected `usim`
+executables. The seven reviewed Python programs cross as one root pipe plus one
+separate helper pipe per non-root source; Bubblewrap materializes those bytes as
+read-only files below the sealed program root rather than exposing a repository
+tree or retaining an in-memory source bundle. The child descriptor-walks its
+actually mounted startup gate, launcher, and guard and requires their identities to
+equal the canonical receipt; after exit the parent requires an explicit
+bootstrap-start token, then rehashes its retained Python, Bubblewrap, authority,
+every Guix-store directory, every prepared file, and all other permit descriptors and
+again compares the authority artifacts and ELF profiles to that same receipt.
+
 The committed campaign join now requires reciprocal O0/O2 provenance manifests
 rather than accepting two independently plausible reports. It binds the same exact
-11 source authorities, recursive import closure, selected media and O0/O2 executable
+ordered source-authority set, recursive import closure, selected media and O0/O2 executable
 identities, direct start/end observations, M6 transcript/idle/mapping evidence, all
 208 derived input states, all 100 key transitions, and the exact worker-message
 suffix. A rights-safe synthetic M6 producer exercises that join without private
@@ -1261,6 +1373,8 @@ M15 and M16 never block the offline museum release.
 - [CADR microcode, microassembler, and console debugger](cadr-microcode-microassembler-and-console-debugger.md)
 - [CADR computer-use harness](cadr-computer-use-harness.md)
 - [TV window-system specification](tv-window-system-reimplementation-specification.md)
+- Linux kernel, [Yama ptrace_scope](https://docs.kernel.org/admin-guide/LSM/Yama.html), verified 2026-08-02.
+- Linux man-pages, [user_namespaces(7)](https://man7.org/linux/man-pages/man7/user_namespaces.7.html), verified 2026-08-02.
 - Pinned `usim` modules under repository `l/usim/`
 
 Last verified: 2026-08-02.

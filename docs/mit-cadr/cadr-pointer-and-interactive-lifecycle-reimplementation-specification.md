@@ -3,7 +3,7 @@ type: Reimplementation Specification
 title: CADR browser pointer and interactive lifecycle reimplementation specification
 description: A release-bounded browser-to-core contract for EDGE32 pointer ingress, focus and capture deactivation, accessible controls, and an ABI 1.8 IOB subset without a claim of CW2 interactive closure.
 tags: [mit-cadr, cadr-web, input, pointer, lifecycle, reimplementation]
-timestamp: 2026-07-31T00:35:00-04:00
+timestamp: 2026-08-02T03:31:43-04:00
 ---
 
 # CADR browser pointer and interactive lifecycle reimplementation specification
@@ -39,6 +39,7 @@ that the selected historical executable used these JavaScript objects.
 | `USIM-X11-SRC` | Public X11 `usim` source pin | The selected X11 mapping witness/profile basis | A browser event, DOM capture, or live runtime observation |
 | `P1-INF` | Explicit reconstruction inference | The finite host bridge and `CDRINP1` record needed by the selected web profile | A historical implementation expression |
 | `P1-CORE` | Tracked ABI 1.8 core/IOB implementation and direct C conformance test | Exact record validation, completed-boundary delivery, mouse word packing, readiness behavior, and post-delivery witness | Native `usim` equivalence or a preserved-machine behavior claim |
+| `M6-SRC` | Tracked selected M4 block-service and M6 READY4 receipt validator | Digest-only host-service receipt operation/count and overlay-transition contract | A native M6 runtime observation or an historical wire format |
 | `P1-TEST` | Synthetic Node, worker, and direct-core conformance tests | The exact implemented host behavior, dedicated-worker dispatch, core delivery, and shared browser request ordering | Preserved-machine behavior |
 | `TODO-RUNTIME` | Unperformed harness oracle | Nothing yet | A claim that the branch has been exercised |
 
@@ -67,6 +68,7 @@ bit `0/1/2`, X11 button `1/2/3`, and DOM `PointerEvent.button` `0/1/2`.
 | Profile selection | `C303-SRC`, exact `USIM-X11-SRC` witnesses above, `S46-SRC` pins below | None in this phase | selected evidence boundary |
 | EDGE32, queue, coalescing, lifecycle, transforms, controls | `P1-INF` | `P1-TEST` only | normative reconstruction |
 | `CDRINP1` / ABI 1.8 IOB subset | `P1-INF`, selected `iob.c` source witness | `P1-CORE` only | reconstructed delivery, not native equivalence |
+| READY4 `CDRM6HS1` host receipt | `M6-SRC` | `P1-TEST` only | M6 native observation or a claim that digest-only records publish completion bytes |
 | `CDRSTATE6` block | `P1-INF` | None | proposed future contract; not serialized by ABI 1.8 |
 | Listener/editor/window workflow | None | `TODO-RUNTIME-CW2-01` | open |
 
@@ -381,6 +383,7 @@ This is a semantic browser-host protocol, not a source compatibility layer.
 | `T-M9-A11Y` | direct and production-submit button toggles, rejected toggle, directions, Release All accept/reject, release/focus/live controls | state updates only after acceptance; Release All rejection remains terminal after queue drain |
 | `T-M9-WORKER-CHANNEL` | v6 display-capable worker, M8/M9 interleaving, and DOM binding seams | pointer state is owned by the worker, generic kind 4 remains rejected, and shared request IDs are monotonic |
 | `T-M9-IOB` | Direct ABI 1.8 machine receives pointer, keyboard, all-up, stale ordinal, malformed record, and out-of-range coordinate cases | Pointer words/readiness, keyboard FIFO, and ordinal/sequence commit are exact and failure is mutation-free |
+| `T-M9-INHERITED-M7-ROUTES` | M9-profile builds of CDRM7U1 and CDRM7TV1 boundary tests | the exact `017772045` CSR read remains an IOB-only read exception, and the full `017000000..017077777` TV range remains a normal bus read/write route without widening neighboring space |
 | `T-M8-M9-DEACTIVATE` | key→pointer→blur and pointer→key→capture-loss interleavings, exact `KeyQ`/`(60,70)` derived payloads, and a mutant of each post-delivery observation | M8 remains held before delivery commit; the tail contains pointer-up then exactly one all-up; every CDRIOB91 transition and the final state are CDRINP-derived; commit clears both controllers |
 
 The executable tests are [pointer queue and EDGE32 tests](../../tests/test_cadr_m9_pointer.mjs),
@@ -421,12 +424,127 @@ intentionally deferred only until the complete post-idle M8/M9 script is witness
 it then halts through the original M6 completion condition. A missing record, an
 early exit, a changed private disk, or any non-private path fails the capture.
 
+The captured-Python execution authority has an additional, currently
+**unfulfilled** host-policy prerequisite: the host-global Linux Yama
+`/proc/sys/kernel/yama/ptrace_scope` value MUST be exactly `3` before its Guix
+authority may be built or either native entry point may start. This is a
+safety-corrected authority requirement for the selected `native-capture` closure,
+not a claim about historical CADR behavior. The wrapper and Node builder reject any
+other value before Guix, the parent rejects it before child creation and before it
+accepts a canonical receipt, and the child rejects it before it executes the
+captured oracle. The X11 campaign validator also rejects build, runtime, or outer
+receipts that carry a value other than `3`.
+
+This exact requirement follows the declared hostile-parent boundary. Yama mode `2`
+is **not** sufficient: the kernel documents it as an admin-only mode that permits
+processes with `CAP_SYS_PTRACE`, whereas mode `3` permits neither attach nor
+`PTRACE_TRACEME`. The Bubblewrap child is deliberately created with a new user
+namespace. Linux documents that a process in the parent user namespace whose
+effective UID owns that child namespace has every capability in it. Therefore the
+parent namespace creator can satisfy mode `2`'s capability condition for the child;
+mode `2` cannot prove the intended anti-parent tracing boundary. This is an
+implementation-independent inference from the selected namespace topology and the
+kernel rules, not a captured CADR runtime observation.
+
+The user and PID namespace options and Bubblewrap's fresh `--proc` mount are
+defense-in-depth isolation mechanics, not substitutes for host-global mode `3`.
+They do not remove the creator's capability relationship to the child user
+namespace or turn the system-wide Yama policy into an independently rooted child
+authority. The in-child read and receipt comparison detect divergence from the
+parent decision; they do not make a remounted `/proc` authoritative. The regression
+coverage therefore uses exact source and receipt checks for a forged mode-`2`
+decision and does not fake `/proc` or launch a native campaign. The development host
+was observed at scope `1` on 2026-08-02; no sysctl was changed, no authority was
+built or executed, and no CADR runtime was launched. This remains a selected-closure
+prerequisite and retained receipt field, not a completed conformance gate.
+
+When that prerequisite is deliberately satisfied by the host administrator,
+the selected Python executable, immutable launcher/guard/bootstrap tree, and
+stdlib/platstdlib/dynamic-loader files are accepted only through held
+descriptor walks. Every component must be owned by an identity other than the
+current process UID, must not be writable by the effective or supplemental
+groups, and must not be other-writable. File bytes, device, inode, and SHA-256
+remain in the receipt. Wildcard imports, unknown namespace mutation, computed
+repository loaders, and unresolved Python source paths fail closed. These
+controls bound the local capture process; they do not replace the native X11 or
+matched browser behavioral oracles.
+
+Authority selection is receipt-driven. The builder receipt commits the exact
+reviewed six-file build closure, descriptor-bound Guix client and immutable
+ancestry, closed Guix environment, derivation and output paths, bootstrap
+bytes, static launcher bytes and ELF program-header profile, and guard bytes
+and shared-object ELF profile. The runner rejects the former direct
+store-directory selector. It independently re-evaluates the derivation and
+dry-run output with the same descriptor-bound Guix client, then reopens and
+rehashes the receipt-selected output. The child provenance and outer campaign
+result each retain the complete canonical receipt plus that independent
+selection. A launcher-only change, guard-only change, fabricated alternate
+output, missing static-link property, or changed reviewed build source is
+nonconforming.
+
+The Python import surface is likewise an explicit receipt invariant.
+`sys.path` contains only the descriptor-verified stdlib, platstdlib, and
+`lib-dynload` roots; archive paths and the `zipimport` hook are absent. The
+approved non-file importers are only CPython's recorded built-in and frozen
+importers, followed by `PathFinder` with the one `FileFinder` hook. Every
+initial or later stdlib `FileLoader` target is descriptor-walked and hashed.
+Captured-source analysis rejects archive imports, direct `__main__` or
+`sitecustomize` imports, enumerated frame/function reflection attributes, and
+importer-namespace mutation; the startup gate registers an exit check for the
+importer surface.
+
+The gate itself is installed as sealed `sitecustomize` and returns before the
+sealed root pathname becomes CPython's actual `__main__`. Its static launcher
+replaces the environment and supplies the one literal startup `PYTHONPATH`; the
+gate then replaces `runpy.run_path`, `io.open_code`, `compile`, `exec`, and `eval`
+on their shared objects. It retains no original `compile` or `exec` reference in a
+gate-module dictionary or Python caller frame. The root and each helper are separate
+validated read-only pipe mounts, so helpers use the ordinary guarded loader instead
+of a bootstrap-held private executor. Tests attempt to recover a raw executor via
+`__main__`, `sys.modules`, the startup module, a guarded loader's globals, and a
+caller frame; none may execute the injected string.
+
+This is an authority reduction for the exact reviewed source closure, not a general
+safe-Python claim for arbitrary hostile source. The filesystem permit, namespace
+profile, descriptor receipts, and required host Yama policy remain independent
+requirements, and the dynamic regression remains unexecuted until an administrator
+deliberately establishes scope `3`.
+
+The launch filesystem is permit-only. Bubblewrap creates a tmpfs root and a
+fresh minimal `/dev`; it does not bind the host root, the whole Guix store, or
+the repository and does not supply a repository-root environment variable.
+The receipt-bound Guix client enumerates the selected store Python's exact
+recursive requisites; the parent opens and individually mounts only those store
+items. The receipt also fixes Bubblewrap's synthetic device set: seven named
+character devices including `pts/ptmx`; `pts` and `shm`; and the `core`, `fd`,
+standard-stream, and `ptmx` symlinks. The exact descriptor-fed data permit consists of native configuration,
+every prepared file separately, its five configuration-selected media inputs, selected
+static profile/template/release/patch/mapping evidence, the generated script
+and campaign, and the one 0700 output directory. The prepared-file receipt
+rejects symlinks and unexpected executable leaves and permits execute bits only
+on the three selected `usim` products. The selected seven-program Python closure is
+supplied as a one-shot root pipe and a separate helper pipe for every non-root source,
+which Bubblewrap materializes as individual read-only files below the sealed program
+root—not as a repository mount or an in-memory helper bundle. The child independently
+identifies the mounted startup gate, static launcher, and pre-Python guard and
+requires each to equal the canonical authority receipt. After child exit, the parent
+rehashes every held Python, Bubblewrap, authority, Guix-store, prepared-file, and other permit descriptor;
+the child must also have emitted its bootstrap-start token. Authority byte and ELF
+identities must still equal the canonical receipt before a result is accepted.
+
+Local observation, 2026-08-01: Bubblewrap 0.11.2 (84,464-byte executable,
+SHA-256 `6ad2138a73d592acb43525432965e3c66f6fad8a2f3d610c6ca0b6855e993cbe`)
+was run with a synthetic root, `--dev /dev`, and `/proc`; a sorted one-level
+`find` established the device names and link targets enumerated above. This is
+evidence for the pinned receipt and regression test, not a claim that every
+Bubblewrap release constructs the same tree.
+
 [`run-cadr-m8-m9-input-conformance.mjs`](../../scripts/run-cadr-m8-m9-input-conformance.mjs)
 is the direct-boundary, explicitly non-CW2 campaign entry point. After explicit `--execute`, it uses
 a newly allocated ignored 0700 session; materializes one native script covering all
 100 selected physical keys (down and up), motion, all three button transitions,
 and capture-loss neutralization; runs the strict native capture; then independently
-boots the protocol-v6 M9 Wasm machine to the frozen M6 READY contract and sends the
+boots the protocol-v6 M9-DEVID Wasm machine to the frozen M6 READY contract and sends the
 same controller-derived actions through the real worker. It retains `CDRM8N1`,
 `CDRINP1`, `CDRIOB91` state receipts, the M6/raw receipts, hashes, private-disk
 identity, and worker shutdown record. There is no synthetic/native fallback.
@@ -437,7 +555,7 @@ input does not receive EDGE32's after-mask directly. Therefore the paired result
 records the representations and their shared action schedule, but does not claim
 their bytes are equal or native behavioral equivalence. After the source closure
 has been prepared and built, run this direct-boundary command once for each selected
-Wasm optimization variant. Each invocation forcibly rebuilds **both** M9 Wasm
+Wasm optimization variant. Each invocation forcibly rebuilds **both** M9-DEVID Wasm
 outputs before it creates the private runtime, then records the candidate/base source
 closure, all selected profile/release artifact identities, both output identities, and
 the exact worker/module identities in its result manifest. The two recorded output
@@ -459,7 +577,7 @@ instead of leaving a stale direct receipt apparently applicable.
 Each direct result is an exact current-owner 0700 session with a fixed 0600 sidecar
 layout. Before a later consumer accepts it, it verifies the complete source binding
 (candidate/base commits and trees, every resolved local module, plus the exact ordered
-11-authority direct-runner list and its scoped Git status); the profile source pins;
+direct-runner authority list and its scoped Git status); the profile source pins;
 the frozen release record; the five selected artifacts and native-host input; the
 prepared source/build markers and recorded native toolchain; the rendered-private-
 config fingerprint; the immutable private-disk start/end identity; and the frozen M6
@@ -472,7 +590,18 @@ The raw M6 validation is the producer contract, not a superficial header check: 
 selected meta row, every frozen schedule event, rational guest-boundary clock row and
 same-boundary priority, exact nine A/B/C `DEBUG-IR` writes, 67 A/B/C/suffix boundaries,
 one retained-C settled row, quiescent state/counter conditions, and all 64 96-byte
-`CDRM6I1` idle samples are required. The browser half derives every expected
+`CDRM6I1` idle samples are required. Separately, the M6 `CDRM6HS1` READY4
+host-service receipt is a digest-only selected-profile record, not a raw native
+transcript. `M6-SRC` requires one adjacent issue/completion pair for each reason-3
+`CDRM6FAST1` stop, a block read's declared completion count to equal its nonzero
+`blockCount * 1024` range and its delivery digest not to equal SHA-256 of empty input,
+and a block write to carry a 24-byte descriptor, exactly one block-1 payload, and no
+completion bytes. Overlay generation begins at zero: reads and failed writes retain it;
+a successful new write advances it by exactly one; and a no-advance success is accepted
+only as the exact last committed write replay, including generation, request ID,
+descriptor digest, and payload digest. The receipt does not serialize completion bytes,
+so this validates selected-service state and count semantics rather than proving a
+completion preimage. The browser half derives every expected
 `CDRIOB91` state from the accepted `CDRINP1` stream, checks all 100 bounded keyboard
 consumption transitions, requires the complete pointer-up plus one-all-up
 deactivation tail, compares every deactivation `CDRIOB91` transition and final state,
@@ -497,9 +626,9 @@ path-substituted result nonconforming; they do not turn a same-user ignored outp
 directory into a cryptographic evidence store.
 
 ```sh
-guix shell node -- node scripts/run-cadr-m8-m9-input-conformance.mjs --execute --native-config build/cadr-oracle/m6-run-smoke/usim.ini --prepared build/cadr-oracle/m8-m9-x11-prepared-v4 --variant O0 --wasm cadr-web/build/cadr-web-m9-O0.wasm
+guix shell node -- node scripts/run-cadr-m8-m9-input-conformance.mjs --execute --native-config build/cadr-oracle/m6-run-smoke/usim.ini --prepared build/cadr-oracle/m8-m9-x11-prepared-v4 --variant O0 --wasm cadr-web/build/cadr-web-m9-devid-O0.wasm
 
-guix shell node -- node scripts/run-cadr-m8-m9-input-conformance.mjs --execute --native-config build/cadr-oracle/m6-run-smoke/usim.ini --prepared build/cadr-oracle/m8-m9-x11-prepared-v4 --variant O2 --wasm cadr-web/build/cadr-web-m9-O2.wasm
+guix shell node -- node scripts/run-cadr-m8-m9-input-conformance.mjs --execute --native-config build/cadr-oracle/m6-run-smoke/usim.ini --prepared build/cadr-oracle/m8-m9-x11-prepared-v4 --variant O2 --wasm cadr-web/build/cadr-web-m9-devid-O2.wasm
 ```
 
 This command was not launched while the M6 benchmark was active. `make -C cadr-web
@@ -557,7 +686,7 @@ self-consistent 208-record receipt cannot stand in for a reciprocal source-closu
 join. Before opening X11, the runner recomputes the staged/current closure and
 requires each direct receipt to match it byte-for-byte, including candidate/base
 commits and trees, complete M8/M9 source set, worker, selected profile/release media,
-the prepared direct and X11 witnesses, and both M9 Wasm outputs at their exact joined
+the prepared direct and X11 witnesses, and both M9-DEVID Wasm outputs at their exact joined
 paths. O0 and O2 receipts must name distinct outer direct-session IDs, native-session
 IDs, portable-worker session IDs, private-disk instance IDs, and result roots. After both native X11
 sessions have stopped, the runner recomputes the complete closure and requires it to
@@ -606,5 +735,7 @@ Lisp result.
 | Browser/core implementation | `cadr-web/wasm/cadr-m9-pointer.mjs`, lifecycle/adapter/control modules, browser channel, worker dispatch, and `cadr-web/core/cadr_m9_input.h` | independently written, tracked source; reconstructed ABI 1.8 IOB boundary, no native equivalence claim |
 
 - MIT CADR System Software, [System 46 source pin](https://github.com/mietek/mit-cadr-system-software/tree/8e978d7d1704096a63edd4386a3b8326a2e584af), verified as the selected public reference on 2026-07-29.
+- Linux kernel documentation, [Yama ptrace_scope](https://docs.kernel.org/admin-guide/LSM/Yama.html), mode definitions verified 2026-08-02.
+- Linux man-pages, [user_namespaces(7)](https://man7.org/linux/man-pages/man7/user_namespaces.7.html), parent-owner capability rule verified 2026-08-02.
 - Maintained LM-3 System 303 and `usim` Fossil pins listed above are separate selected source profiles. The two `usim` files were hashed from the prepared public-source copy on 2026-07-29; the preparation record asserted the Fossil identity from its pinned manifest but did not live-verify the unavailable local Fossil administrative database. Their exact pointer runtime behavior remains a `TODO-RUNTIME`, not an asserted observation.
 - The staged browser deliverable and its future `CW2-INTERACTIVE` gate are defined in the [CADR browser WebAssembly implementation roadmap](cadr-browser-webassembly-implementation-roadmap.md).

@@ -24,7 +24,10 @@ import tempfile
 from typing import Any
 
 
-ROOT = Path(__file__).resolve().parents[1]
+ROOT = Path(os.environ.get(
+    "CADR_M8_M9_REPOSITORY_ROOT", Path(__file__).resolve().parents[1])).resolve()
+PROGRAM_ROOT = Path(os.environ.get(
+    "CADR_M8_M9_PYTHON_PROGRAM_ROOT", ROOT)).resolve()
 PATCH = Path("cadr-web/oracle/patches/0004-m8-m9-pre-iob-input-witness.patch")
 SUPPORT = (
     Path("cadr-web/oracle/native/cadr_m8_m9_input_witness.c"),
@@ -48,7 +51,7 @@ class M8M9OracleError(ValueError):
 
 
 def load_m7() -> Any:
-    path = ROOT / "scripts/cadr-m7-native-frame-oracle.py"
+    path = PROGRAM_ROOT / "scripts/cadr-m7-native-frame-oracle.py"
     specification = importlib.util.spec_from_file_location("cadr_m8_m9_m7_base", path)
     if specification is None or specification.loader is None:
         raise M8M9OracleError("cannot load the pinned M7 source-closure preparer")
@@ -100,6 +103,12 @@ def python_identity() -> dict[str, Any]:
 def runtime_python_identity() -> dict[str, Any]:
     """Bind Python to the inherited fd-3 execution object without host paths."""
     try:
+        captured = sys._CADR_CAPTURED_PYTHON_IDENTITY
+    except AttributeError:
+        captured = None
+    if isinstance(captured, dict):
+        return dict(captured)
+    try:
         descriptor = os.fstat(3)
     except OSError as exc:
         raise M8M9OracleError("M8/M9 native capture requires inherited Python descriptor 3") from exc
@@ -128,6 +137,27 @@ def runtime_python_identity() -> dict[str, Any]:
             **{field: from_sys[field] for field in ("bytes", "sha256", "device", "inode")},
             "sys_executable": from_sys, "proc_self_exe": from_proc,
             "version": sys.version, "implementation": sys.implementation.name}
+
+
+def runtime_program_identity() -> dict[str, Any]:
+    """Bind the root oracle bytes consumed once from inherited pipe 4."""
+    try:
+        captured = sys._CADR_CAPTURED_PROGRAM_IDENTITY
+    except AttributeError:
+        captured = None
+    if isinstance(captured, dict):
+        return dict(captured)
+    try:
+        descriptor = os.fstat(4)
+        raw = Path("/proc/self/fd/4").read_bytes()
+    except OSError as exc:
+        raise M8M9OracleError(
+            "M8/M9 native capture requires inherited oracle-program descriptor 4") from exc
+    if not stat.S_ISREG(descriptor.st_mode):
+        raise M8M9OracleError("M8/M9 oracle-program descriptor 4 is not regular")
+    return {"schema": "cadr-m8-m9-python-program-identity-v1", "inherited_fd": 4,
+            "bytes": len(raw), "sha256": hashlib.sha256(raw).hexdigest(),
+            "device": str(descriptor.st_dev), "inode": str(descriptor.st_ino)}
 
 
 def marker(prepared: Path, name: str) -> dict[str, Any]:
@@ -291,8 +321,15 @@ def build(*, prepared_value: str) -> dict[str, Any]:
         prepared, source, prepared_marker = prepared_source(prepared_value)
         tools = {name: tool_identity(name) for name in ("make", "cc", "ar", "ld", "nm")}
         pkg_config = tool_identity("pkg-config")
+        # Guix profiles publish x11.pc through PKG_CONFIG_PATH rather than a
+        # global directory.  Preserve only pkg-config's three documented
+        # search-root variables (not the ambient environment) for both the
+        # preflight queries and the nested Make invocation that repeats them.
         pkg_environment = {"LANG": "C", "LC_ALL": "C", "TZ": "UTC",
                            "PATH": os.environ.get("PATH", "")}
+        for name in ("PKG_CONFIG_PATH", "PKG_CONFIG_LIBDIR", "PKG_CONFIG_SYSROOT_DIR"):
+            if name in os.environ:
+                pkg_environment[name] = os.environ[name]
         x11_queries: dict[str, dict[str, Any]] = {}
         for label, arguments in (("cflags", ("--cflags", "x11")),
                                  ("libs", ("--libs", "x11")),
@@ -307,6 +344,9 @@ def build(*, prepared_value: str) -> dict[str, Any]:
         if not libx11.is_file():
             raise M8M9OracleError("pkg-config X11 libdir has no resolvable libX11.so")
         x11_toolchain = {"pkg_config": pkg_config, "queries": x11_queries,
+                         "pkg_config_environment": {name: pkg_environment.get(name)
+                                                    for name in ("PKG_CONFIG_PATH", "PKG_CONFIG_LIBDIR",
+                                                                 "PKG_CONFIG_SYSROOT_DIR")},
                          "resolved_libX11": {"path": str(libx11),
                                              "bytes": libx11.stat().st_size,
                                              "sha256": sha256(libx11)}}
@@ -314,8 +354,7 @@ def build(*, prepared_value: str) -> dict[str, Any]:
                    "USIM_BACKEND=m8-m9-input-oracle", "USIM_BUILD_TYPE=release",
                    "CHAOSDIR=../chaos", "LDFLAGS=-no-pie",
                    f"CC={tools['cc']['path']}", f"AR={tools['ar']['path']}"]
-        build_environment = {"LANG": "C", "LC_ALL": "C", "TZ": "UTC",
-                             "PATH": os.environ.get("PATH", "")}
+        build_environment = dict(pkg_environment)
         completed = subprocess.run(
             command, cwd=source, env=build_environment,
             stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, check=False)
@@ -489,7 +528,8 @@ def native_capture(*, prepared_value: str, config_value: str, output_value: str,
             "prepared": {"path": str(prepared.relative_to(ROOT)), "source_tree_sha256": prepared_marker["prepared_source_tree_sha256"],
                          "source_file_count": prepared_marker["prepared_source_file_count"], "executable": build_marker},
             "runtime_provenance": {
-                "python": runtime_python_identity(), "rendered_config": rendered_config_identity,
+                "python": runtime_python_identity(), "program": runtime_program_identity(),
+                "rendered_config": rendered_config_identity,
                 "private_executable": {"sha256_at_start": private_executable_start,
                                        "sha256_at_exec": private_executable_exec,
                                        "sha256_at_end": private_executable_end},
@@ -549,7 +589,7 @@ def campaign_plan(*, prepared_value: str) -> dict[str, Any]:
             "direct_boundary_campaign_command": (
                 "guix shell node -- node scripts/run-cadr-m8-m9-input-conformance.mjs "
                 "--execute --native-config build/cadr-oracle/m6-run-smoke/usim.ini "
-                f"--prepared {prepared.relative_to(ROOT)} --wasm cadr-web/build/cadr-web-m9-O0.wasm"),
+                f"--prepared {prepared.relative_to(ROOT)} --wasm cadr-web/build/cadr-web-m9-devid-O0.wasm"),
             "ordered_transition": [
                 "advance one guest boundary", "run M8/M9 driver rows due at that boundary",
                 "write CDRM8N1 before kbd_event or mouse_event mutates native IOB state",

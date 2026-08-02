@@ -88,10 +88,12 @@ M7_DEVID_WASM_O0 := build/cadr-web-m7-devid-O0.wasm
 M7_DEVID_WASM_O2 := build/cadr-web-m7-devid-O2.wasm
 M9_WASM_O0 := build/cadr-web-m9-O0.wasm
 M9_WASM_O2 := build/cadr-web-m9-O2.wasm
+M9_DEVID_WASM_O0 := build/cadr-web-m9-devid-O0.wasm
+M9_DEVID_WASM_O2 := build/cadr-web-m9-devid-O2.wasm
 M12_WASM_O0 := build/cadr-web-m12-O0.wasm
 M12_WASM_O2 := build/cadr-web-m12-O2.wasm
 
-.PHONY: all test clean audit forbidden-symbols exported-symbols mutable-globals dependency-audit header-audit mutant-audit python-cross-parse m3-wasm m3-browser m3-differential m3-conformance m3-snapshot-cross-target m4-unit m4-browser m4-differential m4-media-compare m5-unit m6-release-validation m6-devid-wasm m6-diagnostic-receipt-unit m7-unit m7-native-source-pin m7-native-source-unit m10-unit m11-unit m12-unit
+.PHONY: all test clean audit forbidden-symbols exported-symbols mutable-globals dependency-audit header-audit mutant-audit python-cross-parse m3-wasm m3-browser m3-differential m3-conformance m3-snapshot-cross-target m4-unit m4-browser m4-differential m4-media-compare m5-unit m6-release-validation m6-devid-wasm m6-diagnostic-receipt-unit m7-unit m7-native-source-pin m7-native-source-unit m8-m9-unit m8-m9-devid-unit m10-unit m11-unit m12-unit
 
 all: $(LIBRARY) $(HOST_BINARY) $(M2_HOST_BINARY) $(M3_HOST_BINARY) $(M3_SNAPSHOT_HOST_BINARY)
 
@@ -192,6 +194,16 @@ build/test_cadr_m7_iob_csr_route: tests/test_cadr_m7_iob_csr_route.c $(M7_CORE_S
 build/test_cadr_m7_tv_bus_route: tests/test_cadr_m7_tv_bus_route.c $(M7_CORE_SOURCES) $(CORE_HEADERS) | build
 	$(CC) $(CPPFLAGS) $(CFLAGS) -DCADR_M7_CORE -DCADR_M3_TESTING -o $@ $< $(M7_CORE_SOURCES)
 
+# M9 is an additive M7-core profile.  Build the exact inherited core route here
+# so a later M8/M9 change cannot silently lose CDRM7U1's sole CSR read exception.
+build/test_cadr_m9_iob_csr_route: tests/test_cadr_m7_iob_csr_route.c $(M9_CORE_SOURCES) $(CORE_HEADERS) host/cadr_m3_native_observer.c host/cadr_m3_native_observer_sink.h | build
+	$(CC) $(CPPFLAGS) $(CFLAGS) -DCADR_M7_CORE -DCADR_M9_CORE -DCADR_M3_TESTING -DCADR_M3_NATIVE_OBSERVER -o $@ $< host/cadr_m3_native_observer.c $(M9_CORE_SOURCES)
+
+# M9 must retain the inherited M7 TV backing-store route as well as the CSR
+# exception.  The same boundary test is compiled against the additive profile.
+build/test_cadr_m9_tv_bus_route: tests/test_cadr_m7_tv_bus_route.c $(M9_CORE_SOURCES) $(CORE_HEADERS) | build
+	$(CC) $(CPPFLAGS) $(CFLAGS) -DCADR_M7_CORE -DCADR_M9_CORE -DCADR_M3_TESTING -o $@ $< $(M9_CORE_SOURCES)
+
 build/test_cadr_m9_input_bridge: tests/test_cadr_m9_input_bridge.c $(M9_LIBRARY) $(CORE_HEADERS) | build
 	$(CC) $(CPPFLAGS) $(CFLAGS) -DCADR_M7_CORE -DCADR_M9_CORE -o $@ $< $(M9_LIBRARY)
 
@@ -291,13 +303,19 @@ $(M9_WASM_O0): wasm/build-wasm.sh wasm/cadr_wasm_adapter.c wasm/cadr_wasm_runtim
 $(M9_WASM_O2): wasm/build-wasm.sh wasm/cadr_wasm_adapter.c wasm/cadr_wasm_runtime.c $(M9_CORE_SOURCES) $(CORE_HEADERS) | build
 	sh wasm/build-wasm.sh --m9 --opt O2 $@
 
+$(M9_DEVID_WASM_O0): wasm/build-wasm.sh wasm/cadr_wasm_adapter.c wasm/cadr_wasm_runtime.c core/cadr_m6_disk_evidence.c core/cadr_m6_disk_evidence.h core/cadr_m6_fast_run.c core/cadr_m6_fast_run.h $(M9_CORE_SOURCES) $(CORE_HEADERS) | build
+	sh wasm/build-wasm.sh --m9-devid --opt O0 $@
+
+$(M9_DEVID_WASM_O2): wasm/build-wasm.sh wasm/cadr_wasm_adapter.c wasm/cadr_wasm_runtime.c core/cadr_m6_disk_evidence.c core/cadr_m6_disk_evidence.h core/cadr_m6_fast_run.c core/cadr_m6_fast_run.h $(M9_CORE_SOURCES) $(CORE_HEADERS) | build
+	sh wasm/build-wasm.sh --m9-devid --opt O2 $@
+
 $(M12_WASM_O0): wasm/build-wasm.sh wasm/cadr_wasm_adapter.c wasm/cadr_wasm_runtime.c $(M12_CORE_SOURCES) $(CORE_HEADERS) | build
 	sh wasm/build-wasm.sh --m12 --opt O0 $@
 
 $(M12_WASM_O2): wasm/build-wasm.sh wasm/cadr_wasm_adapter.c wasm/cadr_wasm_runtime.c $(M12_CORE_SOURCES) $(CORE_HEADERS) | build
 	sh wasm/build-wasm.sh --m12 --opt O2 $@
 
-test: $(TEST_BINARIES) $(HOST_BINARY) $(M2_HOST_BINARY) $(M3_HOST_BINARY) mutant-audit python-cross-parse m3-wasm m3-conformance m3-browser m4-unit m4-browser m5-unit m6-devid-wasm m6-diagnostic-receipt-unit m7-unit m7-native-source-unit audit
+test: $(TEST_BINARIES) $(HOST_BINARY) $(M2_HOST_BINARY) $(M3_HOST_BINARY) mutant-audit python-cross-parse m3-wasm m3-conformance m3-browser m4-unit m4-browser m5-unit m6-devid-wasm m6-diagnostic-receipt-unit m7-unit m7-native-source-unit m8-m9-unit audit
 	./build/test_cadr_host_api
 	./build/test_cadr_machine_state
 	./build/test_cadr_processor_microengine
@@ -446,8 +464,9 @@ m11-unit: build/test_cadr_m11_core_audio
 
 # M8/M9's dedicated ABI profile maps CDRINP1 records directly to IOB state,
 # rather than smuggling host input through generic scheduler event kinds.
-m8-m9-unit: build/test_cadr_m9_input_bridge $(M9_WASM_O0) $(M9_WASM_O2)
+m8-m9-unit: m8-m9-devid-unit build/test_cadr_m9_input_bridge
 	./build/test_cadr_m9_input_bridge
+	guix shell node -- node ../tests/test_cadr_m7_devid_failure_diagnostic.mjs
 	python3 ../tests/test_cadr_m8_m9_native_input_witness.py
 	guix shell node -- node ../tests/test_cadr_m8_m9_campaign.mjs
 	guix shell node -- node ../tests/test_run_cadr_m8_m9_input_conformance.mjs
@@ -460,6 +479,12 @@ m8-m9-unit: build/test_cadr_m9_input_bridge $(M9_WASM_O0) $(M9_WASM_O2)
 	guix shell node -- node ../tests/test_cadr_m8_m9_worker_channel.mjs
 	guix shell node -- node ../tests/test_cadr_m8_m9_worker.mjs
 	CADR_M9_WASM_VARIANT=O2 guix shell node -- node ../tests/test_cadr_m8_m9_worker.mjs
+
+m8-m9-devid-unit: build/test_cadr_m9_iob_csr_route build/test_cadr_m9_tv_bus_route $(M7_WASM_O0) $(M9_WASM_O0) $(M9_WASM_O2) $(M9_DEVID_WASM_O0) $(M9_DEVID_WASM_O2)
+	./build/test_cadr_m9_iob_csr_route
+	./build/test_cadr_m9_tv_bus_route
+	guix shell node -- node ../tests/test_cadr_m8_m9_devid_wasm_exports.mjs
+	guix shell node -- node ../tests/test_cadr_m8_m9_devid_worker.mjs
 
 mutant-audit: $(MUTANT_BASE_BINARIES) $(MUTANT_BINARIES)
 	@for target in $(MUTANT_TARGETS); do \

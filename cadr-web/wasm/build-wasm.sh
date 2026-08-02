@@ -3,7 +3,7 @@
 set -eu
 
 usage() {
-    echo "usage: $0 [--conformance] [--m4|--m5|--m5-oracle|--m6-diagnostic|--m6-devid|--m7|--m7-devid|--m9|--m12] --opt O0|O2 [OUTPUT]" >&2
+    echo "usage: $0 [--conformance] [--m4|--m5|--m5-oracle|--m6-diagnostic|--m6-devid|--m7|--m7-devid|--m9|--m9-devid|--m12] --opt O0|O2 [OUTPUT]" >&2
     exit 2
 }
 
@@ -19,6 +19,7 @@ if test "${1-}" = --m6-devid; then profile=m6-devid; shift; fi
 if test "${1-}" = --m7; then profile=m7; shift; fi
 if test "${1-}" = --m7-devid; then profile=m7-devid; shift; fi
 if test "${1-}" = --m9; then profile=m9; shift; fi
+if test "${1-}" = --m9-devid; then profile=m9-devid; shift; fi
 if test "${1-}" = --m12; then profile=m12; shift; fi
 case ${1-} in
     --opt) opt=${2-}; shift 2 ;;
@@ -73,6 +74,10 @@ exec guix shell clang-toolchain lld -- sh -eu -c '
   if test "$profile" = m9; then
     extra_defines="-DCADR_M5_WASM -DCADR_M7_WASM -DCADR_M7_CORE -DCADR_M9_WASM -DCADR_M9_CORE"
     profile_sources="core/cadr_display.c"
+  fi
+  if test "$profile" = m9-devid; then
+    extra_defines="-DCADR_M5_WASM -DCADR_M6_DEVID_WASM -DCADR_M7_WASM -DCADR_M7_CORE -DCADR_M9_WASM -DCADR_M9_CORE"
+    profile_sources="core/cadr_m6_disk_evidence.c core/cadr_m6_fast_run.c core/cadr_display.c"
   fi
   if test "$profile" = m12; then
     extra_defines="-DCADR_M5_WASM -DCADR_M7_WASM -DCADR_M7_CORE -DCADR_M9_WASM -DCADR_M9_CORE -DCADR_M11_WASM -DCADR_M11_CORE -DCADR_M12_WASM -DCADR_M12_CORE"
