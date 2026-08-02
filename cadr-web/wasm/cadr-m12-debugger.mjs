@@ -21,6 +21,9 @@ export const CADR_M12_STATUS_NOT_READY = 9;
 export const CADR_M12_STATUS_ORACLE_UNAVAILABLE = 13;
 export const CADR_M12_STATUS_DEBUG_STOP = 19;
 export const CADR_M12_STATUS_LIMIT_REACHED = 20;
+/* ABI 1.10's process-local adapter resource result.  It is intentionally not
+ * admitted by any v7 debugger operation: no request owns a rebind. */
+export const CADR_M12_STATUS_INCARNATION_EXHAUSTED = 21;
 export const CADR_M12_MAX_BREAKPOINTS = 64;
 export const CADR_M12_MACRO_SLOT_LIMIT = 1048576n;
 export const CADR_M12_STOP_BYTES = 136;

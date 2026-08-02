@@ -223,6 +223,9 @@ cadr_m12_status cadr_m12_debugger_initialize(
     const uint8_t profile_sha256[CADR_M12_SHA256_BYTES]);
 cadr_m12_status cadr_m12_incarnation_domain_initialize(
     cadr_m12_incarnation_domain *domain);
+/* Semantic virgin check used by a containing adapter before it binds the
+ * debugger to its stable address.  It intentionally ignores padding bytes. */
+int cadr_m12_debugger_is_virgin(const cadr_m12_debugger *debugger);
 /* Reinitialization never changes domain identity.  It is permitted only for
  * a valid paused debugger with no live owner, so existing leases are already
  * stale and a later bind receives a nonrecycled domain incarnation. */

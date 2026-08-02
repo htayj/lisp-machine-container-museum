@@ -214,6 +214,8 @@ static void test_atomic_rebind_with_configuration_snapshot(void)
         1U, CADR_M12_BREAKPOINT_RAW_LC_BEFORE, UINT64_C(0456)
     };
     cadr_m12_inspector_lease old_lease;
+    cadr_m12_inspector_lease final_lease;
+    cadr_m12_machine_adapter adapter_before;
     uint8_t snapshot[CADR_M12_CONFIG_SNAPSHOT_BYTES];
     uint32_t value = 0U;
 
@@ -236,7 +238,7 @@ static void test_atomic_rebind_with_configuration_snapshot(void)
     adapter.domain.next_incarnation = UINT64_MAX;
     CHECK(cadr_m12_machine_adapter_rebind_config_snapshot(
               &adapter, second, snapshot) ==
-          (cadr_status)CADR_M12_STATUS_INCARNATION_EXHAUSTED);
+          CADR_M12_STATUS_INCARNATION_EXHAUSTED);
     CHECK(adapter.machine == first);
     CHECK(cadr_m12_inspector_lease_read(
               &adapter.debugger, &old_lease, CADR_M12_ARRAY_A_MEMORY, 2U,
@@ -255,9 +257,121 @@ static void test_atomic_rebind_with_configuration_snapshot(void)
     CHECK(cadr_m12_machine_adapter_rebind_config_snapshot(
               &adapter, second, snapshot) == CADR_STATUS_OK);
     CHECK(adapter.machine == second && adapter.debugger.breakpoints[7].enabled == 1U);
+    CHECK(adapter.inspector_owner.incarnation == UINT64_MAX - UINT64_C(1) &&
+          adapter.domain.next_incarnation == UINT64_MAX);
     CHECK(cadr_m12_inspector_lease_read(
               &adapter.debugger, &old_lease, CADR_M12_ARRAY_A_MEMORY, 2U,
               &value) == CADR_M12_STATUS_STALE_GENERATION);
+    CHECK(cadr_m12_inspector_lease_open(&adapter.debugger, &final_lease) ==
+          CADR_M12_STATUS_OK);
+
+    /* UINT64_MAX-1 is issued exactly once.  Its successor is the unissued
+     * exhaustion sentinel, and the immediately following attempt cannot
+     * retire that owner or invalidate its lease. */
+    (void)memcpy(&adapter_before, &adapter, sizeof(adapter_before));
+    CHECK(cadr_m12_machine_adapter_rebind(&adapter, first) ==
+          CADR_M12_STATUS_INCARNATION_EXHAUSTED);
+    CHECK(memcmp(&adapter, &adapter_before, sizeof(adapter)) == 0);
+    CHECK(cadr_m12_inspector_lease_read(
+              &adapter.debugger, &final_lease, CADR_M12_ARRAY_A_MEMORY, 2U,
+              &value) == CADR_M12_STATUS_OK && value == UINT32_C(0x22222222));
+    cadr_m12_machine_adapter_destroy(&adapter);
+    cadr_machine_destroy(first);
+    cadr_machine_destroy(second);
+}
+
+/* The M12 identity tuple is deliberately process-local and pointer-bearing.
+ * Stable-address reuse retains one monotonic domain sequence, so even an
+ * adversarial old-lease read after a new owner is installed must stay stale. */
+static void test_adapter_lifetime_reuse_copy_and_exhaustion(void)
+{
+    cadr_machine *first = fresh_running_machine();
+    cadr_machine *second = fresh_running_machine();
+    cadr_m12_machine_adapter adapter;
+    cadr_m12_machine_adapter copied;
+    cadr_m12_machine_adapter adapter_before;
+    cadr_m12_inspector_lease first_lease;
+    cadr_m12_inspector_lease second_lease;
+    uint8_t snapshot[CADR_M12_CONFIG_SNAPSHOT_BYTES];
+    uint32_t value = 0U;
+    uint64_t first_generation;
+    uint64_t next_incarnation;
+
+    (void)memset(&adapter, 0, sizeof(adapter));
+    if (first == NULL || second == NULL) {
+        cadr_machine_destroy(first);
+        cadr_machine_destroy(second);
+        return;
+    }
+    first->state.cpu.a_memory[4U] = UINT32_C(0x11112222);
+    second->state.cpu.a_memory[4U] = UINT32_C(0x33334444);
+    /* A failed initial-boundary check is a nonmutating preflight.  The exact
+     * same semantically virgin storage remains usable after correction. */
+    first_generation = first->state.events.generation;
+    (void)memcpy(&adapter_before, &adapter, sizeof(adapter_before));
+    first->state.events.generation = 0U;
+    CHECK(cadr_m12_machine_adapter_initialize(&adapter, first) ==
+          CADR_M12_STATUS_INVALID_ARGUMENT);
+    CHECK(memcmp(&adapter, &adapter_before, sizeof(adapter)) == 0);
+    first->state.events.generation = first_generation;
+    CHECK(second->state.events.generation == first_generation);
+    CHECK(cadr_m12_machine_adapter_initialize(&adapter, first) == CADR_STATUS_OK);
+    CHECK(cadr_m12_inspector_lease_open(&adapter.debugger, &first_lease) ==
+          CADR_M12_STATUS_OK);
+    CHECK(cadr_m12_inspector_lease_read(&adapter.debugger, &first_lease,
+                                        CADR_M12_ARRAY_A_MEMORY, 4U, &value) ==
+          CADR_M12_STATUS_OK && value == UINT32_C(0x11112222));
+
+    /* A byte copy must not make its copied machine or owner routes usable. */
+    (void)memcpy(&copied, &adapter, sizeof(copied));
+    CHECK(cadr_m12_machine_adapter_config_snapshot_serialize(&copied, snapshot) ==
+          CADR_STATUS_INVALID_ARGUMENT);
+    CHECK(cadr_m12_machine_adapter_trace_filter_matches(&copied, NULL) == 0);
+    cadr_m12_machine_adapter_destroy(&copied);
+    CHECK(cadr_m12_inspector_lease_read(&adapter.debugger, &first_lease,
+                                        CADR_M12_ARRAY_A_MEMORY, 4U, &value) ==
+          CADR_M12_STATUS_OK && value == UINT32_C(0x11112222));
+
+    /* Rebinding has a no-mutation exhaustion preflight.  In particular the
+     * old owner remains registered and its live lease remains readable. */
+    next_incarnation = adapter.domain.next_incarnation;
+    adapter.domain.next_incarnation = UINT64_MAX;
+    (void)memcpy(&adapter_before, &adapter, sizeof(adapter_before));
+    CHECK(cadr_m12_machine_adapter_rebind(&adapter, second) ==
+          CADR_M12_STATUS_INCARNATION_EXHAUSTED);
+    CHECK(memcmp(&adapter, &adapter_before, sizeof(adapter)) == 0);
+    CHECK(cadr_m12_inspector_lease_read(&adapter.debugger, &first_lease,
+                                        CADR_M12_ARRAY_A_MEMORY, 4U, &value) ==
+          CADR_M12_STATUS_OK && value == UINT32_C(0x11112222));
+    adapter.domain.next_incarnation = next_incarnation;
+
+    cadr_m12_machine_adapter_destroy(&adapter);
+    CHECK(cadr_m12_inspector_lease_read(&adapter.debugger, &first_lease,
+                                        CADR_M12_ARRAY_A_MEMORY, 4U, &value) ==
+          CADR_M12_STATUS_STALE_GENERATION);
+
+    /* A destroyed adapter also preserves exhaustion as a nonmutating result. */
+    adapter.domain.next_incarnation = UINT64_MAX;
+    (void)memcpy(&adapter_before, &adapter, sizeof(adapter_before));
+    CHECK(cadr_m12_machine_adapter_initialize(&adapter, second) ==
+          CADR_M12_STATUS_INCARNATION_EXHAUSTED);
+    CHECK(memcmp(&adapter, &adapter_before, sizeof(adapter)) == 0);
+    adapter.domain.next_incarnation = next_incarnation;
+
+    /* This is legal reuse at the exact same adapter address after teardown. */
+    CHECK(cadr_m12_machine_adapter_initialize(&adapter, second) == CADR_STATUS_OK);
+    CHECK(cadr_m12_inspector_lease_open(&adapter.debugger, &second_lease) ==
+          CADR_M12_STATUS_OK);
+    CHECK(second_lease.debugger_token == first_lease.debugger_token &&
+          second_lease.owner_token == first_lease.owner_token &&
+          second_lease.generation == first_lease.generation &&
+          second_lease.owner_incarnation > first_lease.owner_incarnation);
+    CHECK(cadr_m12_inspector_lease_read(&adapter.debugger, &second_lease,
+                                        CADR_M12_ARRAY_A_MEMORY, 4U, &value) ==
+          CADR_M12_STATUS_OK && value == UINT32_C(0x33334444));
+    CHECK(cadr_m12_inspector_lease_read(&adapter.debugger, &first_lease,
+                                        CADR_M12_ARRAY_A_MEMORY, 4U, &value) ==
+          CADR_M12_STATUS_STALE_GENERATION);
     cadr_m12_machine_adapter_destroy(&adapter);
     cadr_machine_destroy(first);
     cadr_machine_destroy(second);
@@ -272,5 +386,6 @@ int main(void)
     test_pointer_free_configuration_snapshot();
     test_installed_trace_filter_is_copied_and_applied();
     test_atomic_rebind_with_configuration_snapshot();
+    test_adapter_lifetime_reuse_copy_and_exhaustion();
     return failures == 0 ? 0 : 1;
 }

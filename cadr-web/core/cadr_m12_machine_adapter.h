@@ -27,13 +27,20 @@ typedef struct cadr_m12_machine_adapter {
 #define CADR_M12_CONFIG_SNAPSHOT_BYTES UINT32_C(1088)
 
 /* The caller must zero-initialize storage before the first initialize call.
- * Rebinding and destruction are then exclusively adapter-managed. */
-cadr_status cadr_m12_machine_adapter_initialize(
+ * Destroy clears the active payload but retains the same-address domain's
+ * nonrecycled incarnation sequence for safe later reuse. */
+cadr_m12_status cadr_m12_machine_adapter_initialize(
     cadr_m12_machine_adapter *adapter, cadr_machine *machine);
-/* A reset or snapshot replacement invalidates all leases before this call
- * rebinds the stable adapter to the replacement machine. */
-cadr_status cadr_m12_machine_adapter_rebind(
+/* A successful reset or snapshot replacement invalidates all leases before
+ * this call rebinds the stable adapter to the replacement machine. */
+cadr_m12_status cadr_m12_machine_adapter_rebind(
     cadr_m12_machine_adapter *adapter, cadr_machine *machine);
+/* Purely validates that a later rebind may reserve a distinct owner
+ * incarnation.  This is used before an enclosing transaction changes core
+ * state, so CADR_M12_STATUS_INCARNATION_EXHAUSTED cannot leave an adapter
+ * detached from its machine. */
+cadr_m12_status cadr_m12_machine_adapter_rebind_preflight(
+    const cadr_m12_machine_adapter *adapter, const cadr_machine *machine);
 void cadr_m12_machine_adapter_destroy(cadr_m12_machine_adapter *adapter);
 
 cadr_m12_status cadr_m12_machine_adapter_breakpoint_set(
@@ -71,7 +78,7 @@ cadr_status cadr_m12_machine_adapter_config_snapshot_restore(
  * owner is retired.  After that retirement the remaining reinitialization,
  * owner bind, and breakpoint publication have no fallible branch.
  */
-cadr_status cadr_m12_machine_adapter_rebind_config_snapshot(
+cadr_m12_status cadr_m12_machine_adapter_rebind_config_snapshot(
     cadr_m12_machine_adapter *adapter, cadr_machine *machine,
     const uint8_t bytes[CADR_M12_CONFIG_SNAPSHOT_BYTES]);
 

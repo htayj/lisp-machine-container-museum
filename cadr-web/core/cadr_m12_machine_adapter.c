@@ -24,10 +24,80 @@ static cadr_m12_boundary cadr_m12_machine_boundary(const cadr_machine *machine)
     return boundary;
 }
 
+static int cadr_m12_owner_virgin(const cadr_m12_inspector_owner *owner)
+{
+    return owner != NULL && owner->self_token == 0U &&
+        owner->debugger_token == 0U && owner->incarnation == 0U &&
+        owner->arrays.a_memory == NULL && owner->arrays.m_memory == NULL &&
+        owner->arrays.dispatch_memory == NULL && owner->arrays.pdl == NULL &&
+        owner->arrays.micro_stack == NULL && owner->arrays.a_memory_count == 0U &&
+        owner->arrays.m_memory_count == 0U &&
+        owner->arrays.dispatch_memory_count == 0U && owner->arrays.pdl_count == 0U &&
+        owner->arrays.micro_stack_count == 0U && owner->lifecycle == 0U &&
+        owner->reserved0 == 0U;
+}
+
+/* Like cadr_m12_debugger_is_virgin, this names semantic zero fields rather
+ * than object representation.  A caller must establish this state before the
+ * first initialization at one stable adapter address. */
+static int cadr_m12_adapter_payload_virgin(
+    const cadr_m12_machine_adapter *adapter)
+{
+    return adapter != NULL && cadr_m12_debugger_is_virgin(&adapter->debugger) &&
+        cadr_m12_owner_virgin(&adapter->inspector_owner) &&
+        adapter->machine == NULL && adapter->trace_filter.flags == 0U &&
+        adapter->trace_filter.micro_pc == 0U &&
+        adapter->trace_filter.first_clock_slot == 0U &&
+        adapter->trace_filter.last_clock_slot == 0U &&
+        adapter->trace_filter_installed == 0U && adapter->initialized == 0U &&
+        adapter->reserved0 == 0U;
+}
+
+static int cadr_m12_adapter_virgin(const cadr_m12_machine_adapter *adapter)
+{
+    return cadr_m12_adapter_payload_virgin(adapter) &&
+        adapter->domain.self_token == 0U &&
+        adapter->domain.next_incarnation == 0U && adapter->domain.lifecycle == 0U &&
+        adapter->domain.reserved0 == 0U;
+}
+
+/* A normal destroy clears only the active payload.  Keeping this live domain
+ * at the same address preserves its monotonically increasing incarnation
+ * sequence across legal adapter reuse, so an old lease can never revive. */
+static int cadr_m12_adapter_reusable(const cadr_m12_machine_adapter *adapter)
+{
+    return cadr_m12_adapter_payload_virgin(adapter) &&
+        adapter->domain.self_token == (uintptr_t)&adapter->domain &&
+        adapter->domain.next_incarnation != 0U && adapter->domain.lifecycle == 1U &&
+        adapter->domain.reserved0 == 0U;
+}
+
+static void cadr_m12_adapter_clear_payload(cadr_m12_machine_adapter *adapter)
+{
+    (void)memset(&adapter->debugger, 0, sizeof(adapter->debugger));
+    (void)memset(&adapter->inspector_owner, 0,
+                 sizeof(adapter->inspector_owner));
+    adapter->machine = NULL;
+    (void)memset(&adapter->trace_filter, 0, sizeof(adapter->trace_filter));
+    adapter->trace_filter_installed = 0U;
+    adapter->initialized = 0U;
+    adapter->reserved0 = 0U;
+}
+
+/* Check the containing domain/debugger identities before any public adapter
+ * operation dereferences machine state.  This makes a byte-copied adapter fail
+ * closed even if its copied machine pointer is now dangling.  The debugger API
+ * performs the fuller owner/array validation once those local routes exist. */
 static int cadr_m12_adapter_valid(const cadr_m12_machine_adapter *adapter)
 {
     return adapter != NULL && adapter->initialized == 1U &&
-        adapter->reserved0 == 0U && adapter->machine != NULL;
+        adapter->reserved0 == 0U && adapter->machine != NULL &&
+        adapter->domain.self_token == (uintptr_t)&adapter->domain &&
+        adapter->domain.next_incarnation != 0U && adapter->domain.lifecycle == 1U &&
+        adapter->domain.reserved0 == 0U &&
+        adapter->debugger.self_token == (uintptr_t)&adapter->debugger &&
+        adapter->debugger.incarnation_domain == &adapter->domain &&
+        adapter->debugger.incarnation_domain_token == (uintptr_t)&adapter->domain;
 }
 
 static void cadr_m12_put32(uint8_t *bytes, uint32_t value)
@@ -180,43 +250,86 @@ static cadr_m12_status cadr_m12_machine_bind_owner(
                                          &adapter->inspector_owner, &arrays);
 }
 
-cadr_status cadr_m12_machine_adapter_initialize(
+static cadr_m12_status cadr_m12_machine_adapter_initialize_preflight(
+    const cadr_m12_machine_adapter *adapter, const cadr_machine *machine,
+    cadr_m12_boundary *initial, int *first_initialization)
+{
+    int first;
+    if (adapter == NULL || machine == NULL || initial == NULL ||
+        first_initialization == NULL) return CADR_M12_STATUS_INVALID_ARGUMENT;
+    first = cadr_m12_adapter_virgin(adapter);
+    if (!first && !cadr_m12_adapter_reusable(adapter)) {
+        return CADR_M12_STATUS_INVALID_ARGUMENT;
+    }
+    *initial = cadr_m12_machine_boundary(machine);
+    if (machine->state.events.generation == 0U || initial->fault > 1U ||
+        initial->device_request > 1U) return CADR_M12_STATUS_INVALID_ARGUMENT;
+    if (!first && adapter->domain.next_incarnation == UINT64_MAX) {
+        return CADR_M12_STATUS_INCARNATION_EXHAUSTED;
+    }
+    *first_initialization = first;
+    return CADR_M12_STATUS_OK;
+}
+
+cadr_m12_status cadr_m12_machine_adapter_initialize(
     cadr_m12_machine_adapter *adapter, cadr_machine *machine)
 {
     cadr_m12_boundary initial;
     cadr_m12_status status;
-    if (adapter == NULL || machine == NULL || adapter->initialized != 0U ||
-        adapter->machine != NULL || adapter->reserved0 != 0U) {
-        return CADR_STATUS_INVALID_ARGUMENT;
-    }
-    (void)memset(adapter, 0, sizeof(*adapter));
-    status = cadr_m12_incarnation_domain_initialize(&adapter->domain);
+    int first_initialization = 0;
+    status = cadr_m12_machine_adapter_initialize_preflight(
+        adapter, machine, &initial, &first_initialization);
     if (status != CADR_M12_STATUS_OK) return status;
-    initial = cadr_m12_machine_boundary(machine);
+    if (first_initialization != 0) {
+        status = cadr_m12_incarnation_domain_initialize(&adapter->domain);
+        if (status != CADR_M12_STATUS_OK) return status;
+    }
     status = cadr_m12_debugger_initialize(&adapter->debugger, &adapter->domain,
                                           &initial, machine->state.events.generation,
                                           cadr_m12_profile_sha256);
-    if (status != CADR_M12_STATUS_OK) return status;
+    if (status != CADR_M12_STATUS_OK) goto rollback;
     adapter->machine = machine;
     adapter->initialized = 1U;
     adapter->debugger.clock_slots_completed = machine->state.clock_slots_completed;
     adapter->debugger.boundary_ordinal = machine->state.clock_slots_completed;
     status = cadr_m12_machine_bind_owner(adapter);
-    if (status != CADR_M12_STATUS_OK) {
+    if (status != CADR_M12_STATUS_OK) goto rollback;
+    return CADR_M12_STATUS_OK;
+
+rollback:
+    if (first_initialization != 0) {
         (void)memset(adapter, 0, sizeof(*adapter));
-        return status;
+    } else {
+        cadr_m12_adapter_clear_payload(adapter);
     }
-    return CADR_STATUS_OK;
+    return status;
 }
 
-cadr_status cadr_m12_machine_adapter_rebind(
+cadr_m12_status cadr_m12_machine_adapter_rebind_preflight(
+    const cadr_m12_machine_adapter *adapter, const cadr_machine *machine)
+{
+    cadr_m12_boundary initial;
+    if (!cadr_m12_adapter_valid(adapter) || machine == NULL) {
+        return CADR_M12_STATUS_INVALID_ARGUMENT;
+    }
+    initial = cadr_m12_machine_boundary(machine);
+    if (machine->state.events.generation == 0U || initial.fault > 1U ||
+        initial.device_request > 1U) {
+        return CADR_M12_STATUS_INVALID_ARGUMENT;
+    }
+    /* UINT64_MAX is never issued.  Check it before retirement so exhaustion
+     * cannot detach the still-live debugger and its leases. */
+    return adapter->domain.next_incarnation == UINT64_MAX ?
+        CADR_M12_STATUS_INCARNATION_EXHAUSTED : CADR_M12_STATUS_OK;
+}
+
+cadr_m12_status cadr_m12_machine_adapter_rebind(
     cadr_m12_machine_adapter *adapter, cadr_machine *machine)
 {
     cadr_m12_boundary initial;
     cadr_m12_status status;
-    if (!cadr_m12_adapter_valid(adapter) || machine == NULL) {
-        return CADR_STATUS_INVALID_ARGUMENT;
-    }
+    status = cadr_m12_machine_adapter_rebind_preflight(adapter, machine);
+    if (status != CADR_M12_STATUS_OK) return status;
     status = cadr_m12_inspector_owner_retire(&adapter->debugger,
                                              &adapter->inspector_owner);
     if (status != CADR_M12_STATUS_OK) return status;
@@ -236,7 +349,7 @@ void cadr_m12_machine_adapter_destroy(cadr_m12_machine_adapter *adapter)
     if (!cadr_m12_adapter_valid(adapter)) return;
     (void)cadr_m12_inspector_owner_retire(&adapter->debugger,
                                           &adapter->inspector_owner);
-    (void)memset(adapter, 0, sizeof(*adapter));
+    cadr_m12_adapter_clear_payload(adapter);
 }
 
 cadr_m12_status cadr_m12_machine_adapter_breakpoint_set(
@@ -351,7 +464,7 @@ cadr_status cadr_m12_machine_adapter_config_snapshot_restore(
     return CADR_STATUS_OK;
 }
 
-cadr_status cadr_m12_machine_adapter_rebind_config_snapshot(
+cadr_m12_status cadr_m12_machine_adapter_rebind_config_snapshot(
     cadr_m12_machine_adapter *adapter, cadr_machine *machine,
     const uint8_t bytes[CADR_M12_CONFIG_SNAPSHOT_BYTES])
 {
@@ -365,17 +478,10 @@ cadr_status cadr_m12_machine_adapter_rebind_config_snapshot(
      */
     if (!cadr_m12_adapter_valid(adapter) || machine == NULL ||
         cadr_m12_config_snapshot_decode(machine, bytes, candidate) !=
-            CADR_STATUS_OK) {
-        return CADR_STATUS_INVALID_ARGUMENT;
-    }
-    if (adapter->domain.next_incarnation == UINT64_MAX) {
-        return (cadr_status)CADR_M12_STATUS_INCARNATION_EXHAUSTED;
-    }
+            CADR_STATUS_OK) return CADR_M12_STATUS_INVALID_ARGUMENT;
+    status = cadr_m12_machine_adapter_rebind_preflight(adapter, machine);
+    if (status != CADR_M12_STATUS_OK) return status;
     initial = cadr_m12_machine_boundary(machine);
-    if (machine->state.events.generation == 0U ||
-        initial.fault > 1U || initial.device_request > 1U) {
-        return CADR_STATUS_INVALID_ARGUMENT;
-    }
 
     status = cadr_m12_inspector_owner_retire(&adapter->debugger,
                                              &adapter->inspector_owner);

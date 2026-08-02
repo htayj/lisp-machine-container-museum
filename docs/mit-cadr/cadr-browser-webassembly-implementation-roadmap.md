@@ -3,7 +3,7 @@ type: Implementation Roadmap
 title: MIT CADR System 303 browser and WebAssembly implementation roadmap
 description: A milestone-complete plan for porting the pinned System 303 CADR emulator to a deterministic, locally persistent, browser-hosted WebAssembly machine.
 tags: [mit-cadr, lm-3, system-303, webassembly, browser, emulator, roadmap]
-timestamp: 2026-08-02T02:51:04-04:00
+timestamp: 2026-08-02T04:23:41-04:00
 ---
 
 # MIT CADR System 303 browser and WebAssembly implementation roadmap
@@ -1044,7 +1044,7 @@ historical `CC` console, whose full profile assumes a separate debuggee.
 Exit gate `C-M12`: each control stops at the documented boundary and resume produces
 the same continuation as a run with the equivalent preinstalled breakpoint.
 
-Implementation status, 2026-07-30: a narrow cumulative M12 ABI 1.10/protocol-v7 profile has a
+Implementation status, 2026-08-02: a narrow cumulative M12 ABI 1.10/protocol-v7 profile has a
 real one-slot core adapter, source-bounded QMLP/DMLP candidate-loop map, O0/O2 Wasm
 export checks, an installed closed v7 worker branch, and pointer-free `CDRM12C1`
 breakpoint-configuration save/restore through direct Wasm and the worker. Direct
@@ -1057,7 +1057,19 @@ and worker tests establish the selected source-level
 M8/M11 order, but not a runtime observation. Generic snapshot configuration
 composition is closed at the direct-Wasm boundary; M9 protocol-v7 continuation,
 a selected load-band macro trace, and historical console behavior remain open;
-`C-M12` remains open.
+`C-M12` remains open. The formerly open pure-source ABI 1.10 lifetime boundary is
+now covered in the composed adapter: nonmutating failed-initial-boundary retry,
+semantic-zero first initialization, normal teardown retaining a monotonic domain
+counter, same-address adapter reuse that keeps the old lease stale after new-owner
+publication, copied-adapter rejection before copied-machine access, and nonmutating
+owner-incarnation exhaustion preflight all have native tests. Internal C-M12 status
+21 is not a v7 debugger result and cannot be
+mistaken for terminal debugger statuses 19/20; direct Wasm lifecycle and composed
+snapshot bridges map it to existing public status 15 before mutation/publication,
+while a v7 backend-protocol attempt to emit 21 is closed as status 2 without a result.
+The native boundary vector also issues `UINT64_MAX-1` exactly once, reaches the
+unissued sentinel, and proves that the immediately following status-21 attempt leaves
+the final owner and its lease unchanged.
 
 ### M13 — Hardening and accessibility
 

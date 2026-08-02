@@ -3,7 +3,7 @@ type: Reimplementation Specification
 title: CADR-WEB-303 C-M12 debugger reimplementation specification
 description: An isolated Phase 1 contract for deterministic outer-slot stepping, breakpoint stops, paused direct-array inspection, and privacy-bounded debugger evidence.
 tags: [mit-cadr, cadr-web, debugger, microcode, trace, reimplementation]
-timestamp: 2026-07-30T23:15:00-04:00
+timestamp: 2026-08-02T04:23:41-04:00
 ---
 
 # CADR-WEB-303 C-M12 debugger reimplementation specification
@@ -23,6 +23,17 @@ a successful micro-step, binds the five read-only inspector arrays to the live
 machine, and invalidates/rebinds that owner across machine replacement. It
 recognizes only the public System 303 source labels `QMLP` (I-MEM 0164) and `DMLP`
 (I-MEM 0200) as candidate macro-loop boundaries.
+
+ABI 1.10 also closes the adapter's source-level lifetime and exhaustion boundary.
+The adapter's first initialization accepts only a semantically zero, stable-address
+domain/debugger/owner tuple; a byte-copied live adapter is rejected before it can
+follow its copied machine pointer. Normal teardown clears the active payload but
+retains that address-bound domain's monotonically increasing incarnation counter.
+Consequently, an old lease remains stale even after a new owner is installed at the
+same debugger and owner addresses with the same machine generation. Internal
+owner-lineage exhaustion remains C-M12 status 21; direct Wasm lifecycle and snapshot
+bridges map it to the preexisting public resource-exhaustion status 15, and no v7
+debugger request admits 21.
 
 The M12 direct-Wasm generic snapshot is now the `CDRM12S1` composed envelope,
 which retains the frozen lower-profile `CDRSNAP1`, `CDRAUDS1`, and `CDRM12C1`
@@ -62,6 +73,7 @@ continuation decision and provenance-bound runtime evidence.
 | `DEC-M12` | Explicit reconstruction decision | Fixed limits, stop order, record schemas, privacy policy, isolated protocol boundary, and live-host lease safety rules | A historical algorithm or storage layout |
 | `SRC-M12` | New readable Phase 1 source | The implemented callback, debugger/domain/lease identities, filter, scalar ABI adapter, and byte behavior | Preserved-runtime result |
 | `TEST-M12` | Strict native C and Node/Wasm tests | The listed deterministic adapter, O0/O2 export, and worker cases | CADR or LM-3 behavior |
+| `TEST-M12-ABI110` | Strict native C and Node protocol tests | Stable-address teardown/reuse, copied-adapter rejection before machine access, nonmutating rebind exhaustion, direct-Wasm status mapping source, and v7 rejection of backend status 21 | A preserved CADR debugger lifetime or runtime allocation exhaustion |
 | `TEST-M12-BROWSER` | Local Chromium accessibility/protocol probe using generated M12 Wasm | Keyboard activation reaches the scalar A-memory read and copied trace-filter install through the real v7 worker | System 303 boot, a historical debugger UI, selected-load-band behavior, or real diagnostic provenance |
 | `ORACLE-M12` | Open generated/native oracle obligation | The source labels only; no generated/native execution witness yet | Complete macro semantics or selected-load-band timing |
 | `TODO-RUNTIME-M12` | Unperformed native/Wasm runtime probe | Nothing until the named campaign runs | User-visible debugger behavior or timing |
@@ -106,7 +118,7 @@ retained-trace owner -> installed copied C-M12 filter predicate
 | **PCM** | No PCM samples, render state, or audio queue is read or written. | An M11 bridge must prove audio events retain their documented post-slot and intra-slot order around an M12 stop. |
 | **WORKLET** | The protocol reference imports neither worker nor AudioWorklet code. | A later control UI must prove pause/resume cannot race an audio consumer or cause a second device-visible event. |
 | **BROWSER PANEL** | A separately mounted, keyboard-accessible host panel issues only `debug-inspect-read` and `debug-trace-filter` requests to the v7 worker. The inspector export makes a single copied scalar record; the panel never receives a Wasm view, direct array, lease, storage capability, or raw guest bytes. | Bind this panel to a full M13/M10 artifact and run its screen-reader and private-System-303 workflows. |
-| **INCARNATION** | The adapter owns one stable debugger/domain/owner tuple, never exposes a lease to JavaScript, retires the owner before a rebind, and keeps it outside CDRSNAP1/protocol data. | Exercise same-address reuse and teardown in a composed profile and retain sanitizer evidence. |
+| **INCARNATION** | The adapter owns one stable debugger/domain/owner tuple, never exposes a lease to JavaScript, retires the owner before a rebind, and keeps it outside CDRSNAP1/protocol data. Native conformance covers nonmutating failed first initialization and retry, normal teardown, same-address reuse with a monotonically newer owner, adversarial old-lease rejection after that reuse, copied-adapter rejection before a copied machine pointer is read, and nonmutating exhaustion preflight. | Retain a sanitizer run that covers any later allocator or ownership change. |
 | **ORACLE** | `macro-step` uses the public source-defined QMLP/DMLP loop labels only; it has no LC-change, decoded-word, trap, or arbitrary-PC fallback. | Generate and pin exact dispatch behavior from a selected control-store/native witness, then cross-check native behavior. |
 | **Runtime** | Native, O0/O2 Wasm, and worker tests exercise the adapter. No CADR/LM-3 or licensed Genera process was opened. | Run an isolated System 303 native/Wasm probe with identity, slot trace, source revision, clean stop, and a discriminating macro-boundary trace. |
 
@@ -268,6 +280,34 @@ dereferencing it. Rebinding the same owner address after same-address debugger
 reinitialization receives a distinct domain incarnation and does not revive an old
 lease. There is intentionally no bus read, memory deposit, control-memory edit, or
 arbitrary address route.
+
+The composed adapter extends that rule to its containing storage. Its first
+initialization requires every named domain, debugger, owner, filter, machine, and
+adapter field to be semantically zero; debugger padding is still ignored. It validates
+the initial machine generation and complete debugger boundary before changing that
+virgin storage, so an invalid initial boundary leaves it byte-identical and a corrected
+retry may succeed. Before an adapter-facing operation reads `machine`, it proves that
+the embedded domain and debugger self tokens point back into the containing adapter.
+Thus a byte-copied live adapter rejects configuration serialization and other adapter
+operations without following the copy's possibly dangling machine pointer.
+
+`destroy` retires the owner and zeroes the debugger, owner, machine route, filter, and
+adapter flags, but retains the live same-address domain and its next-incarnation
+counter. Reinitialization accepts that exact reusable state and allocates the next
+owner incarnation instead of restarting at one. If an old lease is presented after
+the new owner is installed—even when debugger address, owner address, and machine
+generation all match—the incarnation comparison returns `STALE_GENERATION` before
+array access. At `UINT64_MAX`, reusable initialization returns internal status 21
+without changing the retained domain or empty payload.
+
+`cadr_m12_machine_adapter_rebind_preflight` validates the replacement boundary and
+checks the unissued `UINT64_MAX` incarnation sentinel before the old owner is
+retired. Both ordinary rebind and `CDRM12C1` rebind use it, so internal status 21
+leaves the live adapter, owner, lease, and machine selection unchanged. The latter
+two adapter functions return the C-M12 status type rather than the generic core
+status type. At a direct Wasm lifecycle or composed-snapshot boundary, status 21 is
+mapped to public `CADR_STATUS_NO_MEMORY = 15`; the C-M12 spelling is not an
+undocumented generic ABI result.
 
 ## Breakpoints and deterministic stop order
 
@@ -459,7 +499,11 @@ mismatch is mapped to status 2 with the fixed reason `backend-response`.
 Exceptions are mapped to status 2 with fixed reason `backend-rejected`; backend
 messages, paths, byte payloads, and private fields are never reflected. Statuses
 19 and 20 are marked `terminal: true` but are transient control outcomes, not
-persisted lifecycle states. The module deliberately has no generic scheduler,
+persisted lifecycle states. Status 21 is excluded from every v7 debugger-operation
+set: no debugger request owns a rebind. A backend that supplies 21 is therefore an
+operation-inappropriate backend response and receives the same closed status-2,
+nonterminal, no-result `backend-response` envelope; it cannot be converted into a
+stop or disclosed as an adapter detail. The module deliberately has no generic scheduler,
 trace-output, generic array/address/byte-range, snapshot, PCM, worker, or Worklet
 operation; `debug-inspect-read` is its only scalar inspector route.
 
@@ -469,12 +513,20 @@ operation; `debug-inspect-read` is its only scalar inspector route.
   nonvirgin or copied/moved debugger, virgin/live/copied/moved/reinitialized
   domain, mismatched reinitialize domain, stale lease, record byte, protocol
   field, or filter range is rejected with no partial C-M12 mutation.
+- Adapter initialization validates the complete initial machine boundary before it
+  initializes a virgin domain or publishes a debugger. An invalid boundary leaves
+  every named adapter field unchanged, and retrying after correction is supported.
+  Destroyed same-address storage retains only its valid domain and monotonic
+  incarnation counter; a failed retry leaves that reusable state unchanged.
 - A live owner rejects debugger reinitialization without changing the debugger,
   domain, or owner. Bind validates every input before it tests reservation; at the
   `UINT64_MAX` exhaustion sentinel it returns nonterminal operation status 21 and
-  leaves the domain, debugger, and owner byte-identical. Status 21 is not a
-  debugger lifecycle value, a CDRBUG1 terminal status, or a protocol-v7 result
-  until a future adapter explicitly maps it.
+  leaves the domain, debugger, and owner byte-identical. Rebind performs the same
+  exhaustion check before retiring its owner. Status 21 is not a debugger lifecycle
+  value, CDRBUG1 terminal status, or v7 debugger result. The direct Wasm lifecycle
+  and composed-snapshot bridges map it to generic status 15 before core mutation or
+  publication; a v7 debugger backend that attempts to return 21 is rejected as a
+  closed status-2 backend response.
 - A core callback may propagate only statuses `2`, `7` through `12`, and `14`
   through `18`; C-M12 restores its paused marker and does not fabricate a
   completion. Any other nonzero callback status, including 19 or 20, maps to
@@ -512,6 +564,7 @@ operation; `debug-inspect-read` is its only scalar inspector route.
 | `M12-JS-03` | L0 | Inspect the native C-M12 source surface from the Node suite | Domain/reinitialize/exhaustion and debugger self/lifecycle checks exist; padding-wide virgin checks, C11 atomics, and process-global incarnation allocator symbols are absent |
 | `M12-CORE-01` | Narrow adapter seam | Strict native adapter test: pre-PC breakpoint, one successful step, direct-array read, stale lease after rebind, and QMLP source-label macro stop | A successful micro-step invokes exactly one actual core outer slot; reads remain lease-gated and rebind invalidates ownership |
 | `M12-CORE-02` | Snapshot sidecar | Save/restore 64 breakpoint records; malformed kind/value/magic/length rejection | `CDRM12C1` is pointer-free and restore is atomic |
+| `M12-CORE-03` | ABI 1.10 lifetime and exhaustion | In a composed M12 build, reject a zero-generation first machine and retry corrected; issue owner incarnation `UINT64_MAX-1` and immediately attempt the sentinel successor; byte-copy a live adapter and attempt a copied configuration save; preflight an exhausted rebind; destroy the original, reject an exhausted reusable initialization, then initialize the same address for another machine and adversarially reuse the old lease | Failed first initialization leaves virgin storage byte-identical; `UINT64_MAX-1` is issued exactly once and the immediate successor leaves that owner and lease readable; the copy rejects before its machine pointer is read; every exhaustion path is nonmutating; teardown makes the old lease stale; the new owner has a greater incarnation, the new lease reads only the new machine, and the old lease remains stale after publication |
 | `M12-WASM-01` | Narrow adapter seam | O0 and O2 M12 modules expose the checked scalar debugger bridge, scalar paused inspector reads, direct `CDRM12C1` save/restore, and reject inactive-machine stepping | The cumulative ABI 1.10 adapter has no JavaScript pointer or array lease route |
 | `M12-WASM-02` | Composed snapshot transaction | Build a public synthetic `CDRM12S1`; independently corrupt its reserved header and each of the `CDRSNAP1`, `CDRAUDS1`, and `CDRM12C1` stages; then repair and import it in O0 and O2 modules | Every pre-commit failure preserves machine/debugger/audio state and both sidecars byte-for-byte; the native adapter separately preserves its live lease. Success publishes the saved breakpoint only after core/audio staging and later save emits `CDRM12S1` |
 | `M12-WORKER-01` | Narrow adapter seam | Protocol-v7 worker test drives breakpoint/stop/resume/filter/micro/macro requests through a real M12 Wasm module | The installed v7 branch preserves the earlier worker branches and returns closed result shapes |
@@ -525,8 +578,6 @@ operation; `debug-inspect-read` is its only scalar inspector route.
 | --- | --- | --- |
 | `ORACLE-M12-QMLP-01` | Run the prepared, compile-verified disposable public-usim witness and retain its canonical candidate-loop record; compare a discriminating selected-load-band trace | Exact selected QMLP/DMLP macro dispatch set; preparation/build alone has not run it |
 | `ORACLE-M12-CORE-01` | Instrument the composed adapter around one clock, one inhibited slot, and one host wait | Callback `0`/`1` completion meaning and source-level ordering comparison |
-| `TODO-M12-ABI110-DOMAIN-01` | Exercise the adapter's existing zero-initialized stable domain through normal teardown, same-address core/debugger reuse, copied-debugger rejection, and failed owner bind in a composed profile | Adapter lifetime/serialization rules for noncopyable, nonserializable pointer-bearing domain, debugger, owner, and lease state |
-| `TODO-M12-ABI110-STATUS-01` | Specify and test whether operation-scoped status 21 stays host-internal or receives a closed protocol response mapping | cumulative ABI1.10/protocol-v7 treatment of domain-exhaustion without mistaking it for terminal 19/20 |
 | `TODO-RUNTIME-M12-01` | Start disposable System 303 CADR harness session, record artifact/source/harness identities and action trace, then stop and verify integrity | Bounded runtime debugger observation for the selected load band |
 
 No historical console command grammar, symbolic decoding, control-memory patching,

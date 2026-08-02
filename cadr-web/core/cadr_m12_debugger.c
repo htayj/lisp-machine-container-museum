@@ -116,7 +116,7 @@ static int stop_record_zero(const cadr_m12_stop_record *record)
 }
 
 /* Virgin validation is semantic and never examines padding bytes. */
-static int debugger_virgin(const cadr_m12_debugger *debugger)
+int cadr_m12_debugger_is_virgin(const cadr_m12_debugger *debugger)
 {
     uint32_t index;
     if (debugger == NULL || debugger->current.micro_pc != 0U ||
@@ -372,7 +372,7 @@ cadr_m12_status cadr_m12_debugger_initialize(
     const cadr_m12_boundary *initial, uint64_t generation,
     const uint8_t profile_sha256[CADR_M12_SHA256_BYTES])
 {
-    if (!debugger_virgin(debugger) ||
+    if (!cadr_m12_debugger_is_virgin(debugger) ||
         !debugger_initialize_arguments_valid(domain, initial, generation,
                                             profile_sha256)) {
         return CADR_M12_STATUS_INVALID_ARGUMENT;

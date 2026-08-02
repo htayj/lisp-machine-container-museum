@@ -10,6 +10,7 @@ import {
   CADR_M12_MACRO_SLOT_LIMIT,
   CADR_M12_PROTOCOL_VERSION,
   CADR_M12_STATUS_DEBUG_STOP,
+  CADR_M12_STATUS_INCARNATION_EXHAUSTED,
   CADR_M12_STATUS_INVALID_ARGUMENT,
   CADR_M12_STATUS_LIMIT_REACHED,
   CADR_M12_STATUS_OK,
@@ -280,11 +281,18 @@ function testProtocolBranch() {
   }).status, CADR_M12_STATUS_INVALID_ARGUMENT);
 
   const arbitraryStatusBackend = new CadrM12ProtocolSubhandler({
-    invoke() { return { status: 21 }; },
+    invoke() { return { status: CADR_M12_STATUS_INCARNATION_EXHAUSTED }; },
   });
-  assert.equal(arbitraryStatusBackend.handle({
+  const rejectedIncarnation = arbitraryStatusBackend.handle({
     version: 7, id: 12, op: "debug-micro-step",
-  }).status, CADR_M12_STATUS_INVALID_ARGUMENT);
+  });
+  /* Status 21 is an adapter-only owner-lineage result.  No v7 debugger
+   * operation performs a rebind, so a backend cannot promote it into a
+   * protocol result or a terminal 19/20-like stop. */
+  assert.equal(rejectedIncarnation.status, CADR_M12_STATUS_INVALID_ARGUMENT);
+  assert.equal(rejectedIncarnation.terminal, false);
+  assert.equal(Object.hasOwn(rejectedIncarnation, "result"), false);
+  assert.equal(rejectedIncarnation.reason, "backend-response");
 
   const stateBackend = new CadrM12ProtocolSubhandler({
     invoke() {
@@ -322,8 +330,12 @@ function testIsolationSurface() {
 function testNativeIncarnationDomainIsolation() {
   const header = readFileSync(new URL("../cadr-web/core/cadr_m12_debugger.h", import.meta.url), "utf8");
   const source = readFileSync(new URL("../cadr-web/core/cadr_m12_debugger.c", import.meta.url), "utf8");
+  const adapter = readFileSync(new URL("../cadr-web/core/cadr_m12_machine_adapter.c", import.meta.url), "utf8");
+  const wasmAdapter = readFileSync(new URL("../cadr-web/wasm/cadr_wasm_adapter.c", import.meta.url), "utf8");
+  const hostApi = readFileSync(new URL("../cadr-web/include/cadr_host_api.h", import.meta.url), "utf8");
   assert.match(header, /typedef struct cadr_m12_incarnation_domain/);
   assert.match(header, /cadr_m12_incarnation_domain_initialize/);
+  assert.match(header, /cadr_m12_debugger_is_virgin/);
   assert.match(header, /cadr_m12_debugger_reinitialize/);
   assert.match(header, /CADR_M12_STATUS_INCARNATION_EXHAUSTED/);
   assert.match(source, /domain->next_incarnation == UINT64_MAX/);
@@ -331,6 +343,15 @@ function testNativeIncarnationDomainIsolation() {
   assert.match(source, /debugger->lifecycle != CADR_M12_DEBUGGER_LIVE/);
   assert.doesNotMatch(source, /all_zero\(\(const uint8_t \*\)debugger/);
   assert.doesNotMatch(source, /stdatomic\.h|_Atomic|atomic_|cadr_m12_next_inspector_incarnation/);
+  assert.match(adapter, /cadr_m12_adapter_virgin/);
+  assert.match(adapter, /cadr_m12_adapter_reusable/);
+  assert.match(adapter, /cadr_m12_adapter_clear_payload/);
+  assert.match(adapter, /cadr_m12_machine_adapter_rebind_preflight/);
+  assert.match(adapter, /adapter->debugger\.self_token == \(uintptr_t\)&adapter->debugger/);
+  assert.match(wasmAdapter, /static cadr_status cadr_wasm_m12_adapter_status/);
+  assert.match(wasmAdapter, /CADR_M12_STATUS_INCARNATION_EXHAUSTED \?\s*CADR_STATUS_NO_MEMORY : status/);
+  assert.match(wasmAdapter, /cadr_wasm_m12_adapter_status\(cadr_m12_machine_adapter_initialize/);
+  assert.doesNotMatch(hostApi, /CADR_STATUS_INCARNATION_EXHAUSTED/);
 }
 
 testProfileAndCanonicalStop();

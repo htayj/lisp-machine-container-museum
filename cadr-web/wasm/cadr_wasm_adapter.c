@@ -200,12 +200,22 @@ static cadr_status cadr_wasm_ensure_machine(void)
 }
 
 #if defined(CADR_M12_WASM)
+/* C-M12 status 21 is an operation-local owner-lineage exhaustion.  Direct
+ * Wasm exports use the preexisting public resource-exhaustion result instead
+ * of leaking 21 as an undocumented generic ABI status.  Debugger v7 requests
+ * never perform a rebind and therefore do not admit either spelling. */
+static cadr_status cadr_wasm_m12_adapter_status(cadr_m12_status status)
+{
+    return status == CADR_M12_STATUS_INCARNATION_EXHAUSTED ?
+        CADR_STATUS_NO_MEMORY : status;
+}
+
 static cadr_status cadr_wasm_m12_ensure_adapter(void)
 {
     if (cadr_wasm_machine == NULL) return CADR_STATUS_NOT_READY;
     if (cadr_wasm_m12_adapter.initialized != 0U) return CADR_STATUS_OK;
-    return cadr_m12_machine_adapter_initialize(&cadr_wasm_m12_adapter,
-                                                cadr_wasm_machine);
+    return cadr_wasm_m12_adapter_status(cadr_m12_machine_adapter_initialize(
+        &cadr_wasm_m12_adapter, cadr_wasm_machine));
 }
 
 /* Cold power, reset, and restore replace observable CPU state.  Their caller
@@ -217,8 +227,17 @@ static cadr_status cadr_wasm_m12_rebind_adapter(void)
     if (cadr_wasm_m12_adapter.initialized == 0U) {
         return cadr_wasm_m12_ensure_adapter();
     }
-    return cadr_m12_machine_adapter_rebind(&cadr_wasm_m12_adapter,
-                                            cadr_wasm_machine);
+    return cadr_wasm_m12_adapter_status(cadr_m12_machine_adapter_rebind(
+        &cadr_wasm_m12_adapter, cadr_wasm_machine));
+}
+
+static cadr_status cadr_wasm_m12_rebind_preflight(void)
+{
+    if (cadr_wasm_machine == NULL) return CADR_STATUS_NOT_READY;
+    if (cadr_wasm_m12_adapter.initialized == 0U) return CADR_STATUS_OK;
+    return cadr_wasm_m12_adapter_status(
+        cadr_m12_machine_adapter_rebind_preflight(&cadr_wasm_m12_adapter,
+                                                   cadr_wasm_machine));
 }
 
 static uint32_t cadr_wasm_m12_state(void)
@@ -383,6 +402,8 @@ uint32_t cadr_wasm_cold_power_on(void)
 #endif
 #if defined(CADR_M12_WASM)
     if (cadr_wasm_machine == NULL) return CADR_STATUS_NOT_READY;
+    status = cadr_wasm_m12_rebind_preflight();
+    if (status != CADR_STATUS_OK) return status;
     status = cadr_machine_cold_power_on(cadr_wasm_machine);
     if (status == CADR_STATUS_OK) status = cadr_wasm_m12_rebind_adapter();
     return status;
@@ -400,6 +421,8 @@ uint32_t cadr_wasm_boot(void)
 #endif
 #if defined(CADR_M12_WASM)
     if (cadr_wasm_machine == NULL) return CADR_STATUS_NOT_READY;
+    status = cadr_wasm_m12_rebind_preflight();
+    if (status != CADR_STATUS_OK) return status;
     status = cadr_machine_boot(cadr_wasm_machine);
     if (status == CADR_STATUS_OK) status = cadr_wasm_m12_rebind_adapter();
     return status;
@@ -420,6 +443,8 @@ uint32_t cadr_wasm_reset(void)
 #if defined(CADR_M12_WASM)
     cadr_status status;
     if (cadr_wasm_machine == NULL) return CADR_STATUS_NOT_READY;
+    status = cadr_wasm_m12_rebind_preflight();
+    if (status != CADR_STATUS_OK) return status;
     status = cadr_machine_reset(cadr_wasm_machine, &request);
     if (status == CADR_STATUS_OK) status = cadr_wasm_m12_rebind_adapter();
     return status;
@@ -1659,7 +1684,7 @@ static uint32_t cadr_wasm_snapshot_replace(const uint8_t *bytes,
     if (status != CADR_STATUS_OK) {
         cadr_machine_destroy(restored);
         cadr_wasm_allocator_rollback(allocation_mark);
-        return status;
+        return cadr_wasm_m12_adapter_status(status);
     }
 #endif
     cadr_wasm_machine = restored;
