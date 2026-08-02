@@ -1126,7 +1126,8 @@ export function selectedImageNegativeSystemdCommand(childArguments,
     throw new TypeError("invalid selected-image negative systemd command");
   }
   const unit = `${UNIT_PREFIX}${nonce}.service`;
-  const args = ["--user", "--no-block", "--service-type=exec", `--unit=${unit}`,
+  const args = ["--user", "--no-block", "--expand-environment=no",
+    "--service-type=exec", `--unit=${unit}`,
     "--job-mode=fail",
     `--property=RuntimeMaxSec=${RUNTIME_SECONDS}s`, "--property=TimeoutStopSec=30s",
     "--property=MemoryMax=536870912", "--property=MemorySwapMax=0",
@@ -1159,9 +1160,16 @@ export function selectedImageNegativeSystemdCommand(childArguments,
     M6_SELECTED_IMAGE_PINNED_NODE.path, ...childArguments]);
   const fragmentPath =
     `/run/user/${process.getuid()}/systemd/transient/${unit}`;
+  /* Pinned systemd v261.1 run.c defaults expansion on (line 79), parses
+   * --expand-environment at lines 329-333, and emits ExecStartEx with the
+   * no-env-expand flag at lines 1219-1220 and 1428-1435.  It passes argv[0]
+   * through
+   * find_executable() before connecting to the bus (lines 2871-2920), then
+   * serializes that literal path and argv into ExecStart (lines 1394-1424).
+   * A leading ':' is unit-file ExecStart syntax, not systemd-run CLI syntax. */
   args.push(`--property=ReadOnlyPaths=${readOnlyRoots.join(" ")}`,
     `--property=ReadWritePaths=${readWriteRoot}`,
-    `:${launcherPath}`, unit, M6_SELECTED_IMAGE_PINNED_NODE.path, ...childArguments);
+    launcherPath, unit, M6_SELECTED_IMAGE_PINNED_NODE.path, ...childArguments);
   return Object.freeze({ command: SYSTEMD_CLIENT_PATHS.systemdRun, unit,
     args: Object.freeze(args),
     effectiveEnvironment, execStart, fragmentPath });
@@ -1203,32 +1211,86 @@ export function parseExactSelectedImageSystemdShow(text, expectedNames,
   return Object.freeze(result);
 }
 
-export function validateSelectedImageNegativeExecStart(value, expected) {
+/* This is deliberately the pinned Linux x86_64/glibc userspace profile, not
+ * Node's host signal table.  systemd v261.1 signal_to_string() emits every
+ * realtime signal as RTMIN+N, including both endpoints. */
+const PINNED_SELECTED_IMAGE_SIGNAL_NAMES = Object.freeze({
+  1: "HUP", 2: "INT", 3: "QUIT", 4: "ILL", 5: "TRAP", 6: "ABRT",
+  7: "BUS", 8: "FPE", 9: "KILL", 10: "USR1", 11: "SEGV", 12: "USR2",
+  13: "PIPE", 14: "ALRM", 15: "TERM", 16: "STKFLT", 17: "CHLD",
+  18: "CONT", 19: "STOP", 20: "TSTP", 21: "TTIN", 22: "TTOU",
+  23: "URG", 24: "XCPU", 25: "XFSZ", 26: "VTALRM", 27: "PROF",
+  28: "WINCH", 29: "IO", 30: "PWR", 31: "SYS",
+});
+const PINNED_SELECTED_IMAGE_SIGRTMIN = 34;
+const PINNED_SELECTED_IMAGE_SIGRTMAX = 64;
+
+function pinnedSelectedImageSignalName(number) {
+  if (!Number.isInteger(number)) return null;
+  if (Object.hasOwn(PINNED_SELECTED_IMAGE_SIGNAL_NAMES, number)) {
+    return PINNED_SELECTED_IMAGE_SIGNAL_NAMES[number];
+  }
+  if (number >= PINNED_SELECTED_IMAGE_SIGRTMIN &&
+      number <= PINNED_SELECTED_IMAGE_SIGRTMAX) {
+    return `RTMIN+${number - PINNED_SELECTED_IMAGE_SIGRTMIN}`;
+  }
+  return null;
+}
+
+function validateSelectedImageNegativeExecRecord(value, expected, prefix,
+  label) {
+  /* Pinned v261.1 systemctl-show.c:1535-1559 omits the slash for CLD_EXITED
+   * and emits N/SIGNAL otherwise.  service.c:4529-4545 copies the completed
+   * main-process status into the ExecStart command record. */
   if (typeof value !== "string" || !Array.isArray(expected) ||
       expected.length === 0) {
-    throw new TypeError("invalid selected-image negative ExecStart identity");
+    throw new TypeError(`invalid selected-image negative ${label} identity`);
   }
-  const fixed = `{ path=${expected[0]} ; argv[]=${expected.join(" ")} ; ` +
-    "ignore_errors=no ; ";
+  const fixed = `{ path=${expected[0]} ; argv[]=${expected.join(" ")} ; ${prefix} ; `;
   if (!value.startsWith(fixed)) {
-    throw new Error("selected-image negative ExecStart command differs");
+    throw new Error(`selected-image negative ${label} command or flags differ`);
   }
   const dynamic = value.slice(fixed.length);
-  const match =
-    /^start_time=(\[[^\]\r\n]+\]) ; stop_time=(\[[^\]\r\n]+\]) ; pid=(0|[1-9][0-9]*) ; code=(\(null\)|exited|killed|dumped) ; status=(0|[1-9][0-9]*)\/(0|[1-9][0-9]*) \}$/.exec(
-      dynamic);
-  if (match === null) {
-    throw new Error(
-      "selected-image negative ExecStart is not one complete command record");
+  const common =
+    /^start_time=(\[[^\]\r\n]+\]) ; stop_time=(\[[^\]\r\n]+\]) ; pid=(0|[1-9][0-9]*) ; code=(\(null\)|exited|killed|dumped) ; status=([^\s;]+) \}$/.exec(dynamic);
+  if (common === null) {
+    throw new Error(`selected-image negative ${label} is not one complete command record`);
   }
-  return Object.freeze({
-    start_time: match[1],
-    stop_time: match[2],
-    pid: match[3],
-    code: match[4],
-    status_signal: match[5],
-    status_code: match[6],
-  });
+  const [, startTime, stopTime, pid, code, status] = common;
+  let state; let statusCode; let statusSignal = null;
+  if (code === "(null)") {
+    if (pid !== "0" || startTime !== "[n/a]" || stopTime !== "[n/a]" ||
+        status !== "0/0") {
+      throw new Error(`selected-image negative ${label} never-run state differs`);
+    }
+    state = "never-run"; statusCode = "0"; statusSignal = "0";
+  } else if (code === "exited") {
+    if (pid === "0" || !/^(?:0|[1-9][0-9]{0,2})$/.test(status) ||
+        Number(status) > 255) {
+      throw new Error(`selected-image negative ${label} exited state differs`);
+    }
+    state = "exited"; statusCode = status;
+  } else {
+    const signal = /^([1-9][0-9]?)\/([A-Z0-9+]+)$/.exec(status);
+    if (pid === "0" || signal === null ||
+        pinnedSelectedImageSignalName(Number(signal[1])) !== signal[2]) {
+      throw new Error(`selected-image negative ${label} signal state differs`);
+    }
+    state = code === "killed" ? "killed" : "dumped";
+    statusCode = signal[1]; statusSignal = signal[2];
+  }
+  return Object.freeze({ start_time: startTime, stop_time: stopTime, pid,
+    code, state, status_code: statusCode, status_signal: statusSignal });
+}
+
+export function validateSelectedImageNegativeExecStart(value, expected) {
+  return validateSelectedImageNegativeExecRecord(value, expected,
+    "ignore_errors=no", "ExecStart");
+}
+
+export function validateSelectedImageNegativeExecStartEx(value, expected) {
+  return validateSelectedImageNegativeExecRecord(value, expected,
+    "flags=no-env-expand", "ExecStartEx");
 }
 
 const POLICY = Object.freeze({ TimeoutStopUSec: "30s",
@@ -1272,7 +1334,7 @@ export function parseSelectedImageNegativeDurationUSec(value) {
 }
 
 export function validateSelectedImageNegativeSystemdPolicy(value, authorityRoot,
-  artifactRoot, privateRoot, unit) {
+  artifactRoot, privateRoot, unit, expectedExecStart) {
   for (const [field, expected] of Object.entries(POLICY)) {
     if (value?.[field] !== expected) {
       throw new Error(`selected-image negative effective systemd policy differs at ${field}`);
@@ -1285,6 +1347,14 @@ export function validateSelectedImageNegativeSystemdPolicy(value, authorityRoot,
   exactWordSet(value?.ReadOnlyPaths, [authorityRoot, artifactRoot], "read-only paths");
   exactWordSet(value?.ReadWritePaths, [privateRoot], "read-write paths");
   exactWordSet(value?.Environment, [], "unit environment assignments");
+  const legacy = validateSelectedImageNegativeExecStart(value?.ExecStart,
+    expectedExecStart);
+  const extended = validateSelectedImageNegativeExecStartEx(value?.ExecStartEx,
+    expectedExecStart);
+  if (legacy.state !== "exited" || legacy.status_code !== "0" ||
+      canonicalJson(legacy) !== canonicalJson(extended)) {
+    throw new Error("selected-image negative final ExecStart state is not exact successful exit");
+  }
   return value;
 }
 
@@ -1308,13 +1378,15 @@ const WAIT_PROPERTIES = Object.freeze([
 ]);
 const RECOVERY_PROPERTIES = Object.freeze([
   "LoadState", "Transient", "FragmentPath", "Type", "ExecStart",
+  "ExecStartEx",
 ]);
 const ABSENT_RECOVERY_PROPERTIES = Object.freeze([
   "LoadState", "Transient", "FragmentPath", "Type",
 ]);
 const ABSENCE_PROPERTIES = Object.freeze(["LoadState"]);
 const ACCOUNTING_PROPERTIES = Object.freeze([
-  "Result", "ExecMainCode", "ExecMainStatus", "MemoryPeak", "CPUUsageNSec",
+  "Result", "ExecMainCode", "ExecMainStatus", "ExecStart", "ExecStartEx",
+  "MemoryPeak", "CPUUsageNSec",
   "TasksCurrent", "IOReadBytes", "IOWriteBytes", "IPIngressBytes",
   "IPEgressBytes", "RuntimeMaxUSec", "TimeoutStopUSec", "MemoryMax",
   "MemorySwapMax", "CPUQuotaPerSecUSec", "TasksMax", "UMask", "LimitCORE",
@@ -1353,9 +1425,15 @@ function classifyRecoveredSelectedImageUnit(command, shown) {
       return Object.freeze({ kind: "mismatch", state });
     }
     try {
-      validateSelectedImageNegativeExecStart(state.ExecStart,
+      const legacy = validateSelectedImageNegativeExecStart(state.ExecStart,
         command.execStart);
-      return Object.freeze({ kind: "original", state });
+      const extended = validateSelectedImageNegativeExecStartEx(state.ExecStartEx,
+        command.execStart);
+      if (canonicalJson(legacy) !== canonicalJson(extended)) {
+        throw new Error("selected-image recovery ExecStart states differ");
+      }
+      return Object.freeze({ kind: `original-${legacy.state}`, state,
+        exec_state: legacy });
     } catch { return Object.freeze({ kind: "mismatch", state }); }
   } catch (loadedParseError) {
     try {
@@ -1420,7 +1498,7 @@ export async function startSelectedImageNegativeUnit(command,
   try {
     const recovered = await showRecoveredSelectedImageUnit(command, clients,
       captureFn);
-    if (recovered.kind === "original" && started.failure === null) {
+    if (recovered.kind.startsWith("original-") && started.failure === null) {
       return command.unit;
     }
     if (recovered.kind === "absent") {
@@ -2381,7 +2459,7 @@ export async function executeSelectedImageNegativeSystemd(options,
     const accounting = parseExactSelectedImageSystemdShow(
       shown.stdout.toString("utf8"), ACCOUNTING_PROPERTIES, "accounting");
     validateSelectedImageNegativeSystemdPolicy(accounting, authorityRoot,
-      options.artifactRoot, stage.privateRoot, unit);
+      options.artifactRoot, stage.privateRoot, unit, command.execStart);
     validateSelectedImageNegativeSystemdAccounting(accounting);
     if (accounting.Result !== "success" || accounting.ExecMainCode !== "1" ||
         accounting.ExecMainStatus !== "0") {

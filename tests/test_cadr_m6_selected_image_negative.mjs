@@ -44,6 +44,8 @@ import { parseSelectedImageNegativeSystemdArguments,
   closeSelectedImageSystemdClients,
   verifySelectedImageSystemdClients,
   verifyPinnedSelectedImageStagedExecutionClosure,
+  validateSelectedImageNegativeExecStart,
+  validateSelectedImageNegativeExecStartEx,
   validateSelectedImageNegativeSystemdAccounting,
   validateSelectedImageNegativeSystemdPolicy } from
   "../scripts/run-cadr-m6-selected-image-negative-systemd.mjs";
@@ -710,14 +712,95 @@ for (const property of [
   "--property=ReadWritePaths=/private",
   "--property=ProtectSystem=strict", "--property=ProtectHome=read-only",
 ]) assert.ok(command.args.includes(property), property);
+assert.equal(command.args.filter(value => value === "--expand-environment=no").length,
+  1, "systemd-run receives one exact no-expansion option");
 assert.ok(command.args.some(value =>
-  value === ":/gnu/store/authority/bin/cadr-m6-selected-image-static-launcher"),
-  "the ExecStart executable disables systemd environment expansion");
+  value === "/gnu/store/authority/bin/cadr-m6-selected-image-static-launcher"),
+  "systemd-run receives the exact absolute launcher path as command argv[0]");
+assert.equal(command.args.some(value => value.startsWith(":/")), false,
+  "unit-file executable prefixes never enter systemd-run command argv");
 const launcherIndex = command.args.indexOf(
-  ":/gnu/store/authority/bin/cadr-m6-selected-image-static-launcher");
+  "/gnu/store/authority/bin/cadr-m6-selected-image-static-launcher");
 assert.deepEqual(command.args.slice(launcherIndex + 1, launcherIndex + 4),
   [command.unit, M6_SELECTED_IMAGE_PINNED_NODE.path, "child"],
   "the static launcher directly receives the unit, pinned Node, and child");
+assert.deepEqual(command.execStart, [
+  "/gnu/store/authority/bin/cadr-m6-selected-image-static-launcher",
+  command.unit, M6_SELECTED_IMAGE_PINNED_NODE.path, "child", "--execute",
+], "the canonical expected ExecStart remains the literal launcher argv");
+assert.throws(() => validateSelectedImageNegativeExecStart(
+  `{ path=:${command.execStart[0]} ; argv[]=:${command.execStart.join(" ")} ; ignore_errors=no ; start_time=[n/a] ; stop_time=[n/a] ; pid=0 ; code=(null) ; status=0/0 }`,
+  command.execStart), /command or flags differ/,
+"a colon-prefixed regression cannot satisfy exact ExecStart recovery");
+assert.throws(() => selectedImageNegativeSystemdCommand(
+  ["child", "--execute"], "12".repeat(16),
+  ["/gnu/store/authority", "/artifacts"], "/private",
+  ":/gnu/store/authority/bin/cadr-m6-selected-image-static-launcher"),
+/absolute static launcher/,
+"a colon-prefixed launcher cannot enter command construction through input");
+const literalDollar = selectedImageNegativeSystemdCommand(
+  ["child", "literal-$M6_SELECTED_IMAGE"], "56".repeat(16),
+  ["/gnu/store/authority", "/artifacts"], "/private",
+  "/gnu/store/authority/bin/cadr-m6-selected-image-static-launcher");
+assert.equal(literalDollar.args.at(-1), "literal-$M6_SELECTED_IMAGE");
+assert.equal(literalDollar.execStart.at(-1), "literal-$M6_SELECTED_IMAGE");
+const literalDollarExecStart =
+  `{ path=${literalDollar.execStart[0]} ; argv[]=${literalDollar.execStart.join(" ")} ; ignore_errors=no ; start_time=[n/a] ; stop_time=[n/a] ; pid=0 ; code=(null) ; status=0/0 }`;
+const literalDollarExecStartEx =
+  `{ path=${literalDollar.execStart[0]} ; argv[]=${literalDollar.execStart.join(" ")} ; flags=no-env-expand ; start_time=[n/a] ; stop_time=[n/a] ; pid=0 ; code=(null) ; status=0/0 }`;
+assert.equal(validateSelectedImageNegativeExecStart(literalDollarExecStart,
+  literalDollar.execStart).pid, "0");
+assert.equal(validateSelectedImageNegativeExecStartEx(literalDollarExecStartEx,
+  literalDollar.execStart).pid, "0",
+"configured argv and effective no-expand ExecStartEx remain byte-literal");
+const execRecord = (prefix, code, status, pid = "77") =>
+  `{ path=${literalDollar.execStart[0]} ; argv[]=${literalDollar.execStart.join(" ")} ; ${prefix} ; start_time=[Sat 2026-08-01 20:00:00 EDT] ; stop_time=[Sat 2026-08-01 20:00:01 EDT] ; pid=${pid} ; code=${code} ; status=${status} }`;
+for (const [code, status, state] of [
+  ["exited", "0", "exited"], ["exited", "7", "exited"],
+  ["killed", "15/TERM", "killed"], ["dumped", "11/SEGV", "dumped"],
+  ["killed", "34/RTMIN+0", "killed"],
+  ["dumped", "35/RTMIN+1", "dumped"],
+  ["killed", "49/RTMIN+15", "killed"],
+  ["dumped", "63/RTMIN+29", "dumped"],
+  ["killed", "64/RTMIN+30", "killed"],
+]) {
+  assert.equal(validateSelectedImageNegativeExecStart(execRecord(
+    "ignore_errors=no", code, status), literalDollar.execStart).state, state);
+  assert.equal(validateSelectedImageNegativeExecStartEx(execRecord(
+    "flags=no-env-expand", code, status), literalDollar.execStart).state,
+  state);
+}
+assert.throws(() => validateSelectedImageNegativeExecStart(
+  execRecord("ignore_errors=no", "exited", "0/0"), literalDollar.execStart),
+/state differs/, "exited status cannot use signal framing");
+assert.throws(() => validateSelectedImageNegativeExecStart(
+  literalDollarExecStart.replace("status=0/0", "status=0"),
+  literalDollar.execStart), /state differs/,
+"never-run status retains its exact 0/0 spelling");
+const rejectedSignalStatuses = [
+  "15", "15/KILL", "6/IOT", "29/POLL",
+  "34/RTMIN", "34/RTMIN+1", "35/RTMIN+0",
+  "34/RTMIN-0", "34/RTMIN++0", "35/RTMIN+01", "33/RTMIN+-1",
+  "65/RTMIN+31", "64/RTMAX", "64/RTMAX-0", "63/RTMAX-1",
+  "0/RTMIN+0", "034/RTMIN+0",
+];
+for (const status of rejectedSignalStatuses) {
+  assert.throws(() => validateSelectedImageNegativeExecStart(execRecord(
+    "ignore_errors=no", "killed", status), literalDollar.execStart),
+  /state differs|complete command record/,
+  `ExecStart rejects noncanonical signal status ${status}`);
+  assert.throws(() => validateSelectedImageNegativeExecStartEx(execRecord(
+    "flags=no-env-expand", "dumped", status), literalDollar.execStart),
+  /state differs|complete command record/,
+  `ExecStartEx rejects noncanonical signal status ${status}`);
+}
+for (const flags of ["", "ignore-failure", "no-env-expand extra",
+  "no-env-expand no-env-expand", "NO-ENV-EXPAND"]) {
+  assert.throws(() => validateSelectedImageNegativeExecStartEx(
+    literalDollarExecStartEx.replace("flags=no-env-expand", `flags=${flags}`),
+    literalDollar.execStart), /flags differ|complete command record/,
+  "missing, extra, duplicate, and wrong ExecStartEx flags are rejected");
+}
 assert.equal(command.args.some(value => value.startsWith("--setenv=")), false,
   "no inherited systemd environment assignment is relied upon");
 {
@@ -1021,6 +1104,10 @@ const policy = {
   ProtectKernelModules: "yes", LockPersonality: "yes", RestrictSUIDSGID: "yes",
   ReadOnlyPaths: "/source /artifacts", ReadWritePaths: "/private",
   Environment: "",
+  ExecStart:
+    `{ path=${command.execStart[0]} ; argv[]=${command.execStart.join(" ")} ; ignore_errors=no ; start_time=[Sat 2026-08-01 20:00:00 EDT] ; stop_time=[Sat 2026-08-01 20:00:01 EDT] ; pid=77 ; code=exited ; status=0 }`,
+  ExecStartEx:
+    `{ path=${command.execStart[0]} ; argv[]=${command.execStart.join(" ")} ; flags=no-env-expand ; start_time=[Sat 2026-08-01 20:00:00 EDT] ; stop_time=[Sat 2026-08-01 20:00:01 EDT] ; pid=77 ; code=exited ; status=0 }`,
 };
 for (const [value, expected] of [["600s", 600000000n], ["10min", 600000000n],
   ["600000000us", 600000000n], ["600000ms", 600000000n]]) {
@@ -1031,33 +1118,69 @@ for (const value of ["9min", "601s", "infinity", "10min 1s",
   if (value === "9min" || value === "601s") {
     assert.throws(() => validateSelectedImageNegativeSystemdPolicy({
       ...policy, RuntimeMaxUSec: value,
-    }, "/source", "/artifacts", "/private", unit), /RuntimeMaxUSec/);
+    }, "/source", "/artifacts", "/private", unit, command.execStart),
+    /RuntimeMaxUSec/);
   } else {
     assert.throws(() => parseSelectedImageNegativeDurationUSec(value),
       /duration/);
   }
 }
 assert.equal(validateSelectedImageNegativeSystemdPolicy(policy, "/source", "/artifacts",
-  "/private", unit).ProtectSystem, "strict");
+  "/private", unit, command.execStart).ProtectSystem, "strict");
 assert.throws(() => validateSelectedImageNegativeSystemdPolicy({ ...policy,
-  ReadOnlyPaths: "/source" }, "/source", "/artifacts", "/private", unit), /read-only paths/);
+  ReadOnlyPaths: "/source" }, "/source", "/artifacts", "/private", unit,
+  command.execStart), /read-only paths/);
 assert.throws(() => validateSelectedImageNegativeSystemdPolicy({ ...policy,
-  ReadOnlyPaths: "/source /artifacts /widened" }, "/source", "/artifacts", "/private", unit), /read-only paths/);
+  ReadOnlyPaths: "/source /artifacts /widened" }, "/source", "/artifacts",
+  "/private", unit, command.execStart), /read-only paths/);
 assert.throws(() => validateSelectedImageNegativeSystemdPolicy({ ...policy,
-  ReadWritePaths: "/private /widened" }, "/source", "/artifacts", "/private", unit), /read-write paths/);
+  ReadWritePaths: "/private /widened" }, "/source", "/artifacts", "/private",
+  unit, command.execStart), /read-write paths/);
 assert.throws(() => validateSelectedImageNegativeSystemdPolicy({ ...policy,
-  LimitCORE: "infinity" }, "/source", "/artifacts", "/private", unit), /LimitCORE/);
+  LimitCORE: "infinity" }, "/source", "/artifacts", "/private", unit,
+  command.execStart), /LimitCORE/);
+for (const ExecStartEx of [undefined, policy.ExecStartEx.replace(
+  "flags=no-env-expand", "flags="), policy.ExecStartEx.replace(
+  "flags=no-env-expand", "flags=ignore-failure")]) {
+  assert.throws(() => validateSelectedImageNegativeSystemdPolicy({ ...policy,
+    ExecStartEx }, "/source", "/artifacts", "/private", unit,
+  command.execStart), /ExecStartEx/,
+  "final policy rejects missing or wrong effective no-expansion flags");
+}
+for (const [label, changed] of [
+  ["nonzero", { ExecStart: policy.ExecStart.replace("status=0", "status=7"),
+    ExecStartEx: policy.ExecStartEx.replace("status=0", "status=7") }],
+  ["never-run", { ExecStart: literalDollarExecStart.replaceAll(
+    literalDollar.execStart.join(" "), command.execStart.join(" ")).replaceAll(
+      literalDollar.execStart[0], command.execStart[0]),
+    ExecStartEx: literalDollarExecStartEx.replaceAll(
+      literalDollar.execStart.join(" "), command.execStart.join(" ")).replaceAll(
+        literalDollar.execStart[0], command.execStart[0]) }],
+  ["signal", { ExecStart: policy.ExecStart.replace(
+    "code=exited ; status=0", "code=killed ; status=15/TERM"),
+    ExecStartEx: policy.ExecStartEx.replace(
+      "code=exited ; status=0", "code=killed ; status=15/TERM") }],
+  ["mismatched", { ExecStartEx: policy.ExecStartEx.replace(
+    "status=0", "status=7") }],
+]) assert.throws(() => validateSelectedImageNegativeSystemdPolicy({ ...policy,
+  ...changed }, "/source", "/artifacts", "/private", unit,
+command.execStart), /successful exit|states differ/,
+`final policy rejects ${label} legacy and ExecStartEx state`);
 assert.equal(validateSelectedImageNegativeSystemdAccounting({ MemoryPeak: "1",
   CPUUsageNSec: "2", TasksCurrent: "[not set]", IOReadBytes: "[not set]",
   IOWriteBytes: "0", IPIngressBytes: "[no data]", IPEgressBytes: "[no data]" }).MemoryPeak,
 "1");
 
-function syntheticSelectedSystemdShow(sourceRoot, privateRoot) {
+function syntheticSelectedSystemdShow(sourceRoot, privateRoot, execStart) {
   return { ...policy, ReadOnlyPaths: `${sourceRoot} /synthetic/artifacts`,
     ReadWritePaths: privateRoot, Result: "success", ExecMainCode: "1",
     ExecMainStatus: "0", MemoryPeak: "1", CPUUsageNSec: "2",
     TasksCurrent: "0", IOReadBytes: "0", IOWriteBytes: "0",
-    IPIngressBytes: "0", IPEgressBytes: "0" };
+    IPIngressBytes: "0", IPEgressBytes: "0",
+    ExecStart:
+      `{ path=${execStart[0]} ; argv[]=${execStart.join(" ")} ; ignore_errors=no ; start_time=[Sat 2026-08-01 20:00:00 EDT] ; stop_time=[Sat 2026-08-01 20:00:01 EDT] ; pid=77 ; code=exited ; status=0 }`,
+    ExecStartEx:
+      `{ path=${execStart[0]} ; argv[]=${execStart.join(" ")} ; flags=no-env-expand ; start_time=[Sat 2026-08-01 20:00:00 EDT] ; stop_time=[Sat 2026-08-01 20:00:01 EDT] ; pid=77 ; code=exited ; status=0 }` };
 }
 
 function syntheticSelectedRun(stage, release, selected, environment) {
@@ -1283,7 +1406,8 @@ for (const testCase of [
         stdout: Buffer.from([
           "LoadState=loaded", "Transient=yes", "Type=exec",
           `FragmentPath=${command.fragmentPath}`,
-          `ExecStart={ path=${command.execStart[0]} ; argv[]=${command.execStart.join(" ")} ; ignore_errors=no ; start_time=[n/a] ; stop_time=[n/a] ; pid=123 ; code=(null) ; status=0/0 }`,
+          `ExecStart={ path=${command.execStart[0]} ; argv[]=${command.execStart.join(" ")} ; ignore_errors=no ; start_time=[n/a] ; stop_time=[n/a] ; pid=123 ; code=exited ; status=0 }`,
+          `ExecStartEx={ path=${command.execStart[0]} ; argv[]=${command.execStart.join(" ")} ; flags=no-env-expand ; start_time=[n/a] ; stop_time=[n/a] ; pid=123 ; code=exited ; status=0 }`,
           "",
         ].join("\n")), stderr: Buffer.alloc(0) };
     },
@@ -1308,6 +1432,7 @@ for (const testCase of [
           "LoadState=loaded", "Transient=yes", "Type=exec",
           `FragmentPath=${command.fragmentPath}`,
           "ExecStart={ path=/coincident ; argv[]=/coincident ; ignore_errors=no ; start_time=[n/a] ; stop_time=[n/a] ; pid=1 ; code=(null) ; status=0/0 }",
+          "ExecStartEx={ path=/coincident ; argv[]=/coincident ; flags=no-env-expand ; start_time=[n/a] ; stop_time=[n/a] ; pid=1 ; code=(null) ; status=0/0 }",
           "",
         ].join("\n")), stderr: Buffer.alloc(0) };
     },
@@ -1321,22 +1446,50 @@ for (const testCase of [
 for (const ambiguous of [
   { code: 1, signal: null, failure: null },
 ]) {
-  let call = 0;
+  let call = 0; let recoveryArgs = null;
   const recovered = await startSelectedImageNegativeUnit(command, {
     captureFn: async (_program, args) => {
       if (call++ === 0) return { ...ambiguous,
         stdout: Buffer.alloc(0), stderr: Buffer.alloc(0) };
+      recoveryArgs = args;
       return { code: 0, signal: null, failure: null,
         stdout: Buffer.from([
           "LoadState=loaded", "Transient=yes", "Type=exec",
           `FragmentPath=${command.fragmentPath}`,
-          `ExecStart={ path=${command.execStart[0]} ; argv[]=${command.execStart.join(" ")} ; ignore_errors=no ; start_time=[n/a] ; stop_time=[n/a] ; pid=123 ; code=(null) ; status=0/0 }`,
+          `ExecStart={ path=${command.execStart[0]} ; argv[]=${command.execStart.join(" ")} ; ignore_errors=no ; start_time=[n/a] ; stop_time=[n/a] ; pid=123 ; code=exited ; status=0 }`,
+          `ExecStartEx={ path=${command.execStart[0]} ; argv[]=${command.execStart.join(" ")} ; flags=no-env-expand ; start_time=[n/a] ; stop_time=[n/a] ; pid=123 ; code=exited ; status=0 }`,
           "",
         ].join("\n")), stderr: Buffer.alloc(0) };
     },
   });
   assert.equal(recovered, command.unit,
     "accepted-but-reply-lost unit ownership is recovered from exact ExecStart");
+  assert.equal(recoveryArgs.at(-1),
+    "--property=LoadState,Transient,FragmentPath,Type,ExecStart,ExecStartEx",
+  "ambiguous recovery queries both configured argv and effective exec flags");
+}
+
+for (const [code, status] of [
+  ["killed", "34/RTMIN+0"],
+  ["dumped", "64/RTMIN+30"],
+]) {
+  let call = 0;
+  const recovered = await startSelectedImageNegativeUnit(command, {
+    captureFn: async () => {
+      if (call++ === 0) return { code: 1, signal: null, failure: null,
+        stdout: Buffer.alloc(0), stderr: Buffer.alloc(0) };
+      return { code: 0, signal: null, failure: null,
+        stdout: Buffer.from([
+          "LoadState=loaded", "Transient=yes", "Type=exec",
+          `FragmentPath=${command.fragmentPath}`,
+          `ExecStart={ path=${command.execStart[0]} ; argv[]=${command.execStart.join(" ")} ; ignore_errors=no ; start_time=[Sat 2026-08-01 20:00:00 EDT] ; stop_time=[Sat 2026-08-01 20:00:01 EDT] ; pid=123 ; code=${code} ; status=${status} }`,
+          `ExecStartEx={ path=${command.execStart[0]} ; argv[]=${command.execStart.join(" ")} ; flags=no-env-expand ; start_time=[Sat 2026-08-01 20:00:00 EDT] ; stop_time=[Sat 2026-08-01 20:00:01 EDT] ; pid=123 ; code=${code} ; status=${status} }`,
+          "",
+        ].join("\n")), stderr: Buffer.alloc(0) };
+    },
+  });
+  assert.equal(recovered, command.unit,
+    `ambiguous recovery accepts exact canonical ${status} ${code} records`);
 }
 
 for (const shown of [
@@ -1345,6 +1498,21 @@ for (const shown of [
   `LoadState=not-found\nTransient=no\nFragmentPath=${command.fragmentPath}\nType=\n`,
   "LoadState=not-found\nTransient=no\nFragmentPath=\n",
   "LoadState=loaded\nTransient=yes\nType=exec\nFragmentPath=\nExecStart={ path=/unrelated ; argv[]=/unrelated ; ignore_errors=no ; start_time=[n/a] ; stop_time=[n/a] ; pid=0 ; code=(null) ; status=0/0 }\n",
+  ["LoadState=loaded", "Transient=yes", "Type=exec",
+    `FragmentPath=${command.fragmentPath}`,
+    `ExecStart={ path=${command.execStart[0]} ; argv[]=${command.execStart.join(" ")} ; ignore_errors=no ; start_time=[n/a] ; stop_time=[n/a] ; pid=0 ; code=(null) ; status=0/0 }`,
+    `ExecStartEx={ path=${command.execStart[0]} ; argv[]=${command.execStart.join(" ")} ; flags= ; start_time=[n/a] ; stop_time=[n/a] ; pid=0 ; code=(null) ; status=0/0 }`,
+    ""].join("\n"),
+  ["LoadState=loaded", "Transient=yes", "Type=exec",
+    `FragmentPath=${command.fragmentPath}`,
+    `ExecStart={ path=${command.execStart[0]} ; argv[]=${command.execStart.join(" ")} ; ignore_errors=no ; start_time=[n/a] ; stop_time=[n/a] ; pid=0 ; code=(null) ; status=0/0 }`,
+    `ExecStartEx={ path=${command.execStart[0]} ; argv[]=${command.execStart.join(" ")} ; flags=no-env-expand ignore-failure ; start_time=[n/a] ; stop_time=[n/a] ; pid=0 ; code=(null) ; status=0/0 }`,
+    ""].join("\n"),
+  ["LoadState=loaded", "Transient=yes", "Type=exec",
+    `FragmentPath=${command.fragmentPath}`,
+    `ExecStart={ path=${command.execStart[0]} ; argv[]=${command.execStart.join(" ")} ; ignore_errors=no ; start_time=[Sat 2026-08-01 20:00:00 EDT] ; stop_time=[Sat 2026-08-01 20:00:01 EDT] ; pid=123 ; code=killed ; status=64/RTMAX }`,
+    `ExecStartEx={ path=${command.execStart[0]} ; argv[]=${command.execStart.join(" ")} ; flags=no-env-expand ; start_time=[Sat 2026-08-01 20:00:00 EDT] ; stop_time=[Sat 2026-08-01 20:00:01 EDT] ; pid=123 ; code=killed ; status=64/RTMAX }`,
+    ""].join("\n"),
   ["LoadState=loaded", "Transient=yes", "Type=exec",
     `FragmentPath=/attacker/systemd/transient/${command.unit}`,
     `ExecStart={ path=${command.execStart[0]} ; argv[]=${command.execStart.join(" ")} ; ignore_errors=no ; start_time=[n/a] ; stop_time=[n/a] ; pid=0 ; code=(null) ; status=0/0 }`,
@@ -1477,7 +1645,8 @@ for (const shown of [
             stdout: Buffer.from([
               "LoadState=loaded", "Transient=yes", "Type=exec",
               `FragmentPath=${command.fragmentPath}`,
-              `ExecStart={ path=${command.execStart[0]} ; argv[]=${command.execStart.join(" ")} ; ignore_errors=no ; start_time=[n/a] ; stop_time=[n/a] ; pid=123 ; code=(null) ; status=0/0 }`,
+              `ExecStart={ path=${command.execStart[0]} ; argv[]=${command.execStart.join(" ")} ; ignore_errors=no ; start_time=[n/a] ; stop_time=[n/a] ; pid=123 ; code=exited ; status=0 }`,
+              `ExecStartEx={ path=${command.execStart[0]} ; argv[]=${command.execStart.join(" ")} ; flags=no-env-expand ; start_time=[n/a] ; stop_time=[n/a] ; pid=123 ; code=exited ; status=0 }`,
               "",
             ].join("\n")), stderr: Buffer.alloc(0) };
         },
@@ -1567,6 +1736,7 @@ for (const shown of [
             "LoadState=loaded", "Transient=yes", "Type=exec",
             `FragmentPath=${command.fragmentPath}`,
             `ExecStart={ path=${command.execStart[0]} ; argv[]=${command.execStart.join(" ")} ; ignore_errors=no ; start_time=[n/a] ; stop_time=[n/a] ; pid=123 ; code=(null) ; status=0/0 }`,
+            `ExecStartEx={ path=${command.execStart[0]} ; argv[]=${command.execStart.join(" ")} ; flags=no-env-expand ; start_time=[n/a] ; stop_time=[n/a] ; pid=123 ; code=(null) ; status=0/0 }`,
             "",
           ].join("\n")), stderr: Buffer.alloc(0) };
       },
@@ -1730,7 +1900,8 @@ for (const shown of [
     waitUnit: async () => undefined,
     captureUnit: async () => {
       const shown = syntheticSelectedSystemdShow(
-        syntheticAuthority(stage).output_path, privateRoot);
+        syntheticAuthority(stage).output_path, privateRoot,
+        started.execStart);
       return { code: 0, signal: null, failure: null, stderr: Buffer.alloc(0),
         stdout: Buffer.from(Object.entries(shown).map(([key, value]) =>
           `${key}=${value}`).join("\n") + "\n") };
@@ -1813,7 +1984,8 @@ for (const shown of [
     waitUnit: async () => undefined,
     captureUnit: async () => {
       const shown = syntheticSelectedSystemdShow(
-        syntheticAuthority(stage).output_path, privateRoot);
+        syntheticAuthority(stage).output_path, privateRoot,
+        started.execStart);
       return { code: 0, signal: null, failure: null, stderr: Buffer.alloc(0),
         stdout: Buffer.from(Object.entries(shown).map(([key, value]) =>
           `${key}=${value}`).join("\n") + "\n") };
