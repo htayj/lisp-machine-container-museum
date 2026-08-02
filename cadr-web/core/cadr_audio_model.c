@@ -535,6 +535,24 @@ cadr_audio_status cadr_audio_model_reset(cadr_audio_model *model)
     return CADR_AUDIO_STATUS_OK;
 }
 
+cadr_audio_status cadr_audio_model_reset_for_generation(
+    cadr_audio_model *model, uint64_t generation)
+{
+    uint32_t renderer_profile;
+    cadr_audio_authority *authority;
+    if (!model_self_valid(model) || !authority_valid(model) || generation == 0U) {
+        return CADR_AUDIO_STATUS_INVALID_ARGUMENT;
+    }
+    authority = model->authority;
+    if (authority->consumer_epoch == UINT64_MAX) {
+        return CADR_AUDIO_STATUS_OVERFLOW;
+    }
+    renderer_profile = model->renderer_profile;
+    authority->consumer_epoch += UINT64_C(1);
+    model_semantic_initialize(model, authority, generation, renderer_profile);
+    return CADR_AUDIO_STATUS_OK;
+}
+
 cadr_audio_status cadr_audio_model_start_consumer_session(
     cadr_audio_model *model)
 {

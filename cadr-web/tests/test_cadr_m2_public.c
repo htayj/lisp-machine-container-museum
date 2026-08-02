@@ -977,6 +977,47 @@ done:
     return ok ? 0 : 1;
 }
 
+static int emit_state5_digest(const char *path)
+{
+    cadr_machine *source = booted_machine();
+    uint8_t digest[CADR_SHA256_BYTES];
+    FILE *output = NULL;
+    int ok = 0;
+    if (source != NULL) {
+        source->state.devices.disk.status = CADR_DISK_STATUS_NOT_ACTIVE |
+            CADR_DISK_STATUS_ATTENTION;
+        source->state.devices.disk.command = UINT32_C(012);
+    }
+    if (source == NULL || path == NULL ||
+        cadr_machine_state_v5_digest(source, digest) != CADR_STATUS_OK) goto done;
+    output = fopen(path, "wb");
+    if (output == NULL || fwrite(digest, 1U, sizeof(digest), output) != sizeof(digest) ||
+        fclose(output) != 0) { output = NULL; goto done; }
+    output = NULL; ok = 1;
+done:
+    if (output != NULL) (void)fclose(output);
+    cadr_machine_destroy(source);
+    return ok ? 0 : 1;
+}
+
+static int emit_booted_state5_digest(const char *path)
+{
+    cadr_machine *source = booted_machine();
+    uint8_t digest[CADR_SHA256_BYTES];
+    FILE *output = NULL;
+    int ok = 0;
+    if (source == NULL || path == NULL ||
+        cadr_machine_state_v5_digest(source, digest) != CADR_STATUS_OK) goto done;
+    output = fopen(path, "wb");
+    if (output == NULL || fwrite(digest, 1U, sizeof(digest), output) != sizeof(digest) ||
+        fclose(output) != 0) { output = NULL; goto done; }
+    output = NULL; ok = 1;
+done:
+    if (output != NULL) (void)fclose(output);
+    cadr_machine_destroy(source);
+    return ok ? 0 : 1;
+}
+
 static int emit_m5_pending_snapshot(const char *path)
 {
     cadr_machine *source = booted_machine();
@@ -1103,6 +1144,12 @@ int main(int argc, char **argv)
     }
     if (argc == 3 && strcmp(argv[1], "--emit-m3-snapshot") == 0) {
         return emit_m3_snapshot(argv[2]);
+    }
+    if (argc == 3 && strcmp(argv[1], "--emit-state5-digest") == 0) {
+        return emit_state5_digest(argv[2]);
+    }
+    if (argc == 3 && strcmp(argv[1], "--emit-booted-state5-digest") == 0) {
+        return emit_booted_state5_digest(argv[2]);
     }
     if (argc == 3 && strcmp(argv[1], "--emit-m5-pending-snapshot") == 0) {
         return emit_m5_pending_snapshot(argv[2]);

@@ -3,7 +3,7 @@ type: Reimplementation Specification
 title: CADR-WEB-303 C-M12 debugger reimplementation specification
 description: An isolated Phase 1 contract for deterministic outer-slot stepping, breakpoint stops, paused direct-array inspection, and privacy-bounded debugger evidence.
 tags: [mit-cadr, cadr-web, debugger, microcode, trace, reimplementation]
-timestamp: 2026-08-02T04:23:41-04:00
+timestamp: 2026-08-02T14:32:00-04:00
 ---
 
 # CADR-WEB-303 C-M12 debugger reimplementation specification
@@ -36,13 +36,12 @@ bridges map it to the preexisting public resource-exhaustion status 15, and no v
 debugger request admits 21.
 
 The M12 direct-Wasm generic snapshot is now the `CDRM12S1` composed envelope,
-which retains the frozen lower-profile `CDRSNAP1`, `CDRAUDS1`, and `CDRM12C1`
+which retains frozen `CDRSNAP1` and adds digest-bound `CDRM9D1`, `CDRAUDS1`, and `CDRM12C1`
 records and gives their adoption one staged publication boundary.
 
 It claims semantic and selected wire-representation compatibility for those
 clean-room rules and that narrow adapter only. It does not claim a preserved-system
-or hardware observation of the selected M8/M11 order, generic protocol-v7 M9 input
-continuation, AudioWorklet behavior, a historical CADR debugger,
+or hardware observation of the selected M8/M11 order, AudioWorklet behavior, a historical CADR debugger,
 preserved System 303 load-band behavior, or that the two source labels fully
 establish historical macro-step semantics.
 In particular, changing a location counter or revisiting an arbitrary PC is
@@ -56,10 +55,8 @@ and closed protocol subhandler
 the ABI, M12 Wasm build, and worker surfaces without changing their earlier
 protocol branches. `CDRM12C1` is available through direct Wasm exports and closed
 v7 save/restore operations. The v7 build composes M8/M9 `CDRINP1` ingress with M11
-audio and M12 controls. Direct generic Wasm save/import uses `CDRM12S1`; the worker
-still rejects generic protocol-v7 snapshots because the frozen M5 `CDRSNAP1` payload
-does not carry M9 ingress ordering. Full M12 closure remains conditional on that M9
-continuation decision and provenance-bound runtime evidence.
+audio and M12 controls. Direct generic Wasm and v7 worker save/import use exact
+`CDRM12S1` version 2. Full M12 closure remains conditional on provenance-bound runtime evidence.
 
 `MUST`, `MUST NOT`, `SHOULD`, and `MAY` are normative below.
 
@@ -86,14 +83,14 @@ second debuggee link. See the separate
 | Level | Includes | Reserved |
 | --- | --- | --- |
 | `M12-L0` | Pure C state machine, exact records, callback seam, caller-owned direct-array incarnation domain and lease, pure filters | ABI, worker, snapshot, audio, Worklet, and native runtime integration |
-| `M12-L1` | `M12-L0` plus composed M8/M9/M11 ABI 1.10/protocol-v7 input/audio order, scalar browser inspector reads, `CDRM12C1` sidecar transport, and direct-Wasm `CDRM12S1` staged generic restore | Protocol-v7 M9 input continuation |
+| `M12-L1` | `M12-L0` plus composed M8/M9/M11 ABI 1.10/protocol-v7 input/audio order, scalar browser inspector reads, `CDRM12C1` sidecar transport, and exact direct-Wasm/worker `CDRM12S1` v2 staged generic restore | Selected-runtime continuation proof |
 | `M12-L2` | `M12-L1` plus provenance-bound native and Wasm differential probes | Preserved System 303 macro semantics and historical console compatibility |
 | `M12-L3` | `M12-L2` plus named CADR harness observations | Historical timing, source-interface, binary, and pixel identity |
 
 `M12-L0`, the narrow cumulative ABI 1.10/protocol-v7 adapter seam, composed M8/M9/M11 input
 and audio order, direct-Wasm `CDRM12C1` save/restore, and direct-Wasm composed
-snapshot adoption are implemented and tested. Protocol-v7 M9 input continuation
-and provenance-bound runtime evidence remain open.
+snapshot adoption and source-level protocol-v7 M9 input continuation are implemented
+and tested. Provenance-bound runtime evidence remains open.
 
 ## Architecture and explicit integration obligations
 
@@ -114,7 +111,7 @@ retained-trace owner -> installed copied C-M12 filter predicate
 | Boundary | Present Phase 1 responsibility | Required later proof; deliberately absent now |
 | --- | --- | --- |
 | **CORE** | The adapter invokes `cadr_machine_run` with an exact one-slot budget and rejects any zero or multi-slot result. The composed profile accepts M8/M9 `CDRINP1` only at a ready boundary, then records M11 `BEEP` as post-slot; a strict native composition test fixes their distinct sequence domains and a worker test proves both v7 branches are installed. C-M12 makes no device, bus, memory, or deposit call of its own. | Compare this source-level order with a provenance-bound runtime trace. |
-| **SNAPSHOT** | `CDRM12C1` serializes only profile identity, generation, and 64 breakpoint records. `CDRM12S1` places frozen `CDRSNAP1`, `CDRAUDS1`, and `CDRM12C1` payloads in that exact order and stages all three before publication. It excludes leases, live pointers, stop reports, callback state, and M9 ingress ordering. | Define a separate M9 continuation record or retain protocol-v7 generic-snapshot rejection; never serialize a live pointer lease. |
+| **SNAPSHOT** | `CDRM12C1` serializes only profile identity, generation, and 64 breakpoint records. `CDRM12S1` v2 places frozen `CDRSNAP1`, 72-byte digest-bound `CDRM9D1`, `CDRAUDS1`, and `CDRM12C1` payloads in exact order and stages all four before publication. It excludes leases, live pointers, stop reports, callback state, and the host pointer epoch. | Never serialize a live pointer lease or host controller epoch. |
 | **PCM** | No PCM samples, render state, or audio queue is read or written. | An M11 bridge must prove audio events retain their documented post-slot and intra-slot order around an M12 stop. |
 | **WORKLET** | The protocol reference imports neither worker nor AudioWorklet code. | A later control UI must prove pause/resume cannot race an audio consumer or cause a second device-visible event. |
 | **BROWSER PANEL** | A separately mounted, keyboard-accessible host panel issues only `debug-inspect-read` and `debug-trace-filter` requests to the v7 worker. The inspector export makes a single copied scalar record; the panel never receives a Wasm view, direct array, lease, storage capability, or raw guest bytes. | Bind this panel to a full M13/M10 artifact and run its screen-reader and private-System-303 workflows. |
@@ -139,28 +136,44 @@ sidecar, not proof that a generic machine snapshot continues a paused debugger.
 
 `CDRM12S1` is an inferred, safety-corrected M12 composition record; it is not a
 historical CADR format. It leaves every component byte format unchanged. Its
-48-byte little-endian header contains magic `"CDRM12S1"`, `version:u32le = 1`,
+48-byte little-endian header contains magic `"CDRM12S1"`, `version:u32le = 2`,
 `header_bytes:u32le = 48`, `total_bytes:u64le`, `cdrsnap1_bytes:u64le`,
-`cdrauds1_bytes:u32le`, `cdrm12c1_bytes:u32le = 1088`, and a zero reserved
-`u64le`. The three exact component payloads follow contiguously in the named
+`cdrauds1_bytes:u32le`, `cdrm12c1_bytes:u32le = 1088`,
+`cdrm9d1_bytes:u32le = 72`, and a zero reserved `u32le`. The four exact component payloads follow contiguously in the named
 order. Lower ABI profiles continue to save and restore bare `CDRSNAP1`.
 
-Save observes one serialized adapter boundary and writes `CDRSNAP1`, then
+`CDRM9D1` contains magic and version/length words, the exact frozen `CDRSTATE5`
+digest, restored machine generation,
+`input_ingress_ordinal:u64le`, `input_sequence:u32le`, and the two guest mouse
+words. The selected reconstruction invariant makes the ordinal authoritative:
+the sequence MUST equal its low 32 bits, including modulo wrap. This is an
+explicit reconstruction choice, not a historical CADR claim. Coordinates,
+reserved button bit, generation, and ordinal/sequence are validated before adoption.
+The host pointer generation is a distinct controller epoch and is not serialized.
+
+Save observes one serialized adapter boundary and writes `CDRSNAP1`, `CDRM9D1`,
 `CDRAUDS1`, then `CDRM12C1`; no component publication occurs during save. Restore
 has this transaction contract:
 
 1. Validate envelope version, sizes, reserved field, exact exhaustion, and bounded
    component lengths without changing live state.
 2. Parse `CDRSNAP1` into a newly allocated unpublished machine.
-3. Adopt and validate `CDRAUDS1` only into that machine's initially empty audio
+3. Recompute frozen `CDRSTATE5`, require the exact `CDRM9D1` digest binding, then validate and adopt its continuation fields into the unpublished machine.
+4. Adopt and validate `CDRAUDS1` only into that machine's initially empty audio
    model, require its generation to equal the restored machine event generation,
    and create a fresh local consumer epoch.
-4. Decode `CDRM12C1` against the replacement generation and preflight a
+5. Decode `CDRM12C1` against the replacement generation and preflight a
    nonrecycled inspector-owner incarnation.
-5. At the commit point, retire the old inspector owner, reinitialize the debugger
+6. At the commit point, retire the old inspector owner, reinitialize the debugger
    paused on the replacement boundary, bind a new owner, publish the decoded
    breakpoint table, swap the global machine, invalidate the retained audio
    cursor, and destroy the old machine.
+
+Cold power clears the audio queue at the current machine event generation
+and advances only the process-local audio consumer epoch; it does not advance a
+second independent audio generation or alter the M9 event-generation transition.
+This makes the generation equality above an invariant established at the source,
+not a restore-time repair.
 
 Any envelope, core, audio, generation, configuration, or preflight failure occurs
 before the commit point: the staged machine is destroyed and the live machine,
@@ -566,7 +579,8 @@ operation; `debug-inspect-read` is its only scalar inspector route.
 | `M12-CORE-02` | Snapshot sidecar | Save/restore 64 breakpoint records; malformed kind/value/magic/length rejection | `CDRM12C1` is pointer-free and restore is atomic |
 | `M12-CORE-03` | ABI 1.10 lifetime and exhaustion | In a composed M12 build, reject a zero-generation first machine and retry corrected; issue owner incarnation `UINT64_MAX-1` and immediately attempt the sentinel successor; byte-copy a live adapter and attempt a copied configuration save; preflight an exhausted rebind; destroy the original, reject an exhausted reusable initialization, then initialize the same address for another machine and adversarially reuse the old lease | Failed first initialization leaves virgin storage byte-identical; `UINT64_MAX-1` is issued exactly once and the immediate successor leaves that owner and lease readable; the copy rejects before its machine pointer is read; every exhaustion path is nonmutating; teardown makes the old lease stale; the new owner has a greater incarnation, the new lease reads only the new machine, and the old lease remains stale after publication |
 | `M12-WASM-01` | Narrow adapter seam | O0 and O2 M12 modules expose the checked scalar debugger bridge, scalar paused inspector reads, direct `CDRM12C1` save/restore, and reject inactive-machine stepping | The cumulative ABI 1.10 adapter has no JavaScript pointer or array lease route |
-| `M12-WASM-02` | Composed snapshot transaction | Build a public synthetic `CDRM12S1`; independently corrupt its reserved header and each of the `CDRSNAP1`, `CDRAUDS1`, and `CDRM12C1` stages; then repair and import it in O0 and O2 modules | Every pre-commit failure preserves machine/debugger/audio state and both sidecars byte-for-byte; the native adapter separately preserves its live lease. Success publishes the saved breakpoint only after core/audio staging and later save emits `CDRM12S1` |
+| `M12-WASM-02` | Composed snapshot transaction | Build a public synthetic `CDRM12S1` v2; independently corrupt its header and each of the `CDRSNAP1`, `CDRM9D1`, `CDRAUDS1`, and `CDRM12C1` stages; exercise a real worker save/fresh-worker import and hash-valid v1/boundary/raw mutations | Every pre-commit failure preserves machine/debugger/audio state and sidecars byte-for-byte; success publishes only after all four stages and later save emits exact v2 |
+| `M12-WASM-03` | Compile-gated public synthetic restore profile | Build O0 and O2 with `--m12-synthetic-test`; run the unchanged worker from booted `PAUSED` through nondefault neutral host state, save, further mutation, and same-process restore; replace only `CDRAUDS1` with an independently serialized, semantically valid generation-two record and recompute the worker envelope; compare the exact 72-byte `CDRM9D1` after production-module restore/save against a public `CDRSTATE5` digest fixture | The hostile generation mismatch rejects before publication with byte-identical live machine, debugger, audio, keyboard, and pointer state. Successful restore keeps epoch one but installs distinct neutral keyboard and pointer protocol/controller objects; cursor, ordinal, barriers, warp, queues, held state, and stall reset; O0/O2 records and hashes agree; the production and test modules have identical exports and ordinary production create remains cold |
 | `M12-WORKER-01` | Narrow adapter seam | Protocol-v7 worker test drives breakpoint/stop/resume/filter/micro/macro requests through a real M12 Wasm module | The installed v7 branch preserves the earlier worker branches and returns closed result shapes |
 | `M12-BROWSER-01` | Browser accessibility seam | Serve only the generated M12 Wasm and required browser/worker modules under a restrictive same-origin CSP; keyboard-focus Read word at A[0], then keyboard-focus Apply trace filter | The real browser worker returns one copied scalar word and accepts the installed filter without a Wasm memory/lease/storage capability crossing the UI boundary |
 | `M12-ORACLE-01` | L2 | Generate candidate dispatch PC map from pinned selected artifact; compare native trace | Each macro start/end is independently established; QMLP/LC heuristics alone fail |

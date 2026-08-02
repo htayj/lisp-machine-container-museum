@@ -103,21 +103,33 @@ const config = new Uint8Array(e.memory.buffer, configInput, 1088).slice();
 const fixtureDirectory = await mkdtemp(resolve(tmpdir(), "cadr-m12-composed-"));
 try {
   const corePath = resolve(fixtureDirectory, "core.cdrsnap1");
+  const digestPath = resolve(fixtureDirectory, "state5.sha256");
   execFileSync("make", ["-C", resolve(ROOT, "cadr-web"), "build/test_cadr_m2_public"],
     { stdio: "inherit" });
   execFileSync(resolve(ROOT, "cadr-web/build/test_cadr_m2_public"),
     ["--emit-m3-snapshot", corePath]);
   const core = new Uint8Array(await readFile(corePath));
-  const composed = new Uint8Array(48 + core.byteLength + audio.byteLength + config.byteLength);
+  execFileSync(resolve(ROOT, "cadr-web/build/test_cadr_m2_public"),
+    ["--emit-state5-digest", digestPath]);
+  const state5Digest = new Uint8Array(await readFile(digestPath));
+  const continuation = new Uint8Array(72);
+  const continuationView = new DataView(continuation.buffer);
+  continuation.set(new TextEncoder().encode("CDRM9D1"), 0);
+  continuationView.setUint32(8, 1, true); continuationView.setUint32(12, 72, true);
+  continuation.set(state5Digest, 16); continuationView.setBigUint64(48, 1n, true);
+  const composed = new Uint8Array(48 + core.byteLength + continuation.byteLength +
+    audio.byteLength + config.byteLength);
   const composedView = new DataView(composed.buffer);
   composed.set(new TextEncoder().encode("CDRM12S1"), 0);
-  composedView.setUint32(8, 1, true); composedView.setUint32(12, 48, true);
+  composedView.setUint32(8, 2, true); composedView.setUint32(12, 48, true);
   composedView.setBigUint64(16, BigInt(composed.byteLength), true);
   composedView.setBigUint64(24, BigInt(core.byteLength), true);
   composedView.setUint32(32, audio.byteLength, true);
   composedView.setUint32(36, config.byteLength, true);
-  composed.set(core, 48); composed.set(audio, 48 + core.byteLength);
-  composed.set(config, 48 + core.byteLength + audio.byteLength);
+  composedView.setUint32(40, continuation.byteLength, true);
+  composed.set(core, 48); composed.set(continuation, 48 + core.byteLength);
+  composed.set(audio, 48 + core.byteLength + continuation.byteLength);
+  composed.set(config, 48 + core.byteLength + continuation.byteLength + audio.byteLength);
 
   const { exports: target } = await WebAssembly.instantiate(wasm, {});
   assert.equal(target.cadr_wasm_create(), 0);
@@ -169,10 +181,20 @@ try {
     assertLiveTargetState(preflightState, label);
     composed[offset] = original;
   };
-  assertRollback(40, 1, "envelope validation failure");
+  assertRollback(8, 1, "CDRM12S1 v1 rejection");
+  assertRollback(44, 1, "envelope validation failure");
   assertRollback(48, "X".charCodeAt(0), "CDRSNAP1 staging failure");
-  assertRollback(48 + core.byteLength, "X".charCodeAt(0), "CDRAUDS1 adoption failure");
-  assertRollback(48 + core.byteLength + audio.byteLength + 60, 1,
+  assertRollback(48 + core.byteLength, "X".charCodeAt(0), "CDRM9D1 adoption failure");
+  assertRollback(48 + core.byteLength + 16, state5Digest[0] ^ 1, "CDRM9D1 digest mismatch");
+  assertRollback(48 + core.byteLength + 48, 2, "CDRM9D1 generation mismatch");
+  assertRollback(48 + core.byteLength + 56, 1, "CDRM9D1 ordinal/sequence mismatch");
+  assertRollback(48 + core.byteLength + 64, 1, "CDRM9D1 sequence/ordinal mismatch");
+  assertRollback(48 + core.byteLength + 69, 3, "CDRM9D1 hostile X coordinate");
+  assertRollback(48 + core.byteLength + 71, 4, "CDRM9D1 hostile Y coordinate");
+  assertRollback(48 + core.byteLength + 71, 0x80, "CDRM9D1 reserved button bit");
+  assertRollback(48 + core.byteLength + continuation.byteLength,
+    "X".charCodeAt(0), "CDRAUDS1 adoption failure");
+  assertRollback(48 + core.byteLength + continuation.byteLength + audio.byteLength + 60, 1,
     "CDRM12C1 preflight failure");
 
   new Uint8Array(target.memory.buffer, targetInput, composed.byteLength).set(composed);

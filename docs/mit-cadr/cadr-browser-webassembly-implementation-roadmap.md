@@ -3,7 +3,7 @@ type: Implementation Roadmap
 title: MIT CADR System 303 browser and WebAssembly implementation roadmap
 description: A milestone-complete plan for porting the pinned System 303 CADR emulator to a deterministic, locally persistent, browser-hosted WebAssembly machine.
 tags: [mit-cadr, lm-3, system-303, webassembly, browser, emulator, roadmap]
-timestamp: 2026-08-02T13:00:48-04:00
+timestamp: 2026-08-02T14:32:01-04:00
 ---
 
 # MIT CADR System 303 browser and WebAssembly implementation roadmap
@@ -1260,10 +1260,10 @@ protocol-v7 M12-Wasm subhandler, deterministic fixed-table signed-16 PCM, and a
 bounded AudioWorklet queue/acknowledgement bridge. Strict C, Node, and O0/O2 Wasm
 tests pass. The v7 path composes M8/M9 `CDRINP1` ingress before M11 post-slot
 beeper events and keeps their sequence domains separate. The M12 direct-Wasm
-`CDRM12S1` envelope stages frozen `CDRSNAP1`, `CDRAUDS1`, and `CDRM12C1` in that
-order and rolls back before publication on any malformed component. Bare
-`CDRSNAP1` does not include audio state, and protocol-v7 generic restore remains
-blocked on M9 continuation. A source-bound System 303 session evaluated
+`CDRM12S1` version 2 stages frozen `CDRSNAP1`, the exact 72-byte digest-bound
+`CDRM9D1` companion, `CDRAUDS1`, and `CDRM12C1` in that order and rolls back
+before publication on any malformed component. Lower profiles and frozen
+`CDRSTATE5` are unchanged. A source-bound System 303 session evaluated
 `(SI:%BEEP 500. 100000.)` and retained 199 ordered job/PCM pairs; the independent
 `CDRM11FIX2` clean-room oracle also closes narrow `C-M11-04-PCM` across native
 O0/O2 and freshly rebuilt selected-M12 Wasm O0/O2. These results do not exercise
@@ -1298,15 +1298,30 @@ Implementation status, 2026-08-02: a narrow cumulative M12 ABI 1.10/protocol-v7 
 real one-slot core adapter, source-bounded QMLP/DMLP candidate-loop map, O0/O2 Wasm
 export checks, an installed closed v7 worker branch, and pointer-free `CDRM12C1`
 breakpoint-configuration save/restore through direct Wasm and the worker. Direct
-generic M12 Wasm snapshots now use `CDRM12S1`: restore stages `CDRSNAP1`, adopts
+generic M12 Wasm snapshots now use `CDRM12S1` v2: restore stages `CDRSNAP1`,
+requires `CDRM9D1` to bind the exact recomputed frozen `CDRSTATE5`, adopts
 `CDRAUDS1`, validates `CDRM12C1`, and only then publishes the replacement while
 staling old audio cursors and inspector leases. Malformed-envelope and successful
 publication tests pass in O0 and O2 without changing lower snapshot formats. A separate
+compile-gated public synthetic test profile now boots only from `cadr_wasm_create`
+and drives the unchanged worker through a real same-process replacement. It has
+the exact production export surface, cannot enter an ordinary `--m12` build, and
+does not restore or bypass a production snapshot to reach its initial state.
+A cross-variant test restores its fixture into fresh production O0/O2 modules,
+resaves it, and compares the exact 72-byte `CDRM9D1` and its public `CDRSTATE5`
+binding. A separate
+hostile O0/O2 transaction replaces only the audio sidecar with an independently
+serialized, witness-valid generation-two `CDRAUDS1`; the generation-one machine
+rejects it before publication and retains byte-identical machine, debugger, audio,
+keyboard, and pointer state. Cold power now clears audio at the current machine
+event generation while renewing only its local consumer authority, so accepted
+snapshots establish generation equality at creation rather than repairing it on
+restore. A separate
 public-usim candidate-loop witness prepared and compiled without being run. Native
 and worker tests establish the selected source-level
 M8/M11 order, but not a runtime observation. Generic snapshot configuration
-composition is closed at the direct-Wasm boundary; M9 protocol-v7 continuation,
-a selected load-band macro trace, and historical console behavior remain open;
+composition and source-level M9 protocol-v7 continuation are closed at the
+direct-Wasm/worker boundary. A selected load-band macro trace and historical console behavior remain open;
 `C-M12` remains open. The formerly open pure-source ABI 1.10 lifetime boundary is
 now covered in the composed adapter: nonmutating failed-initial-boundary retry,
 semantic-zero first initialization, normal teardown retaining a monotonic domain

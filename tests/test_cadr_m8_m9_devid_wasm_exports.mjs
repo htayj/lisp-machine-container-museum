@@ -13,16 +13,16 @@ const build = name => resolve(root, "cadr-web/build", name);
  * either inherited route back. */
 const m9ProfileArtifacts = Object.freeze({
   O0: Object.freeze({
-    ordinary: Object.freeze({ bytes: 204402,
-      sha256: "f65c08e50aa3440f014016adc3ae252cdf7ca626323276f7deaac338c718b9b1" }),
-    devid: Object.freeze({ bytes: 167232,
-      sha256: "ac32ee309ca6f10368dd3317fb31ef70c5642896eda441306169b5fe21e325d8" }),
+    ordinary: Object.freeze({ bytes: 204470,
+      sha256: "fbddac2367d6c499d9d32c9c25db22097946422ba243209db7c80e9062a865a6" }),
+    devid: Object.freeze({ bytes: 167293,
+      sha256: "fa12ede426d647eaa75394dd1495ec661f62b013eb90d928eabf87db02e38fa8" }),
   }),
   O2: Object.freeze({
-    ordinary: Object.freeze({ bytes: 182384,
-      sha256: "c1b4c70c20317bd156b7e79e35ea4d245f1fdde46143727f5600c0da58c09570" }),
-    devid: Object.freeze({ bytes: 122282,
-      sha256: "f5accbe7fa33c8208b3d5a4874a75b90c59ea4bec721741ff3b84196e762a62a" }),
+    ordinary: Object.freeze({ bytes: 182401,
+      sha256: "87b13d9a3ea13106faff755456fe4e16b31cb4fd95cf45ea8a45f918ddf88757" }),
+    devid: Object.freeze({ bytes: 122299,
+      sha256: "3a16f04508e42a47295cf36c3aad9756fc97e9f58e2d12b1a2f06d831e1c7407" }),
   }),
 });
 const ordinaryM9Exports = Object.freeze([

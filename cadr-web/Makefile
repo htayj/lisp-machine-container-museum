@@ -92,6 +92,8 @@ M9_DEVID_WASM_O0 := build/cadr-web-m9-devid-O0.wasm
 M9_DEVID_WASM_O2 := build/cadr-web-m9-devid-O2.wasm
 M12_WASM_O0 := build/cadr-web-m12-O0.wasm
 M12_WASM_O2 := build/cadr-web-m12-O2.wasm
+M12_SYNTH_WASM_O0 := build/cadr-web-m12-synthetic-test-O0.wasm
+M12_SYNTH_WASM_O2 := build/cadr-web-m12-synthetic-test-O2.wasm
 M13_AUDIO_WASM_O0 := build/cadr-web-m13-audio-O0.wasm
 M13_AUDIO_WASM_O2 := build/cadr-web-m13-audio-O2.wasm
 
@@ -317,6 +319,12 @@ $(M12_WASM_O0): wasm/build-wasm.sh wasm/cadr_wasm_adapter.c wasm/cadr_wasm_runti
 $(M12_WASM_O2): wasm/build-wasm.sh wasm/cadr_wasm_adapter.c wasm/cadr_wasm_runtime.c $(M12_CORE_SOURCES) $(CORE_HEADERS) | build
 	sh wasm/build-wasm.sh --m12 --opt O2 $@
 
+$(M12_SYNTH_WASM_O0): wasm/build-wasm.sh wasm/cadr_wasm_adapter.c wasm/cadr_wasm_runtime.c $(M12_CORE_SOURCES) $(CORE_HEADERS) | build
+	sh wasm/build-wasm.sh --m12-synthetic-test --opt O0 $@
+
+$(M12_SYNTH_WASM_O2): wasm/build-wasm.sh wasm/cadr_wasm_adapter.c wasm/cadr_wasm_runtime.c $(M12_CORE_SOURCES) $(CORE_HEADERS) | build
+	sh wasm/build-wasm.sh --m12-synthetic-test --opt O2 $@
+
 $(M13_AUDIO_WASM_O0): wasm/build-wasm.sh wasm/cadr_wasm_adapter.c wasm/cadr_wasm_runtime.c $(M12_CORE_SOURCES) core/cadr_m13_audio_transport.c core/cadr_m13_audio_transport.h $(CORE_HEADERS) | build
 	sh wasm/build-wasm.sh --m13-audio --opt O0 $@
 
@@ -453,13 +461,16 @@ m10-unit:
 	guix shell node -- node ../scripts/run-cadr-m10-indexeddb-browser.mjs
 	guix shell node -- node ../scripts/run-cadr-m10-process-kill-browser.mjs
 
-m12-unit: build/test_cadr_m12_machine_adapter build/test_cadr_m12_composed_m8_m11 $(M12_WASM_O0) $(M12_WASM_O2)
+m12-unit: build/test_cadr_m2_public build/test_cadr_m12_machine_adapter build/test_cadr_m12_composed_m8_m11 $(M12_WASM_O0) $(M12_WASM_O2) $(M12_SYNTH_WASM_O0) $(M12_SYNTH_WASM_O2)
 	./build/test_cadr_m12_machine_adapter
 	./build/test_cadr_m12_composed_m8_m11
 	guix shell node -- node ../tests/test_cadr_m12_debugger.mjs
 	guix shell node -- node ../tests/test_cadr_m12_wasm_exports.mjs
 	CADR_M12_WASM_VARIANT=O2 guix shell node -- node ../tests/test_cadr_m12_wasm_exports.mjs
 	guix shell node -- node ../tests/test_cadr_m12_worker.mjs
+	guix shell node -- node ../tests/test_cadr_m12_synthetic_restore.mjs
+	CADR_M12_SYNTHETIC_VARIANT=O2 guix shell node -- node ../tests/test_cadr_m12_synthetic_restore.mjs
+	guix shell node -- node ../tests/test_cadr_m12_cdrm9d1_cross_variant.mjs
 	guix shell node -- node ../tests/test_cadr_m11_audio_protocol.mjs
 	guix shell node -- node ../tests/test_cadr_m11_audio_worklet.mjs
 	python3 ../tests/test_cadr_native_source_witness.py

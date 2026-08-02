@@ -2,6 +2,8 @@ import { m5SlotAdvanceAllowed, runM5DigestBatch } from "./cadr-m5-batch.mjs";
 import { parseCdrDisp1 } from "./cadr-display-renderer.mjs";
 import { CadrM8KeyboardProtocolSubhandler } from "./cadr-m8-keyboard.mjs";
 import { CadrM9PointerProtocolSubhandler } from "./cadr-m9-pointer.mjs";
+import { cadrM9InputHostStateNeutral, replaceCadrM9InputHostState } from
+  "./cadr-m8-m9-restore.mjs";
 import { encodeCdrInp1 } from "./cadr-m8-m9-campaign.mjs";
 import { commitCadrM8M9SharedDeactivation,
   prepareCadrM8M9SharedDeactivation } from "./cadr-m8-m9-deactivation.mjs";
@@ -313,8 +315,48 @@ function validInnerM5Snapshot(raw, boundary) {
     boundary <= view.getBigUint64(88, true);
 }
 
+function validNestedCdrsnap1(raw, boundary) {
+  const bytes = new Uint8Array(raw);
+  const magic = [0x43,0x44,0x52,0x53,0x4e,0x41,0x50,0x31];
+  if (bytes.byteLength < 264 || !magic.every((value, index) => bytes[index] === value)) return false;
+  const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+  const minor = view.getUint16(10, true);
+  return view.getUint16(8, true) === 1 && (minor === 1 || minor === 2) &&
+    view.getUint32(12, true) === 264 &&
+    view.getBigUint64(32, true) === BigInt(bytes.byteLength) &&
+    boundary <= view.getBigUint64(88, true);
+}
+
+/* Protocol v7 has one exact inner format: CDRM12S1 v2 containing a complete
+ * frozen CDRSNAP1 whose clock boundary covers the worker control boundary.
+ * This is checked before any native reserve/copy/adoption operation. */
+function validInnerM12Snapshot(raw, boundary) {
+  const bytes = new Uint8Array(raw);
+  const magic = [0x43,0x44,0x52,0x4d,0x31,0x32,0x53,0x31];
+  if (bytes.byteLength < 48 || !magic.every((value, index) => bytes[index] === value)) return false;
+  const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+  if (view.getUint32(8, true) !== 2 || view.getUint32(12, true) !== 48 ||
+      view.getBigUint64(16, true) !== BigInt(bytes.byteLength) ||
+      view.getUint32(40, true) !== 72 || view.getUint32(44, true) !== 0) return false;
+  const coreLength = view.getBigUint64(24, true);
+  const audioLength = BigInt(view.getUint32(32, true));
+  const configLength = BigInt(view.getUint32(36, true));
+  if (coreLength === 0n || coreLength > BigInt(bytes.byteLength - 48) ||
+      48n + coreLength + 72n + audioLength + configLength !== BigInt(bytes.byteLength)) return false;
+  const coreEnd = 48 + Number(coreLength);
+  const continuation = new DataView(bytes.buffer, bytes.byteOffset + coreEnd, 72);
+  const continuationMagic = [0x43,0x44,0x52,0x4d,0x39,0x44,0x31,0x00];
+  if (!continuationMagic.every((value, index) => bytes[coreEnd + index] === value) ||
+      continuation.getUint32(8, true) !== 1 || continuation.getUint32(12, true) !== 72 ||
+      continuation.getUint32(64, true) !==
+        Number(continuation.getBigUint64(56, true) & 0xffffffffn)) return false;
+  return validNestedCdrsnap1(bytes.slice(48, coreEnd), boundary);
+}
+
 async function wrapM5WorkerSnapshot(snapshot) {
   const raw = new Uint8Array(snapshot);
+  if (protocolVersion === CADR_M12_PROTOCOL_VERSION &&
+      !validInnerM12Snapshot(raw, controlBoundary)) return null;
   const wrapped = new Uint8Array(raw.byteLength + 104);
   wrapped.set([0x43, 0x44, 0x52, 0x4d, 0x35, 0x57, 0x4b, 0x31], 0);
   const view = new DataView(wrapped.buffer);
@@ -361,7 +403,8 @@ async function unwrapM5WorkerSnapshot(snapshot) {
     if (expected[index] !== bytes[72 + index]) return null;
   }
   const raw = bytes.slice(104);
-  if (!validInnerM5Snapshot(raw, boundary)) return null;
+  if (!(protocolVersion === CADR_M12_PROTOCOL_VERSION ?
+      validInnerM12Snapshot(raw, boundary) : validInnerM5Snapshot(raw, boundary))) return null;
   return { raw, hidden: (flags & 1) !== 0, visibilityInitialized: initialized,
     controlOrdinal: ordinal, controlBoundary: boundary, controlWitness: witness, legacy: false };
 }
@@ -399,10 +442,13 @@ function m9InputCoreState(e) {
   if (new TextDecoder().decode(bytes.subarray(0, 8)) !== "CDRIOB91") return null;
   const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
   if (view.getUint32(8, true) !== 1 || view.getUint32(12, true) !== 64) return null;
+  const sequence = view.getUint32(32, true);
+  const ordinal = view.getBigUint64(40, true);
+  if (sequence !== Number(ordinal & 0xffffffffn)) return null;
   return Object.freeze({ csr: view.getUint32(16, true), scancode: view.getUint32(20, true),
     mouseX: view.getUint32(24, true), mouseY: view.getUint32(28, true),
-    inputSequence: view.getUint32(32, true), keyboardFifoCount: view.getUint32(36, true),
-    ingressOrdinal: view.getBigUint64(40, true), generation: view.getBigUint64(48, true),
+    inputSequence: sequence, keyboardFifoCount: view.getUint32(36, true),
+    ingressOrdinal: ordinal, generation: view.getBigUint64(48, true),
     lifecycle: view.getUint32(56, true), bytes: bytes.slice() });
 }
 
@@ -426,6 +472,16 @@ function m9InputPreflight(e, request) {
   if (state === null || state.lifecycle !== 2) {
     return Object.freeze({ status: CADR_STATUS_NOT_READY, reason: "core-not-running" });
   }
+  if (state.ingressOrdinal === 0xffffffffffffffffn) {
+    return Object.freeze({ status: CADR_STATUS_NOT_READY, reason: "input-ingress-ordinal-exhausted" });
+  }
+  const deactivation = request.op === "keyboard-focus-lost" || request.op === "pointer-neutralize";
+  const required = deactivation ?
+    BigInt(m9PointerProtocol.controller.snapshot().heldButtonNames.length + 1) : 1n;
+  if (state.ingressOrdinal > 0xffffffffffffffffn - required) {
+    return Object.freeze({ status: CADR_STATUS_NOT_READY,
+      reason: "input-ingress-ordinal-exhausted" });
+  }
   const potentiallyKeyboard = request.op === "keyboard-down" || request.op === "keyboard-up" ||
     request.op === "keyboard-focus-lost" || request.op === "pointer-neutralize";
   if (potentiallyKeyboard && (state.csr & (1 << 5)) !== 0 && state.keyboardFifoCount >= 10) {
@@ -447,13 +503,13 @@ function m9InputDeliver(e, state, entries) {
     }
     const observation = m9InputCoreState(e);
     if (observation === null || observation.ingressOrdinal !== ordinal ||
-        observation.inputSequence !== state.inputSequence + wireRecords.length + 1) return null;
+        observation.inputSequence !== Number(ordinal & 0xffffffffn)) return null;
     wireRecords.push(record.slice());
     coreObservations.push(observation.bytes.slice());
   }
   return Object.freeze({ wireSchema: "CDRINP1", recordsDelivered: entries.length,
     firstIngressOrdinal: entries.length === 0 ? state.ingressOrdinal : state.ingressOrdinal + 1n,
-    lastIngressOrdinal: ordinal, inputSequence: state.inputSequence + entries.length,
+    lastIngressOrdinal: ordinal, inputSequence: Number(ordinal & 0xffffffffn),
     wireRecords: Object.freeze(wireRecords.map(bytes => bytes.buffer)),
     coreObservations: Object.freeze(coreObservations.map(bytes => bytes.buffer)) });
 }
@@ -463,6 +519,16 @@ function consumeM9InputEntries(entries) {
   const pointerCount = entries.filter(entry => entry.source === "pointer").length;
   if (keyboardCount !== 0) m8KeyboardProtocol.controller.drain(keyboardCount);
   if (pointerCount !== 0) m9PointerProtocol.controller.drain(pointerCount);
+}
+
+function m9InputHostStateNeutral() {
+  return cadrM9InputHostStateNeutral(m8KeyboardProtocol, m9PointerProtocol);
+}
+
+function replaceM9InputHostStatePreservingEpoch() {
+  const replacement = replaceCadrM9InputHostState(m8KeyboardProtocol, m9PointerProtocol);
+  m8KeyboardProtocol = replacement.keyboardProtocol;
+  m9PointerProtocol = replacement.pointerProtocol;
 }
 
 /* M8 and M9 accept only physical edges which have crossed CDRINP1 into a
@@ -1222,7 +1288,14 @@ async function handle(request) {
     mediaOverlayGeneration = 0n;
     workerLifecycle = CADR_WORKER_NEW;
     hidden = false; visibilityInitialized = false; controlOrdinal = 0n; controlWitness = new Uint8Array(32); controlBoundary = 0n; pendingBoundaryDigest = false; lastFailureEvidence = null;
-    response(id, op, instance.exports.cadr_wasm_create() >>> 0);
+    const createStatus = instance.exports.cadr_wasm_create() >>> 0;
+    /* A module that legitimately creates an already-running core enters the
+       worker at PAUSED. Production modules create COLD; the compile-gated
+       public synthetic M12 test profile is the only current running creator. */
+    if (createStatus === CADR_STATUS_OK && coreIsRunning(instance.exports)) {
+      workerLifecycle = CADR_WORKER_PAUSED;
+    }
+    response(id, op, createStatus, { lifecycle: workerLifecycle });
     return;
   }
 
@@ -1333,9 +1406,10 @@ async function handle(request) {
     sendV6InputSubhandlerResult(v6Input);
     return;
   }
-  /* M9 device ingress is deliberately absent from the M5 snapshot ABI.
-     Reject rather than make a snapshot that cannot restore input ordering. */
-  if (isM8M9ProtocolVersion(protocolVersion) && ["snapshot-size", "snapshot-save", "snapshot-restore",
+  /* Only public v7 composes the exact CDRM12S1-v2 continuation.  Frozen v6
+     and private v8 keep their generic-snapshot prohibition. */
+  if (isM8M9ProtocolVersion(protocolVersion) && protocolVersion !== CADR_M12_PROTOCOL_VERSION &&
+      ["snapshot-size", "snapshot-save", "snapshot-restore",
     "snapshot-restore-import"].includes(op)) {
     response(id, op, CADR_STATUS_NOT_READY);
     return;
@@ -2270,6 +2344,9 @@ async function handle(request) {
     }
     response(id, op, e.cadr_wasm_trace_finish(request.reason) >>> 0);
   } else if (op === "snapshot-size") {
+    if (protocolVersion === CADR_M12_PROTOCOL_VERSION && !m9InputHostStateNeutral()) {
+      response(id, op, CADR_STATUS_NOT_READY); return;
+    }
     if (mediaBusy || mediaDirty || mediaSnapshotBlocked || pendingBoundaryDigest) {
       response(id, op, CADR_STATUS_NOT_READY);
       return;
@@ -2280,6 +2357,9 @@ async function handle(request) {
     else response(id, op, status, { byteCount: meta[0] +
       (isM5ProtocolVersion(protocolVersion) ? 104n : 0n) });
   } else if (op === "snapshot-save") {
+    if (protocolVersion === CADR_M12_PROTOCOL_VERSION && !m9InputHostStateNeutral()) {
+      response(id, op, CADR_STATUS_NOT_READY); return;
+    }
     if (isM5ProtocolVersion(protocolVersion) &&
         (workerLifecycle !== CADR_WORKER_PAUSED || !visibilityInitialized)) {
       response(id, op, CADR_STATUS_NOT_READY); return;
@@ -2314,6 +2394,9 @@ async function handle(request) {
       response(id, op, status, { snapshot: rawSnapshot.buffer }, [rawSnapshot.buffer]);
     }
   } else if (op === "snapshot-restore") {
+    if (protocolVersion === CADR_M12_PROTOCOL_VERSION && !m9InputHostStateNeutral()) {
+      response(id, op, CADR_STATUS_NOT_READY); return;
+    }
     if (isM5ProtocolVersion(protocolVersion) && workerLifecycle !== CADR_WORKER_PAUSED) {
       response(id, op, CADR_STATUS_NOT_READY); return;
     }
@@ -2327,9 +2410,13 @@ async function handle(request) {
       controlWitness = snapshotControlWitness.slice();
       controlBoundary = snapshotControlBoundary;
       visibilityInitialized = snapshotVisibilityInitialized;
+      if (protocolVersion === CADR_M12_PROTOCOL_VERSION) replaceM9InputHostStatePreservingEpoch();
     }
     response(id, op, status, { lifecycle: workerLifecycle, hidden });
   } else if (op === "snapshot-restore-import") {
+    if (protocolVersion === CADR_M12_PROTOCOL_VERSION && !m9InputHostStateNeutral()) {
+      response(id, op, CADR_STATUS_NOT_READY); return;
+    }
     if (isM5ProtocolVersion(protocolVersion) && workerLifecycle !== CADR_WORKER_PAUSED &&
         workerLifecycle !== CADR_WORKER_NEW) {
       response(id, op, CADR_STATUS_NOT_READY); return;
@@ -2343,7 +2430,7 @@ async function handle(request) {
     if (isM5ProtocolVersion(protocolVersion) && supplied !== null) {
       envelope = await unwrapM5WorkerSnapshot(supplied);
       if (envelope !== null && envelope.legacy) {
-        envelope = request.allowLegacyNativeImport === true ?
+        envelope = protocolVersion !== CADR_M12_PROTOCOL_VERSION && request.allowLegacyNativeImport === true ?
           { raw: supplied, hidden: false, visibilityInitialized: false, legacy: true } : null;
       }
     } else envelope = supplied === null ? null : { raw: supplied, hidden: false };
@@ -2373,6 +2460,7 @@ async function handle(request) {
        * visibility policy, but a restored worker still needs this tab's
        * explicit handshake before it may advance guest time. */
       visibilityInitialized = false;
+      if (protocolVersion === CADR_M12_PROTOCOL_VERSION) replaceM9InputHostStatePreservingEpoch();
       snapshotHidden = hidden;
       pendingBoundaryDigest = false;
     }

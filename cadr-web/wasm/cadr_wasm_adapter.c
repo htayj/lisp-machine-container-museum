@@ -112,13 +112,16 @@ static void cadr_wasm_meta_result(uint64_t first, uint64_t second);
 #define CADR_WASM_CDRSNAP_MAX_BYTES UINT32_C(18126780)
 #if defined(CADR_M12_WASM)
 /*
- * CDRM12S1 is the composed M12 generic-snapshot envelope.  Its three payloads
- * occur in normative restore order: CDRSNAP1, CDRAUDS1, then CDRM12C1.
+ * CDRM12S1 version 2 adds the digest-bound pointer-free CDRM9D1 companion omitted by
+ * frozen CDRSNAP1 minor 2.  Payload order is CDRSNAP1, CDRM9D1, CDRAUDS1,
+ * then CDRM12C1.
  */
 #define CADR_WASM_M12_SNAPSHOT_HEADER_BYTES UINT32_C(48)
+#define CADR_WASM_M9_CONTINUATION_BYTES UINT32_C(72)
 #define CADR_WASM_SNAPSHOT_MAX_BYTES \
     (CADR_WASM_M12_SNAPSHOT_HEADER_BYTES + CADR_WASM_CDRSNAP_MAX_BYTES + \
-     CADR_AUDIO_SNAPSHOT_MAX_BYTES + CADR_M12_CONFIG_SNAPSHOT_BYTES)
+     CADR_WASM_M9_CONTINUATION_BYTES + CADR_AUDIO_SNAPSHOT_MAX_BYTES + \
+     CADR_M12_CONFIG_SNAPSHOT_BYTES)
 #else
 #define CADR_WASM_SNAPSHOT_MAX_BYTES CADR_WASM_CDRSNAP_MAX_BYTES
 #endif
@@ -277,6 +280,18 @@ uint32_t cadr_wasm_create(void)
     }
 #if defined(CADR_M12_WASM)
     status = cadr_wasm_ensure_machine();
+#if defined(CADR_M12_SYNTHETIC_TEST_WASM)
+    /* Compile-gated public test profile only: establish the same synthetic
+     * booted_machine state used by native public tests.  It does not restore,
+     * import bytes, or weaken any production snapshot path. */
+    if (status == CADR_STATUS_OK) {
+        cadr_wasm_machine->state.artifacts.boot_configuration_ingressed = 1U;
+        cadr_wasm_machine->state.artifacts.control_store_ingressed = 1U;
+        cadr_wasm_machine->state.artifacts.base_disk_verified = 1U;
+        status = cadr_machine_cold_power_on(cadr_wasm_machine);
+    }
+    if (status == CADR_STATUS_OK) status = cadr_machine_boot(cadr_wasm_machine);
+#endif
     if (status == CADR_STATUS_OK) status = cadr_wasm_m12_ensure_adapter();
     return status;
 #else
@@ -696,6 +711,56 @@ static uint64_t cadr_wasm_get64le(const uint8_t *bytes)
     return (uint64_t)cadr_wasm_get32le(bytes) |
         ((uint64_t)cadr_wasm_get32le(bytes + 4U) << 32U);
 }
+
+#if defined(CADR_M12_WASM)
+static cadr_status cadr_wasm_m9_continuation_encode(
+    const cadr_machine_state *const state, uint8_t *const bytes)
+{
+    const cadr_iob_state *const iob = &state->devices.iob;
+    (void)memset(bytes, 0, CADR_WASM_M9_CONTINUATION_BYTES);
+    (void)memcpy(bytes, "CDRM9D1", 7U);
+    cadr_wasm_put32(bytes + 8U, UINT32_C(1));
+    cadr_wasm_put32(bytes + 12U, CADR_WASM_M9_CONTINUATION_BYTES);
+    if (cadr_state_v5_digest(state, bytes + 16U) != CADR_STATUS_OK) return CADR_STATUS_INVALID_ARGUMENT;
+    cadr_wasm_put64(bytes + 48U, state->events.generation);
+    cadr_wasm_put64(bytes + 56U, iob->input_ingress_ordinal);
+    cadr_wasm_put32(bytes + 64U, iob->input_sequence);
+    bytes[68] = (uint8_t)iob->mouse_x; bytes[69] = (uint8_t)(iob->mouse_x >> 8U);
+    bytes[70] = (uint8_t)iob->mouse_y; bytes[71] = (uint8_t)(iob->mouse_y >> 8U);
+    return CADR_STATUS_OK;
+}
+
+static cadr_status cadr_wasm_m9_continuation_adopt(
+    cadr_machine_state *const state, const uint8_t *const bytes)
+{
+    cadr_iob_state *const iob = &state->devices.iob;
+    uint8_t digest[CADR_SHA256_BYTES];
+    const uint64_t ordinal = cadr_wasm_get64le(bytes + 56U);
+    const uint32_t sequence = cadr_wasm_get32le(bytes + 64U);
+    const uint16_t mouse_x =
+        (uint16_t)((uint16_t)bytes[68] | ((uint16_t)bytes[69] << 8U));
+    const uint16_t mouse_y =
+        (uint16_t)((uint16_t)bytes[70] | ((uint16_t)bytes[71] << 8U));
+    if (cadr_state_v5_digest(state, digest) != CADR_STATUS_OK ||
+        memcmp(bytes + 16U, digest, 32U) != 0) {
+        return CADR_STATUS_INVALID_ARGUMENT;
+    }
+    if (memcmp(bytes, "CDRM9D1", 8U) != 0 ||
+        cadr_wasm_get32le(bytes + 8U) != UINT32_C(1) ||
+        cadr_wasm_get32le(bytes + 12U) != CADR_WASM_M9_CONTINUATION_BYTES ||
+        cadr_wasm_get64le(bytes + 48U) != state->events.generation ||
+        sequence != (uint32_t)ordinal || mouse_x >= UINT16_C(768) ||
+        (mouse_y & UINT16_C(0x8000)) != 0U ||
+        (mouse_y & UINT16_C(0x0fff)) >= UINT16_C(963)) {
+        return CADR_STATUS_INVALID_ARGUMENT;
+    }
+    iob->input_ingress_ordinal = ordinal;
+    iob->input_sequence = sequence;
+    iob->mouse_x = mouse_x;
+    iob->mouse_y = mouse_y;
+    return CADR_STATUS_OK;
+}
+#endif
 #endif
 
 #if defined(CADR_M5_WASM)
@@ -1478,6 +1543,7 @@ uint32_t cadr_wasm_snapshot_size(void)
             status = (cadr_status)cadr_wasm_m11_status(audio_status);
         } else {
             size += CADR_WASM_M12_SNAPSHOT_HEADER_BYTES +
+                CADR_WASM_M9_CONTINUATION_BYTES +
                 (uint64_t)audio_size + CADR_M12_CONFIG_SNAPSHOT_BYTES;
         }
     }
@@ -1517,7 +1583,8 @@ uint32_t cadr_wasm_snapshot_save(void)
         return cadr_wasm_m11_status(audio_status);
     }
     total = CADR_WASM_M12_SNAPSHOT_HEADER_BYTES + size +
-        (uint64_t)audio_size + CADR_M12_CONFIG_SNAPSHOT_BYTES;
+        CADR_WASM_M9_CONTINUATION_BYTES + (uint64_t)audio_size +
+        CADR_M12_CONFIG_SNAPSHOT_BYTES;
     if (total > CADR_WASM_SNAPSHOT_MAX_BYTES) return CADR_STATUS_NO_MEMORY;
 #else
     if (size > CADR_WASM_SNAPSHOT_MAX_BYTES) return CADR_STATUS_NO_MEMORY;
@@ -1530,7 +1597,10 @@ uint32_t cadr_wasm_snapshot_save(void)
 #if defined(CADR_M12_WASM)
     (void)memset(cadr_wasm_snapshot, 0,
                  CADR_WASM_M12_SNAPSHOT_HEADER_BYTES);
-    status = cadr_machine_snapshot_save(
+    status = cadr_wasm_m9_continuation_encode(
+        &cadr_wasm_machine->state,
+        cadr_wasm_snapshot + CADR_WASM_M12_SNAPSHOT_HEADER_BYTES + (size_t)size);
+    if (status == CADR_STATUS_OK) status = cadr_machine_snapshot_save(
         cadr_wasm_machine, &request,
         cadr_wasm_snapshot + CADR_WASM_M12_SNAPSHOT_HEADER_BYTES,
         cadr_wasm_snapshot_capacity - CADR_WASM_M12_SNAPSHOT_HEADER_BYTES,
@@ -1539,9 +1609,10 @@ uint32_t cadr_wasm_snapshot_save(void)
         audio_status = cadr_audio_model_snapshot_serialize(
             cadr_wasm_machine->state.devices.audio_model,
             cadr_wasm_snapshot + CADR_WASM_M12_SNAPSHOT_HEADER_BYTES +
-                (size_t)written,
+                (size_t)written + CADR_WASM_M9_CONTINUATION_BYTES,
             (uint32_t)(cadr_wasm_snapshot_capacity -
-                CADR_WASM_M12_SNAPSHOT_HEADER_BYTES - written),
+                CADR_WASM_M12_SNAPSHOT_HEADER_BYTES - written -
+                CADR_WASM_M9_CONTINUATION_BYTES),
             &audio_written);
         status = (cadr_status)cadr_wasm_m11_status(audio_status);
     }
@@ -1549,13 +1620,14 @@ uint32_t cadr_wasm_snapshot_save(void)
         status = cadr_m12_machine_adapter_config_snapshot_serialize(
             &cadr_wasm_m12_adapter,
             cadr_wasm_snapshot + CADR_WASM_M12_SNAPSHOT_HEADER_BYTES +
-                (size_t)written + audio_written);
+                (size_t)written + CADR_WASM_M9_CONTINUATION_BYTES + audio_written);
     }
     if (status == CADR_STATUS_OK) {
         total = CADR_WASM_M12_SNAPSHOT_HEADER_BYTES + written +
-            (uint64_t)audio_written + CADR_M12_CONFIG_SNAPSHOT_BYTES;
+            CADR_WASM_M9_CONTINUATION_BYTES + (uint64_t)audio_written +
+            CADR_M12_CONFIG_SNAPSHOT_BYTES;
         (void)memcpy(cadr_wasm_snapshot, "CDRM12S1", 8U);
-        cadr_wasm_put32(cadr_wasm_snapshot + 8U, UINT32_C(1));
+        cadr_wasm_put32(cadr_wasm_snapshot + 8U, UINT32_C(2));
         cadr_wasm_put32(cadr_wasm_snapshot + 12U,
                         CADR_WASM_M12_SNAPSHOT_HEADER_BYTES);
         cadr_wasm_put64(cadr_wasm_snapshot + 16U, total);
@@ -1563,7 +1635,9 @@ uint32_t cadr_wasm_snapshot_save(void)
         cadr_wasm_put32(cadr_wasm_snapshot + 32U, audio_written);
         cadr_wasm_put32(cadr_wasm_snapshot + 36U,
                         CADR_M12_CONFIG_SNAPSHOT_BYTES);
-        cadr_wasm_put64(cadr_wasm_snapshot + 40U, UINT64_C(0));
+        cadr_wasm_put32(cadr_wasm_snapshot + 40U,
+                        CADR_WASM_M9_CONTINUATION_BYTES);
+        cadr_wasm_put32(cadr_wasm_snapshot + 44U, UINT32_C(0));
         written = total;
         cadr_wasm_snapshot_written = written;
     }
@@ -1623,8 +1697,10 @@ static uint32_t cadr_wasm_snapshot_replace(const uint8_t *bytes,
     uintptr_t allocation_mark;
 #if defined(CADR_M12_WASM)
     uint64_t core_count;
+    uint32_t m9_count;
     uint32_t audio_count;
     uint32_t config_count;
+    const uint8_t *m9_bytes;
     const uint8_t *audio_bytes;
     const uint8_t *config_bytes;
     cadr_audio_status audio_status;
@@ -1637,29 +1713,34 @@ static uint32_t cadr_wasm_snapshot_replace(const uint8_t *bytes,
 #if defined(CADR_M12_WASM)
     if (byte_count < CADR_WASM_M12_SNAPSHOT_HEADER_BYTES ||
         memcmp(bytes, "CDRM12S1", 8U) != 0 ||
-        cadr_wasm_get32le(bytes + 8U) != UINT32_C(1) ||
+        cadr_wasm_get32le(bytes + 8U) != UINT32_C(2) ||
         cadr_wasm_get32le(bytes + 12U) !=
             CADR_WASM_M12_SNAPSHOT_HEADER_BYTES ||
         cadr_wasm_get64le(bytes + 16U) != byte_count ||
-        cadr_wasm_get64le(bytes + 40U) != UINT64_C(0)) {
+        cadr_wasm_get32le(bytes + 44U) != UINT32_C(0)) {
         return CADR_STATUS_INVALID_ARGUMENT;
     }
     core_count = cadr_wasm_get64le(bytes + 24U);
     audio_count = cadr_wasm_get32le(bytes + 32U);
     config_count = cadr_wasm_get32le(bytes + 36U);
+    m9_count = cadr_wasm_get32le(bytes + 40U);
     if (core_count == 0U || core_count > CADR_WASM_CDRSNAP_MAX_BYTES ||
+        m9_count != CADR_WASM_M9_CONTINUATION_BYTES ||
         audio_count < CADR_AUDIO_SNAPSHOT_HEADER_BYTES ||
         audio_count > CADR_AUDIO_SNAPSHOT_MAX_BYTES ||
         config_count != CADR_M12_CONFIG_SNAPSHOT_BYTES ||
         core_count > byte_count - CADR_WASM_M12_SNAPSHOT_HEADER_BYTES ||
-        (uint64_t)audio_count >
+        (uint64_t)m9_count >
             byte_count - CADR_WASM_M12_SNAPSHOT_HEADER_BYTES - core_count ||
+        (uint64_t)audio_count >
+            byte_count - CADR_WASM_M12_SNAPSHOT_HEADER_BYTES - core_count - m9_count ||
         byte_count != CADR_WASM_M12_SNAPSHOT_HEADER_BYTES + core_count +
-            (uint64_t)audio_count + config_count) {
+            m9_count + (uint64_t)audio_count + config_count) {
         return CADR_STATUS_INVALID_ARGUMENT;
     }
-    audio_bytes = bytes + CADR_WASM_M12_SNAPSHOT_HEADER_BYTES +
+    m9_bytes = bytes + CADR_WASM_M12_SNAPSHOT_HEADER_BYTES +
         (size_t)core_count;
+    audio_bytes = m9_bytes + m9_count;
     config_bytes = audio_bytes + audio_count;
 #endif
 #if defined(CADR_M7_WASM)
@@ -1682,6 +1763,12 @@ static uint32_t cadr_wasm_snapshot_replace(const uint8_t *bytes,
         return status;
     }
 #if defined(CADR_M12_WASM)
+    status = cadr_wasm_m9_continuation_adopt(&restored->state, m9_bytes);
+    if (status != CADR_STATUS_OK) {
+        cadr_machine_destroy(restored);
+        cadr_wasm_allocator_rollback(allocation_mark);
+        return status;
+    }
     /*
      * The replacement is still unpublished.  CDRAUDS1 adoption both validates
      * its semantic witness and creates a fresh local consumer epoch.

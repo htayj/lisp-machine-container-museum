@@ -3,7 +3,7 @@ type: Reimplementation Specification
 title: CADR browser pointer and interactive lifecycle reimplementation specification
 description: A release-bounded browser-to-core contract for EDGE32 pointer ingress, focus and capture deactivation, accessible controls, and an ABI 1.8 IOB subset without a claim of CW2 interactive closure.
 tags: [mit-cadr, cadr-web, input, pointer, lifecycle, reimplementation]
-timestamp: 2026-08-02T03:31:43-04:00
+timestamp: 2026-08-02T14:31:00-04:00
 ---
 
 # CADR browser pointer and interactive lifecycle reimplementation specification
@@ -320,6 +320,22 @@ handshake.  M10 alone determines whether a durable-state warning is appropriate.
 
 `CDRSTATE6` is not current ABI.  Its proposed 24-byte little-endian pointer block
 is intentionally future-facing:
+
+The later selected M12 reconstruction does not adopt this proposed block. Its
+72-byte `CDRM9D1` companion binds the exact frozen `CDRSTATE5` digest and stores the machine-generation binding, the
+authoritative `u64` input ordinal, its required modulo-2^32 low-word sequence,
+and the two guest IOB mouse words. It deliberately excludes the host pointer
+generation: that value is a controller epoch, not machine state. Same-process
+restore is admitted only while keyboard and pointer controllers are neutral;
+after successful machine publication it installs new neutral controller objects,
+preserving only the current pointer epoch and resetting queues, held state, warp,
+stall, cursor, local ordinal, and coalescing state. Fresh-worker import therefore
+starts at epoch zero. Any failed validation or restore preserves every host field.
+The public synthetic M12 test build initializes the same `booted_machine` state
+only inside `cadr_wasm_create`; it has no additional export and is absent from
+ordinary `--m12` production builds. It exists solely to exercise this replacement
+transaction through the unchanged worker without a private artifact or snapshot
+bypass.
 
 | Offset | Field |
 | --- | --- |

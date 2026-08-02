@@ -772,7 +772,12 @@ static int cadr_snapshot_validate_scheduler(const cadr_machine_state *state)
     const cadr_scheduler_state *scheduler = &state->scheduler;
     uint64_t last_sequence = 0U;
     uint32_t index;
-    if (iob->usec_phase >= 60U || (iob->csr & ~UINT32_C(057)) != 0U ||
+#if defined(CADR_M9_CORE)
+    const uint32_t iob_csr_known = UINT32_C(077);
+#else
+    const uint32_t iob_csr_known = UINT32_C(057);
+#endif
+    if (iob->usec_phase >= 60U || (iob->csr & ~iob_csr_known) != 0U ||
         iob->scancode > UINT32_C(0x1ffff) ||
         iob->key_queue_read >= CADR_IOB_KEY_QUEUE_LEN ||
         iob->key_queue_write >= CADR_IOB_KEY_QUEUE_LEN ||

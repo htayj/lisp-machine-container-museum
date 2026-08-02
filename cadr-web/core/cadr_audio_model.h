@@ -172,6 +172,8 @@ cadr_audio_status cadr_audio_model_initialize(
 /* Detaches and zeroes one model; authority storage must still be live. */
 cadr_audio_status cadr_audio_model_destroy(cadr_audio_model *model);
 cadr_audio_status cadr_audio_model_reset(cadr_audio_model *model);
+cadr_audio_status cadr_audio_model_reset_for_generation(
+    cadr_audio_model *model, uint64_t generation);
 /* Issues the authority's current epoch + 1; no epoch is caller-selectable. */
 cadr_audio_status cadr_audio_model_start_consumer_session(
     cadr_audio_model *model);

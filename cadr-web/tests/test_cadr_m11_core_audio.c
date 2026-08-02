@@ -39,7 +39,8 @@ int main(void)
     CHECK(machine->state.lifecycle == CADR_MACHINE_POWERED &&
           machine->state.devices.audio_model == &machine->audio &&
           machine->audio.count == 0U &&
-          machine->audio.generation == UINT64_C(2));
+          machine->audio.generation == machine->state.events.generation &&
+          machine->audio.generation == UINT64_C(1));
     machine->state.cpu.m_memory[22] = UINT32_C(125000);
     CHECK(cadr_iob_write(&machine->state, UINT32_C(0764110), UINT16_C(500)) ==
           CADR_STATUS_OK);

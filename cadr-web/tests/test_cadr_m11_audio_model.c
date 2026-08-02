@@ -513,6 +513,11 @@ static void test_reset_clears_job_and_stales_cursor(void)
     cadr_audio_authority authority = { 0 };
     cadr_audio_cursor stale;
     cadr_audio_cursor cursor;
+    uint64_t authority_identity;
+    uint64_t authority_incarnation;
+    uint64_t accepted_sequence_high_water;
+    uintptr_t authority_self;
+    cadr_audio_incarnation_allocator *authority_allocator;
 
     initialize_fresh(&model, &authority, UINT64_C(42),
                      CADR_AUDIO_RENDERER_NO_AUDIO,
@@ -532,6 +537,32 @@ static void test_reset_clears_job_and_stales_cursor(void)
     CHECK(cadr_audio_model_peek(&model, &cursor) ==
           CADR_AUDIO_STATUS_EMPTY);
     CHECK(cadr_audio_model_verify_witness(&model) == CADR_AUDIO_STATUS_OK);
+
+    CHECK(cadr_audio_model_accept_beep_job(
+              &model, UINT64_C(2), UINT32_C(744), UINT32_C(1)) ==
+          CADR_AUDIO_STATUS_OK);
+    CHECK(cadr_audio_model_peek(&model, &cursor) == CADR_AUDIO_STATUS_OK);
+    CHECK(cadr_audio_model_ack(&model, &cursor, cursor.frames_remaining) ==
+          CADR_AUDIO_STATUS_OK && authority.accepted_sequence_high_water != 0U &&
+          model.count == 0U);
+
+    authority_identity = authority.identity;
+    authority_incarnation = authority.incarnation;
+    accepted_sequence_high_water = authority.accepted_sequence_high_water;
+    authority_self = authority.self_address_token;
+    authority_allocator = authority.incarnation_allocator;
+    CHECK(cadr_audio_model_reset_for_generation(&model, UINT64_C(9)) ==
+          CADR_AUDIO_STATUS_OK && model.generation == UINT64_C(9) &&
+          authority.consumer_epoch == UINT64_C(72) && model.count == 0U &&
+          authority.identity == authority_identity &&
+          authority.incarnation == authority_incarnation &&
+          authority.accepted_sequence_high_water == accepted_sequence_high_water &&
+          authority.self_address_token == authority_self &&
+          authority.incarnation_allocator == authority_allocator);
+    unchanged = model;
+    CHECK(cadr_audio_model_reset_for_generation(&model, UINT64_C(0)) ==
+          CADR_AUDIO_STATUS_INVALID_ARGUMENT);
+    CHECK(memcmp(&model, &unchanged, sizeof(model)) == 0);
 
     model.generation = UINT64_MAX;
     unchanged = model;

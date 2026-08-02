@@ -84,7 +84,8 @@ static cadr_status cadr_m11_audio_reset(cadr_machine *machine)
     if (machine == NULL || machine->state.devices.audio_model != &machine->audio) {
         return CADR_STATUS_INVALID_ARGUMENT;
     }
-    status = cadr_audio_model_reset(&machine->audio);
+    status = cadr_audio_model_reset_for_generation(
+        &machine->audio, machine->state.events.generation);
     if (status == CADR_AUDIO_STATUS_OK) {
         machine->state.devices.audio_model = &machine->audio;
     }
@@ -884,6 +885,8 @@ cadr_status cadr_machine_m9_input_deliver(cadr_machine *const machine,
         return CADR_STATUS_NOT_READY;
     }
     if (generation != machine->state.events.generation ||
+        machine->state.devices.iob.input_sequence !=
+            (uint32_t)machine->state.devices.iob.input_ingress_ordinal ||
         machine->state.devices.iob.input_ingress_ordinal == UINT64_MAX ||
         ordinal != machine->state.devices.iob.input_ingress_ordinal + UINT64_C(1)) {
         return CADR_STATUS_STALE_GENERATION;
@@ -897,8 +900,11 @@ cadr_status cadr_machine_m9_input_deliver(cadr_machine *const machine,
         return CADR_STATUS_INVALID_ARGUMENT;
     }
     if (status != CADR_STATUS_OK) return status;
+    cadr_state_v2_invalidate(&machine->state);
     machine->state.devices.iob.input_ingress_ordinal = ordinal;
-    machine->state.devices.iob.input_sequence += 1U;
+    /* The 64-bit ingress ordinal is authoritative.  CDRIOB91 exposes its
+     * low 32 bits as input_sequence, including defined modulo wrap. */
+    machine->state.devices.iob.input_sequence = (uint32_t)ordinal;
     return CADR_STATUS_OK;
 }
 #endif
