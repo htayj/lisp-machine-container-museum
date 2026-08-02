@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
-import { CadrM13AudioBoundary } from "../cadr-web/browser/cadr-m13-audio-boundary.mjs";
+import { CadrM13AudioBoundary, CadrM13WorkerAudioCore } from
+  "../cadr-web/browser/cadr-m13-audio-boundary.mjs";
 import { CadrM13Shell } from "../cadr-web/browser/cadr-m13-shell.mjs";
 import { encodeCdrPcm1, sha256Hex } from "../cadr-web/browser/cadr-m13-audio-record.mjs";
 import { CadrM13AudioSource } from "../cadr-web/wasm/cadr-m13-audio-source.mjs";
@@ -33,6 +34,17 @@ const worker = new Worker(); const shell = new CadrM13Shell({ worker, audioBound
   sessionRandom: () => Uint8Array.from({ length: 32 }, () => 0x13) });
 const request = (id, op, fields = {}) => ({ type: "cadr-request", version: 8,
   sessionId: shell.sessionId, id, op, ...fields });
+
+/* The private worker reply retains its operation-specific payload beneath
+ * `remainder`; the public boundary adapter must flatten exactly that payload. */
+{
+  const adapter = new CadrM13WorkerAudioCore({ request: async operation => ({
+    status: 0, op: operation.op, remainder: { audio: { state: "READY", generation: 1n,
+      consumerEpoch: 2n, queuePackets: 0, queuedFrames: 0 } },
+  }) });
+  assert.deepEqual(await adapter.open(), { status: 0, state: "READY", generation: 1n,
+    consumerEpoch: 2n, queuePackets: 0, queuedFrames: 0 });
+}
 
 let reply = await shell.submit(request(1, "audio-open", {
   rendererProfile: "USIM-SDL3-SINE-330D8248-CANONICAL-v1" }));

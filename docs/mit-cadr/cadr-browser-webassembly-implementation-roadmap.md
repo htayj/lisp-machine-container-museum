@@ -3,7 +3,7 @@ type: Implementation Roadmap
 title: MIT CADR System 303 browser and WebAssembly implementation roadmap
 description: A milestone-complete plan for porting the pinned System 303 CADR emulator to a deterministic, locally persistent, browser-hosted WebAssembly machine.
 tags: [mit-cadr, lm-3, system-303, webassembly, browser, emulator, roadmap]
-timestamp: 2026-08-02T05:37:12-04:00
+timestamp: 2026-08-02T07:07:32-04:00
 ---
 
 # MIT CADR System 303 browser and WebAssembly implementation roadmap
@@ -1255,9 +1255,21 @@ The `M13-AUDIO1` source profile now composes optional audio dispatch through the
 public shell and retains the no-audio default. Its real private v8 worker owns the
 ABI1.11 source, calls the actual open export, and pumps at most 64 semantic packets
 after open or acknowledgement. O0/O2, exact-record, overflow, source, worker, and
-synthetic lifecycle tests are implementation evidence only; the E27 selected-media
-run did not select audio playback. Selected-media playback, composed browser
-autoplay, accessibility review, and failure campaigns therefore remain open.
+synthetic lifecycle tests remain implementation evidence. A separate Chromium 150
+probe on signed base `779812a` now composes the selected ABI1.11 O2 module, actual
+worker, public shell, click-created 48 kHz AudioContexts, and real AudioWorklet;
+pause/resume changes epoch 2 to 3. The selected core remains empty. One explicitly
+synthetic 512-frame downstream record reaches the Worklet in epoch 3; its one
+acknowledgement reaches the actual worker, is rejected stale, and completes loss
+fencing. A new click-created context and epoch 4 then repeat the exact sequence with
+one synthetic 88-frame record. Three fresh captures have identical request/response
+order and canonical report bytes. Thus the run proves no selected guest PCM or
+successful automatic repump. The current public selected-media harness was rerun
+separately on the same
+signed base and byte-identical selected inputs and still stops at the first host
+wait rather than a Listener `%BEEP`. Guest-generated selected-media playback,
+composed autoplay denial, accessibility review, and the remaining failure campaign
+therefore remain open.
 
 ### M14 — Reproducible museum release
 

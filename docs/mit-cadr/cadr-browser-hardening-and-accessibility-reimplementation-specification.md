@@ -2,7 +2,7 @@
 type: concept
 title: CADR-WEB-303 browser hardening and accessibility reimplementation specification
 description: A release-bounded M13 contract for hostile host inputs, resource ceilings, offline execution, worker failure, and accessible controls around an unmodified CADR framebuffer.
-timestamp: 2026-08-02T05:27:51-04:00
+timestamp: 2026-08-02T07:07:32-04:00
 ---
 
 # CADR-WEB-303 browser hardening and accessibility reimplementation specification
@@ -55,8 +55,18 @@ handler must call before asynchronous public request validation. Synthetic tests
 cover autoplay refusal before core open, core-issued fresh epochs, exact worker
 ownership against the actual empty O0 Wasm core, partial and
 stale acknowledgements, zero-frame UART, high water, pause/resume, timeout,
-processor/context/device loss, and worker-loss teardown. No selected System 303
-browser playback has run for this profile; `C-M11` and `C-M13` remain open.
+processor/context/device loss, and worker-loss teardown. A current Chromium 150
+probe now composes the selected ABI1.11 O2 Wasm, actual worker, public shell, a
+real 48 kHz `AudioContext`, and the real AudioWorklet. Direct click activation
+opens epoch 2 and pause/resume opens epoch 3. The selected core is empty: its
+queue remains zero, no preserved guest executes, and the 512/88-frame records are
+explicitly synthetic downstream fixtures. The 512-frame fixture runs alone in
+epoch 3; its Worklet reply reaches the actual worker, is rejected stale (status 3),
+and completes device-loss fencing. A new direct-click resume then opens epoch 4
+before the 88-frame fixture repeats that exact stale-ack/loss sequence. Both
+records therefore have one deterministic acknowledgement and loss, with no core
+packet acknowledged. This is composed browser boundary evidence, not selected
+System 303 playback or guest-generated `%BEEP`; `C-M11` and `C-M13` remain open.
 Those earlier probes include a real browser Worker boundary, the exact provisional CSP attack
 matrix, a keyboard route through every provisional host control, a narrow real
 AudioContext/AudioWorklet component probe, and deterministic named-parser and
@@ -155,6 +165,7 @@ node tests/test_cadr_m13_admission_ledger.mjs
 node tests/test_cadr_m13_named_parser_corpus.mjs
 node tests/test_cadr_m13_lifecycle.mjs
 python3 tests/test_cadr_m13_audio_browser.py
+python3 tests/test_cadr_m13_selected_audio_runtime.py
 ```
 
 The compatibility boundary is the modern host shell and its exact selected
@@ -904,9 +915,11 @@ operation has a versioned cancellation handshake that reports an unchanged state
 ### M11 renderer and AudioWorklet boundary
 
 M13 selects the M11 `USIM-SDL3-SINE-330D8248-CANONICAL-v1` software-render target,
-not `NO-AUDIO`. The source-only ABI1.11 renderer/Worklet transport exists, but this
-does not assert selected guest/browser runtime closure: M13 cannot pass until the
-remaining `C-M11-05-WORKLET` runtime campaign closes. The worker sends only a
+not `NO-AUDIO`. The ABI1.11 renderer/Worklet transport now has one selected-Wasm
+Chromium composition probe, but this does not assert selected guest/browser runtime
+closure: its core queue was empty and its labelled downstream PCM was synthetic.
+M13 cannot pass until the remaining `C-M11-05-WORKLET` guest-generated runtime
+campaign closes. The worker sends only a
 validated current-generation `CDRPCM1` record to the
 shell; the shell validates its fixed header and forwards only its sample bytes plus
 generation, consumer epoch, sequence, and frame offset to an AudioWorklet. The
@@ -1198,7 +1211,7 @@ and policy-harness facts. Neither report substitutes for the other.
 | `TODO-RUNTIME-M13-04` | Serve the exact M13 build-local artifact under CSP and browser-stack request recording | bounded-bootstrap/no-network and CSP claim |
 | `TODO-RUNTIME-M13-05` | Complete worker-crash injection at every named operation and M10 `IN_DOUBT` reopen/reread path | saved-versus-volatile recovery claim |
 | `TODO-RUNTIME-M13-06` | Complete automated and manual keyboard/screen-reader workflow in each supported browser | accessibility claim |
-| `TODO-RUNTIME-M13-07` | Complete M11 renderer/AudioWorklet autoplay, crash, device-loss, and backpressure campaign | selected audio boundary |
+| `TODO-RUNTIME-M13-07` | Extend the selected ABI1.11 worker/shell/real-Worklet probe from empty-core plus labelled downstream fixtures to guest-generated `%BEEP`; cover successful partial acknowledgement/greater-than-512 repump, autoplay denial, processor/context/worker loss, and backpressure against the selected core. | selected audio boundary |
 | `TODO-RUNTIME-M14-REPEAT-01` | M14 independently reproduces the final package and aggregates the M13 report with its browser matrix | CW4 release, not C-M13 |
 
 ## Exit gate

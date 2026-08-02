@@ -16,8 +16,9 @@ export class CadrM13WorkerAudioCore {
   }
   async #invoke(op, fields = {}) {
     const result = await this.#request({ op, ...fields });
-    return result?.status === OK && result.audio !== undefined ?
-      Object.freeze({ status: OK, ...result.audio }) : Object.freeze({ status: result?.status ?? NOT_READY });
+    const audio = result?.remainder?.audio;
+    return result?.status === OK && audio !== undefined ?
+      Object.freeze({ status: OK, ...audio }) : Object.freeze({ status: result?.status ?? NOT_READY });
   }
   open() { return this.#invoke("m13-audio-open"); }
   ack(record) { return this.#invoke("m13-audio-ack", record); }

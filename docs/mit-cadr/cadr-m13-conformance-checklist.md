@@ -3,7 +3,7 @@ type: Conformance Checklist
 title: CADR-WEB-303 M13 conformance campaign checklist
 description: A case-by-case evidence ledger for the M13 browser-hardening gate, including partial probes and the remaining runtime-only work.
 tags: [mit-cadr, cadr-web, browser, m13, conformance, security, accessibility]
-timestamp: 2026-08-02T05:27:51-04:00
+timestamp: 2026-08-02T07:07:32-04:00
 ---
 
 # CADR-WEB-303 M13 conformance campaign checklist
@@ -63,8 +63,8 @@ repository-relative and all inputs are synthetic/public code.
 | `E25` | [`tests/test_cadr_m13_m10_dispatch_browser.py`](../../tests/test_cadr_m13_m10_dispatch_browser.py), [`cadr-m13-m10-dispatch-browser.mjs`](../../cadr-web/browser/cadr-m13-m10-dispatch-browser.mjs) | test `a8f0794cd073739006e14ee803efdc7f29ef4743b506229c00827a0bacf840f2`; browser source `c15161a9a2f3b16fa8ce827f0f94b8c9630f767731dc98991cae127384aaf504` | `python3 tests/test_cadr_m13_m10_dispatch_browser.py` — passed: Chromium composes the shared v8 shell with the real `C-M10-IDB-v1` controller through its actual bridge factory. A synthetic exact M4 write drives sealed `scheduler-run-v7-slice → host-next-request → host-complete` dispatch and durable overlay readback. A controller staging failure before guest acceptance returns nonterminal v8 status `7`, leaves `CLEAN`, sends one failed completion, and does not replace/terminate the worker. A post-completion IDB publication fault instead yields status `7`, `terminal:true`, controller `IN_DOUBT`, exactly one replacement callback, and worker termination. It supplies neither selected Wasm nor selected-base bytes, so it is not a boot or selected-artifact claim. |
 | `E26` | [`cadr-worker.js`](../../cadr-web/wasm/cadr-worker.js), [`cadr-m13-shell.mjs`](../../cadr-web/browser/cadr-m13-shell.mjs), [`tests/test_cadr_m5_worker_protocol.mjs`](../../tests/test_cadr_m5_worker_protocol.mjs), [`tests/test_cadr_m12_worker.mjs`](../../tests/test_cadr_m12_worker.mjs), [`tests/test_cadr_m13_selected_media_m10_browser.py`](../../tests/test_cadr_m13_selected_media_m10_browser.py), [`cadr-m13-selected-media-m10-browser.mjs`](../../cadr-web/browser/cadr-m13-selected-media-m10-browser.mjs) | worker `c702a42eab9b3e941207eb2ed48b9babc89609b4d03b4c051f94ef0ac5d9a691`; shell `5355fde137a81c4a18bbf81b13c406536c051cce6e8623d1efc111a827cf554c`; M5 test `36ab859c1ddd3edde0ecadcb9a1000571be31e510761f6f4898d3828c0415bc9`; M12 test `02a088d928b8208a4201ef0550b3d4b3874fcfc693dc11932b9101a6f7010091`; browser test `80e76b58548a54973f604ceb6a3333119f5cc8e870e72560352bfc16884a45e8`; browser source `9412a78c9513d905adca6616415e90d3f57f0b3daae0de1c6c0c25162df37857` | `CADR_M13_RUN_SELECTED_MEDIA=1 python3 -m unittest -v tests.test_cadr_m13_selected_media_m10_browser` — passed in 17.448 s on local selected inputs (the test skips unless explicitly opted in): v4--v6 reject the new lower name; `scheduler-run` retains queued pause/stop control after a complete slot; v8 bounds `machine-run` to 4,096 and emits only v7 `scheduler-run-v7-slice`. The real selected M12 O2 witness mounted the exact base, exposed M10 identity only from the mounted binding, reached the first host wait at tick 1,029,735 in 252 slices (251 full plus a final 1,639-slot/1,636-microinstruction status-8 slice), and serviced one actual block-1 write request. The write bytes equal selected base block 1, so M10 reports `durable:true,changed:false` and creates no overlay page. A fresh controller then reopens the same binding `CLEAN`, reads the same base-equivalent 1,024 bytes, and performs no worker replacement. This is not evidence of overlay persistence. The final lower order is `scheduler-run-v7-slice → host-next-request → host-complete`; no generic lower `run*` or `scheduler-run` appears. |
 | `E27` | [`tests/test_cadr_m13_selected_media_m10_browser.py`](../../tests/test_cadr_m13_selected_media_m10_browser.py), [`cadr-m13-selected-media-m10-browser.mjs`](../../cadr-web/browser/cadr-m13-selected-media-m10-browser.mjs), local ignored `build/cadr-m13/public-selected-runtime-6bad935/report.json` | test `16c92404d7444dc1f56ba5bf66371c5c9bfa62568853fd3c7ce029fe83e58e07`; browser source `df513715f6684e240432b83f9db27575059feba91ee4dfa62e1b2fc085d355cb`; shell `560a7acdd13193e03fe01ac9ce2b96929f1a4e1dc4161bd5aa5860720986d52b`; worker `2ffc09c275224e7a43511a329b317cac745902fbc9cfcd8a560890ed82eb2023`; report `3ec41f03fd525d53788a99a01681d2295814a83eccd3260d4cb814e68bb18b26` | Chromium 150 passed the public v8 selected path on signed base `6bad935`: 258 public import chunks, public mount/reopen, selected cold/boot/start, and the real first guest block-1 no-change request in 252 bounded slices. The worker is `RUNNING` after completion. A separately labelled synthetic controller write survives read and public reopen. Public export/restore names dispatch only to `M13-E27-CDRM10W1-DISPATCH-ADAPTER-v1`, which roundtrips one real synthetic `CDRM10W1` but emits no normative pinned-object records, adopts nothing, and performs no paused/reset restore. |
-
 | `E28` | ABI1.11 audio source, exact-record, Worklet, reducer, shell, real-worker/actual-Wasm, and O0/O2 export tests | source-only; hashes are bound by the eventual commit | Core-issued epochs, independent `CDRM11O1`/`CDRPCM1` literal vectors, nonmutating epoch exhaustion to status 22, zero-frame UART, private frame authority, greater-than-512-frame packet repump, a 64-packet automatic-pump bound, stale generation rejection before Worklet/deadline, eight-record high water, autoplay-before-open, pause/resume, deadline/device loss, worker-loss teardown, and a real worker call into the actual empty O0 ABI1.11 core pass. No licensed media, selected guest PCM, or selected guest/browser playback run was used. |
+| `E29` | [`tests/test_cadr_m13_selected_audio_runtime.py`](../../tests/test_cadr_m13_selected_audio_runtime.py), [`cadr-m13-selected-audio-runtime.mjs`](../../cadr-web/browser/cadr-m13-selected-audio-runtime.mjs), [`cadr-m13-audio-boundary.mjs`](../../cadr-web/browser/cadr-m13-audio-boundary.mjs), ignored `build/cadr-m13/selected-audio-runtime-779812a/report.json` | test `7437e02e8fdeced447f726291931d64a569566f69edb4621894dea263371cf0f`; harness `02d422e69b42764946b105d390ea3615cd78fd9dc05b12bf7ed43bab9ffdc251`; boundary `4052e0568be4230af8fbb17db73f13ca2ced29bdf5c3fcb4886cbebdfa3cfe75`; report `7371cce80f3987030521713d1d85c6ef70642d16f90891a2b7854cd9e64be836` | Chromium `150.0.7871.124` on signed base `779812a`: selected ABI1.11 O2 Wasm, actual worker, public shell, three synchronous-click 48 kHz AudioContexts, and real AudioWorklet compose successfully. Open is epoch 2; pause/resume is epoch 3. One synthetic 512-frame fixture in epoch 3 completes exactly one stale status-3 acknowledgement and device-loss response before a fresh click opens epoch 4; one synthetic 88-frame fixture then completes the same sequence. Exact request/response order and two sequence identities are asserted; three fresh reports are byte-identical. The selected core remains empty, so no selected-core acknowledgement or guest progress is invented. This does not prove guest-generated PCM, successful greater-than-512 repump, `C-M11`, or `C-M13`. |
 
 `E11` is intentionally described as process loss, not physical power loss. The
 separate M10 specification records its source and Chromium version evidence; this
@@ -146,6 +146,52 @@ state. It does **not** implement or prove pinned canonical-object export records
 does not adopt the parsed wrapper, and does not pause/reset/restore the worker. It is
 neither a guest-generated changed write nor normative export/restore evidence.
 
+### E29 selected audio composition report
+
+E29 ran from signed commit `779812aff56a030a208d23fef925aa55e4c27d37`
+(tree `1ea86d88530bf05ee54fee0c573bc279d12b92a0`) with:
+
+```text
+make -C cadr-web m13-audio-unit
+CADR_M13_AUDIO_RUNTIME_REPORT=build/cadr-m13/selected-audio-runtime-779812a/report.json \
+  python3 tests/test_cadr_m13_selected_audio_runtime.py
+```
+
+The 8,316-byte deterministic ignored report has schema
+`cadr-m13-selected-audio-runtime-v1` and SHA-256
+`7371cce80f3987030521713d1d85c6ef70642d16f90891a2b7854cd9e64be836`.
+Three fresh Chromium sessions produced byte-identical reports. It records Chromium
+`150.0.7871.124` and the selected 218,335-byte ABI1.11 O2 Wasm SHA-256
+`11794b191dd355e6577133f293b591f065bb695b07ff0b3c41c2597c8c6bcd35`.
+All three context preparations observed active user activation and each real context
+reported 48,000 Hz. Open returned generation 1/epoch 2 with an empty queue; pause
+retired that context; resume returned generation 1/epoch 3 with an empty queue.
+After epoch 3 completed its stale-ack/loss handshake, another direct-click resume
+returned generation 1/epoch 4 with an empty queue.
+
+The two `CDRPCM1` records are not guest output. They are labelled
+`synthetic-downstream-fixture`, contain 512 and 88 frames, and have record hashes
+`00d2289545a3284dfe03256ead582b218b0624969b745b1124f5a1722e4e8388` and
+`ad3a73bea2cfd11000dbdbea77cf258f92c5879d4c7a7e3fcf2c5ae7c91cc712`.
+The first is sequence 10/epoch 3 and the second is sequence 11/epoch 4. Each runs
+alone and exercises the shell-to-real-Worklet seam only. Because the actual worker
+did not issue either record, each Worklet acknowledgement receives status 3
+(`STALE`) and is followed by one completed device-loss response before the next
+fixture begins. The exact eight-operation lifecycle is open, pause, open, ack,
+loss, open, ack, loss; every response retains lifecycle `NEW`. No selected-core
+packet is acknowledged or removed. No guest instruction ran, so this run cannot
+establish guest-time behavior. E28's greater-than-512 automatic repump remains
+source/unit evidence, not an E29 runtime observation.
+
+For pin cross-checking, the public selected-media test was run separately on the
+same commit with its ignored input directory and report. Its exact 19,222-byte
+report has SHA-256
+`96074a8625ab7cafd63c55876bcd2bd742a3b987d55ec047ffc2726ad0290c65`.
+It passed in Chromium 150, found the same ABI1.11 O2 Wasm hash, and verified the
+269,562,880-byte System 303 base plus four boot artifacts unchanged. It reached one
+real base-identical host write after 252 slices, not a Listener or `%BEEP`;
+therefore it cannot be combined with E29 into a guest-audio claim.
+
 ## Required-case ledger
 
 “Pass” below means the listed narrow program passed, not that the full conformance
@@ -170,8 +216,8 @@ specification.
 | `M13-F12` | `E04` verifies all 13 current buttons' names, status role/live properties, framebuffer non-transcription, visible focus, and the full Tab route. | Partial automated provisional audit | Run automated complete-app state checks and a recorded manual screen-reader review. |
 | `M13-F13` | `E03`/`E18` verify exact output inventory/hash, deterministic nonce binding, no unlisted/symlinked artifact, bounded capability/private-path/secret scan, and tamper rejection. | Partial build-local evidence | Scan selected Wasm, Worklet, source maps, and the complete application artifact; record final release identities. |
 | `M13-F14` | `E07`–`E09` pass focused M11 model/browser-boundary tests and `E05` passes a generated M12 panel check. They are not lower conformance runs *through* the M13 shell; `C-M11` and `C-M12` remain open. | Partial lower-test evidence | Run every available lower test through the composed M13 shell after M11/M12 native/runtime gates close. |
-| `M13-F15` | `E20` supplies genuine Chromium click activation (without an autoplay bypass), a real AudioContext and AudioWorklet, one Worklet-originated acknowledgement, immediate context closure after a post without a fabricated acknowledgement, an intentionally throwing Worklet with `processorerror`, one deterministic rejection of a second 8,192-frame packet by the actual M11 Worklet queue, and a fresh second epoch. `E28` adds the worker-owned ABI1.11 source, actual empty-core export call, exact records, frame authority, partial/stale acknowledgement, worker/device-loss, and bounded-pump tests. The PCM remains a fixed test fixture. | Partial browser component plus source composition evidence | Run selected guest PCM through the composed ABI1.11 worker/shell/AudioWorklet path and retain its event/provenance trace. |
-| `M13-F15b` | `E06`, `E14`, and `E20` cover the source reducer plus actual browser `queueMicrotask`/separate `setTimeout` turns: same-task device-error precedence, committed deadline fencing across tasks, and eight-record high water. | Partial browser-task component evidence | Integrate it into the v8 shell and run every required pairwise/equal-time/reentrant/epoch order against real audio callbacks. |
+| `M13-F15` | `E20` supplies genuine Chromium click activation, real AudioContext/AudioWorklet component behavior, processor/context loss, and Worklet queue rejection. `E28` adds worker-owned ABI1.11 source, actual empty-core export calls, frame authority, greater-than-512 repump, stale acknowledgement, worker/device loss, and bounded-pump source tests. `E29` composes selected ABI1.11 O2 Wasm, actual worker, public shell, click-created real contexts, pause/resume epochs, and real Worklet; two separately fenced synthetic downstream acknowledgements are each rejected stale by the empty selected core, proving deterministic order and no invented progress. | Partial selected composition with synthetic downstream PCM | Reach a Listener in the selected-media runtime, generate `%BEEP`, and run that guest PCM through successful partial acknowledgement/repump plus selected processor/context/worker-loss and backpressure cases. |
+| `M13-F15b` | `E06`, `E14`, and `E20` cover the source reducer plus actual browser `queueMicrotask`/separate `setTimeout` turns: same-task device-error precedence, committed deadline fencing across tasks, and eight-record high water. E29 proves that this boundary can be reached through the selected v8 shell, but does not run the ordering matrix there. | Partial browser-task component plus selected seam | Run every required pairwise/equal-time/reentrant/epoch order through the selected v8 shell against real audio callbacks. |
 
 ## Blocking dependencies and runtime reservation
 
@@ -180,9 +226,9 @@ not closed by the synthetic/browser tests above:
 
 | Gate | Exact blocker | Why it is not interchangeable with the listed evidence |
 | --- | --- | --- |
-| `C-M11` | A source-bound System 303 `%BEEP` session now establishes native job/PCM ordering, and the independent fixed-table oracle closes narrow `C-M11-04-PCM`; a selected-Wasm browser AudioWorklet campaign must still validate playback, partial acknowledgements, pause/resume, and worker/device-loss semantics. | The native witness and clean-room PCM agreement do not prove the selected browser playback lifecycle. |
+| `C-M11` | A source-bound System 303 `%BEEP` session establishes native job/PCM ordering, and the independent fixed-table oracle closes narrow `C-M11-04-PCM`. E29 validates selected-Wasm worker/shell/real-Worklet composition and pause/resume only with an empty core and labelled downstream fixtures. Guest-generated playback, successful partial acknowledgements/repump, and selected processor/context/worker-loss semantics remain open. | Native and clean-room witnesses do not prove selected browser playback; E29's synthetic records do not prove selected guest generation or successful core acknowledgement. |
 | `C-M12` | A fresh isolated System 303 runtime observation must prove debugger breakpoint/pause/inspection/resume/macro-step behavior and hashes. The candidate pause/resume witness is instrumentation evidence, not historical macro-step semantics. | Generated Wasm scalar inspection proves the host panel only, not the preserved runtime. |
-| M13 composition | E27 authenticates current public v8 selected import/mount/reopen/boot and the real first guest no-change request. Its separate synthetic changed block survives controller read and public reopen. A test adapter proves only public operation dispatch and a real synthetic `CDRM10W1` parser/serializer roundtrip while the worker remains `RUNNING`. E26 remains the exact older private-seam observation. | No guest-generated changed write, normative pinned-object export, paused/reset composite restore, or complete selected failure/power-loss algebra exists; lifecycle, accessibility, and audio remain unproven. |
+| M13 composition | E27 authenticates public v8 selected import/mount/reopen/boot and the real first guest no-change request. E29 separately authenticates selected ABI1.11 worker/shell/real-Worklet composition with an empty core and synthetic downstream PCM. E26 remains the exact older private-seam observation. | The two separate runs do not compose media boot with audio. No guest-generated changed write or PCM, normative pinned-object export, paused/reset composite restore, or complete selected failure/power-loss algebra exists; lifecycle and accessibility remain unproven. |
 
 Native M11/M12 captures must not reuse an active private runtime or mutable disk. At
 the time this ledger was prepared, separate M6/M7 native campaigns owned their
