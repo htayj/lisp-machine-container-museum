@@ -3,7 +3,7 @@ type: Reimplementation Specification
 title: CADR-WEB-303 ABI 1.3 boot-media controller reimplementation specification
 description: An implementation-ready contract for the selected System 303 disk controller, asynchronous range service, volatile boot-scratch overlay, controller evidence, and native/Wasm conformance gate.
 tags: [mit-cadr, lm-3, system-303, disk-controller, webassembly, reimplementation]
-timestamp: 2026-07-29T03:30:01-04:00
+timestamp: 2026-08-02T05:37:12-04:00
 ---
 
 # CADR-WEB-303 ABI 1.3 boot-media controller reimplementation specification
@@ -75,6 +75,7 @@ itself a frozen artifact.
 | `M4-CTRL` | independently serialized native and Wasm `CDRM4CTRL1` | exact common portable controller path and final state | independent correctness, because the core is shared |
 | `M4-MEDIA` | native C and JavaScript `CDRM4MEDIA1` | host actor ordering and overlay commit identity | full controller state |
 | `M4-TEST` | synthetic negative, fault, reset, trace, snapshot, Chromium host-adapter, and differential gates | exercised failure and ordering rules | unselected media or a full selected boot inside Chromium |
+| `M7-EPI-UNIT` | [`test_cadr_m7_effective_page_identity.mjs`](../../tests/test_cadr_m7_effective_page_identity.mjs) and the default M4 block-service test | opt-in M7 acknowledgement ordering, identity, and no-mutation failure cases | a historical media disposition or a completed P4 run |
 | `INF-M4` | rules stated here where preserved evidence is silent | deterministic browser-hosting policy | historical fact |
 
 Source, compiled artifact, runtime observation, manuals, and papers remain
@@ -259,6 +260,54 @@ overlay:
   before accepted delivery discards the stale stage;
 - explicit service discard clears overlay bytes and identity.
 
+### M7-only effective-page acknowledgement companion
+
+`CADR-WEB-303/ABI1.5/protocol-v5/C-M7-P4-EFFECTIVE-PAGE-IDENTITY-v1` is a
+default-disabled JavaScript companion selected only by the M7 P4 wrapper.  It
+does not revise this ABI1.3 profile, the native M4 service, or `CDRM4MEDIA1`.
+The first valid LBA-1 boot-scratch write remains the sole M4 `COMMIT`, and an
+exact replay of its original identity remains M4 replay before the companion is
+considered.
+
+After that initial M4 commit, the companion requires the exact overlay-backed
+LBA-1 comparison and base-backed LBA-0 read above, followed by an exact M6 fast
+reason-1 quiet suffix at or after boundary `1030044`, with persistent status
+zero and no outstanding request. Only then can a strictly newer generation and
+request identity propose a well-formed one-block write to **any** LBA whose
+1,024-byte range lies wholly within the selected base. Generation is compared
+first and request ID second; transaction ID must equal request ID. A stale
+identity, or the original identity with a changed descriptor or payload, is not
+an acknowledgement. Exact descriptor-and-payload replay of the original M4
+LBA-1 commit is resolved first and remains ordinary M4 replay.
+
+For LBA 1, the comparison authority is the effective overlay page. For every
+other LBA it is an overflow-safe `readRange(firstBlock * 1024, 1024)` of the
+selected base. Equal bytes create only an internal candidate. After successful
+host completion, M6 independently rereads the effective page and cross-links
+the candidate and each of the arm's initial-commit, comparison-read, and
+base-read operations to unique adjacent `CDRM6HS1` issue/completion pairs:
+LBA and bounds, generation/request/transaction, descriptor and payload,
+boundaries, host status, overlay generation/root, effective source, selected
+base identity, and the full arm. The public `IDENTITY_ACK` carries those hashes
+and unchanged before/after media state, but no page bytes.
+
+Validation does not trust the receipt's base or root assertions. Its authority
+must independently supply the expected base byte count and SHA-256. The
+validator checks the receipt against both, performs the overflow-safe
+`byte_offset + 1024 <= base-byte-count` bound, and derives the expected root by
+applying the canonical `CDRM4OVERLAY1` construction below to that base and the
+authoritative initial LBA-1 payload hash. Any substituted base, false root,
+missing or duplicate arm pair, or forged record link is rejected.
+
+Changed payloads, malformed or out-of-range descriptors, stale or reused
+identities, a failed or short range read, any targeted M4 fault, rejected
+delivery, detach, missing fresh witness, or transcript mismatch fail closed
+without an acknowledgement, stage, commit, generation advance, root change,
+persistence, or sparse overlay. This is an implementation-tested
+reconstruction rule, not a claim about a historical CADR disk no-op
+acknowledgement. No new P4 campaign has exercised it, so it closes no M4 or M7
+runtime gate.
+
 The final overlay root is:
 
 ```text
@@ -408,6 +457,10 @@ request, followed by STABLE.
 Only a successful write delivery has COMMIT. A failed delivery has ABORT and leaves
 overlay identity unchanged. Reads use NONE. The stable turn requires no outstanding
 request, queued completion, or request payload.
+
+`IDENTITY_ACK` is deliberately not a `CDRM4MEDIA1` disposition.  It belongs to
+the separately typed M7 companion evidence above, so frozen M4 media bytes and
+their successful-write meaning remain unchanged.
 
 ### CDRM4CTRL1
 

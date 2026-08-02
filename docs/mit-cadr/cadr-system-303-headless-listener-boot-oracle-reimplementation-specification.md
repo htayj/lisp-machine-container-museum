@@ -3,7 +3,7 @@ type: Reimplementation Specification
 title: CADR-WEB-303 ABI 1.4 headless System 303 Listener boot oracle reimplementation specification
 description: Release-bounded contract for artifact preflight, raw Cadet boot input, source-defined Listener busy and idle witnesses, post-observer quiescence, bounded failures, and three-run native and WebAssembly conformance.
 tags: [mit-cadr, lm-3, system-303, listener, boot, oracle, webassembly, reimplementation]
-timestamp: 2026-08-01T20:55:00-04:00
+timestamp: 2026-08-02T05:37:12-04:00
 ---
 
 # CADR-WEB-303 ABI 1.4 headless System 303 Listener boot oracle reimplementation specification
@@ -557,6 +557,29 @@ and systemd scripts are control-plane scaffolding with explicit `--execute`,
 not observed boot evidence. In particular, their O0/O2 comparator's
 1,130,000-slot receipt check and its 25,000 slots/second, twelve-hour
 projection threshold have not been run against licensed System 303 media.
+
+The M7-only
+`CADR-WEB-303/ABI1.5/protocol-v5/C-M7-P4-EFFECTIVE-PAGE-IDENTITY-v1`
+companion may explicitly observe the returned fast record after each M6 call;
+it is disabled unless the M7 wrapper selects its exact typed policy.  It can
+arm only after the M4 boot-scratch commit, comparison, and base-read suffix,
+and only on the selected terminal quiet suffix at or after boundary `1030044`:
+a returned reason-1 record with zero persistent status and no outstanding
+request. This observation does not alter `CDRM6FAST1`, the M6 chain, the frozen
+M6 release, or ordinary M6 behavior.
+
+The block service never publishes the acknowledgement by itself. After a
+matching write completes, the M6 fast driver first serializes its adjacent
+issue/completion events into the exact `CDRM6HS1` transcript, obtains a fresh
+effective-page reread from the trusted service, and only then constructs the
+receipt. It binds both record ordinals and digests, all request identity and
+boundary fields, host status, selected-base identity, effective source,
+overlay generation/root, and unique record pairs for all three arm operations.
+The validator receives the selected base identity independently and derives
+the canonical overlay root from it and the transcript-authoritative initial
+commit page hash. A missing, duplicate, or forged arm pair, missing or second candidate, failed
+reread, or mismatch aborts publication. This is unit-tested M7 control-plane
+support, not a frozen M6 release result or a new P4 runtime observation.
 
 The O2 continuation canary has a deliberately separate, non-default
 systemd entry point:

@@ -1,3 +1,12 @@
+import { m4OverlayRootForBase, m4Sha256 } from "./cadr-m4-media.mjs";
+import {
+  CADR_M7_EFFECTIVE_PAGE_IDENTITY_CANDIDATE_SCHEMA,
+  CADR_M7_EFFECTIVE_PAGE_IDENTITY_ARM_SCHEMA,
+  CADR_M7_EFFECTIVE_PAGE_IDENTITY_MIN_QUIET_BOUNDARY,
+  createM7EffectivePageIdentityArm,
+  parseM7EffectivePageIdentityPolicy,
+} from "./cadr-m7-effective-page-identity.mjs";
+
 /*
  * M4-D0 immutable block-range service.
  *
@@ -127,6 +136,18 @@ export function createM4BlockRangeService(config) {
   const faultOperation = config.faultOperation ?? 0;
   const faultFirstBlock = config.faultFirstBlock ?? null;
   const faultOccurrence = config.faultOccurrence ?? 0n;
+  let effectivePageIdentity;
+  try {
+    effectivePageIdentity = parseM7EffectivePageIdentityPolicy(
+      config.m7EffectivePageIdentityPolicy);
+  } catch {
+    throw configError(CADR_STATUS_INVALID_ARGUMENT,
+      "invalid M7 effective-page identity policy");
+  }
+  const selectedBaseInput = config.selectedBaseSha256 === undefined ? null :
+    bytesOf(config.selectedBaseSha256);
+  const selectedBaseSha256 = selectedBaseInput === null ? null :
+    selectedBaseInput.slice();
   if (typeof readRange !== "function" || !unsigned64(imageByteCount) ||
       !unsigned64(expectedByteCount) || expectedByteCount !== imageByteCount) {
     throw configError(CADR_STATUS_ARTIFACT_MISMATCH, "wrong immutable image byte count");
@@ -134,6 +155,11 @@ export function createM4BlockRangeService(config) {
   if (!unsigned64(latencyTicks) || blockBytes !== CADR_M4_BLOCK_BYTES ||
       !unsigned32(faultMask) || (faultMask & ~CADR_M4_BLOCK_FAULT_KNOWN) !== 0) {
     throw configError(CADR_STATUS_INVALID_ARGUMENT, "invalid M4 block-service configuration");
+  }
+  if (effectivePageIdentity.enabled &&
+      (selectedBaseSha256 === null || selectedBaseSha256.byteLength !== 32)) {
+    throw configError(CADR_STATUS_INVALID_ARGUMENT,
+      "M7 effective-page identity needs the trusted selected-base hash");
   }
   if (![0, CADR_HOST_OPERATION_BLOCK_READ,
         CADR_HOST_OPERATION_BLOCK_WRITE].includes(faultOperation) ||
@@ -150,6 +176,156 @@ export function createM4BlockRangeService(config) {
   let overlayGeneration = 0n;
   let faultMatchCount = 0n;
   let committed = null;
+  const identity = {
+    policy: effectivePageIdentity,
+    phase: effectivePageIdentity.enabled ? "await-initial-commit" : "disabled",
+    initialCommit: null,
+    comparisonRead: null,
+    baseRead: null,
+    arm: null,
+    candidates: [],
+  };
+
+  function sameBytes(left, right) {
+    return left.byteLength === right.byteLength &&
+      left.every((value, index) => value === right[index]);
+  }
+
+  function blockReadIs(pending, firstBlock) {
+    return pending.request.operation === CADR_HOST_OPERATION_BLOCK_READ &&
+      pending.firstBlock === firstBlock && pending.blockCount === 1 &&
+      pending.blockBytes === blockBytes &&
+      pending.request.requestPayloadByteCount === 0n &&
+      pending.request.completionByteCount === BigInt(blockBytes) &&
+      pending.hostStatus === CADR_HOST_RESULT_OK &&
+      pending.bytes.byteLength === blockBytes;
+  }
+
+  async function bootRequestRecord(pending, page, completionBoundary) {
+    return Object.freeze({ generation: pending.request.generation,
+      request_id: pending.request.requestId,
+      transaction_id: pending.transactionId,
+      first_block: pending.firstBlock,
+      issue_boundary: pending.issueTick,
+      completion_boundary: completionBoundary,
+      page_sha256: await m4Sha256(page) });
+  }
+
+  async function identityBootDelivery(pending, overlayCommitted,
+                                      completionBoundary) {
+    if (!identity.policy.enabled || identity.phase === "blocked" ||
+        identity.phase === "acknowledged") return;
+    if (identity.phase === "await-initial-commit") {
+      if (pending.request.operation !== CADR_HOST_OPERATION_BLOCK_WRITE ||
+          pending.hostStatus !== CADR_HOST_RESULT_OK || !overlayCommitted ||
+          pending.firstBlock !== 1n || pending.blockCount !== 1 ||
+          pending.blockBytes !== blockBytes || pending.transactionId === 0n ||
+          pending.transactionId !== pending.request.requestId ||
+          overlayGeneration !== 1n || overlay === null) {
+        identity.phase = "blocked";
+        return;
+      }
+      identity.initialCommit = await bootRequestRecord(pending,
+        pending.requestPayload, completionBoundary);
+      identity.phase = "await-lba1-compare";
+      return;
+    }
+    if (identity.phase === "await-lba1-compare") {
+      if (!blockReadIs(pending, 1n) || overlay === null ||
+          !sameBytes(pending.bytes, overlay)) {
+        identity.phase = "blocked";
+        return;
+      }
+      identity.comparisonRead = await bootRequestRecord(pending, pending.bytes,
+        completionBoundary);
+      identity.phase = "await-lba0-read";
+      return;
+    }
+    if (identity.phase === "await-lba0-read") {
+      if (!blockReadIs(pending, 0n)) {
+        identity.phase = "blocked";
+        return;
+      }
+      identity.baseRead = await bootRequestRecord(pending, pending.bytes,
+        completionBoundary);
+      identity.phase = "await-quiet-suffix";
+    }
+  }
+
+  async function overlayRootSnapshot() {
+    if (overlay === null) return m4OverlayRootForBase(selectedBaseSha256, new Map());
+    const pageSha256 = await m4Sha256(overlay);
+    return m4OverlayRootForBase(selectedBaseSha256,
+      new Map([[1n, pageSha256]]));
+  }
+
+  function parseSingleBlockWrite(request, descriptor, payload) {
+    if (request.operation !== CADR_HOST_OPERATION_BLOCK_WRITE ||
+        descriptor.byteLength !== 24) return null;
+    const view = new DataView(descriptor.buffer, descriptor.byteOffset,
+      descriptor.byteLength);
+    const transactionId = view.getBigUint64(0, true);
+    const firstBlock = view.getBigUint64(8, true);
+    const blockCount = view.getUint32(16, true);
+    const requestBlockBytes = view.getUint32(20, true);
+    const offset = firstBlock * BigInt(blockBytes);
+    if (transactionId === 0n || transactionId !== request.requestId ||
+        blockCount !== 1 || requestBlockBytes !== blockBytes ||
+        request.requestPayloadByteCount !== BigInt(blockBytes) ||
+        request.completionByteCount !== 0n || payload.byteLength !== blockBytes ||
+        offset > imageByteCount || BigInt(blockBytes) > imageByteCount - offset) {
+      return null;
+    }
+    return Object.freeze({ transactionId, firstBlock, blockCount,
+      requestBlockBytes, offset });
+  }
+
+  function requestIsNewer(request, transactionId) {
+    return committed !== null && transactionId === request.requestId &&
+      (request.generation > committed.generation ||
+       (request.generation === committed.generation &&
+        request.requestId > committed.requestId));
+  }
+
+  async function identityAcknowledgementCandidate(request, descriptor, payload,
+                                                  parsed, tick) {
+    if (!identity.policy.enabled || identity.phase !== "armed" ||
+        identity.candidates.length !== 0 ||
+        !requestIsNewer(request, parsed.transactionId)) {
+      return null;
+    }
+    let effective;
+    let effectiveSource;
+    if (parsed.firstBlock === 1n && overlay !== null) {
+      effective = overlay.slice();
+      effectiveSource = "overlay";
+    } else {
+      try {
+        const supplied = bytesOf(await readRange(parsed.offset,
+          BigInt(blockBytes)));
+        if (supplied === null || supplied.byteLength !== blockBytes) return false;
+        effective = supplied.slice();
+        effectiveSource = "base";
+      } catch {
+        return false;
+      }
+    }
+    if (!sameBytes(payload, effective)) return false;
+    const root = await overlayRootSnapshot();
+    return Object.freeze({
+      schema: CADR_M7_EFFECTIVE_PAGE_IDENTITY_CANDIDATE_SCHEMA,
+      profile: identity.policy.profile, arm: identity.arm,
+      generation: request.generation, request_id: request.requestId,
+      transaction_id: parsed.transactionId, first_block: parsed.firstBlock,
+      descriptor: descriptor.slice(), effective_source: effectiveSource,
+      effective_page_sha256: await m4Sha256(effective),
+      issue_boundary: tick, due_boundary: tick + latencyTicks,
+      host_status: CADR_HOST_RESULT_OK,
+      media_before: Object.freeze({ dirty: overlay !== null,
+        overlay_generation: overlayGeneration, overlay_root_sha256: root,
+        persistent: false, staged: false }),
+    });
+  }
 
   function selectedFaultMask(request, firstBlock) {
     if ((faultOperation !== 0 && faultOperation !== request.operation) ||
@@ -199,6 +375,7 @@ export function createM4BlockRangeService(config) {
     let transactionId = 0n;
     let staged = null;
     let replay = false;
+    let identityAcknowledgement = null;
     if (request.operation === CADR_HOST_OPERATION_BLOCK_READ &&
         descriptor.byteLength === 16 && request.completionByteCount <= BigInt(CADR_M4_MAX_COMPLETION_BYTES)) {
       const view = new DataView(descriptor.buffer, descriptor.byteOffset, descriptor.byteLength);
@@ -228,32 +405,38 @@ export function createM4BlockRangeService(config) {
       }
     } else if (request.operation === CADR_HOST_OPERATION_BLOCK_WRITE &&
                descriptor.byteLength === 24) {
-      const view = new DataView(descriptor.buffer, descriptor.byteOffset, descriptor.byteLength);
-      transactionId = view.getBigUint64(0, true);
-      firstBlock = view.getBigUint64(8, true);
-      blockCount = view.getUint32(16, true);
-      requestBlockBytes = view.getUint32(20, true);
-      if (transactionId !== 0n && firstBlock === 1n && blockCount === 1 &&
-          transactionId === request.requestId &&
-          requestBlockBytes === blockBytes &&
-          request.requestPayloadByteCount === BigInt(blockBytes) &&
-          request.completionByteCount === 0n &&
-          payload.byteLength === blockBytes &&
-          overlayGeneration < 0xffffffffffffffffn) {
+      const parsed = parseSingleBlockWrite(request, descriptor, payload);
+      if (parsed !== null) {
+        ({ transactionId, firstBlock, blockCount, requestBlockBytes } = parsed);
         if (committed !== null &&
             committed.generation === request.generation &&
             committed.requestId === request.requestId &&
-            committed.transactionId === transactionId) {
+            committed.transactionId === transactionId &&
+            sameBytes(committed.descriptor, descriptor)) {
           if (overlay !== null && overlay.byteLength === payload.byteLength &&
               overlay.every((value, index) => value === payload[index])) {
             bytes = new Uint8Array(0);
             hostStatus = CADR_HOST_RESULT_OK;
             replay = true;
           }
-        } else if (committed === null ||
-                   request.generation > committed.generation ||
-                   (request.generation === committed.generation &&
-                    request.requestId > committed.requestId)) {
+        } else if (identity.policy.enabled &&
+                   identity.phase !== "await-initial-commit") {
+          const candidate = await identityAcknowledgementCandidate(request,
+            descriptor, payload, parsed, tick);
+          if (candidate !== null && candidate !== false) {
+            identityAcknowledgement = candidate;
+            bytes = new Uint8Array(0);
+            hostStatus = CADR_HOST_RESULT_OK;
+          } else {
+            /* Once the M7 policy is selected, a post-boot write has no
+             * fallback mutation path.  An unarmed, changed, malformed, or
+             * unreadable candidate is a failed host completion. */
+            bytes = new Uint8Array(0);
+            hostStatus = CADR_HOST_RESULT_FAILED;
+          }
+        } else if (firstBlock === 1n &&
+                   overlayGeneration < 0xffffffffffffffffn &&
+                   (committed === null || requestIsNewer(request, transactionId))) {
           staged = payload.slice();
           bytes = new Uint8Array(0);
           hostStatus = CADR_HOST_RESULT_OK;
@@ -263,7 +446,12 @@ export function createM4BlockRangeService(config) {
     }
     const activeFaultMask = selectedFaultMask(request, firstBlock);
     if (bytes === null) bytes = new Uint8Array(Number(request.completionByteCount));
-    if ((activeFaultMask & CADR_M4_BLOCK_FAULT_STATUS_FAILED) !== 0) {
+    if (identityAcknowledgement !== null &&
+        activeFaultMask !== CADR_M4_BLOCK_FAULT_NONE) {
+      identityAcknowledgement = null;
+      hostStatus = CADR_HOST_RESULT_FAILED;
+      bytes.fill(0);
+    } else if ((activeFaultMask & CADR_M4_BLOCK_FAULT_STATUS_FAILED) !== 0) {
       hostStatus = CADR_HOST_RESULT_FAILED;
       bytes.fill(0);
       if (staged !== null) {
@@ -284,7 +472,7 @@ export function createM4BlockRangeService(config) {
       request, descriptor: descriptor.slice(),
       requestPayload: payload.slice(),
       bytes, hostStatus, firstBlock, blockCount, transactionId, staged,
-      replay, activeFaultMask,
+      replay, identityAcknowledgement, activeFaultMask,
       blockBytes: requestBlockBytes, issueTick: tick,
       dueTick: tick + latencyTicks + extraTick,
       overlayGeneration,
@@ -300,6 +488,9 @@ export function createM4BlockRangeService(config) {
       const discardPending = () => {
         if (pending?.staged !== null && pending?.staged !== undefined) {
           pending.staged.fill(0);
+        }
+        if (identity.policy.enabled && identity.phase !== "acknowledged") {
+          identity.phase = "blocked";
         }
         pending = null;
       };
@@ -347,6 +538,9 @@ export function createM4BlockRangeService(config) {
           return { status: CADR_STATUS_INVALID_ARGUMENT, events };
         }
         if (completion.status !== CADR_STATUS_OK) {
+          if (identity.policy.enabled && identity.phase !== "acknowledged") {
+            identity.phase = "blocked";
+          }
           pending = null;
           return { status: completion.status, events };
         }
@@ -360,6 +554,7 @@ export function createM4BlockRangeService(config) {
             CADR_HOST_OPERATION_BLOCK_WRITE ?
             pending.requestPayload.slice() : pending.bytes.slice(),
         };
+        let overlayCommitted = false;
         if (pending.request.operation === CADR_HOST_OPERATION_BLOCK_WRITE &&
             pending.hostStatus === CADR_HOST_RESULT_OK &&
             pending.staged !== null) {
@@ -369,14 +564,31 @@ export function createM4BlockRangeService(config) {
             generation: pending.request.generation,
             requestId: pending.request.requestId,
             transactionId: pending.transactionId,
+            descriptor: pending.descriptor.slice(),
           };
           delivered.overlayCommitted = true;
           delivered.overlayGeneration = overlayGeneration;
+          overlayCommitted = true;
         } else if (pending.request.operation ===
                      CADR_HOST_OPERATION_BLOCK_WRITE &&
                    pending.hostStatus === CADR_HOST_RESULT_OK &&
                    pending.replay) {
           delivered.overlayReplayed = true;
+        }
+        await identityBootDelivery(pending, overlayCommitted, tick);
+        if (pending.identityAcknowledgement !== null &&
+            pending.hostStatus === CADR_HOST_RESULT_OK) {
+          const currentRoot = await overlayRootSnapshot();
+          const candidate = Object.freeze({ ...pending.identityAcknowledgement,
+            completion_boundary: tick,
+            media_after: Object.freeze({ dirty: overlay !== null,
+              overlay_generation: overlayGeneration,
+              overlay_root_sha256: currentRoot,
+              persistent: false, staged: false }) });
+          delivered.identityAcknowledged = true;
+          delivered.identityAcknowledgementCandidate = candidate;
+          identity.candidates.push(candidate);
+          identity.phase = "acknowledged";
         }
         events.push(delivered);
         pending = null;
@@ -414,6 +626,81 @@ export function createM4BlockRangeService(config) {
     hasPendingRequest() {
       return pending !== null;
     },
+    m7EffectivePageIdentityEnabled() {
+      return identity.policy.enabled;
+    },
+    m7EffectivePageIdentityCandidates() {
+      return Object.freeze(identity.candidates.map(value => value));
+    },
+    m7EffectivePageIdentityArm() {
+      return identity.arm;
+    },
+    observeM7EffectivePageIdentityQuietSuffix(observation) {
+      if (!identity.policy.enabled || detaching) return Promise.resolve(null);
+      const result = lifecycleTail.then(async () => {
+        if (detaching || identity.phase !== "await-quiet-suffix") return null;
+        if (observation === null || typeof observation !== "object" ||
+            Object.getPrototypeOf(observation) !== Object.prototype ||
+            Object.keys(observation).sort().join(",") !==
+              "boundary,outstandingRequestId,persistentStatus,reason" ||
+            !unsigned64(observation.boundary) || observation.reason !== 1 ||
+            !unsigned32(observation.persistentStatus) ||
+            observation.persistentStatus !== 0 ||
+            !unsigned64(observation.outstandingRequestId) ||
+            observation.outstandingRequestId !== 0n ||
+            observation.boundary < CADR_M7_EFFECTIVE_PAGE_IDENTITY_MIN_QUIET_BOUNDARY ||
+            identity.initialCommit === null || identity.comparisonRead === null ||
+            identity.baseRead === null ||
+            overlay === null || overlayGeneration !== 1n || pending !== null) {
+          identity.phase = "blocked";
+          return null;
+        }
+        identity.arm = createM7EffectivePageIdentityArm({
+          schema: CADR_M7_EFFECTIVE_PAGE_IDENTITY_ARM_SCHEMA,
+          profile: identity.policy.profile,
+          initial_commit: identity.initialCommit,
+          comparison_read: identity.comparisonRead,
+          base_read: identity.baseRead,
+          quiet_suffix: { boundary: observation.boundary, reason: observation.reason,
+            persistent_status: observation.persistentStatus,
+            outstanding_request_id: observation.outstandingRequestId },
+        });
+        identity.phase = "armed";
+        return identity.arm;
+      });
+      lifecycleTail = result.then(() => undefined, () => undefined);
+      return result;
+    },
+    m7EffectivePageIdentityWitness() {
+      if (!identity.policy.enabled || detaching || identity.phase !== "acknowledged" ||
+          identity.candidates.length !== 1) return Promise.resolve(null);
+      const result = lifecycleTail.then(async () => {
+        if (detaching || pending !== null || identity.phase !== "acknowledged") return null;
+        const candidate = identity.candidates[0];
+        let bytes;
+        if (candidate.first_block === 1n && overlay !== null) {
+          bytes = overlay.slice();
+        } else {
+          const offset = candidate.first_block * BigInt(blockBytes);
+          let supplied;
+          try {
+            supplied = bytesOf(await readRange(offset, BigInt(blockBytes)));
+          } catch {
+            return null;
+          }
+          if (supplied === null || supplied.byteLength !== blockBytes) return null;
+          bytes = supplied.slice();
+        }
+        return Object.freeze({ first_block: candidate.first_block,
+          effective_source: candidate.effective_source, bytes,
+          media: Object.freeze({ dirty: overlay !== null,
+            overlay_generation: overlayGeneration,
+            overlay_root_sha256: await overlayRootSnapshot(),
+            persistent: false, staged: false }) });
+      });
+      lifecycleTail = result.then(() => undefined, () => undefined);
+      return result;
+    },
     discard() {
       if (detaching) {
         return Promise.reject(configError(
@@ -430,6 +717,12 @@ export function createM4BlockRangeService(config) {
         overlayGeneration = 0n;
         committed = null;
         faultMatchCount = 0n;
+        identity.phase = identity.policy.enabled ? "blocked" : "disabled";
+        identity.initialCommit = null;
+        identity.comparisonRead = null;
+        identity.baseRead = null;
+        identity.arm = null;
+        identity.candidates.length = 0;
         attachmentEpoch += 1n;
       }).finally(() => {
         detaching = false;

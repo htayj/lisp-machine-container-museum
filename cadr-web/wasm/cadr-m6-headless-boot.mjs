@@ -18,6 +18,8 @@ import {
   CADR_STATUS_NOT_READY,
   createM4BlockRangeService,
 } from "./cadr-m4-block-service.mjs";
+import { createM7EffectivePageIdentityAcknowledgement } from
+  "./cadr-m7-effective-page-identity.mjs";
 import { CADR_STATUS_UNIMPLEMENTED_DEVICE,
   parseCadrM7UnimplementedDiagnostic } from "./cadr-m7-devid-failure.mjs";
 
@@ -2496,7 +2498,17 @@ async function serviceM6FastHost(client, context, hostTransactions, limits) {
   }
   for (const event of polled.events) {
     if (event.requestSeen) hostTransactions += 1;
-    context.transcript.push(await transcriptRecord(event, context.transcript.length));
+    const ordinal = context.transcript.length;
+    context.transcript.push(await transcriptRecord(event, ordinal));
+    if (event.identityAcknowledgementCandidate !== undefined) {
+      if (!Array.isArray(context.identityCandidates) || ordinal === 0) {
+        throw new TypeError("M7 effective-page candidate appeared outside its profile");
+      }
+      context.identityCandidates.push(Object.freeze({
+        candidate: event.identityAcknowledgementCandidate,
+        issueOrdinal: ordinal - 1, completionOrdinal: ordinal,
+      }));
+    }
   }
   if (context.blockService.hasPendingRequest()) {
     return Object.freeze({ failed: "positive-latency-host-service-is-not-selected",
@@ -2521,7 +2533,8 @@ async function runM6Ready4FastInternal(config, testReady = null) {
       new TextEncoder().encode("CDRM6FASTCHAIN1\0")), checkpointCount: 0,
     checkpointRecords: [],
     hostWaitChain: await sha256(new TextEncoder().encode("CDRM6FASTHOSTWAIT1\0")),
-    hostWaitCount: 0, hostWaitRecords: [],
+    hostWaitCount: 0, hostWaitRecords: [], identityCandidates: [],
+    selectedBase: null,
     runEvidence: { sessionId: freshEvidenceId("m6-ready4-session"),
       privateDiskInstanceId: freshEvidenceId("m6-ready4-private-disk"),
       privateDiskBaseSha256: null }, blockService: null,
@@ -2550,9 +2563,15 @@ async function runM6Ready4FastInternal(config, testReady = null) {
     const disk = context.preflight.sources.find(source => source.kind === 3);
     const diskIdentity = context.preflight.artifacts.find(artifact => artifact.kind === 3);
     context.runEvidence.privateDiskBaseSha256 = diskIdentity.sha256.slice();
+    context.selectedBase = Object.freeze({ byte_count: disk.byteCount,
+      sha256: diskIdentity.sha256.slice() });
     context.runEvidence = Object.freeze(context.runEvidence);
     context.blockService = createM4BlockRangeService({ imageByteCount: disk.byteCount,
-      expectedImageByteCount: disk.byteCount, readRange: disk.readRange });
+      expectedImageByteCount: disk.byteCount, readRange: disk.readRange,
+      ...(config.m7EffectivePageIdentityPolicy === undefined ? {} : {
+        m7EffectivePageIdentityPolicy: config.m7EffectivePageIdentityPolicy,
+        selectedBaseSha256: diskIdentity.sha256 }),
+    });
   } catch (error) {
     return { outcome: "failed", preflight: null, transcript: [], report: failure(
       error.status === STATUS_ARTIFACT_MISMATCH ? "artifact-preflight-mismatch" :
@@ -2627,6 +2646,13 @@ async function runM6Ready4FastInternal(config, testReady = null) {
         terminalStatus: fast.terminalStatus, reason: fast.reason,
         preBoundary: fast.preBoundary, postBoundary: fast.postBoundary });
       context.boundary = fast.postBoundary;
+      if (typeof context.blockService.observeM7EffectivePageIdentityQuietSuffix === "function") {
+        await context.blockService.observeM7EffectivePageIdentityQuietSuffix({
+          boundary: context.boundary, reason: fast.reason,
+          persistentStatus: fast.persistentStatus,
+          outstandingRequestId: fast.outstandingRequestId,
+        });
+      }
       if (fast.reason === 3) {
         context.hostWaitRecords.push(fast.bytes.slice());
         context.hostWaitChain = await appendM6FastHostWait(context.hostWaitChain,
@@ -2701,6 +2727,32 @@ async function runM6Ready4FastInternal(config, testReady = null) {
         artifactSetSha256: context.preflight.artifactSetSha256,
         hostWaitRecords: context.hostWaitRecords,
       });
+      let identityAcknowledgements = Object.freeze([]);
+      if (context.blockService.m7EffectivePageIdentityEnabled()) {
+        if (context.identityCandidates.length > 1) {
+          throw new Error("M7 effective-page profile produced multiple candidates");
+        }
+        if (context.identityCandidates.length === 1) {
+          const linked = context.identityCandidates[0];
+          const serviceCandidates =
+            context.blockService.m7EffectivePageIdentityCandidates();
+          const witness = await context.blockService.m7EffectivePageIdentityWitness();
+          if (serviceCandidates.length !== 1 || witness === null ||
+              serviceCandidates[0] !== linked.candidate) {
+            throw new Error("M7 effective-page candidate lacks its trusted reread");
+          }
+          identityAcknowledgements = Object.freeze([
+            await createM7EffectivePageIdentityAcknowledgement({
+              candidate: linked.candidate,
+              issue_ordinal: linked.issueOrdinal,
+              completion_ordinal: linked.completionOrdinal,
+              host_transcript: hostTranscript,
+              selected_base: context.selectedBase,
+              effective_page_witness: witness,
+            }),
+          ]);
+        }
+      }
       const ready3Witness = await canonicalM6ReadyWitnessFromValidatedRecord({
         record: config.ready, releaseRecord: config.ready.releaseRecord,
         artifactSetSha256: context.preflight.artifactSetSha256,
@@ -2717,6 +2769,13 @@ async function runM6Ready4FastInternal(config, testReady = null) {
         checkpointChainSha256: context.checkpointChain,
         hostWaitCount: context.hostWaitCount,
         hostWaitChainSha256: context.hostWaitChain });
+      const m7EffectivePageIdentity =
+        typeof context.blockService.m7EffectivePageIdentityEnabled === "function" &&
+        context.blockService.m7EffectivePageIdentityEnabled() ? Object.freeze({
+          profile: config.m7EffectivePageIdentityPolicy.profile,
+          arm: context.blockService.m7EffectivePageIdentityArm(),
+          acknowledgements: identityAcknowledgements,
+        }) : null;
       return Object.freeze({ outcome: "ready4", target: CADR_M6_DEVID_PROFILE,
         contract: CADR_M6_READY4_CONTRACT, runEvidence: context.runEvidence,
         preflight: publicPreflight(context.preflight), ready: Object.freeze({ ...readyWitness,
@@ -2733,6 +2792,7 @@ async function runM6Ready4FastInternal(config, testReady = null) {
         cdrm6e1TotalAccepted: summary.totalAccepted,
         cdrm6e1TailEventCount: summary.tailEventCount,
         transcript: context.transcript.slice(), hostTranscript, hostTranscriptSha256,
+        ...(m7EffectivePageIdentity === null ? {} : { m7EffectivePageIdentity }),
         machineInfo: context.lastMachineInfo, quiescence,
         noPendingOrOrphanedHostRequest: true });
     } catch (error) {

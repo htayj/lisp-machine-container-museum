@@ -1067,9 +1067,18 @@ async function executeM7P4FastDifferentialInternal(config, {
   if (result.target !== CADR_M7_READY4_FAST_TARGET || result.contract !== CADR_M7_READY4_FAST_CONTRACT) {
     fail("M7 fast differential result has the wrong target or contract");
   }
+  const identityAcknowledgementSha256 =
+    result.identityAcknowledgementSha256 instanceof IntrinsicUint8Array ?
+      result.identityAcknowledgementSha256 : null;
+  if (identityAcknowledgementSha256 === null ||
+      identityAcknowledgementSha256.byteLength !== 32) {
+    fail("M7 fast differential result lacks its identity acknowledgement digest");
+  }
   return Object.freeze({ ...result, nativeAuthority: native.receipt,
-    executionReceipt: Object.freeze({ schema: "cadr-m7-p4-fast-execution-receipt-v2",
+    executionReceipt: Object.freeze({ schema: "cadr-m7-p4-fast-execution-receipt-v3",
       provenance: executionProvenance,
+      effective_page_identity_ack_sha256:
+        Buffer.from(identityAcknowledgementSha256).toString("hex"),
       p4_expected_closure_sha256: native.receipt.expected_closure_sha256,
       p4_manifest_sha256: native.receipt.manifest.sha256,
       protocol_transcript_sha256: canonicalDigest(transcript) }),

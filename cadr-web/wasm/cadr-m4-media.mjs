@@ -37,14 +37,15 @@ export async function m4Sha256(value = new Uint8Array(0)) {
       bytes.byteOffset, bytes.byteOffset + bytes.byteLength)));
 }
 
-export async function m4OverlayRoot(entries) {
+export async function m4OverlayRootForBase(baseSha256, entries) {
+  const base = copyHash(baseSha256);
   const ordered = [...entries.entries()].sort(([left], [right]) =>
     left < right ? -1 : left > right ? 1 : 0);
   const bytes = new Uint8Array(
     OVERLAY_DOMAIN.byteLength + 32 + 8 + ordered.length * 40);
   const view = new DataView(bytes.buffer);
   bytes.set(OVERLAY_DOMAIN, 0);
-  bytes.set(BASE_SHA256, OVERLAY_DOMAIN.byteLength);
+  bytes.set(base, OVERLAY_DOMAIN.byteLength);
   view.setBigUint64(OVERLAY_DOMAIN.byteLength + 32,
     BigInt(ordered.length), true);
   let offset = OVERLAY_DOMAIN.byteLength + 40;
@@ -54,6 +55,10 @@ export async function m4OverlayRoot(entries) {
     offset += 40;
   }
   return m4Sha256(bytes);
+}
+
+export function m4OverlayRoot(entries) {
+  return m4OverlayRootForBase(BASE_SHA256, entries);
 }
 
 export function m4EmptyTurn() {

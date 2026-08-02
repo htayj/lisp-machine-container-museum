@@ -421,6 +421,7 @@ m7-unit: build/test_cadr_m7_display build/test_cadr_m7_profile_isolation build/t
 	guix shell node -- node ../tests/test_cadr_m7_worker.mjs --variant O2
 	guix shell node -- node ../tests/test_cadr_m7_frame_checkpoint.mjs
 	guix shell node -- node ../tests/test_cadr_m7_devid_failure_diagnostic.mjs
+	guix shell node -- node ../tests/test_cadr_m7_effective_page_identity.mjs
 	guix shell node -- node ../tests/test_run_cadr_m7_frame_conformance.mjs
 	python3 ../tests/test_run_cadr_m7_browser_conformance.py
 	guix shell node -- node ../tests/test_cadr_m7_devid_o2_canary.mjs

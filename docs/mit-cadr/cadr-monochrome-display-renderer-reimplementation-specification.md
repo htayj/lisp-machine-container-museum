@@ -3,7 +3,7 @@ type: Reimplementation Specification
 title: CADR-WEB-303 ABI 1.5 monochrome display and browser renderer reimplementation specification
 description: A release-bounded contract for transferring, validating, rendering, and testing the System 303 monochrome framebuffer without claiming an unrecorded native Listener-pixel oracle.
 tags: [mit-cadr, lm-3, system-303, webassembly, display, framebuffer, renderer, reimplementation]
-timestamp: 2026-07-30T07:03:57-04:00
+timestamp: 2026-08-02T05:37:12-04:00
 ---
 
 # CADR-WEB-303 ABI 1.5 monochrome display and browser renderer reimplementation specification
@@ -39,6 +39,7 @@ The terms `MUST`, `MUST NOT`, `SHOULD`, and `MAY` state requirements for an inde
 | `M7-UNIT` | M7 C and Node tests named below | exercised synthetic, malformed-input, and presentation behavior | an unexercised real guest screen |
 | `M7-XTARGET` | direct native `tv.c` fixture and Wasm worker comparison | raw logical pixels agree for two selected source words | a native System 303 Listener checkpoint |
 | `M7-DEVID-RAW` | retained, ignored receipt-bound 776a427 child envelope and outer-failure record | the bounded intervention child reached its recorded nonterminal 1,130,000-boundary state under the recorded systemd accounting | publication of an ordinary final receipt, a raw native frame, or browser presentation |
+| `M7-EPI-UNIT` | [`test_cadr_m7_effective_page_identity.mjs`](../../tests/test_cadr_m7_effective_page_identity.mjs) | the selected synthetic M4/M6-to-M7 acknowledgement state machine and receipt validation | a historical disk protocol, a P4 run, or a framebuffer checkpoint |
 | `INF-M7` | this specification | new wire format, dirty coalescing, generation, and browser ownership rules | a historical CADR device detail |
 | `TODO-RUNTIME-M7-01` | the explicit oracle procedure below | the missing real-screen claim once run | a result before the capture exists |
 | `TODO-RUNTIME-M7-02` | the explicit real-browser procedure below | integral fit/fullscreen presentation once run | raw native/Wasm identity |
@@ -181,6 +182,7 @@ a private runtime without a separate explicit `--execute`.
 | `test_cadr_m7_renderer.mjs` | raw PBM/displayed PPM hashes, LSB-first extraction, BOW polarity, strictly monotonic full/delta application, stale/equal full, old-machine stale full, old-machine high delta, malformed-record atomic rejection, integral letterboxing, and canvas smoothing policy |
 | `test_cadr_m7_worker.mjs` | protocol-v4 rejection, protocol-v5 export admission, initial/full/empty response shape, same-renderer restore at exactly the next framebuffer generation, recovery-full advancement, and full 739,584-pixel O0/O2 equality against the independent zero-plus-three-bit logical fixture; checkout-only runs additionally compare both builds to a fresh native PBM |
 | `test_cadr_m7_frame_checkpoint.mjs` | synthetic Form-C boundary wrapper sequencing, portable witness validation, strict frame comparison, and first-difference reporting |
+| `test_cadr_m7_effective_page_identity.mjs` | default-disabled M4 preservation; first-write replay precedence; selected boot-scratch arm; exact effective-page acknowledgement; independent receipt validation; changed, malformed, reread-failure, targeted-fault, and detach rejection without media mutation |
 | `test_cadr_m7_native_frame_witness.py` in checkout-only `m7-native-source-unit` | source-local private capture writer framing, one-shot behavior, and failure rollback against the pinned native `tv.h` declaration |
 | `test_cadr_m7_native_frame_oracle.py` in checkout-only `m7-native-source-unit` | private-record parser, isolated M6-then-M7 source closure, build-marker integrity, and inert capture-plan validation |
 | `test_run_cadr_m7_frame_conformance.mjs` | P4 hashes-only manifest schema and substitutions of every release, source, support, artifact, schedule, session, disk, process, native-frame, portable-module, contemporaneous adapter observation, staged worker closure, checkpoint, comparison, and summary binding |
@@ -358,6 +360,72 @@ An image rendered from the M7 raw comparator is an oracle by-product, not automa
 ### 5. M6 release isolation
 
 The current M6 release remains immutable. `0003`, the frame-witness executable, its environment policy, capture bundle, comparator, and M7 evidence record are a new M7-only lineage that references the frozen M6 release by SHA-256. It neither rewrites M6 evidence nor broadens the M6 verifier's accepted output. Do not begin this long native/portable campaign until the supervised M6 campaign has finished and its release artifacts are stable.
+
+### 6. M7 effective-page identity acknowledgement companion
+
+The additive, default-disabled profile
+`CADR-WEB-303/ABI1.5/protocol-v5/C-M7-P4-EFFECTIVE-PAGE-IDENTITY-v1`
+recognizes one later write whose bytes already equal an effective in-range
+1,024-byte disk page, without mutating that page or inventing a second M4
+commit. It is not a general CADR disk protocol claim.
+
+The M7 wrapper supplies the exact policy to the M6 fast driver, which retains
+its frozen M4 and `CDRM6FAST1` representations.  The companion first observes
+the selected M4 sequence: the normal initial LBA-1 `COMMIT`, its overlay-backed
+comparison read, and the LBA-0 base read.  It then requires the next qualifying
+M6 quiet suffix at or after boundary `1030044`: reason `1`, persistent status
+`0`, and no outstanding host request. That state creates a typed arm binding
+all three completed boot requests, their boundaries and page hashes, and the
+quiet record. It neither writes a page nor changes M4 staging, generation,
+root, dirty, or persistence state.
+
+An armed companion accepts at most one non-replay write only when its descriptor
+is exactly one in-range 1,024-byte block, transaction ID equals request ID, and
+its `(generation, request ID)` is newer than the initial commit. It compares
+LBA 1 with the effective overlay and every other LBA with an overflow-safe
+bounded base read. Exact replay of the initial LBA-1 descriptor and payload has
+precedence and remains M4 replay; same-ID descriptor or payload changes fail.
+Successful delivery produces only an internal candidate. M6 then rereads the
+effective page from the trusted service and validates the adjacent issue and
+completion records in the serialized `CDRM6HS1` transcript before it constructs
+the public `IDENTITY_ACK`.
+
+That v3 receipt binds the selected base, full arm, request LBA and bounds,
+generation/request/transaction identities, descriptor and payload hashes,
+issue/due/completion boundaries, host status, effective source, unchanged
+overlay generation/root, and transcript plus record digests. The record excludes
+page bytes. Validation requires the transcript again and exactly one independent
+page authority: trusted reread bytes for general tests, or the separately pinned
+effective-page hash for selected P4. The authority also supplies the expected
+base byte count and hash. The validator independently bounds the page and
+derives the canonical overlay root from that base plus the initial committed
+LBA-1 page; receipt-provided base and root values are not authorities. Each of
+the three arm operations must have exactly one matching `CDRM6HS1`
+issue/completion pair, distinct from the candidate pair.
+
+Changed, stale, malformed, or out-of-range input, a second candidate, any
+selected M4 fault, short or throwing reread, completion failure, detach, or
+forged receipt/transcript produces no acknowledgement and does not fall back to
+staging, committing, generating a root, persisting, or creating a sparse
+overlay.
+
+Selected P4 requires exactly one non-null acknowledgement for generation `1`,
+request and transaction `135`, LBA `1299`, issue/due/completion boundary
+`1366722`, effective-page SHA-256
+`ba1b1cc2228edbe5028760e47687c6889023fc72221bd5c5f5be85c4cfbb6a00`,
+selected-base SHA-256
+`bb16e46ad81decfe1efe691d36b6aa4ce3fd4ffb82474365de3520989d397cb5`,
+and unchanged overlay generation `1`. The campaign execution receipt includes
+the canonical acknowledgement digest. These are selected compatibility
+requirements derived from retained request evidence, not proof that the new
+acknowledgement path has completed a real P4 run. `M7-EPI-UNIT` remains
+synthetic unit evidence; no new P4 campaign was run, and `M7-P4`, `M7-P5`, and
+`C-M7` remain open.
+
+The selected arm is additionally pinned to generation/request/transaction/LBA
+tuples `(1,1,1,1)`, `(1,2,0,1)`, and `(1,3,0,0)` for initial commit,
+comparison read, and base read respectively, plus the exact reason-1 quiet
+record at boundary `1030044`. Self-consistent substitutions remain invalid.
 
 This oracle will discriminate an accidental word-endianness agreement in the synthetic fixture from actual machine-state equivalence. Until it exists, neither the M0 native Listener pixel hash nor this page's synthetic PBM hashes establish native/Wasm System 303 display identity.
 

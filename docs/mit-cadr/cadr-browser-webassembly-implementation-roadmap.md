@@ -3,7 +3,7 @@ type: Implementation Roadmap
 title: MIT CADR System 303 browser and WebAssembly implementation roadmap
 description: A milestone-complete plan for porting the pinned System 303 CADR emulator to a deterministic, locally persistent, browser-hosted WebAssembly machine.
 tags: [mit-cadr, lm-3, system-303, webassembly, browser, emulator, roadmap]
-timestamp: 2026-08-02T04:29:35-04:00
+timestamp: 2026-08-02T05:37:12-04:00
 ---
 
 # MIT CADR System 303 browser and WebAssembly implementation roadmap
@@ -843,6 +843,32 @@ adjacent Xbus space and the pre-M7 profile remain fail-closed. The native transc
 does not serialize every bus transaction, so this classification is a pinned-source
 conclusion rather than a claim that the same-boundary native write was captured.
 This repair still does not close either M7 runtime prong.
+
+Effective-page identity hardening, 2026-08-02: the default-disabled P4
+companion now preserves the original M4 LBA-1 commit and exact replay first,
+then, only after the exact selected boot suffix and a reason-1 quiet record at
+or after boundary `1030044`, can acknowledge one strictly newer,
+byte-identical one-block write anywhere within the selected base. LBA 1 is
+checked against the effective overlay; all other LBAs use an overflow-safe
+bounded base read. M6, not the block service, creates the public receipt after
+successful completion, an independent effective-page reread, and exact linkage
+to unique adjacent `CDRM6HS1` issue/completion records for the candidate and
+all three arm operations. The validator independently receives the expected
+base identity, checks page bounds, and derives the canonical overlay root from
+that base plus the authoritative initial LBA-1 commit hash.
+
+The selected target is the retained generation-1 request/transaction `135` for
+LBA `1299` at boundary `1366722`, page SHA-256
+`ba1b1cc2228edbe5028760e47687c6889023fc72221bd5c5f5be85c4cfbb6a00`,
+with overlay generation `1` unchanged. P4 now requires exactly one such receipt
+and the selected arm tuples `(1,1,1,1)`, `(1,2,0,1)`, and `(1,3,0,0)` plus
+the exact boundary-`1030044` quiet record. It binds the receipt's canonical
+digest into the campaign execution receipt. Synthetic
+positive and adversarial tests establish the state-machine and verifier rules;
+no new long P4 campaign has exercised the path, so these changes do not turn
+the retained request observation into an acknowledged completion and do not
+close either runtime prong of `C-M7`. The later M12 and M13 source status below
+is unchanged.
 
 ### M8 — Implement complete keyboard input
 

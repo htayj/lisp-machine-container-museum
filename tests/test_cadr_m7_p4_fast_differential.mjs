@@ -13,10 +13,16 @@ import {
   appendM6FastHostWait,
   canonicalM6ReadyWitness,
   canonicalM6ReadyWitnessV4,
+  serializeM6HostTranscript,
 } from "../cadr-web/wasm/cadr-m6-headless-boot.mjs";
 import {
   CADR_M7_FORM_C_BOUNDARY,
 } from "../cadr-web/wasm/cadr-m7-frame-checkpoint.mjs";
+import { m4OverlayRootForBase } from
+  "../cadr-web/wasm/cadr-m4-media.mjs";
+import { CADR_M7_EFFECTIVE_PAGE_IDENTITY_PROFILE,
+  CADR_M7_P4_IDENTITY_REQUEST, createM7EffectivePageIdentityArm } from
+  "../cadr-web/wasm/cadr-m7-effective-page-identity.mjs";
 import {
   CADR_M7_READY4_FAST_CONTRACT,
   CADR_M7_READY4_FAST_MINIMUM_SPANS,
@@ -600,16 +606,118 @@ const readyBoundary = listenerIdleSettledBoundary + BigInt(
   frozenReleaseRecord.idle_oracle.first_boundary_delta_from_settled) +
   BigInt(frozenReleaseRecord.idle_oracle.sample_count - 1);
 
+async function selectedIdentityFixture(artifactSet) {
+  const selected = CADR_M7_P4_IDENTITY_REQUEST;
+  const descriptorFor = (transactionId, firstBlock, write) => {
+    const bytes = new Uint8Array(write ? 24 : 16);
+    const view = new DataView(bytes.buffer); let offset = 0;
+    if (write) { view.setBigUint64(0, transactionId, true); offset = 8; }
+    view.setBigUint64(offset, firstBlock, true);
+    view.setUint32(offset + 8, 1, true);
+    view.setUint32(offset + 12, 1024, true);
+    return bytes;
+  };
+  const descriptor = descriptorFor(selected.transaction_id,
+    selected.first_block, true);
+  const descriptorSha256 = digest(descriptor);
+  const emptySha256 = digest(new Uint8Array(0));
+  const arm = createM7EffectivePageIdentityArm({
+    schema: "cadr-m7-effective-page-identity-arm-v2",
+    profile: CADR_M7_EFFECTIVE_PAGE_IDENTITY_PROFILE,
+    initial_commit: { generation: 1n, request_id: 1n, transaction_id: 1n,
+      first_block: 1n, issue_boundary: 1000000n,
+      completion_boundary: 1000000n, page_sha256: H(0x31) },
+    comparison_read: { generation: 1n, request_id: 2n, transaction_id: 0n,
+      first_block: 1n, issue_boundary: 1000001n,
+      completion_boundary: 1000001n, page_sha256: H(0x31) },
+    base_read: { generation: 1n, request_id: 3n, transaction_id: 0n,
+      first_block: 0n, issue_boundary: 1000002n,
+      completion_boundary: 1000002n, page_sha256: H(0x32) },
+    quiet_suffix: { boundary: 1030044n, reason: 1,
+      persistent_status: 0, outstanding_request_id: 0n },
+  });
+  const recordPair = (ordinal, request, write, pageHash) => {
+    const descriptorBytes = descriptorFor(request.transaction_id,
+      request.first_block, write);
+    const common = { generation: request.generation,
+      requestId: request.request_id, operation: write ? 2 : 1, hostStatus: 0,
+      descriptorByteCount: BigInt(descriptorBytes.byteLength),
+      requestPayloadByteCount: write ? 1024n : 0n,
+      completionByteCount: write ? 0n : 1024n,
+      descriptorSha256: digest(descriptorBytes),
+      requestPayloadSha256: write ? pageHash : emptySha256,
+      firstBlock: request.first_block, blockCount: 1, blockBytes: 1024 };
+    return [Object.freeze({ ordinal, actor: "issue",
+      guestBoundary: request.issue_boundary,
+      dueBoundary: request.completion_boundary,
+      completionSha256: emptySha256,
+      overlayGeneration: write ? 0n : 1n, ...common }),
+    Object.freeze({ ordinal: ordinal + 1, actor: "completion",
+      guestBoundary: request.completion_boundary,
+      dueBoundary: request.completion_boundary,
+      completionSha256: write ? emptySha256 : pageHash,
+      overlayGeneration: 1n, ...common })];
+  };
+  const candidateRecord = (ordinal, actor) => Object.freeze({ ordinal, actor,
+    guestBoundary: selected.boundary, dueBoundary: selected.boundary,
+    generation: selected.generation, requestId: selected.request_id,
+    operation: 2, hostStatus: 0, descriptorByteCount: 24n,
+    requestPayloadByteCount: 1024n, completionByteCount: 0n,
+    descriptorSha256, requestPayloadSha256: selected.payload_sha256,
+    completionSha256: emptySha256, firstBlock: selected.first_block,
+    blockCount: 1, blockBytes: 1024, overlayGeneration: 1n });
+  const hostTranscript = serializeM6HostTranscript([
+    ...recordPair(0, arm.initial_commit, true, arm.initial_commit.page_sha256),
+    ...recordPair(2, arm.comparison_read, false, arm.comparison_read.page_sha256),
+    ...recordPair(4, arm.base_read, false, arm.base_read.page_sha256),
+    candidateRecord(6, "issue"), candidateRecord(7, "completion"),
+  ], artifactSet);
+  const pairLink = ordinal => ({ issue_ordinal: ordinal,
+    issue_record_sha256: digest(hostTranscript.slice(64 + ordinal * 256,
+      64 + (ordinal + 1) * 256)), completion_ordinal: ordinal + 1,
+    completion_record_sha256: digest(hostTranscript.slice(
+      64 + (ordinal + 1) * 256, 64 + (ordinal + 2) * 256)) });
+  const overlayRoot = await m4OverlayRootForBase(selected.selected_base_sha256,
+    new Map([[1n, arm.initial_commit.page_sha256]]));
+  const media = Object.freeze({ dirty: true, overlay_generation: 1n,
+    overlay_root_sha256: overlayRoot, persistent: false, staged: false });
+  const candidateLink = pairLink(6);
+  const evidence = Object.freeze({
+    schema: "cadr-m7-effective-page-identity-evidence-v3",
+    profile: CADR_M7_EFFECTIVE_PAGE_IDENTITY_PROFILE,
+    disposition: "IDENTITY_ACK", acknowledgement_ordinal: 0, arm,
+    selected_base: { byte_count: selected.selected_base_byte_count,
+      sha256: selected.selected_base_sha256 },
+    request: { generation: selected.generation, request_id: selected.request_id,
+      transaction_id: selected.transaction_id, first_block: selected.first_block,
+      block_count: 1, block_bytes: 1024, issue_boundary: selected.boundary,
+      due_boundary: selected.boundary, completion_boundary: selected.boundary,
+      descriptor, descriptor_sha256: descriptorSha256,
+      payload_sha256: selected.payload_sha256, host_status: 0 },
+    effective_page: { source: "base", first_block: selected.first_block,
+      byte_offset: selected.first_block * 1024n, byte_count: 1024,
+      sha256: selected.payload_sha256 },
+    media_before: media, media_after: media,
+    transcript: { schema: "CDRM6HS1", sha256: digest(hostTranscript),
+      artifact_set_sha256: artifactSet, ...candidateLink,
+      arm_records: { initial_commit: pairLink(0),
+        comparison_read: pairLink(2), base_read: pairLink(4) } },
+  });
+  return Object.freeze({ arm, evidence, hostTranscript,
+    hostTranscriptSha256: digest(hostTranscript) });
+}
+
 async function resultFor(client, bridge, checkpointCount = undefined) {
   const summary = evidenceSummary();
   const cdrstate5 = H(6); const cdrm5q1 = H(7); const artifactSet = H(1);
-  const privateDisk = H(2); const hostTranscript = H(8);
+  const privateDisk = H(2);
+  const identity = await selectedIdentityFixture(artifactSet);
   const ready3 = await canonicalM6ReadyWitness({
     releaseRecord: frozenReleaseRecord, artifactSetSha256: artifactSet,
     privateDiskBaseSha256: privateDisk, formABoundary, formBBoundary,
     listenerIdleCBoundary, listenerIdleSettledBoundary, readyBoundary,
     cdrstate5Sha256: cdrstate5, cdrm5q1Sha256: cdrm5q1,
-    hostTranscriptSha256: hostTranscript,
+    hostTranscriptSha256: identity.hostTranscriptSha256,
   });
   let checkpointChain = digest(new TextEncoder().encode("CDRM6FASTCHAIN1\0"));
   for (const [index, checkpoint] of bridge.settledCheckpoints.entries()) {
@@ -638,12 +746,15 @@ async function resultFor(client, bridge, checkpointCount = undefined) {
       ready3Witness: ready3, ready4Witness: ready4 },
     preflight: { artifactSetSha256: artifactSet },
     runEvidence: { privateDiskBaseSha256: privateDisk },
-    hostTranscriptSha256: hostTranscript,
+    hostTranscript: identity.hostTranscript,
+    hostTranscriptSha256: identity.hostTranscriptSha256,
     checkpointChainSha256: checkpointChain,
     cdrstate5Sha256: cdrstate5, cdrm5q1Sha256: cdrm5q1,
     cdrm6e1: summary, cdrm6e1Sha256: digest(summary),
     cdrm6e1SelectedMaximum: 0x7fff_ffff_ffff_ffffn,
-    cdrm6e1TotalAccepted: 513n, cdrm6e1TailEventCount: 1n });
+    cdrm6e1TotalAccepted: 513n, cdrm6e1TailEventCount: 1n,
+    m7EffectivePageIdentity: { profile: CADR_M7_EFFECTIVE_PAGE_IDENTITY_PROFILE,
+      arm: identity.arm, acknowledgements: [identity.evidence] } });
 }
 
 async function completeFastBoot({ client, checkpointCount, resultTransform } = {}) {
@@ -726,6 +837,54 @@ await assert.rejects(runEarlyFailure({ outcome: "ready4" }),
 const complete = await completeFastBoot();
 assert.equal(complete.target, CADR_M7_READY4_FAST_TARGET);
 assert.equal(complete.contract, CADR_M7_READY4_FAST_CONTRACT);
+await assert.rejects(completeFastBoot({ resultTransform: value => {
+  const withoutIdentity = { ...value };
+  delete withoutIdentity.m7EffectivePageIdentity;
+  return withoutIdentity;
+} }), /effective-page identity result differs/,
+"the selected P4 profile cannot silently omit its default-disabled M7 receipt channel");
+await assert.rejects(completeFastBoot({ resultTransform: value => ({ ...value,
+  m7EffectivePageIdentity: { ...value.m7EffectivePageIdentity,
+    acknowledgements: [value.m7EffectivePageIdentity] } }) }),
+/effective-page acknowledgement evidence has the wrong shape/,
+"an arbitrary P4 result object cannot pose as an identity acknowledgement");
+await assert.rejects(completeFastBoot({ resultTransform: value => ({ ...value,
+  m7EffectivePageIdentity: { ...value.m7EffectivePageIdentity,
+    acknowledgements: [] } }) }), /exactly one effective-page identity acknowledgement/,
+"the selected P4 profile cannot complete with zero acknowledgements");
+await assert.rejects(completeFastBoot({ resultTransform: value => {
+  const evidence = structuredClone(value.m7EffectivePageIdentity.acknowledgements[0]);
+  evidence.request.payload_sha256 = H(0);
+  return { ...value, m7EffectivePageIdentity: { ...value.m7EffectivePageIdentity,
+    acknowledgements: [evidence] } };
+} }), /selected P4 effective-page identity request differs|trusted evidence/,
+"a forged selected-P4 acknowledgement is rejected");
+await assert.rejects(completeFastBoot({ resultTransform: value => {
+  const hostTranscript = value.hostTranscript.slice();
+  hostTranscript[64 + 136] ^= 1;
+  return { ...value, hostTranscript };
+} }), /authoritative|host transcript|trusted evidence|differs/,
+"a forged CDRM6HS1 transcript cannot support the selected-P4 acknowledgement");
+await assert.rejects(completeFastBoot({ resultTransform: value => {
+  const identity = structuredClone(value.m7EffectivePageIdentity);
+  identity.arm.quiet_suffix.boundary += 1n;
+  identity.acknowledgements[0].arm.quiet_suffix.boundary += 1n;
+  return { ...value, m7EffectivePageIdentity: identity };
+} }), /selected P4 request/,
+"the selected-P4 verifier pins the exact arm rather than trusting a self-consistent receipt");
+await assert.rejects(completeFastBoot({ resultTransform: value => {
+  const identity = structuredClone(value.m7EffectivePageIdentity);
+  identity.acknowledgements[0].media_before.overlay_root_sha256 = H(0);
+  identity.acknowledgements[0].media_after.overlay_root_sha256 = H(0);
+  return { ...value, m7EffectivePageIdentity: identity };
+} }), /trusted evidence/,
+"the selected-P4 verifier derives and rejects a false canonical overlay root");
+await assert.rejects(completeFastBoot({ resultTransform: value => {
+  const identity = structuredClone(value.m7EffectivePageIdentity);
+  identity.acknowledgements[0].selected_base.sha256[0] ^= 1;
+  return { ...value, m7EffectivePageIdentity: identity };
+} }), /trusted base/,
+"the selected-P4 verifier rejects a substituted selected-base identity");
 assert.equal(complete.checkpoint.boundary, CADR_M7_FORM_C_BOUNDARY);
 assert.equal(complete.checkpoint.captured_before_next_boundary, true);
 assert.equal(complete.fast.total_stops_to_form_c,
@@ -956,7 +1115,13 @@ const authorityCheckout = resolve(authorityDirectory, "checkout");
 execFileSync("git", ["clone", "--no-local", "--no-checkout", ROOT, authorityCheckout], {
   cwd: ROOT, stdio: "ignore",
 });
-execFileSync("git", ["checkout", "--detach", "HEAD"], { cwd: authorityCheckout,
+const authorityReleaseCommit = execFileSync("git", ["log", "-1", "--format=%H", "--",
+  "scripts/cadr-m7-p4-guix-launcher-receipt.json"], {
+  cwd: ROOT, encoding: "utf8",
+}).trim();
+assert.match(authorityReleaseCommit, /^[0-9a-f]{40}$/,
+  "the authority fixture requires the exact launcher-receipt release commit");
+execFileSync("git", ["checkout", "--detach", authorityReleaseCommit], { cwd: authorityCheckout,
   stdio: "ignore" });
 const launcherReceiptPath = resolve(authorityCheckout,
   "scripts/cadr-m7-p4-guix-launcher-receipt.json");
@@ -1199,6 +1364,7 @@ const fakeNative = () => Object.freeze({
 const fakeResult = async () => Object.freeze({
   target: CADR_M7_READY4_FAST_TARGET,
   contract: CADR_M7_READY4_FAST_CONTRACT,
+  identityAcknowledgementSha256: H(0x5a),
   checkpoint: Object.freeze({ boundary: CADR_M7_FORM_C_BOUNDARY }),
 });
 function executionConfig(supervisor, moduleBytes = wasm, identity = moduleIdentity) {
@@ -1551,6 +1717,9 @@ const testExecutionDependencies = Object.freeze({
     "cadr-m7-p4-fast-execution-provenance-test-v1");
   assert.equal(result.nativeAuthority.schema, "test-native-authority");
   assert.equal(result.executionReceipt.p4_expected_closure_sha256, "4".repeat(64));
+  assert.equal(result.executionReceipt.effective_page_identity_ack_sha256,
+    "5a".repeat(32),
+  "the campaign execution receipt binds the independently validated identity acknowledgement");
 }
 
 for (const required of [
