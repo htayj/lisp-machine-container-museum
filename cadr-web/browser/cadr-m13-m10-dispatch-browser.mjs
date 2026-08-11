@@ -33,6 +33,22 @@ async function binding(serial) {
   });
 }
 
+/* Chromium may deliver the version-change notification from a just-closed
+ * disposable test connection after the first delete request.  Retrying once
+ * on a later task proves cleanup without treating a persistent foreign handle
+ * as success.  This harness owns no selected-media namespace. */
+async function deleteDisposableDisk(backend, selectedBinding) {
+  let failure = null;
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    try { await backend.deleteDisk(selectedBinding); return; }
+    catch (error) {
+      failure = error;
+      if (attempt === 0) await new Promise(resolve => setTimeout(resolve, 0));
+    }
+  }
+  throw failure;
+}
+
 class SyntheticM4WriteWorker {
   #listeners = new Map();
   #payload = Uint8Array.from({ length: 1024 }, (_, index) => (index * 37 + 11) & 255);
@@ -51,7 +67,10 @@ class SyntheticM4WriteWorker {
   }
   #response(request, status, remainder = {}) {
     queueMicrotask(() => this.#emit("message", { data: {
-      type: "cadr-response", version: 7, id: request.id, op: request.op,
+      /* The current M13 shell's private lower envelope is v8.  This synthetic
+       * M4 peer intentionally follows that envelope while still exercising
+       * only the existing M10 host-request bridge. */
+      type: "cadr-response", version: 8, id: request.id, op: request.op,
       status, ok: status === 0, ...remainder,
     } }));
   }
@@ -137,7 +156,7 @@ async function cleanDispatch() {
   } finally {
     shell.dispose();
     try { durable.controller.close(); } catch { /* terminal dispatch may already have closed it */ }
-    await durable.backend.deleteDisk(durable.binding);
+    await deleteDisposableDisk(durable.backend, durable.binding);
   }
 }
 
@@ -160,7 +179,7 @@ async function uncertainDispatch() {
   } finally {
     shell.dispose();
     try { durable.controller.close(); } catch { /* recovery owns this controller after IN_DOUBT */ }
-    await durable.backend.deleteDisk(durable.binding);
+    await deleteDisposableDisk(durable.backend, durable.binding);
   }
 }
 
@@ -183,7 +202,7 @@ async function preCompletionDispatch() {
   } finally {
     shell.dispose();
     try { durable.controller.close(); } catch { /* close remains best effort in probe cleanup */ }
-    await durable.backend.deleteDisk(durable.binding);
+    await deleteDisposableDisk(durable.backend, durable.binding);
   }
 }
 

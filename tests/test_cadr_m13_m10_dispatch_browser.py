@@ -20,9 +20,14 @@ FILES = {
     "/cadr-web/browser/cadr-m13-m10-dispatch-browser.html": "text/html; charset=utf-8",
     "/cadr-web/browser/cadr-m13-m10-dispatch-browser.mjs": "text/javascript; charset=utf-8",
     "/cadr-web/browser/cadr-m13-shell.mjs": "text/javascript; charset=utf-8",
+    "/cadr-web/browser/cadr-m13-audio-boundary.mjs": "text/javascript; charset=utf-8",
+    "/cadr-web/browser/cadr-m13-audio-reducer.mjs": "text/javascript; charset=utf-8",
+    "/cadr-web/browser/cadr-m13-audio-record.mjs": "text/javascript; charset=utf-8",
     "/cadr-web/browser/cadr-m10-controller.mjs": "text/javascript; charset=utf-8",
     "/cadr-web/browser/cadr-m10-indexeddb.mjs": "text/javascript; charset=utf-8",
     "/cadr-web/wasm/cadr-m10-persistence.mjs": "text/javascript; charset=utf-8",
+    "/cadr-web/wasm/cadr-m12-debugger.mjs": "text/javascript; charset=utf-8",
+    "/cadr-web/wasm/cadr-display-renderer.mjs": "text/javascript; charset=utf-8",
 }
 CSP = ("default-src 'none'; script-src 'self' 'wasm-unsafe-eval'; worker-src 'self'; "
        "connect-src 'self'; object-src 'none'; base-uri 'none'; form-action 'none'; "

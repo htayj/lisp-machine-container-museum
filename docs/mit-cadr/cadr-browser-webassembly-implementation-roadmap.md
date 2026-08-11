@@ -3,7 +3,7 @@ type: Implementation Roadmap
 title: MIT CADR System 303 browser and WebAssembly implementation roadmap
 description: A milestone-complete plan for porting the pinned System 303 CADR emulator to a deterministic, locally persistent, browser-hosted WebAssembly machine.
 tags: [mit-cadr, lm-3, system-303, webassembly, browser, emulator, roadmap]
-timestamp: 2026-08-11T07:45:14-04:00
+timestamp: 2026-08-11T09:25:05-04:00
 ---
 
 # MIT CADR System 303 browser and WebAssembly implementation roadmap
@@ -1512,6 +1512,33 @@ pinned-object records, adopts no snapshot, and performs no paused/reset composit
 restore. All source inputs remain byte-identical. This closes neither a guest-
 generated changed write, normative export/restore, the complete F06/F07 power-loss/
 failure algebra, composed M8--M12 accessibility/audio workflows, nor final `C-M13`.
+`E31` adds a separate current-P1 Chromium seam on signed M12 parent
+`ba8d490c186afb8cdc5905923a60611772256b73`: public synthetic Wasm, one actual module
+Worker, the P1 coordinator/current shell, an identity-only 258-range base stream,
+supplied-controller clean transition, pause/resume, delayed-start stop, and worker
+loss. Its local server/CDP boundary observes only self source/module/fixture requests
+and no WebSocket. It does not load M12 P2, selected media/runtime, M10, or IndexedDB.
+
+`E32` closes five prior M13 adapter HOLDs only at the narrow adapter boundary: a copied
+four-part binding prevents mutable-binding TOCTOU; branded review-lease release owns the
+only transient root pin across ordinary and ambiguous lifecycle paths; invalidation is
+terminal for that adapter rather than a route to reopen; a cursor advances only after its
+chunk hash resolves and its epoch remains current; and a disposable Chromium run observes
+those operations against real `C-M10-IDB-v1`. The generic M10 overlay archive is compared
+to the pinned review closure before exposure. Ordinary unpin response loss retains the
+opaque lease until its one branded retry succeeds. A no-lease acquire rejection first
+attempts same-authority synchronous revoke: pre-pin loss and successful post-pin rollback
+are proven terminal by a successful revoke, while only rejected revoke enters adapter
+`RECOVERY_REQUIRED` and requires same-authority acquire/release/revoke/close. The probe
+distinguishes a retained pre-operation root from real-IDB post-commit loss, where session
+rollover has already purged the snapshot but issued-ID unpin retry remains idempotent.
+Replacement cleanup is one private flight: concurrent success shares one
+Promise/result/replacement/revoke/close; concurrent failure shares one error, preserves
+its step, and needs a later explicit retry. Failed replacement may also be lease-free and
+remains `UNKNOWN` until a fresh replacement, revoke, and close complete. This is
+intentionally not the normative M13 pinned-object export record, restore adoption, or
+paused/reset composite restore; it does not use selected media or establish an M13 exit
+gate.
 The `M13-AUDIO1` source profile now composes optional audio dispatch through the
 public shell and retains the no-audio default. Its real private v8 worker owns the
 ABI1.11 source, calls the actual open export, and pumps at most 64 semantic packets

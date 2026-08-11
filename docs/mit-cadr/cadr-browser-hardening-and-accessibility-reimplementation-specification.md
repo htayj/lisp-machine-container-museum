@@ -2,7 +2,7 @@
 type: concept
 title: CADR-WEB-303 browser hardening and accessibility reimplementation specification
 description: A release-bounded M13 contract for hostile host inputs, resource ceilings, offline execution, worker failure, and accessible controls around an unmodified CADR framebuffer.
-timestamp: 2026-08-11T07:45:14-04:00
+timestamp: 2026-08-11T09:25:05-04:00
 ---
 
 # CADR-WEB-303 browser hardening and accessibility reimplementation specification
@@ -62,6 +62,67 @@ replies, resume single-flight, honest pending-mount state, every absorbing
 public-API fence, and a recursive transitive no-network/module-closure scan. This is not selected-media
 runtime, export/restore, browser, accessibility, offline, `C-M13`, or M14
 evidence.
+
+`E31` is the browser-specific complement to that P1 source result. On the signed
+M12 parent `ba8d490c186afb8cdc5905923a60611772256b73`, a disposable Chromium
+151.0.7922.108 campaign serves one public synthetic Wasm module, constructs one real
+module Worker and one current P1/shell pair, and exercises an identity-only 258-range
+base stream, supplied-controller `CLEAN` transition, pause/resume, stop during delayed
+start, and Worker-loss fencing. CDP and page observers admit only the local
+source/module/fixture closure and observe no WebSocket; the test also checks page,
+browser, server-thread, and fixture cleanup. It does not load M12 P2 debugger code,
+selected media/runtime, an M10 adapter, or IndexedDB. It is therefore browser
+behavior for the current P1 seam, not a selected-runtime or `C-M13` result.
+
+`E32` is a separate, narrow M13-to-M10 review-adapter result. The adapter takes a
+synchronous, descriptor-only deep byte copy of the four-part disk binding before the
+controller's first `await`; neither a caller's later typed-array mutation nor a
+getter/prototype can select a different durable namespace. It constructs the current
+M10 controller from only that private copy, claims the one branded review authority,
+and produces a cursor only after the current M10 generic overlay archive's source
+generation and root match the opaque pinned review closure. It returns no disk handle,
+root-reference identifier, storage key, raw binding bytes, or replayable authority.
+
+The adapter state model is `NEW -> OPENING -> OPEN -> ACQUIRING -> REVIEWING`, with
+`RELEASING -> OPEN` only after branded M10 lease release succeeds. A rejected acquire
+that returned no lease is ambiguous: it can be pre-pin loss or a successful post-pin
+rollback, both of which restore M10's authority to `ACTIVE`; only a synchronous failure
+of the same authority's `revoke()` proves M10 retained its opaque post-pin
+`RECOVERY_REQUIRED` record. The adapter therefore attempts revoke first. A successful
+revoke closes and terminates `FAILED` or `INVALIDATED`; a rejected revoke enters opaque
+`RECOVERY_REQUIRED`. `retryAcquisitionCleanup` then must call that same authority's
+`acquire`, retain the returned temporary lease, release it, synchronously revoke, and
+close; any failed cleanup step is `UNKNOWN` with that method as its only retry route. It
+never returns `OPEN` or `DISPOSED`. An ambiguous completion similarly fences a cursor
+immediately. `retryInvalidatedCleanup` handles both an active lease and lease-free
+replacement failure by obtaining a fresh replacement, then releasing if needed,
+synchronously revoking, and closing. It publishes one private cleanup flight before its
+first M10 call: concurrent callers receive that exact Promise/result (or exact failure),
+and only a later explicit call may advance a retained failed step. A chunk copies and
+hashes bytes before it checks its epoch/identity and commits `nextOffset`. Ordinary
+lease-release loss remains `UNKNOWN` and `retryOpaqueRelease` retries only that branded
+release.
+
+The real Chromium `E32` probe uses a disposable actual `C-M10-IDB-v1` database with a
+synthetic base (no selected media, CADR worker, or preserved runtime). It mutates all
+caller-owned binding arrays while `readBaseIdentity` is gated and confirms that the
+original copied binding alone names the IndexedDB metadata. It then observes one real
+snapshot reference during review, gates a chunk digest, invalidates the review, and
+verifies zero references, cursor offset zero, exactly one replacement, rejected stale
+chunk, and rejected reopen before releasing the digest gate. It separately proves a
+retained pre-operation post-pin rollback loss (one real ref until the second explicit
+cleanup completes), and real-IDB post-commit loss: reopening purges the old session's
+snapshot ref, but the authority remains recoverable through its issued-ID idempotence,
+temporary lease release, and exactly one revoke. Both ordinary pre-operation and
+post-commit lease-release loss are tested. It also injects successful post-pin rollback
+and invalidation before `pinRoot`, proving revoke-first terminal classification without
+a recovery record. Concurrent successful replacement cleanup joins one Promise/result,
+replacement, revoke, and close; concurrent replacement failure joins one error and a
+later explicit retry alone completes. A lease-free replacement failure remains `UNKNOWN`
+until a fresh replacement, synchronous revoke, and close complete. CDP sees only the
+self-hosted source closure and no WebSocket. This proves neither the M13 pinned-object
+export-record protocol nor restore adoption, paused/reset worker restore, selected-media
+persistence, a guest-generated changed write, or `C-M13`.
 
 The ABI1.11 source now also contains the exact `CDRM11O1` and `CDRPCM1`
 validators, an eight-record M13 Worklet queue, and a private worker-owned
@@ -185,6 +246,8 @@ node tests/test_cadr_m13_named_parser_corpus.mjs
 node tests/test_cadr_m13_lifecycle.mjs
 python3 tests/test_cadr_m13_audio_browser.py
 python3 tests/test_cadr_m13_selected_audio_runtime.py
+python3 tests/test_cadr_m13_production_browser.py
+python3 tests/test_cadr_m13_m10_review_adapter_browser.py
 ```
 
 The compatibility boundary is the modern host shell and its exact selected
