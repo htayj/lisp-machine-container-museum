@@ -3,7 +3,7 @@ type: Implementation Roadmap
 title: MIT CADR System 303 browser and WebAssembly implementation roadmap
 description: A milestone-complete plan for porting the pinned System 303 CADR emulator to a deterministic, locally persistent, browser-hosted WebAssembly machine.
 tags: [mit-cadr, lm-3, system-303, webassembly, browser, emulator, roadmap]
-timestamp: 2026-08-11T05:18:28-04:00
+timestamp: 2026-08-11T05:33:17-04:00
 ---
 
 # MIT CADR System 303 browser and WebAssembly implementation roadmap
@@ -770,21 +770,39 @@ specification define these separate obligations; completing the raw identity
 oracle alone cannot close `C-M7`.
 
 Phase-A host-foundation status, 2026-08-11: **GO** is limited to the inert
-source-A foundation for a future build, install, and receipt-generation step. It
+source-A foundation and its deterministic receipt-generation step. Source A
 defines the immutable Guix package inputs, fixed `611:612` account declaration,
 no-argument service-entry discipline, descriptor-only runner/dropper inputs, and
 prospective receipt schema. Its synthetic control records set
 `production_evidence: false`; they are not a host action or an installation record.
 
+The signed one-path Receipt-B commit
+[`c6606a9e2bf2a50676d23d98f8222ab146cdb5a9`](https://github.com/htayj/lisp-machine-container-museum/commit/c6606a9e2bf2a50676d23d98f8222ab146cdb5a9)
+is a direct child of signed Source A `e098940d063cab7a4704402d14e5e075fcb692ec`.
+Three clean generations produced the same 3,536-byte receipt, SHA-256
+`90934979c25432b1fdc2038cd6b4f93f7a5af23c4247c9998d3d0a6477eee0c7`.
+It binds source tree `5e8a30666bceeeda09b9acded3df2c36a1c59760`, the Guix
+derivation and output, requisite closure, program inventory, host artifacts, and
+the observed site `nologin` identity. The receipt remains
+`production_evidence: false`.
+
+The receipt is merged into the continuing mainline only as historical/source
+integration. A two-parent mainline merge is not itself an admissible Receipt B:
+the production validator requires the exact signed B commit with Source A as its
+single immediate parent. Any later runnable post-M11 profile therefore needs a
+fresh receipt-free A followed by its own fresh direct-child B; it MUST NOT treat
+the mainline merge commit as release evidence.
+
 **HOLD, post-B:** production-authority READY, process spawn and reaping,
 effective-unit inspection, capability-drop evidence, cgroup-emptiness evidence,
 and every live-host claim remain unperformed. No service or account has been
-installed or enabled, no authority has been launched, and no B receipt exists.
-Release B will need an independently authenticated, descriptor-bound signed
-checkout or embedded signed objects; it will bind the selected identity into its
-unit and receipt, then prove READY, terminate/reap, and empty-cgroup cleanup under
-the installed effective unit. The source-A synthetic READY/result/exit/reap tests
-do not close any of those gates or either M7 runtime prong.
+installed or enabled and no authority has been launched. The current production
+authority also fail-closes before READY at its still test-domain-only Guix endpoint
+revalidation, while the direct host supervisor refuses unconditionally. A later
+post-B cycle must fix and independently review those paths, then prove READY,
+terminate/reap, and empty-cgroup cleanup under the installed effective unit. The
+Source-A synthetic READY/result/exit/reap tests and inert prospective-B fixture do
+not close any of those gates or either M7 runtime prong.
 
 Failure-evidence hardening, 2026-07-30: the private P4 runner now preserves a
 canonical, bounded status-12 M6 diagnostic when the portable machine terminates
