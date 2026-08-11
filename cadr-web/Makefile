@@ -458,6 +458,8 @@ m10-unit:
 	guix shell node -- node ../tests/test_cadr_m10_wrapper.mjs
 	guix shell node -- node ../tests/test_cadr_m10_controller.mjs
 	guix shell node -- node ../tests/test_cadr_m10_indexeddb_static.mjs
+	guix shell node -- node ../tests/test_cadr_m10_cdp_client.mjs
+	guix shell node -- node ../tests/test_cadr_process_group_supervisor.mjs
 	guix shell node -- node ../scripts/run-cadr-m10-indexeddb-browser.mjs
 	guix shell node -- node ../scripts/run-cadr-m10-process-kill-browser.mjs
 

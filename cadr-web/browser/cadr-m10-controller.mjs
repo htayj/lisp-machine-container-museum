@@ -32,6 +32,18 @@ const MAX_HOST_TRANSFER_BYTES = 1024 * 1024;
 const TEXT = new TextEncoder();
 const DECODER = new TextDecoder("utf-8", { fatal: true });
 
+/*
+ * Snapshot-review capability state is intentionally not represented on either
+ * the controller, authority, or lease objects.  The objects are public API
+ * values, so an expando, clone, Proxy receiver, or authority obtained from a
+ * different controller must not become a route to a disk handle or a durable
+ * root-reference identifier.
+ */
+const SNAPSHOT_REVIEW_AUTHORITIES = new WeakMap();
+const SNAPSHOT_REVIEW_LEASES = new WeakMap();
+const SNAPSHOT_REVIEW_LEASE_BRANDS = new WeakSet();
+const MAX_U64 = 0xffffffffffffffffn;
+
 function required(condition, message, ErrorType = TypeError) {
   if (!condition) throw new ErrorType(`C-M10 controller: ${message}`);
 }
@@ -55,6 +67,31 @@ function exact(value, size, label) {
 function same(left, right) {
   return left.byteLength === right.byteLength &&
     left.every((value, index) => value === right[index]);
+}
+
+function u64Decimal(value, label, { nonzero = false } = {}) {
+  required(typeof value === "bigint" && value >= 0n && value <= MAX_U64 &&
+    (!nonzero || value !== 0n), `${label} is not a canonical u64`);
+  return value.toString();
+}
+
+function reviewBinding(closure) {
+  required(closure !== null && typeof closure === "object",
+    "active review closure is invalid", CadrM10RecoveryError);
+  return Object.freeze({
+    generation: u64Decimal(closure.generation, "review generation"),
+    headSeq: u64Decimal(closure.headSeq, "review head sequence", { nonzero: true }),
+    manifestSha256: hexBytes(exact(closure.manifestSha256, 32,
+      "review manifest SHA-256")),
+    rootSha256: hexBytes(exact(closure.rootSha256, 32,
+      "review root SHA-256")),
+  });
+}
+
+function sameReviewBinding(left, right) {
+  return left.generation === right.generation && left.headSeq === right.headSeq &&
+    left.manifestSha256 === right.manifestSha256 &&
+    left.rootSha256 === right.rootSha256;
 }
 
 function zero(value) { return same(value, ZERO); }
@@ -322,20 +359,426 @@ export function createCadrM10Controller({
   let disk = null;
   let state = CADR_M10_CONTROLLER_CLEAN;
   let busy = false;
+  let controller = null;
+  let snapshotReviewLease = null;
+  /* A guest-completion failure and the replacement it requires are one
+   * controller-wide event.  A second observer must join the existing event,
+   * rather than replace a newly-created worker a second time. */
+  let ambiguousInvalidationFlight = null;
+  let ambiguousInvalidationEpoch = 0;
+  let ambiguousInvalidationFailed = false;
 
   const setState = next => {
     state = next; stateChanged(next);
   };
 
+  function clearAmbiguousInvalidation(flight = null) {
+    if (flight === null || ambiguousInvalidationFlight === flight) {
+      ambiguousInvalidationFlight = null;
+      ambiguousInvalidationFailed = false;
+    }
+  }
+
+  function assertNoSnapshotReviewLease() {
+    required(snapshotReviewLease === null,
+      "a snapshot review lease is active", CadrM10ConflictError);
+  }
+
+  function assertSnapshotReviewAcquireAccess() {
+    assertNoSnapshotReviewLease();
+    required(!busy, "another persistence operation is active",
+      CadrM10ConflictError);
+    required(disk !== null && !disk.readOnly &&
+      state === CADR_M10_CONTROLLER_CLEAN,
+    "snapshot review requires an open writable clean controller",
+    CadrM10RecoveryError);
+    const session = disk.sessionId;
+    required(typeof session === "bigint" && session > 0n && session <= MAX_U64,
+      "snapshot review disk session is invalid", CadrM10RecoveryError);
+    return Object.freeze({ disk, session });
+  }
+
+  function assertSnapshotReviewContinuity(record) {
+    required(snapshotReviewLease === record && record.phase === "ACQUIRING" &&
+      disk === record.disk && disk !== null && disk.sessionId === record.session &&
+      !disk.readOnly && state === CADR_M10_CONTROLLER_CLEAN && !busy,
+    "snapshot review changed while authority was acquired", CadrM10ConflictError);
+  }
+
+  async function confirmSnapshotReviewContinuity(record, expected = null) {
+    assertSnapshotReviewContinuity(record);
+    let active;
+    try { active = await record.disk.active(); }
+    catch {
+      throw new CadrM10ConflictError(
+        "C-M10 controller: snapshot review changed while authority was acquired");
+    }
+    assertSnapshotReviewContinuity(record);
+    const observed = reviewBinding({
+      generation: active?.manifest?.generation, headSeq: active?.head?.headSeq,
+      manifestSha256: active?.manifest?.hash,
+      rootSha256: active?.manifest?.rootSha256,
+    });
+    if (expected !== null) required(sameReviewBinding(expected, observed),
+      "snapshot review active closure changed before publication",
+      CadrM10ConflictError);
+    return observed;
+  }
+
+  async function rollbackSnapshotReviewPin(record) {
+    /* A stale open session cannot remove its own reference.  Reopen privately
+     * solely to compensate the just-created durable pin; no cleanup handle or
+     * reference identifier is ever exposed through the authority API. */
+    await refreshSnapshotReviewReleaseSession(record);
+    const cleanup = record.disk;
+    await cleanup.unpinRoot(record.pinId);
+    record.pinId = null;
+  }
+
+  /* A refresh is an asynchronous capability transition.  In particular, a
+   * new ambiguous guest completion can arrive while a previous replacement
+   * has completed and the release is awaiting backend.reopenDisk().  Capture
+   * the release token and the exact replacement it is allowed to follow
+   * before the first await, then reject a reopened handle if either has been
+   * superseded.  Never recover this check from mutable controller-global
+   * state: the lease must remain bound to its own replacement flight. */
+  function snapshotReviewReleaseFence(record, attempt = null) {
+    const fence = Object.freeze({
+      attempt,
+      ambiguityEpoch: record.ambiguityEpoch,
+      ambiguityFlight: record.ambiguityFlight,
+      requiresFreshSession: record.releaseRequiresFreshSession,
+    });
+    if (fence.requiresFreshSession) {
+      required(fence.ambiguityEpoch > 0 &&
+        fence.ambiguityFlight !== null,
+      "snapshot review release lacks its replacement flight",
+      CadrM10RecoveryError);
+    }
+    return fence;
+  }
+
+  function assertSnapshotReviewReleaseFence(record, fence) {
+    required((fence.attempt === null || record.releaseAttempt === fence.attempt) &&
+      record.ambiguityEpoch === fence.ambiguityEpoch &&
+      record.ambiguityFlight === fence.ambiguityFlight &&
+      record.releaseRequiresFreshSession === fence.requiresFreshSession,
+    "snapshot review release was interrupted by ambiguous guest completion",
+    CadrM10RecoveryError);
+  }
+
+  function snapshotReviewReceipt(binding, alreadyReleased) {
+    return Object.freeze({ binding, released: true, alreadyReleased });
+  }
+
+  async function refreshSnapshotReviewReleaseSession(record,
+      fence = snapshotReviewReleaseFence(record),
+      { preserveInDoubt = false } = {}) {
+    /* An active review lease must not turn a lost guest-completion response
+     * into a CLEAN controller.  The emergency fence closes the session first
+     * and replacement completes before the one opaque unpin is retried from a
+     * fresh durable session. */
+    if (fence.requiresFreshSession) {
+      await fence.ambiguityFlight;
+    }
+    assertSnapshotReviewReleaseFence(record, fence);
+    let refreshed = null;
+    try {
+      refreshed = await backend.reopenDisk(binding);
+      assertSnapshotReviewReleaseFence(record, fence);
+      required(refreshed !== null && typeof refreshed === "object" &&
+        !refreshed.readOnly && typeof refreshed.unpinRoot === "function" &&
+        typeof refreshed.sessionId === "bigint" && refreshed.sessionId > 0n &&
+        refreshed.sessionId <= MAX_U64,
+      "snapshot review release could not reopen a writable session",
+      CadrM10RecoveryError);
+    } catch (error) {
+      /* A handle returned by an overtake is an old session even though the
+       * adapter call itself succeeded.  Closing it is part of the fence: it
+       * must never become the controller disk or outlive the rejected retry. */
+      try { refreshed?.close?.(); } catch {}
+      throw error;
+    }
+    disk = refreshed;
+    record.disk = refreshed;
+    record.session = refreshed.sessionId;
+    if (!preserveInDoubt) setState(CADR_M10_CONTROLLER_CLEAN);
+  }
+
+  function releaseSnapshotReviewLease(lease, receiver) {
+    const record = SNAPSHOT_REVIEW_LEASES.get(lease);
+    required(receiver === lease && SNAPSHOT_REVIEW_LEASE_BRANDS.has(lease) &&
+      record !== undefined && record.controller === controller &&
+      record.lease === lease,
+    "snapshot review lease is not recognized", CadrM10ConflictError);
+    if (record.successReceipt !== null) {
+      return Promise.resolve(record.alreadyReleasedReceipt);
+    }
+    if (record.releaseFlight !== null) return record.releaseFlight;
+    required(record.phase === "HELD" || record.phase === "RELEASE_REQUIRED",
+      "snapshot review lease is not releasable", CadrM10ConflictError);
+    const retrying = record.phase === "RELEASE_REQUIRED";
+    const attempt = record.releaseAttempt + 1;
+    const pinId = record.pinId;
+    record.releaseAttempt = attempt;
+    record.phase = "RELEASING";
+    const fence = snapshotReviewReleaseFence(record, attempt);
+    const flight = (async () => {
+      try {
+        /* Publish the shared flight before a hostile adapter can throw. */
+        await Promise.resolve();
+        assertSnapshotReviewReleaseFence(record, fence);
+        /* Reopen after a failed unpin and after a guest ambiguity.  Read the
+         * latter through the captured lease fence: an ambiguity can interleave
+         * with a release that has just claimed its flight. */
+        if (retrying || fence.requiresFreshSession) {
+          await refreshSnapshotReviewReleaseSession(record, fence, {
+            preserveInDoubt: fence.requiresFreshSession,
+          });
+        }
+        assertSnapshotReviewReleaseFence(record, fence);
+        await record.disk.unpinRoot(pinId);
+        assertSnapshotReviewReleaseFence(record, fence);
+        record.pinId = null;
+        record.releaseRequiresFreshSession = false;
+        record.phase = "RELEASED";
+        snapshotReviewLease = null;
+        record.authorityRecord.phase = "ACTIVE";
+        record.authorityRecord.lease = null;
+        if (fence.requiresFreshSession) {
+          required(state === CADR_M10_CONTROLLER_IN_DOUBT,
+            "snapshot review release lost its recovery fence",
+          CadrM10RecoveryError);
+          clearAmbiguousInvalidation(fence.ambiguityFlight);
+          setState(CADR_M10_CONTROLLER_CLEAN);
+        }
+        record.successReceipt = snapshotReviewReceipt(record.binding, false);
+        record.alreadyReleasedReceipt = snapshotReviewReceipt(record.binding, true);
+        return record.successReceipt;
+      } catch (error) {
+        if (record.releaseAttempt === attempt) {
+          record.phase = "RELEASE_REQUIRED";
+          record.releaseFlight = null;
+        }
+        throw error;
+      }
+    })();
+    record.releaseFlight = flight;
+    return flight;
+  }
+
+  function makeSnapshotReviewLease(record, currentBinding) {
+    let lease;
+    const release = Object.freeze(function release() {
+      return releaseSnapshotReviewLease(lease, this);
+    });
+    lease = Object.freeze({ binding: currentBinding, release });
+    record.lease = lease;
+    SNAPSHOT_REVIEW_LEASES.set(lease, record);
+    SNAPSHOT_REVIEW_LEASE_BRANDS.add(lease);
+    return lease;
+  }
+
+  function beginSnapshotReviewAcquire(authorityRecord) {
+    const captured = assertSnapshotReviewAcquireAccess();
+    const record = {
+      controller, authorityRecord, disk: captured.disk, session: captured.session,
+      phase: "ACQUIRING", pinId: null, lease: null, binding: null,
+      releaseFlight: null, successReceipt: null, alreadyReleasedReceipt: null,
+      recoveryFlight: null, releaseRequiresFreshSession: false, releaseAttempt: 0,
+      ambiguityEpoch: 0, ambiguityFlight: null,
+    };
+    snapshotReviewLease = record;
+    authorityRecord.phase = "ACQUIRING";
+
+    return (async () => {
+      try {
+        assertSnapshotReviewContinuity(record);
+        const initial = reviewBinding(await record.disk.exportActiveClosure());
+        assertSnapshotReviewContinuity(record);
+        record.binding = initial;
+        await confirmSnapshotReviewContinuity(record, initial);
+        record.pinId = await record.disk.pinRoot("snapshot",
+          fromHex(initial.rootSha256, 32, "review root SHA-256"));
+        required(typeof record.pinId === "string" && record.pinId.length > 0,
+          "snapshot review pin did not return an identifier", CadrM10RecoveryError);
+        assertSnapshotReviewContinuity(record);
+        await confirmSnapshotReviewContinuity(record, initial);
+        const reread = reviewBinding(await record.disk.exportActiveClosure());
+        assertSnapshotReviewContinuity(record);
+        await confirmSnapshotReviewContinuity(record, initial);
+        required(sameReviewBinding(initial, reread),
+          "snapshot review active closure changed before publication",
+          CadrM10ConflictError);
+        const lease = makeSnapshotReviewLease(record, initial);
+        record.phase = "HELD";
+        authorityRecord.phase = "LEASED";
+        authorityRecord.lease = lease;
+        return lease;
+      } catch (error) {
+        if (record.pinId !== null) {
+          try {
+            await rollbackSnapshotReviewPin(record);
+          } catch (rollbackError) {
+            /* The caller never received a lease, so the authority itself is
+             * the only safe branded recovery route.  Retain its opaque record
+             * and make the next acquire retry cleanup before a fresh pin. */
+            record.phase = "RECOVERY_REQUIRED";
+            authorityRecord.phase = "RECOVERY_REQUIRED";
+            authorityRecord.recovery = record;
+            throw new AggregateError([error, rollbackError],
+              "C-M10 snapshot review acquisition failed and pin rollback failed");
+          }
+        }
+        snapshotReviewLease = null;
+        authorityRecord.phase = "ACTIVE";
+        throw error;
+      }
+    })();
+  }
+
+  function resumeSnapshotReviewAcquire(authorityRecord) {
+    const record = authorityRecord.recovery;
+    required(record !== null && record !== undefined &&
+      snapshotReviewLease === record &&
+      (record.phase === "RECOVERY_REQUIRED" || record.phase === "RECOVERING") &&
+      record.pinId !== null,
+    "snapshot review acquisition recovery is invalid", CadrM10RecoveryError);
+    if (record.recoveryFlight !== null) return record.recoveryFlight;
+    required(record.phase === "RECOVERY_REQUIRED",
+      "snapshot review acquisition recovery is already changing", CadrM10ConflictError);
+    record.phase = "RECOVERING";
+    authorityRecord.phase = "RECOVERING";
+    const flight = (async () => {
+      try {
+        await rollbackSnapshotReviewPin(record);
+        snapshotReviewLease = null;
+        authorityRecord.recovery = null;
+        authorityRecord.phase = "ACTIVE";
+        return await beginSnapshotReviewAcquire(authorityRecord);
+      } catch (error) {
+        record.phase = "RECOVERY_REQUIRED";
+        authorityRecord.phase = "RECOVERY_REQUIRED";
+        authorityRecord.recovery = record;
+        throw error;
+      } finally {
+        record.recoveryFlight = null;
+      }
+    })();
+    record.recoveryFlight = flight;
+    return flight;
+  }
+
+  function invokeSnapshotReviewAcquire(authority, receiver) {
+    const authorityRecord = SNAPSHOT_REVIEW_AUTHORITIES.get(authority);
+    required(receiver === authority && authorityRecord !== undefined &&
+      authorityRecord.controller === controller &&
+      authorityRecord.authority === authority,
+    "snapshot review authority is not recognized", CadrM10ConflictError);
+    if (authorityRecord.phase === "RECOVERY_REQUIRED" ||
+      authorityRecord.phase === "RECOVERING") {
+      return resumeSnapshotReviewAcquire(authorityRecord);
+    }
+    required(authorityRecord.phase === "ACTIVE",
+      "snapshot review authority is not recognized in its current phase",
+      CadrM10ConflictError);
+    return beginSnapshotReviewAcquire(authorityRecord);
+  }
+
+  function claimSnapshotReviewAuthority() {
+    required(this === controller && controller !== null &&
+      !SNAPSHOT_REVIEW_AUTHORITIES.has(controller),
+    "snapshot review authority has already been claimed", CadrM10ConflictError);
+    let authority;
+    const acquire = Object.freeze(function acquire() {
+      return invokeSnapshotReviewAcquire(authority, this);
+    });
+    const revoke = Object.freeze(function revoke(reason) {
+      const authorityRecord = SNAPSHOT_REVIEW_AUTHORITIES.get(authority);
+      required(this === authority && authorityRecord !== undefined &&
+        authorityRecord.controller === controller &&
+        authorityRecord.authority === authority && authorityRecord.phase === "ACTIVE" &&
+        authorityRecord.lease === null,
+      "snapshot review authority cannot be revoked", CadrM10ConflictError);
+      required(typeof reason === "string" && reason.length > 0 && reason.length <= 160,
+        "snapshot review revocation reason is invalid");
+      authorityRecord.phase = "REVOKED";
+      return Object.freeze({ revoked: true, reason });
+    });
+    authority = Object.freeze({ acquire, revoke });
+    SNAPSHOT_REVIEW_AUTHORITIES.set(authority, {
+      controller, authority, phase: "ACTIVE", lease: null, recovery: null,
+    });
+    SNAPSHOT_REVIEW_AUTHORITIES.set(controller, authority);
+    return authority;
+  }
+
   async function invalidateAfterAmbiguousGuest() {
-    if (state === CADR_M10_CONTROLLER_IN_DOUBT) return;
+    /* The bridge reports one lost completion twice: once at transport loss and
+     * once when the enclosing durable publication unwinds.  Keep that event
+     * joinable even after its replacement settles.  A later ambiguity can
+     * supersede it only while the retained lease is actively reopening from
+     * the first replacement; that is the only phase in which a stale refresh
+     * handle could otherwise cross the recovery fence. */
+    const supersedingRelease = snapshotReviewLease !== null &&
+      snapshotReviewLease.phase === "RELEASING" &&
+      snapshotReviewLease.releaseFlight !== null &&
+      snapshotReviewLease.releaseRequiresFreshSession;
+    if (ambiguousInvalidationFlight !== null && !supersedingRelease &&
+        !ambiguousInvalidationFailed) {
+      return ambiguousInvalidationFlight;
+    }
     setState(CADR_M10_CONTROLLER_IN_DOUBT);
-    try { disk?.close(); } catch {}
-    disk = null;
-    await replaceWorker();
+    const ambiguityEpoch = ambiguousInvalidationEpoch + 1;
+    ambiguousInvalidationEpoch = ambiguityEpoch;
+    let resolveFlight; let rejectFlight;
+    const flight = new Promise((resolve, reject) => {
+      resolveFlight = resolve; rejectFlight = reject;
+    });
+    /* Keep this replacement joinable for the second report of the same lost
+     * completion.  The opaque lease separately retains this exact promise so
+     * a superseding release cannot accidentally follow a newer global value. */
+    ambiguousInvalidationFlight = flight;
+    ambiguousInvalidationFailed = false;
+    void flight.catch(() => {});
+    /* The lease is deliberately retained, not released or exposed.  Its
+     * pinned root is part of the recovery boundary, and only its branded
+     * release method may unpin it after the replacement worker exists. */
+    if (snapshotReviewLease !== null) {
+      snapshotReviewLease.releaseRequiresFreshSession = true;
+      snapshotReviewLease.ambiguityEpoch = ambiguityEpoch;
+      snapshotReviewLease.ambiguityFlight = flight;
+      if (snapshotReviewLease.phase === "HELD" ||
+          snapshotReviewLease.phase === "RELEASING") {
+        snapshotReviewLease.phase = "RELEASE_REQUIRED";
+      }
+      /* A pre-fence unpin may never return.  Its token cannot alter state
+       * after this bump; a caller can retry the opaque release through the
+       * fresh session without waiting for that stale transport promise. */
+      if (snapshotReviewLease.releaseFlight !== null) {
+        snapshotReviewLease.releaseAttempt += 1;
+        snapshotReviewLease.releaseFlight = null;
+      }
+    }
+    /* Publish before either close or replaceWorker can re-enter the
+     * controller.  This is the synchronisation point that makes one loss
+     * produce exactly one replacement. */
+    void (async () => {
+      try {
+        try { disk?.close(); } catch {}
+        disk = null;
+        await replaceWorker();
+        resolveFlight();
+      } catch (error) {
+        ambiguousInvalidationFailed = true;
+        rejectFlight(error);
+      }
+    })();
+    return flight;
   }
 
   async function open({ initialize = false } = {}) {
+    assertNoSnapshotReviewLease();
     required(disk === null, "controller is already open",
       CadrM10ConflictError);
     const observedBase = exact(await readBaseIdentity(), 32,
@@ -428,6 +871,7 @@ export function createCadrM10Controller({
   }
 
   async function mutate(planner, options = {}) {
+    assertNoSnapshotReviewLease();
     required(!busy, "another persistence operation is active",
       CadrM10ConflictError);
     required(disk !== null, "controller is not open", CadrM10RecoveryError);
@@ -496,10 +940,10 @@ export function createCadrM10Controller({
     });
   }
 
-  return Object.freeze({
+  controller = Object.freeze({
     profile: CADR_M10_CONTROLLER_PROFILE,
     get state() { return state; },
-    status, open,
+    status, open, claimSnapshotReviewAuthority,
     invalidateAfterAmbiguousGuest,
     commitWrites,
     async readBlock(target) {
@@ -516,6 +960,7 @@ export function createCadrM10Controller({
       return page.bytes.slice();
     },
     async exportOverlay() {
+      assertNoSnapshotReviewLease();
       required(!busy, "another persistence operation is active",
         CadrM10ConflictError);
       required(disk !== null, "controller is not open",
@@ -567,6 +1012,7 @@ export function createCadrM10Controller({
       }
     },
     async compact() {
+      assertNoSnapshotReviewLease();
       required(!busy, "another persistence operation is active",
         CadrM10ConflictError);
       required(disk !== null, "controller is not open",
@@ -586,10 +1032,12 @@ export function createCadrM10Controller({
       }
     },
     async recover() {
+      assertNoSnapshotReviewLease();
       required(!busy, "another persistence operation is active",
         CadrM10ConflictError);
       busy = true;
       try {
+        const recoveryAmbiguityFlight = ambiguousInvalidationFlight;
         if (disk !== null) {
           try { disk.close(); } catch {}
         }
@@ -600,14 +1048,18 @@ export function createCadrM10Controller({
           setState(CADR_M10_CONTROLLER_RECOVERY_REQUIRED);
           throw error;
         }
-        setState(disk.readOnly ? CADR_M10_CONTROLLER_RECOVERY_REQUIRED :
-          CADR_M10_CONTROLLER_CLEAN);
+        if (disk.readOnly) setState(CADR_M10_CONTROLLER_RECOVERY_REQUIRED);
+        else {
+          clearAmbiguousInvalidation(recoveryAmbiguityFlight);
+          setState(CADR_M10_CONTROLLER_CLEAN);
+        }
         return status();
       } finally {
         busy = false;
       }
     },
     close() {
+      assertNoSnapshotReviewLease();
       required(!busy, "another persistence operation is active",
         CadrM10ConflictError);
       busy = true;
@@ -617,6 +1069,7 @@ export function createCadrM10Controller({
       } finally { busy = false; }
     },
   });
+  return controller;
 }
 
 /*

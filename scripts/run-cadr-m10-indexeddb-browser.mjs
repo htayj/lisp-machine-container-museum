@@ -7,10 +7,17 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { spawn } from "node:child_process";
+import { CadrProcessGroupSupervisor } from "./cadr-process-group-supervisor.mjs";
+import { connectBoundedCdp } from "./cadr-cdp-client.mjs";
 
 const root = resolve(fileURLToPath(new URL("../", import.meta.url)));
 const chromium = process.env.CHROMIUM ?? "/usr/bin/chromium";
 const headed = process.argv.includes("--headed");
+const campaignTimeoutMs = Number(process.env.CADR_M10_INDEXEDDB_CAMPAIGN_TIMEOUT_MS ?? "240000");
+if (!Number.isSafeInteger(campaignTimeoutMs) || campaignTimeoutMs < 1000 || campaignTimeoutMs > 240000) {
+  throw new Error("CADR_M10_INDEXEDDB_CAMPAIGN_TIMEOUT_MS must be an integer from 1000 through 240000");
+}
+const campaignStorageKey = "cadr-m10-indexeddb-campaign-v2";
 const sources = Object.freeze({
   "/cadr-web/browser/cadr-m10-indexeddb-campaign.html":
     ["cadr-web/browser/cadr-m10-indexeddb-campaign.html", "text/html; charset=utf-8"],
@@ -24,6 +31,8 @@ const sources = Object.freeze({
     ["cadr-web/browser/cadr-m10-indexeddb-seam-worker.mjs", "text/javascript; charset=utf-8"],
   "/cadr-web/browser/cadr-m10-indexeddb.mjs":
     ["cadr-web/browser/cadr-m10-indexeddb.mjs", "text/javascript; charset=utf-8"],
+  "/cadr-web/browser/cadr-m10-controller.mjs":
+    ["cadr-web/browser/cadr-m10-controller.mjs", "text/javascript; charset=utf-8"],
   "/cadr-web/wasm/cadr-m10-persistence.mjs":
     ["cadr-web/wasm/cadr-m10-persistence.mjs", "text/javascript; charset=utf-8"],
 });
@@ -122,33 +131,9 @@ function debuggerEndpoint(browser, stderrState) {
   });
 }
 
-async function connectDebugger(endpoint) {
-  const socket = new WebSocket(endpoint);
-  const pending = new Map();
-  let sequence = 0;
-  await new Promise((resolveOpen, reject) => { socket.onopen = resolveOpen; socket.onerror = reject; });
-  socket.onmessage = (event) => {
-    const message = JSON.parse(event.data);
-    const waiter = pending.get(message.id);
-    if (waiter !== undefined) {
-      pending.delete(message.id);
-      message.error ? waiter.reject(new Error(message.error.message)) : waiter.resolve(message.result);
-    }
-  };
-  return {
-    call(method, params = {}) {
-      const id = ++sequence;
-      return new Promise((resolveCall, rejectCall) => {
-        pending.set(id, { resolve: resolveCall, reject: rejectCall });
-        socket.send(JSON.stringify({ id, method, params }));
-      });
-    },
-    close() { socket.close(); },
-  };
-}
-
 const first = serve();
 const second = serve();
+const processGroups = new CadrProcessGroupSupervisor();
 const userData = await mkdtemp(join(tmpdir(), "cadr-m10-idb-chromium-"));
 try {
   const firstPort = await listen(first);
@@ -156,12 +141,12 @@ try {
   await proveServerIsolation(firstPort);
   await proveServerIsolation(secondPort);
   const target = `http://127.0.0.1:${firstPort}/cadr-web/browser/cadr-m10-indexeddb-campaign.html?foreign=${secondPort}`;
-  const browser = spawn(chromium, [
+  const browser = processGroups.track(spawn(chromium, [
     ...(headed ? [] : ["--headless=new"]), "--disable-gpu", "--no-first-run",
     "--no-default-browser-check", "--disable-background-networking",
     "--remote-allow-origins=*", "--remote-debugging-port=0",
     `--user-data-dir=${userData}`, "about:blank",
-  ], { stdio: ["ignore", "ignore", "pipe"] });
+  ], { detached: true, stdio: ["ignore", "ignore", "pipe"] }));
   const stderrState = { text: "" };
   let debuggerClient;
   try {
@@ -169,35 +154,73 @@ try {
     const debugOrigin = new URL(browserEndpoint);
     const tab = await (await fetch(`http://127.0.0.1:${debugOrigin.port}/json/new?about:blank`,
       { method: "PUT" })).json();
-    debuggerClient = await connectDebugger(tab.webSocketDebuggerUrl);
+    /* All calls, including setup, share the campaign's one deadline.  A
+     * closed/erroring DevTools socket rejects every pending call immediately. */
+    const deadline = Date.now() + campaignTimeoutMs;
+    debuggerClient = await connectBoundedCdp(tab.webSocketDebuggerUrl, { deadline });
     await debuggerClient.call("Page.enable");
     await debuggerClient.call("Runtime.enable");
     await debuggerClient.call("Page.navigate", { url: target });
-    let result = null;
-    for (let attempt = 0; attempt < 1800; attempt += 1) {
+    let result = null; let lastObservation = null; let lastProgress = null;
+    while (Date.now() < deadline) {
       await pause(100);
       const evaluated = await debuggerClient.call("Runtime.evaluate", {
-        expression: "JSON.stringify({status:document.body.dataset.status,text:document.body.textContent})",
+        expression: `document.body === null ? null : JSON.stringify({status:document.body.dataset.status,text:document.body.textContent,campaign:sessionStorage.getItem(${JSON.stringify(campaignStorageKey)})})`,
         returnByValue: true,
       });
+      /* A newly-created DevTools target may answer one evaluate while its
+       * initial execution context is being replaced by navigation.  That is
+       * not a campaign result; wait for the stable page context rather than
+       * treating CDP's undefined value as malformed campaign JSON. */
+      if (evaluated.exceptionDetails !== undefined) {
+        throw new Error(`campaign status evaluation failed: ${evaluated.exceptionDetails.text ?? "unknown exception"}\n` +
+          JSON.stringify(evaluated.exceptionDetails));
+      }
+      if (typeof evaluated.result?.value !== "string") continue;
       result = JSON.parse(evaluated.result.value);
+      lastObservation = result;
+      try {
+        const progress = JSON.parse(result.campaign ?? "null")?.index;
+        if (Number.isInteger(progress) && progress !== lastProgress) {
+          lastProgress = progress;
+          console.log(`Chromium campaign progress: durable scenario ${progress}/18`);
+        }
+      } catch { /* nonterminal diagnostic output must not change test semantics */ }
       if (result.status === "ok" || result.status === "failed") break;
+    }
+    if (result?.status !== "ok" && result?.status !== "failed") {
+      throw new Error(`Chromium campaign exceeded ${campaignTimeoutMs} ms without a terminal page status:\n` +
+        JSON.stringify(lastObservation));
     }
     if (result?.status !== "ok" || !/"results":18/.test(result.text) ||
       !/"followups":9/.test(result.text) || !/"activationBoundary":4096/.test(result.text) ||
-      !/"lax":0/.test(result.text)) {
+      !/"opaqueReferenceMigration":true/.test(result.text) ||
+      !/"crossKindReferenceForgery":true/.test(result.text) ||
+      !/"reviewAuthority":true/.test(result.text) || !/"lax":0/.test(result.text)) {
       throw new Error(`Chromium campaign failed: ${result?.text ?? "completion timeout"}\n${stderrState.text}`);
     }
   } finally {
     debuggerClient?.close();
-    if (browser.exitCode === null) {
-      browser.kill("SIGTERM");
-      await new Promise((resolveClose) => browser.once("close", resolveClose));
-    }
+    /* The group supervisor gives SIGTERM bounded grace, then SIGKILL, and
+     * refuses a campaign that cannot prove the detached browser exited. */
+    await processGroups.stop(browser, "SIGTERM");
   }
   console.log(`cadr_m10_indexeddb_browser.mjs: ok (Chromium ${headed ? "headed" : "headless"}; exact HTTP allowlist; 6 seams x abort/terminate/reload)`);
 } finally {
-  await new Promise((resolveClose) => first.server.close(resolveClose));
-  await new Promise((resolveClose) => second.server.close(resolveClose));
-  await rm(userData, { recursive: true, force: true });
+  const cleanupFailures = [];
+  for (const cleanup of [
+    () => processGroups.stopAll("SIGKILL"),
+    () => new Promise((resolveClose, rejectClose) =>
+      first.server.close(error => error ? rejectClose(error) : resolveClose())),
+    () => new Promise((resolveClose, rejectClose) =>
+      second.server.close(error => error ? rejectClose(error) : resolveClose())),
+    () => rm(userData, { recursive: true, force: true }),
+  ]) {
+    try { await cleanup(); } catch (error) { cleanupFailures.push(error); }
+  }
+  if (cleanupFailures.length === 1) throw cleanupFailures[0];
+  if (cleanupFailures.length > 1) {
+    throw new AggregateError(cleanupFailures,
+      "C-M10 Chromium campaign cleanup failed");
+  }
 }

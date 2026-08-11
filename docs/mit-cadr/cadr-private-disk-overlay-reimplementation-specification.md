@@ -3,7 +3,7 @@ type: Reimplementation Specification
 title: CADR-WEB-303 C-M10 private disk overlay reimplementation specification
 description: Normative contract for the synthetic, immutable-base, content-addressed CADR-WEB private-disk overlay, durable controller, interchange, and recovery records.
 tags: [mit-cadr, cadr-web, preservation, disk, reimplementation]
-timestamp: 2026-07-30T02:39:00-04:00
+timestamp: 2026-08-11T07:12:10-04:00
 ---
 
 # CADR-WEB-303 C-M10 private disk overlay reimplementation specification
@@ -118,7 +118,28 @@ or retained by this adapter.
 Each disk UUID has one derived IndexedDB database name; a handle for one UUID cannot
 address another UUID's `meta`, `head`, activation, or quarantine records. A database
 contains only the closed records `m10-meta`, `m10-pages`, `m10-nodes`,
-`m10-manifests`, `m10-heads`, `m10-activations`, and `m10-quarantine`. Byte-bearing
+`m10-manifests`, `m10-heads`, `m10-activations`, `m10-quarantine`, and `m10-refs`.
+Schema 3 upgrades the exact schema-1 and schema-2 database names in place. A
+schema-1 upgrade requires the complete canonical pre-reference store set, creates
+only `m10-refs`, and writes `refHighWater: "0"`. A schema-2 upgrade retains the
+same stores and high-water **only when `m10-refs` is empty**. A nonempty schema-2
+reference set aborts the version-change transaction without rewriting controls or
+references. Schema 2's public IDs contained a kind; translating a live record to the
+schema-3 key would strand the owner that still holds its old cleanup ID, and this
+closed schema has no alias or tombstone/reconciliation record with which to preserve
+idempotent release. This is a selected safety boundary for an unpublished candidate
+schema, not a claim that a deployed format can be upgraded automatically. Before that
+rejection, the upgrader validates every schema-2 record, requires every sequence to
+be at or below the persisted high-water, and rejects a sequence used by more than one
+kind; malformed or collision-bearing input also aborts. A schema-3 reference has
+exactly `key`, `diskKey`, `kind`, `rootSha256`, and canonical decimal
+`creatorSession`; a snapshot's creator session is nonzero, while durable clone/export
+records use zero. Its public ID is exactly `lowercase-disk-uuid-hex ":"
+canonical-positive-decimal-u64`; it contains no kind. Kind remains a closed stored
+record field, so a kind-tagged schema-2 spelling is malformed at the schema-3 public
+boundary rather than an alternative idempotence key. An absent, malformed, or
+noncanonical source-schema control or reference record aborts the upgrade.
+Byte-bearing
 records contain an `ArrayBuffer` copy and an exact lowercase hash key; control
 records reject unknown fields, noncanonical decimal u64s, unexpected UUID bindings,
 or noncanonical activation keys. Opening requires the exact sorted object-store set
@@ -134,16 +155,28 @@ The adapter retains the selected 4096-record activation bound *per UUID database
 Recovery requests at most 4097 activation records and refuses an over-bound database.
 At the bound, publication prunes only the oldest unprotected record in that same
 database; it retains the current head activation and immediate predecessor, and
-refuses if neither can be safely removed. Durable `compact` marks the complete
-selected manifest lineage and every reachable node/page while holding the disk's
-writer lease. Its single sweep transaction rereads the exact writer epoch, pending
-generation, and head bytes marked earlier; it deletes only unreachable immutable
-objects if all still match. A concurrent writer or changed head aborts the sweep.
-It deliberately does not truncate the selected lineage.
+refuses if neither can be safely removed. `pinRoot(kind, exactRoot)` accepts only a
+validated complete level-2 overlay root and persists a closed reference record with a
+disk-bound, kind-independent identifier. Its metadata high-water update and reference
+insertion are one strict transaction, so a failed insertion rolls both back and a
+released identifier is never reused. A review `snapshot` is a transient
+creator-session reference; `clone` and `export` are durable roots. `unpinRoot(id)`
+first validates an exact canonical same-disk ID whose sequence is no greater than the
+persisted high-water. It deletes a present record only in its legal current session,
+but a missing **already-issued** ID succeeds idempotently. Thus a completion-response
+loss after a strict delete cannot strand an otherwise opaque review lease; malformed,
+kind-tagged, future, and foreign IDs still reject. Durable `compact` marks the complete
+selected manifest lineage, every reachable node/page, and every durable reference
+root while holding the disk's writer lease. Its single sweep transaction rereads the
+exact writer epoch, pending generation, head bytes, and complete reference set marked
+earlier; it deletes only unreachable immutable objects if all still match. A
+concurrent writer, changed head, or changed reference set aborts the sweep. It
+deliberately does not truncate the selected lineage.
 
-Every reopened durable handle advances the stored session high-water and clears the
-writer lease and any prior session's pending-generation reservation in the same
-metadata transaction before recovery. This is safe because publication clears the
+Every reopened durable handle advances the stored session high-water, purges every
+older-session transient snapshot, and clears the writer lease and any prior session's
+pending-generation reservation in one metadata-and-reference transaction before
+recovery. Clone/export roots are not purged. This is safe because publication clears the
 reservation in the same transaction that writes the new head and activation: a
 reservation left at reopen is necessarily pre-publication, while a completed
 publication already has a cleared reservation. Every public adapter operation
@@ -200,6 +233,10 @@ Invariants:
    reservation, runtime, head, activations, metadata, and owned references if and
    only if the reservation is still the same canonical record in `INITIALIZING`;
    unreachable content-addressed objects may remain collection candidates.
+8. A process or reload loss while acquiring or holding a review snapshot leaves no
+   retained transient reference after the next successful open: its session transition
+   atomically makes the new session authoritative and purges older snapshots. An
+   explicit clone/export root remains reachable across that transition.
 
 ### Browser controller and guest completion
 
@@ -223,6 +260,68 @@ and permits no further disk operation until `recover` reopens and rereads the
 durable store. The bridge implements the existing block-read and block-write
 host-request framing; it adds no worker protocol branch and does not duplicate
 guest disk-controller state.
+
+### Snapshot-review authority
+
+`claimSnapshotReviewAuthority()` is a one-claim controller capability used by the
+M10 review path. The frozen authority exposes only branded `acquire()` and `revoke()`
+methods. A successful acquire pins the current complete active root, then rereads the
+same generation, head sequence, manifest hash, and root hash before returning a
+frozen lease containing that canonical binding and `release()`. Neither public object
+contains a durable handle, an adapter method, or a root-reference identifier.
+
+The controller synchronously fences write, export, compact, recover, open, and close
+while acquisition or a lease is live. Acquisition continuity failure after pin invokes
+opaque compensating unpin. If that cleanup also fails, no lease has been exposed; the
+same branded authority enters `RECOVERY_REQUIRED`, and its next `acquire()` retries
+the opaque cleanup through a fresh durable session before it performs a new acquire.
+A lease-release failure similarly preserves the mutation fence until an explicit
+`release()` retry succeeds. Because IndexedDB `unpinRoot` treats only an exact,
+already-issued same-disk ID as idempotently released, a transaction which committed
+but lost its completion response closes on that retry without accepting forged or
+future identifiers.
+
+An ambiguous guest-completion response is an emergency fence and therefore outranks
+an already-held review lease. The controller changes to `IN_DOUBT`, detaches and
+closes its durable handle, and starts exactly one worker replacement without waiting
+for a prior `release()` transport promise. The frozen lease and its opaque pin remain
+live; its next explicit `release()` captures its exact release-attempt number,
+ambiguity epoch, and replacement-flight identity before its first await. A
+fresh-session retry awaits that captured flight rather than a mutable controller-global
+flight, reopens only after it succeeds, and rechecks all three captured identities
+after `reopenDisk` returns. If another ambiguity superseded the attempt while reopening,
+the returned stale handle is closed and the retry rejects without installing that
+handle, unpinning, releasing the lease, or changing `IN_DOUBT` to `CLEAN`. The final
+current retry remains `IN_DOUBT` through its fresh-session durable unpin and reaches
+`CLEAN` only after that unpin and the same fence recheck succeed. If an old-session
+unpin was already pending, its attempt token is superseded: it cannot later change
+lease state, and it cannot block a fresh-session retry. This is an inferred safety
+rule of the selected reconstruction, not a claim about CADR or LMFS. Synthetic bridge
+tests exercise read, unsupported-operation, and an injected already-permitted write
+completion response loss under a held lease; they require `IN_DOUBT`, one replacement,
+one transmitted completion, retained pin before release, and a reopened session for
+release. Separate adversarial cases leave the old unpin unresolved indefinitely and
+gate both a retry reopen and a superseding replacement; they require the stale reopen
+to close, no unpin before the exact replacement completes, exactly one replacement for
+the superseding ambiguity, and `CLEAN` only after the final fresh unpin. That final
+boundary retires the completed controller-global join marker, so a later ambiguity in
+the restored clean controller starts its own replacement rather than joining obsolete
+recovery work.
+
+If a replacement flight fails, its rejected exact flight likewise retains `IN_DOUBT`
+and the opaque pin: the affected release cannot reopen or unpin through a failed
+replacement. A later ambiguity notification may establish one new replacement flight;
+only an explicit release retry captured against that new flight can continue. This is
+also an inferred recovery rule and is covered with a synthetic failing replacement.
+
+The disposable Chromium runner binds every CDP call to its single campaign deadline.
+A CDP socket error or close rejects every pending request, and a silent request
+rejects when the remaining campaign time expires, so the polling loop cannot wait
+past its own bound. The runner owns Chromium as a detached process group; its cleanup
+uses bounded `SIGTERM`, escalates to `SIGKILL`, and treats a surviving group as a
+campaign failure. Unit tests use hostile socket doubles and the process-group
+supervisor's escalation fixtures; the unchanged eighteen-scenario Chromium campaign
+remains the browser persistence evidence.
 
 | Operation | Durable effect |
 | --- | --- |
@@ -647,8 +746,10 @@ Every disk's active and previous head manifests are mandatory backend-global GC
 roots. Callers may add named `snapshot`, `clone`, or `export` root references only
 after the complete proposed tree verifies. Each disk reserves reference identifiers
 from its own monotonic bounded u64 high-water; deletion never permits identifier
-reuse. Unpin verifies the stored reference ID, disk UUID, and legal kind before
-deletion, so one disk cannot remove another disk's root. Pin publication is a
+reuse. A schema-3 identifier is exactly the disk UUID plus that unique sequence;
+unpin verifies the stored record's disk UUID and legal kind before deletion, so one
+disk cannot remove another disk's root and a caller cannot forge an alternate kind
+for a missing sequence. Pin publication is a
 linearization point: session invalidation during the synchronous map mutation rolls
 back the exact just-published reference and rejects, as does a store mutation that
 throws after insertion; invalidation after publication does not turn a successfully
@@ -674,7 +775,7 @@ separate confidentiality and deletion policy.
 | Begin/close writer | current lifecycle and epoch | exclusive epoch or released lease | stale/concurrent epoch rejects |
 | Commit | epoch, expected head sequence, ordered 1024-byte writes | unchanged result or durable new generation | follows transaction order and uncertain-head reread above |
 | Reopen | same independently verified immutable binding plus fresh base callback | writable active head or read-only recovered head | invalidates all earlier session handles; no valid activation refuses mount |
-| Pin/unpin root | `snapshot`, `clone`, or `export`; complete root hash | monotonic owned retained/released GC reference | stale session, invalid tree, unknown reference, or cross-disk ownership rejects |
+| Pin/unpin root | `snapshot`, `clone`, or `export`; complete root hash | monotonic session-snapshot or durable clone/export GC reference with opaque `diskKey:sequence` ID | stale session, invalid tree, malformed/kind-tagged/future/foreign ID, or cross-disk ownership rejects; exact missing issued IDs are idempotent release |
 | Collect | positive finite step budget | backend-global incremental mark/sweep report | concurrent invocation rejects; mutation blocks or invalidates |
 | Wrap snapshot | bound overlay identity, complete `CDRM5WK1` v3, and injected semantic validator | `CDRM10W1` bytes | absent validator or structural/semantic/integrity failure rejects |
 | IndexedDB durable selection | selected binding, session/writer epoch, reserved complete manifest, immutable closure | atomically activated next head plus matching activation | closed-schema, stale-session, quota, version-change, bounded-activation, or closure failure rejects; a post-publication fault rereads |
@@ -705,7 +806,7 @@ overlay transaction is evidence of a filesystem-level atomic operation.
 | `M10-F10` | `L1-memory` | Insert malformed, oversized, and over-volume activation keys/records | malformed records quarantine without hiding a valid candidate; over-limit scan refuses |
 | `M10-F11` | `L0-format`/`L1-memory` | Exercise zero/partial bindings, count bounds, invalid pins, and u64 high-water exhaustion | canonical validation and every no-wrap boundary fail closed |
 | `M10-F12` | `L1-memory` | Race two same-UUID initializations, commit through the sole handle, then reopen | one initialization rejects; canonical reopen sees the committed head and page |
-| `M10-F13` | `L1-memory` | Delete/recreate a pin and attempt cross-disk unpin | IDs increase without reuse and foreign ownership cannot delete |
+| `M10-F13` | `L1-memory` | Delete/recreate a pin; attempt cross-disk and kind-tagged unpin | IDs increase without reuse; foreign ownership and alternate-kind forgery cannot delete or idempotently release |
 | `M10-F14` | `L1-memory` | Gate old-session base read and root validation across reopen | both operations reject after their await and no stale pin is published |
 | `M10-F15` | `L1-memory` | Gate after genesis head/activation, attempt reopen, remove metadata, release, then retry | reopen rejects `INITIALIZING`; exact owned control records roll back; retry reaches `OPEN` and reopens |
 | `M10-F16` | `L1-memory` | Reopen synchronously inside final pin-map publication | stale publication rolls back its exact reference and leaves no leaked root |
@@ -719,10 +820,15 @@ overlay transaction is evidence of a filesystem-level atomic operation.
 | `M10-I06` | `L2-indexeddb-selection` | Instrument page-realm transactions and statically require the adapter's single transaction factory | every observed read-write transaction requests strict durability; no adapter bypass exists |
 | `M10-I07` | `L2-indexeddb-selection` | Export active closure, stage unreachable page/node, compact, and reread | exact closure is returned; only unreachable objects disappear; active generation is unchanged |
 | `M10-I08` | `L2-indexeddb-selection` | Race commit and compact in both directions and alter the marked epoch/head before sweep | controller admits only one mutation; stale epoch/head sweep rejects before deletion |
+| `M10-I09` | `L2-indexeddb-selection` | Upgrade public schema-1 plus empty and mixed-reference schema-2 fixtures; include malformed and cross-kind-collision schema-2 keys | schema-1 and empty schema-2 controls/closures migrate exactly; any nonempty schema-2 ref set, malformed record, or reused cross-kind sequence aborts atomically with original owner IDs intact |
+| `M10-I10` | `L2-indexeddb-selection` | Pin a schema-3 `snapshot` at sequence 1, then send the former schema-2 `clone` sequence-1 spelling to `unpinRoot` | the kind-tagged spelling rejects before durable mutation; the canonical pin remains present and only the exact `diskKey:sequence` ID may retry idempotently |
+| `M10-C05` | `L3-controller` | Cause active closure/session change after review pin, then lose first rollback completion response | acquire reports the combined fault; the same branded authority's next acquire clears the opaque pin before returning a fresh lease; no mutation is admitted while recovery is pending |
 | `M10-C01` | `L3-controller` | COW-write through staged guest completion, then read, discard, import, clone, compact, and recover | staging precedes guest completion and activation; every operation preserves binding and expected bytes |
 | `M10-C02` | `L3-controller` | Fail publication after completion or make an actual Worker-thread protocol fixture consume completion and exit before responding | controller enters `IN_DOUBT`, closes the handle, terminates/replaces the Worker, and recovers only by durable reopen; this does not claim production `cadr-worker.js` execution |
 | `M10-C03` | `L3-controller` | Service framed block read/write through the worker bridge | completion bytes and durable write order match the existing host-request protocol |
 | `M10-C04` | `L3-controller` | Hold commit/compact while attempting recover/close, then hold recover while attempting mutation/close | every overlapping operation rejects and the surviving owner completes cleanly |
+| `M10-C06` | `L3-controller` | Lose a read, unsupported, or injected already-permitted write completion while a frozen review lease is held; race invalidation with a release paused before or inside unpin; gate a retry reopen while a superseding ambiguity gates replacement; fail then renew a replacement flight | emergency fence is `IN_DOUBT`, exactly one worker replacement and completion occur per ambiguity, the opaque pin remains until explicit fresh-session release, a never-settling old unpin cannot block that retry, a superseded reopened handle closes without unpinning or making the controller `CLEAN`, and a failed replacement permits no unpin until a later flight succeeds |
+| `M10-H01` | host campaign harness | Close/error a hostile CDP socket with calls outstanding; leave a call unanswered through the remaining campaign deadline; hold a detached child through `SIGTERM` | every pending CDP caller rejects, silent calls respect the deadline, and cleanup escalates to `SIGKILL` or reports non-exit |
 | `M10-P01` | `CW3-PERSISTENT/process-loss` | External host kills complete Chromium process group at each durable seam and while stage/head transactions are outstanding, then restarts same profile | pre-publication seams select old complete state; post-publication seams select new complete state; outstanding head transaction selects old or new; none mix |
 | `M10-W01` | `L1-wrapper` | Wrap a structurally valid synthetic `CDRSNAP1` in M5; corrupt outer or inner bytes | both binding and inner integrity reject |
 | `M10-W02` | `L1-wrapper` | Omit or reject the injected validator and wrap arbitrary M5 payload bytes | validator omission fails closed and arbitrary bytes never pass structural validation |
@@ -736,6 +842,8 @@ node tests/test_cadr_m10_persistence.mjs
 node tests/test_cadr_m10_wrapper.mjs
 node tests/test_cadr_m10_controller.mjs
 node tests/test_cadr_m10_indexeddb_static.mjs
+node tests/test_cadr_m10_cdp_client.mjs
+node tests/test_cadr_process_group_supervisor.mjs
 node scripts/run-cadr-m10-indexeddb-browser.mjs
 node scripts/run-cadr-m10-process-kill-browser.mjs
 xvfb-run -a node scripts/run-cadr-m10-indexeddb-browser.mjs --headed
