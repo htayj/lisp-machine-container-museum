@@ -54,6 +54,10 @@ cadr_m12_status cadr_m12_machine_adapter_micro_step(
     cadr_m12_machine_adapter *adapter);
 cadr_m12_status cadr_m12_machine_adapter_macro_step(
     cadr_m12_machine_adapter *adapter);
+#if defined(CADR_M13_DEBUGGER_TEST_WASM)
+cadr_m12_status cadr_m12_machine_adapter_test_arm_macro_limit(
+    cadr_m12_machine_adapter *adapter);
+#endif
 cadr_m12_status cadr_m12_machine_adapter_stop_copy(
     const cadr_m12_machine_adapter *adapter,
     uint8_t output[CADR_M12_STOP_BYTES]);

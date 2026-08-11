@@ -96,6 +96,8 @@ M12_SYNTH_WASM_O0 := build/cadr-web-m12-synthetic-test-O0.wasm
 M12_SYNTH_WASM_O2 := build/cadr-web-m12-synthetic-test-O2.wasm
 M13_AUDIO_WASM_O0 := build/cadr-web-m13-audio-O0.wasm
 M13_AUDIO_WASM_O2 := build/cadr-web-m13-audio-O2.wasm
+M13_DEBUGGER_TEST_WASM_O0 := build/cadr-web-m13-debugger-test-O0.wasm
+M13_DEBUGGER_TEST_WASM_O2 := build/cadr-web-m13-debugger-test-O2.wasm
 
 .PHONY: all test clean audit forbidden-symbols exported-symbols mutable-globals dependency-audit header-audit mutant-audit python-cross-parse m3-wasm m3-browser m3-differential m3-conformance m3-snapshot-cross-target m4-unit m4-browser m4-differential m4-media-compare m5-unit m6-release-validation m6-devid-wasm m6-diagnostic-receipt-unit m7-unit m7-native-source-pin m7-native-source-unit m8-m9-unit m8-m9-devid-unit m10-unit m11-unit m11-selected-playback m12-unit m13-audio-unit m13-p1-unit
 
@@ -331,6 +333,12 @@ $(M13_AUDIO_WASM_O0): wasm/build-wasm.sh wasm/cadr_wasm_adapter.c wasm/cadr_wasm
 $(M13_AUDIO_WASM_O2): wasm/build-wasm.sh wasm/cadr_wasm_adapter.c wasm/cadr_wasm_runtime.c $(M12_CORE_SOURCES) core/cadr_m13_audio_transport.c core/cadr_m13_audio_transport.h $(CORE_HEADERS) | build
 	sh wasm/build-wasm.sh --m13-audio --opt O2 $@
 
+$(M13_DEBUGGER_TEST_WASM_O0): wasm/build-wasm.sh wasm/cadr_wasm_adapter.c wasm/cadr_wasm_runtime.c $(M12_CORE_SOURCES) core/cadr_m13_audio_transport.c core/cadr_m13_audio_transport.h $(CORE_HEADERS) | build
+	sh wasm/build-wasm.sh --m13-debugger-test --opt O0 $@
+
+$(M13_DEBUGGER_TEST_WASM_O2): wasm/build-wasm.sh wasm/cadr_wasm_adapter.c wasm/cadr_wasm_runtime.c $(M12_CORE_SOURCES) core/cadr_m13_audio_transport.c core/cadr_m13_audio_transport.h $(CORE_HEADERS) | build
+	sh wasm/build-wasm.sh --m13-debugger-test --opt O2 $@
+
 test: $(TEST_BINARIES) $(HOST_BINARY) $(M2_HOST_BINARY) $(M3_HOST_BINARY) mutant-audit python-cross-parse m3-wasm m3-conformance m3-browser m4-unit m4-browser m5-unit m6-devid-wasm m6-diagnostic-receipt-unit m7-unit m7-native-source-unit m8-m9-unit audit
 	./build/test_cadr_host_api
 	./build/test_cadr_machine_state
@@ -463,10 +471,14 @@ m10-unit:
 	guix shell node -- node ../scripts/run-cadr-m10-indexeddb-browser.mjs
 	guix shell node -- node ../scripts/run-cadr-m10-process-kill-browser.mjs
 
-m12-unit: build/test_cadr_m2_public build/test_cadr_m12_machine_adapter build/test_cadr_m12_composed_m8_m11 $(M12_WASM_O0) $(M12_WASM_O2) $(M12_SYNTH_WASM_O0) $(M12_SYNTH_WASM_O2)
+m12-unit: build/test_cadr_m2_public build/test_cadr_m12_machine_adapter build/test_cadr_m12_composed_m8_m11 $(M12_WASM_O0) $(M12_WASM_O2) $(M12_SYNTH_WASM_O0) $(M12_SYNTH_WASM_O2) $(M13_AUDIO_WASM_O0) $(M13_AUDIO_WASM_O2) $(M13_DEBUGGER_TEST_WASM_O0) $(M13_DEBUGGER_TEST_WASM_O2)
 	./build/test_cadr_m12_machine_adapter
 	./build/test_cadr_m12_composed_m8_m11
 	guix shell node -- node ../tests/test_cadr_m12_debugger.mjs
+	guix shell node -- node ../tests/test_cadr_m12_production_debugger.mjs
+	guix shell node -- node ../tests/test_cadr_m12_production_shell.mjs
+	guix shell node -- node ../tests/test_cadr_m12_production_worker.mjs
+	CADR_M12_PRODUCTION_VARIANT=O2 guix shell node -- node ../tests/test_cadr_m12_production_worker.mjs
 	guix shell node -- node ../tests/test_cadr_m12_wasm_exports.mjs
 	CADR_M12_WASM_VARIANT=O2 guix shell node -- node ../tests/test_cadr_m12_wasm_exports.mjs
 	guix shell node -- node ../tests/test_cadr_m12_worker.mjs

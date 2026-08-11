@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { readFile } from "node:fs/promises";
 
 import {
   buildCadrM12PrivacyBoundDiagnostic,
@@ -40,4 +41,10 @@ assert.equal(parsed.terminalStatus, CADR_M12_STATUS_DEBUG_STOP);
 assert.equal(parsed.summary, "C-M12 terminal debugger outcome; raw guest content excluded");
 assert.doesNotMatch(parsed.summary, /[\\/:]/,
   "fixed diagnostic summary cannot carry a path or drive marker");
+const panelSource = await readFile(new URL(
+  "../cadr-web/browser/cadr-m12-debugger-panel.mjs", import.meta.url), "utf8");
+for (const label of ["Set breakpoint", "Clear breakpoint", "Micro-step", "Macro-step",
+  "Resume one boundary", "Prepare paused review", "Export reviewed snapshot and diagnostic",
+  "Discard reviewed snapshot"]) assert.match(panelSource, new RegExp(label));
+assert.match(panelSource, /mutating debugger controls are frozen/);
 console.log("cadr M12 debugger panel scalar formatting tests passed");

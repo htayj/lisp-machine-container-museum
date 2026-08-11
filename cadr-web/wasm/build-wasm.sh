@@ -3,7 +3,7 @@
 set -eu
 
 usage() {
-    echo "usage: $0 [--conformance] [--m4|--m5|--m5-oracle|--m6-diagnostic|--m6-devid|--m7|--m7-devid|--m9|--m9-devid|--m12|--m12-synthetic-test|--m13-audio] --opt O0|O2 [OUTPUT]" >&2
+    echo "usage: $0 [--conformance] [--m4|--m5|--m5-oracle|--m6-diagnostic|--m6-devid|--m7|--m7-devid|--m9|--m9-devid|--m12|--m12-synthetic-test|--m13-audio|--m13-debugger-test] --opt O0|O2 [OUTPUT]" >&2
     exit 2
 }
 
@@ -23,6 +23,7 @@ if test "${1-}" = --m9-devid; then profile=m9-devid; shift; fi
 if test "${1-}" = --m12; then profile=m12; shift; fi
 if test "${1-}" = --m12-synthetic-test; then profile=m12-synthetic-test; shift; fi
 if test "${1-}" = --m13-audio; then profile=m13-audio; shift; fi
+if test "${1-}" = --m13-debugger-test; then profile=m13-debugger-test; shift; fi
 case ${1-} in
     --opt) opt=${2-}; shift 2 ;;
     *) usage ;;
@@ -91,6 +92,10 @@ exec guix shell clang-toolchain lld -- sh -eu -c '
   fi
   if test "$profile" = m13-audio; then
     extra_defines="-DCADR_M5_WASM -DCADR_M7_WASM -DCADR_M7_CORE -DCADR_M9_WASM -DCADR_M9_CORE -DCADR_M11_WASM -DCADR_M11_CORE -DCADR_M12_WASM -DCADR_M12_CORE -DCADR_M13_AUDIO_WASM -DCADR_M13_AUDIO_CORE"
+    profile_sources="core/cadr_display.c core/cadr_audio_model.c core/cadr_m13_audio_transport.c core/cadr_m12_debugger.c core/cadr_m12_machine_adapter.c"
+  fi
+  if test "$profile" = m13-debugger-test; then
+    extra_defines="-DCADR_M5_WASM -DCADR_M7_WASM -DCADR_M7_CORE -DCADR_M9_WASM -DCADR_M9_CORE -DCADR_M11_WASM -DCADR_M11_CORE -DCADR_M12_WASM -DCADR_M12_CORE -DCADR_M13_AUDIO_WASM -DCADR_M13_AUDIO_CORE -DCADR_M12_SYNTHETIC_TEST_WASM -DCADR_M13_DEBUGGER_TEST_WASM"
     profile_sources="core/cadr_display.c core/cadr_audio_model.c core/cadr_m13_audio_transport.c core/cadr_m12_debugger.c core/cadr_m12_machine_adapter.c"
   fi
   if test "$mode" = conformance; then

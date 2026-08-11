@@ -1,5 +1,6 @@
 import { CadrM13AudioBoundary, CadrM13WorkerAudioCore } from "./cadr-m13-audio-boundary.mjs";
 import { parseCdrDisp1 } from "../wasm/cadr-display-renderer.mjs";
+import { parseCdrDbgStop1 } from "../wasm/cadr-m12-debugger.mjs";
 
 /*
  * CADR-WEB-303 M13 host shell.
@@ -28,7 +29,11 @@ export const CADR_M13_MAX_METADATA_TOTAL = 4 * 1024 * 1024;
 export const CADR_M13_MAX_BODY_BYTES = 16 * 1024 * 1024;
 export const CADR_M13_MAX_STREAM_WINDOW_BYTES = 1024 * 1024;
 export const CADR_M13_MAX_STREAM_WINDOWS = 2;
+/* Frozen P1 public v8 stream ceiling.  P2's generic raw CDRM12S1 review
+ * stream is private and has its own receipt-bound ceiling below. */
 export const CADR_M13_MAX_SNAPSHOT_BYTES = 18131492;
+export const CADR_M12_P2_RAW_SNAPSHOT_BYTES = 18132272;
+export const CADR_M12_P2_FUTURE_WRAPPED_SNAPSHOT_BYTES = 18132632;
 /* Public M13 progress is deliberately capped to the exact lower v7 slice.
  * Larger requests would alter the selected worker's control-latency contract. */
 export const CADR_M13_SCHEDULER_SLICE_MAX_SLOTS = 4096;
@@ -560,12 +565,15 @@ const LOWER_OPERATION = Object.freeze({
   "machine-cold-power-on": "cold-power-on", "machine-boot": "boot", "machine-visibility": "scheduler-visibility",
   "machine-start": "scheduler-start", "machine-run": "scheduler-run-v7-slice", "machine-pause": "scheduler-pause",
   "machine-reset": "scheduler-reset", "machine-stop": "scheduler-stop",
+  "debug-micro-step": "m13-debug-micro-step",
+  "debug-macro-step": "m13-debug-macro-step",
 });
 const LOWER_REMAINDER = new Set(["lifecycle", "hidden", "completedSlots", "microinstructionsExecuted",
   "discardedUnsavedState", "updated", "full", "frame", "wireSchema", "machineGeneration",
   "framebufferGeneration", "blackOnWhite", "width", "height", "dirtyRectangles", "observation",
   "result", "reason", "audio", "state", "byteCount", "coreSha256", "lastFailureEvidence",
-  "terminal", "queuePackets", "queuedFrames"]);
+  "terminal", "queuePackets", "queuedFrames", "snapshotId", "snapshotSha256",
+  "snapshot", "released", "offset", "nextOffset", "done", "chunkSha256"]);
 const M10_HOST_DESCRIPTOR_BYTES = 64;
 const M10_HOST_REQUEST_PAYLOAD_BYTES = 1024;
 const M10_HOST_COMPLETION_BYTES = 1024 * 1024;
@@ -627,6 +635,12 @@ function safeWorkerResponse(value, expectedId, expectedOp) {
       "unsuccessful M10 host request leaks a body");
   }
   return Object.freeze({ status: fields.status, remainder: result });
+}
+
+function exactLowerRemainder(value, required, optional = []) {
+  const keys = Object.keys(value); const allowed = new Set([...required, ...optional]);
+  invariant(keys.every(key => allowed.has(key)) && required.every(key => Object.hasOwn(value, key)),
+    "worker response has an operation-inappropriate field", { status: CADR_M13_STATUS.PROTOCOL_VIOLATION });
 }
 
 function attach(worker, type, listener) {
@@ -871,6 +885,7 @@ export class CadrM13Shell {
   #selectedWasmSha256 = null; #bootstrapped = false; #adoptedBaseImportId = null; #m10Ready = false;
   #workerOwnership; #onWorkerLoss; #terminalLossPromise; #resolveTerminalLoss;
   #lossGeneration = 0; #terminalLoss = null; #requestCanonicalizer; #sha256Function;
+  #debuggerHostTransaction = null; #externalTerminationStarted = false;
 
   constructor({ worker, storage = null, sessionRandom = undefined, releaseTarget = null, releaseControl = null,
     guestSurface = null, statusSink = null, releaseIngress = null, restoreIngress = null, timeoutMs = 10000,
@@ -951,6 +966,262 @@ export class CadrM13Shell {
   /* Must be called synchronously by the host's direct activation handler,
    * before submit() crosses its validation/digest promise boundary. */
   prepareAudioActivation() { return this.#audioBoundary?.prepareActivation() ?? false; }
+
+  terminateExternalWorker(reason) {
+    invariant(this.#workerOwnership === "external" && typeof reason === "string" && reason.length > 0,
+      "external worker termination boundary is unavailable");
+    invariant(!this.#externalTerminationStarted,
+      "external worker termination is already pending");
+    invariant(typeof this.#worker.terminate === "function",
+      "external worker has no synchronous termination operation");
+    this.#externalTerminationStarted = true;
+    const transaction = this.#debuggerHostTransaction;
+    if (!this.#terminal) {
+      for (const detach of this.#workerDetach.splice(0)) detach?.();
+      this.#audioBoundary?.closeForWorkerLoss();
+      this.#terminal = true; this.#state = "FAILED";
+      this.#recordTerminalLoss(reason, CADR_M13_STATUS.WORKER_LOST);
+      this.releaseInput(reason);
+      for (const [id, pending] of this.#pending) {
+        this.#pending.delete(id); this.#clearTimeout(pending.timer);
+        pending.reject(new M13AdmissionError(reason, { status: CADR_M13_STATUS.WORKER_LOST }));
+      }
+    }
+    this.#worker.terminate();
+    const disposition = transaction?.workerTerminated(reason) ??
+      Promise.resolve(Object.freeze({ disposition: "WORKER_TERMINATED" }));
+    return Object.freeze({ terminated: true, disposition });
+  }
+
+  /* Snapshot transfer is deliberately absent from the protocol-v8 operation
+   * table.  Production composition receives this identity-bearing object
+   * directly; possession of submit(), operation names, or request IDs cannot
+   * manufacture the capability.  One shell admits at most one live review
+   * transaction and invalidates it on reset, loss, or disposal. */
+  openDebuggerHostTransaction() {
+    invariant(!this.#terminal && this.#debuggerHostTransaction === null,
+      "M13 debugger host transaction is unavailable", { status: CADR_M13_STATUS.NOT_READY });
+    const generation = this.#lossGeneration;
+    let active = true; let snapshotId = null; let disposal = null;
+    let disposition = "OPEN"; let terminalUpgrade = null;
+    /* A save message can allocate an opaque worker-local snapshot before the
+     * response reaches this shell.  It is therefore an ownership edge at send
+     * time, not at receipt parsing time.  Keeping this bit until a canonical
+     * non-success or a fully checked success prevents a timed-out, dropped, or
+     * post-disposal success reply from being misreported as ABSENT. */
+    let saveMayHaveAllocated = false;
+    const invalidatingObservers = new Set(), dispositionObservers = new Set();
+    const call = async (op, fields = {}) => {
+      invariant(active && generation === this.#lossGeneration && !this.#terminal,
+        "M13 debugger host transaction is invalid", { status: CADR_M13_STATUS.WORKER_LOST });
+      const request = { version: CADR_M13_LOWER_PROTOCOL_VERSION,
+        id: this.#nextInternalRequestId(generation), op, ...fields };
+      const lower = await this.#postLower(request, { external: null, generation });
+      try {
+      if (lower.status === CADR_M13_STATUS.PROTOCOL_VIOLATION) {
+        throw new M13AdmissionError("private-debugger-protocol-violation",
+          { status: CADR_M13_STATUS.PROTOCOL_VIOLATION });
+      }
+      const required = lower.status === CADR_M13_STATUS.OK ? ({
+        "m13-debug-snapshot-save": ["lifecycle", "snapshotId", "byteCount", "snapshotSha256"],
+        "m13-debug-snapshot-next": ["lifecycle", "snapshotId", "offset", "nextOffset", "done", "chunkSha256", "snapshot"],
+        "m13-debug-snapshot-release": ["lifecycle", "released"],
+      })[op] : ["lifecycle"];
+      exactLowerRemainder(lower.remainder, required);
+      invariant(lower.remainder.lifecycle === "PAUSED",
+        "private debugger transaction escaped PAUSED", { status: CADR_M13_STATUS.PROTOCOL_VIOLATION });
+      return lower;
+      } catch (error) {
+        if (error instanceof M13AdmissionError &&
+            error.status === CADR_M13_STATUS.PROTOCOL_VIOLATION) {
+          this.#workerLost("private-debugger-protocol-violation", true);
+        }
+        throw error;
+      }
+    };
+    const close = ({ retainRecord = false } = {}) => {
+      active = false;
+      if (!retainRecord && this.#debuggerHostTransaction === record) this.#debuggerHostTransaction = null;
+    };
+    const notify = async (observers, value, { retain = false } = {}) => {
+      /* The observers form a cleanup chain, not a fan-out: cancellation and
+       * zeroization have a defined happens-before relation to worker release,
+       * and M10 release begins only after the disposition callback. */
+      const listeners = [...observers];
+      if (!retain) observers.clear();
+      for (const observer of listeners) await observer(Object.freeze(value));
+    };
+    const upgradeWorkerTerminated = reason => {
+      if (terminalUpgrade !== null) return terminalUpgrade;
+      terminalUpgrade = (async () => {
+        if (disposal !== null) {
+          try { await disposal; } catch { /* exact termination may upgrade UNKNOWN */ }
+        }
+        if (!["OPEN", "DISPOSING", "UNKNOWN"].includes(disposition)) {
+          return Object.freeze({ disposition });
+        }
+        disposition = "WORKER_TERMINATED";
+        snapshotId = null; saveMayHaveAllocated = false; close();
+        await notify(dispositionObservers, { reason, disposition });
+        return Object.freeze({ disposition });
+      })();
+      return terminalUpgrade;
+    };
+    const workerTerminated = reason => {
+      if (disposal !== null) return upgradeWorkerTerminated(reason);
+      disposition = "WORKER_TERMINATED";
+      disposal = (async () => {
+        let observerError = null;
+        try { await notify(invalidatingObservers, { reason }); }
+        catch (error) { observerError = error; }
+        snapshotId = null; saveMayHaveAllocated = false; close();
+        try { await notify(dispositionObservers, { reason,
+          disposition: "WORKER_TERMINATED" }); }
+        catch (error) { if (observerError === null) observerError = error; }
+        if (observerError !== null) throw observerError;
+        return Object.freeze({ disposition: "WORKER_TERMINATED" });
+      })();
+      return disposal;
+    };
+    const dispose = reason => {
+      invariant(typeof reason === "string" && reason.length > 0,
+        "private debugger disposal reason is invalid");
+      if (disposal !== null) return disposal;
+      disposition = "DISPOSING";
+      disposal = (async () => {
+        let observerError = null;
+        try { await notify(invalidatingObservers, { reason }); }
+        catch (error) { observerError = error; }
+        /* A save request with no acknowledged result is ambiguous even when
+         * snapshotId is still null.  Stop the one worker this shell is
+         * responsible for (or report loss to its external owner) before
+         * publishing a known terminal disposition.  A delayed response is then
+         * uncorrelated and cannot resurrect this transaction. */
+        if (saveMayHaveAllocated) {
+          const terminated = this.#workerLost("private-debugger-save-ambiguous", false);
+          snapshotId = null; saveMayHaveAllocated = false;
+          disposition = terminated ? "WORKER_TERMINATED" : "UNKNOWN";
+          close({ retainRecord: disposition === "UNKNOWN" });
+          try { await notify(dispositionObservers, { reason,
+            disposition }, { retain: disposition === "UNKNOWN" }); }
+          catch (error) { if (observerError === null) observerError = error; }
+          if (observerError !== null) throw observerError;
+          return Object.freeze({ disposition });
+        }
+        let selectedDisposition = "ABSENT";
+        if (observerError === null && snapshotId !== null && active &&
+            generation === this.#lossGeneration && !this.#terminal) {
+          try {
+            const lower = await call("m13-debug-snapshot-release", { snapshotId });
+            if (lower.status !== CADR_M13_STATUS.OK || lower.remainder.released !== true) {
+              selectedDisposition = "UNKNOWN";
+            } else {
+              snapshotId = null; selectedDisposition = "RELEASED";
+            }
+          } catch { selectedDisposition = "UNKNOWN"; }
+        } else if (snapshotId !== null) {
+          selectedDisposition = this.#workerOwnership === "shell" &&
+            (this.#terminal || generation !== this.#lossGeneration) ?
+            "WORKER_TERMINATED" : "UNKNOWN";
+        }
+        disposition = selectedDisposition;
+        close({ retainRecord: disposition === "UNKNOWN" });
+        try { await notify(dispositionObservers, { reason, disposition },
+          { retain: disposition === "UNKNOWN" }); }
+        catch (error) { if (observerError === null) observerError = error; }
+        if (observerError !== null) throw observerError;
+        return Object.freeze({ disposition });
+      })();
+      return disposal;
+    };
+    const record = { dispose, workerTerminated };
+    const capability = Object.freeze({
+      save: async () => {
+        invariant(snapshotId === null, "private debugger snapshot already exists");
+        /* This synchronous fence distinguishes an already-invalid capability
+         * (which could not have issued a new lower request) from an active
+         * request whose subsequent reply may be lost. */
+        invariant(active && disposal === null && generation === this.#lossGeneration && !this.#terminal,
+          "M13 debugger host transaction is invalid", { status: CADR_M13_STATUS.WORKER_LOST });
+        saveMayHaveAllocated = true;
+        let lower;
+        try { lower = await call("m13-debug-snapshot-save"); }
+        catch (error) {
+          /* A request might have crossed the worker boundary even though this
+           * promise did not receive its result.  Fail-stop rather than making
+           * a later P2 disposal release M10 as though no snapshot existed. */
+          this.#workerLost("private-debugger-save-ambiguous", false);
+          throw error;
+        }
+        try {
+          invariant(active && disposal === null && generation === this.#lossGeneration && !this.#terminal,
+            "private debugger save crossed transaction disposal", { status: CADR_M13_STATUS.WORKER_LOST });
+          if (lower.status !== CADR_M13_STATUS.OK) {
+            saveMayHaveAllocated = false;
+            return lower;
+          }
+        } catch (error) {
+          this.#workerLost("private-debugger-save-ambiguous", false);
+          throw error;
+        }
+        try {
+          invariant(typeof lower.remainder.snapshotId === "bigint" && lower.remainder.snapshotId > 0n &&
+            Number.isSafeInteger(lower.remainder.byteCount) && lower.remainder.byteCount > 0 &&
+            lower.remainder.byteCount <= CADR_M12_P2_RAW_SNAPSHOT_BYTES &&
+            /^[0-9a-f]{64}$/.test(lower.remainder.snapshotSha256),
+          "private debugger snapshot receipt is invalid", { status: CADR_M13_STATUS.PROTOCOL_VIOLATION });
+          snapshotId = lower.remainder.snapshotId;
+          saveMayHaveAllocated = false;
+          return lower;
+        } catch (error) {
+          /* A malformed success may already have allocated worker-private
+           * bytes.  Prove their release or make the owned worker terminal. */
+          try {
+            const released = await call("m13-debug-snapshot-release", { snapshotId: lower.remainder.snapshotId });
+            invariant(released.status === CADR_M13_STATUS.OK && released.remainder.released === true,
+              "private debugger malformed save was not erased", { status: CADR_M13_STATUS.PROTOCOL_VIOLATION });
+            saveMayHaveAllocated = false;
+          } catch { this.#workerLost("private-debugger-malformed-save-unreleased", true); }
+          throw error;
+        }
+      },
+      next: async (offset, maxBytes) => {
+        invariant(snapshotId !== null && Number.isSafeInteger(offset) && offset >= 0 &&
+          Number.isSafeInteger(maxBytes) && maxBytes >= 1 && maxBytes <= 1048576,
+        "private debugger snapshot range is invalid");
+        const lower = await call("m13-debug-snapshot-next", { snapshotId, offset, maxBytes });
+        if (lower.status !== CADR_M13_STATUS.OK) return lower;
+        try {
+          const r = lower.remainder;
+          invariant(r.snapshotId === snapshotId && r.offset === offset && r.snapshot instanceof ArrayBuffer &&
+            r.snapshot.byteLength > 0 && r.snapshot.byteLength <= maxBytes &&
+            r.nextOffset === offset + r.snapshot.byteLength && typeof r.done === "boolean" &&
+            /^[0-9a-f]{64}$/.test(r.chunkSha256),
+          "private debugger snapshot chunk is invalid", { status: CADR_M13_STATUS.PROTOCOL_VIOLATION });
+          const observed = await this.#runLive(() => this.#sha256Function(r.snapshot), generation);
+          invariant(active && generation === this.#lossGeneration && !this.#terminal && observed === r.chunkSha256,
+            "private debugger snapshot chunk is invalid", { status: CADR_M13_STATUS.PROTOCOL_VIOLATION });
+          return lower;
+        } catch (error) {
+          this.#workerLost("private-debugger-snapshot-next-invalid", true);
+          throw error;
+        }
+      },
+      dispose,
+      onInvalidating: observer => {
+        invariant(active && typeof observer === "function", "private debugger invalidation observer is invalid");
+        invalidatingObservers.add(observer);
+        return () => invalidatingObservers.delete(observer);
+      },
+      onDisposition: observer => {
+        invariant(active && typeof observer === "function", "private debugger disposition observer is invalid");
+        dispositionObservers.add(observer);
+        return () => dispositionObservers.delete(observer);
+      },
+    });
+    this.#debuggerHostTransaction = record;
+    return capability;
+  }
 
   bindReleaseChord(target = this.#releaseTarget) {
     invariant(target !== null && typeof target.addEventListener === "function", "release-chord target is unavailable");
@@ -1249,12 +1520,41 @@ export class CadrM13Shell {
       assertSelectedM10Ready(this.#m10Controller);
     }
     const lowerOp = LOWER_OPERATION[request.op] ?? request.op;
+    if (request.op === "machine-reset" && this.#debuggerHostTransaction !== null) {
+      try { await this.#debuggerHostTransaction.dispose("machine-reset"); }
+      catch { return this.#terminalResponse(request, CADR_M13_STATUS.PROTOCOL_VIOLATION); }
+    }
     const lower = Object.create(null); lower.version = CADR_M13_LOWER_PROTOCOL_VERSION;
     lower.id = this.#nextInternalRequestId(generation); lower.op = lowerOp;
     for (const [key, value] of Object.entries(request)) if (!COMMON_FIELDS.includes(key)) lower[key] = value;
     try {
       const result = await this.#postLower(lower, { external: request, generation });
       if (result.status === 21) return this.#terminalResponse(request, CADR_M13_STATUS.PROTOCOL_VIOLATION);
+      if (result.status === CADR_M13_STATUS.PROTOCOL_VIOLATION) {
+        return this.#terminalResponse(request, CADR_M13_STATUS.PROTOCOL_VIOLATION);
+      }
+      if (request.op.startsWith("debug-")) {
+        const successful = result.status === CADR_M13_STATUS.OK || [19, 20].includes(result.status);
+        exactLowerRemainder(result.remainder,
+          successful ? ["lifecycle", "result", "terminal"] : ["lifecycle", "terminal"],
+          !successful && result.status === CADR_M13_STATUS.INVALID_REQUEST ? ["reason"] : []);
+        invariant(typeof result.remainder.lifecycle === "string" &&
+          result.remainder.terminal === false,
+        "private debugger response terminal/lifecycle is invalid",
+        { status: CADR_M13_STATUS.PROTOCOL_VIOLATION });
+      }
+      if (["debug-micro-step", "debug-macro-step"].includes(request.op) &&
+          [19, 20].includes(result.status)) {
+        try {
+          exactLowerRemainder(result.remainder, ["lifecycle", "result", "terminal"]);
+          const stop = parseCdrDbgStop1(result.remainder.result?.stop);
+          const expectedReason = result.status === 19 ? 1 : 2;
+          invariant(stop.reason === expectedReason && result.remainder.terminal === false,
+            "private debugger stop binding is invalid", { status: CADR_M13_STATUS.PROTOCOL_VIOLATION });
+        } catch {
+          return this.#terminalResponse(request, CADR_M13_STATUS.PROTOCOL_VIOLATION);
+        }
+      }
       if (result.status === 8 && this.#m10Bridge !== null) {
         const failure = await this.#serviceM10WaitingRequest(request, generation);
         if (failure !== null) return failure;
@@ -1458,11 +1758,12 @@ export class CadrM13Shell {
   }
   #terminalResponse(request, status) { this.#workerLost(status === 25 ? "protocol-violation" : "worker-lost", status === 25); return response(request, status, { reason: shellReason(status) }, { terminal: true }); }
   #terminateOwnedWorker(requested = true) {
-    if (!requested || this.#workerOwnership !== "shell") return;
-    try { this.#worker.terminate?.(); } catch { /* termination is best effort */ }
+    if (!requested || this.#workerOwnership !== "shell" || typeof this.#worker.terminate !== "function") return false;
+    try { this.#worker.terminate(); return true; } catch { return false; }
   }
   #workerLost(reason, protocol = false, terminateWorker = true, notify = true) {
-    if (this.#terminal) return;
+    if (this.#terminal) return false;
+    const transaction = this.#debuggerHostTransaction;
     this.#audioBoundary?.closeForWorkerLoss();
     const status = protocol ? CADR_M13_STATUS.PROTOCOL_VIOLATION : CADR_M13_STATUS.WORKER_LOST;
     this.#terminal = true; this.#state = "FAILED"; this.#recordTerminalLoss(reason, status); this.releaseInput(reason);
@@ -1471,8 +1772,12 @@ export class CadrM13Shell {
       try { this.#onWorkerLoss?.(Object.freeze({ reason, status })); }
       catch { /* reporting cannot reopen terminal authority */ }
     }
-    this.#terminateOwnedWorker(terminateWorker === true);
+    const terminated = this.#terminateOwnedWorker(terminateWorker === true);
+    if (terminated) {
+      void transaction?.workerTerminated(reason).catch(() => {});
+    }
     this.announce(protocol ? "CADR worker protocol failure; volatile state lost" : "CADR worker lost; volatile state lost");
+    return terminated;
   }
   dispose({ terminateWorker = true } = {}) {
     for (const detach of this.#workerDetach.splice(0)) detach?.();

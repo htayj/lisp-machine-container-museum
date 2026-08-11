@@ -3,7 +3,7 @@ type: Reimplementation Specification
 title: CADR-WEB-303 C-M12 debugger reimplementation specification
 description: An isolated Phase 1 contract for deterministic outer-slot stepping, breakpoint stops, paused direct-array inspection, and privacy-bounded debugger evidence.
 tags: [mit-cadr, cadr-web, debugger, microcode, trace, reimplementation]
-timestamp: 2026-08-02T14:32:00-04:00
+timestamp: 2026-08-11T07:45:14-04:00
 ---
 
 # CADR-WEB-303 C-M12 debugger reimplementation specification
@@ -59,6 +59,99 @@ audio and M12 controls. Direct generic Wasm and v7 worker save/import use exact
 `CDRM12S1` version 2. Full M12 closure remains conditional on provenance-bound runtime evidence.
 
 `MUST`, `MUST NOT`, `SHOULD`, and `MAY` are normative below.
+
+## P2 source-only production review coordinator
+
+`CADR-WEB-303/ABI1.11/protocol-v8/M12-P2-DBGPROV1` is a host reconstruction
+decision layered above, not a replacement for, the closed ABI 1.10/v7 debugger
+branch. It binds a direct status-19 breakpoint or status-20 macro-limit stop to
+one private worker snapshot transaction. Status 20 is accepted only with the
+exact `1,048,576` completed-slot stop record. The public v8 grammar never exposes
+the private save/next/release operations or their snapshot identifier.
+
+The coordinator has the states `PAUSED`, `STOP_BOUND`, `REVIEW_READY`,
+`EXPORT_PREPARED`, `RELEASE_REQUIRED`, and absorbing `FAILED`. Review is
+admitted only from `STOP_BOUND`; it pauses and joins injected audio, performs a
+clean M10 reread/pin, streams a bounded generic `CDRM12S1` v2 snapshot, and
+validates all four constituents before making a read-only review view. The maximum
+raw envelope is exactly 18,132,272 bytes: 48-byte header, 18,126,780-byte
+`CDRSNAP1`, 72-byte `CDRM9D1`, at most 4,284-byte `CDRAUDS1`, and 1,088-byte
+`CDRM12C1`. The JavaScript validator mirrors the native audio grammar, including
+the valid 64-packet pending-active queue case; it does not accept an abbreviated
+audio witness.
+
+Export is a bounded staging protocol: `commit` may be asynchronous, `accept` is
+the sole synchronous publication linearization point, and `cancel` must confirm
+unpublished, erased staged bytes. Every await in review preparation, streaming,
+parsing, staging, and commit is followed by an invalidation-epoch check. Reset,
+worker loss, rejection, and private-transaction invalidation advance that epoch,
+own host zeroization and cancellation, and leave `FAILED` sticky; a stale reply or
+token cannot publish or resurrect a review. Failure to confirm worker snapshot
+erasure is protocol status 25 and terminates the owned worker.
+
+P1's awaited `handoffDebugger` call synchronously fences later P1 admissions,
+drains P1's existing FIFO, and transfers a branded single-use capability without
+allocating an operation identifier. P2 therefore submits through P1's exact tail
+and request-ID allocator; it receives closures for debugger submission, fresh
+private snapshot transactions, and the restricted M10 review authority, never the
+shell, controller, disk handle, snapshot identifier, or root-reference identifier.
+An unused transferred authority remains P1-private; P2 receives no second claim.
+
+Every review obtains a fresh private snapshot transaction. Issuing its private
+save is already an ownership edge: before the shell has parsed an identifier, a
+dropped, timed-out, malformed, or post-disposal response can still correspond to
+an allocated worker snapshot. Therefore such a response loss fail-stops the one
+worker owned by the shell (or reports the same loss to P1, its external owner),
+produces `WORKER_TERMINATED`, and fences any delayed response. It MUST NOT produce
+`ABSENT`, reopen the transaction, or install a late snapshot identifier.
+
+Terminal cleanup first cancels and zeroes host state, then obtains the worker
+disposition `ABSENT`, `RELEASED`, `WORKER_TERMINATED`, or `UNKNOWN`, and only after
+that disposition releases the opaque M10 lease. `UNKNOWN` retains that lease in
+`RELEASE_REQUIRED`; an ambiguous unpin acknowledgement retries only the idempotent
+M10 release and does not re-release the already closed snapshot. A confirmed
+discard renews the private transaction through its factory before the next review
+cycle. Source/synthetic regressions exercise two independent save/release cycles,
+an allocation followed by a dropped and then delayed save reply, and prove that the
+M10 release is ordered after the known `WORKER_TERMINATED` disposition. The frozen P1 public stream limit remains 18,131,492 bytes; P2's
+18,132,272-byte raw limit and a possible 18,132,632-byte future wrapper are
+separate receipt/profile values, not public restore widening.
+
+M10 permits only one branded review-authority claim per controller. If P2
+construction fails after P1 has claimed that still lease-free authority, P1 retains
+it privately for exactly the next attempted handoff rather than revoking it and
+trying to mint an impossible second claim. P1 terminal loss first completes the
+worker/snapshot cleanup above, then records an explicit terminal-authority state:
+`IDLE`, `INVALIDATING`, `WORKER_TERMINATION_PENDING`, non-retryable
+`EXTERNAL_RECOVERY_REQUIRED`, the named invalidation/M10-release retry states,
+`AUTHORITY_REVOKING`, `AUTHORITY_RECOVERING_ACQUIRE`,
+`AUTHORITY_RECOVERING_RELEASE`, the named authority retry states, or `REVOKED`.
+Normal M10 revocation is synchronous. If it rejects because the current M10-v5
+authority is `RECOVERY_REQUIRED` after a post-pin rollback failure, P2 invokes only
+that same branded `acquire()`, which performs M10's opaque rollback recovery and
+returns a lease; P2 releases that lease and only then retries synchronous `revoke()`.
+An acquire, release, or final revoke failure retains the exact failure object and
+the privately held authority/lease in a retryable state. P1 observes the rejected
+flight so it cannot become an unhandled rejection, but does not convert it to
+success; `retryTerminalCleanup()` starts the next real cleanup attempt. No state
+exposes an M10 disk handle, pin ID, or second authority. This is an inferred
+host-safety rule, not a claim about historical CADR debugger authority.
+
+An `UNKNOWN` worker-snapshot disposition is never itself retryable permission to
+unpin. For the production external-Worker profile, a single-use shell operation
+fences the shell and itself invokes the exact captured Worker's required synchronous
+`terminate()`. Only normal return from that call permits the one-way `UNKNOWN` to
+`WORKER_TERMINATED` upgrade; callers cannot mint a separate confirmation. The debugger then replaces only that
+same transaction's memoized unknown-disposition failure and releases M10 exactly
+once. A missing or throwing operation leaves
+`EXTERNAL_RECOVERY_REQUIRED` with `retryable:false` and retains the lease and pin.
+The synchronous termination receipt separates that proof from its asynchronous
+disposition flight: a later observer or durable-unpin rejection remains P2's named
+retryable M10-release state and never reclassifies the already terminated Worker.
+
+This is source and synthetic-conformance evidence only. It deliberately does not
+close `C-M12`, claim a selected load-band/debugger observation, or promote the full
+historical console debugger from HOLD.
 
 ## Evidence boundary and compatibility level
 

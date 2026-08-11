@@ -17,6 +17,15 @@ import {
   CadrM13StorageBoundary,
   canonicalizeCadrM13Request,
 } from "../cadr-web/browser/cadr-m13-shell.mjs";
+import { CadrM13ProductionP2DebuggerApp,
+  CADR_M13_PRODUCTION_P2_DEBUGGER_SCHEMA } from "../cadr-web/browser/cadr-m13-production-app.mjs";
+import { cadrM12ProductionDebuggerReceipt } from "../cadr-web/browser/cadr-m12-production-debugger.mjs";
+import { serializeCdrDbgStop1 } from "../cadr-web/wasm/cadr-m12-debugger.mjs";
+import { createCadrM10Controller } from "../cadr-web/browser/cadr-m10-controller.mjs";
+import {
+  CADR_M10_BASE_SHA256 as CONTROLLER_BASE_SHA256,
+  parseCdrOvm1, parseCdrOvn1, serializeCdrOvm1, serializeCdrOvn1,
+} from "../cadr-web/wasm/cadr-m10-persistence.mjs";
 
 const receipt = Object.freeze({ schema: CADR_M13_PRODUCTION_P1_RECEIPT_SCHEMA,
   profile: CADR_M13_PROFILE, disposition: "source-only" });
@@ -41,11 +50,13 @@ class WorkerDouble {
 }
 
 class ShellDouble {
-  constructor(worker, { replies = null, events = null, restore = null } = {}) {
+  constructor(worker, { replies = null, events = null, restore = null, transaction = null } = {}) {
     this.worker = worker; this.sessionId = "a".repeat(64); this.requests = [];
     this.replies = replies ?? new Map(); this.events = events ?? [];
     this.restore = restore;
+    this.transaction = transaction;
     this.releaseCount = 0; this.restoreCount = 0; this.disposed = 0;
+    this.state = "PAUSED"; this.transactionOpens = 0;
   }
   async submit(request) {
     this.requests.push(request); this.events.push(`submit:${request.op}`);
@@ -61,6 +72,18 @@ class ShellDouble {
   dispose({ terminateWorker = true } = {}) {
     this.disposed += 1; this.events.push("dispose");
     if (terminateWorker) this.worker.terminate();
+  }
+  terminateExternalWorker(reason) {
+    this.disposed += 1; this.events.push("dispose");
+    this.worker.terminate();
+    return Object.freeze({ terminated: true,
+      disposition: this.transaction?.terminate?.(reason) ??
+        Promise.resolve(Object.freeze({ disposition: "WORKER_TERMINATED" })) });
+  }
+  openDebuggerHostTransaction() {
+    this.transactionOpens += 1;
+    if (this.transaction === null) throw new Error("the handoff test must not open a snapshot before prepareReview");
+    return this.transaction;
   }
 }
 
@@ -113,6 +136,17 @@ function cleanController() {
     open: this.clean, readOnly: !this.clean }; } };
 }
 
+function reviewController() {
+  const controller = cleanController(); let claimed = false;
+  controller.claimSnapshotReviewAuthority = () => {
+    if (claimed) throw new Error("review authority already claimed");
+    claimed = true;
+    return Object.freeze({ async acquire() { throw new Error("not reached before prepareReview"); },
+      revoke() { return Object.freeze({ revoked: true }); } });
+  };
+  return controller;
+}
+
 function inDoubtController() {
   return Object.freeze({ status() { return { state: "IN_DOUBT", open: false, readOnly: true }; } });
 }
@@ -138,7 +172,8 @@ function selectedBootArtifacts() {
   ];
 }
 
-function realCompositionFixture({ holdStage = null, preDispatch = null, audioBoundary = null } = {}) {
+function realCompositionFixture({ holdStage = null, preDispatch = null, audioBoundary = null,
+  reviewAuthority = null } = {}) {
   const events = []; const worker = new ProductionFaultWorker(events);
   const reached = Object.create(null); const reach = name => {
     let resolve; const promise = new Promise(value => { resolve = value; });
@@ -153,6 +188,7 @@ function realCompositionFixture({ holdStage = null, preDispatch = null, audioBou
     async commitWrites() {}, async readBlock() { return new Uint8Array(1024); },
     async invalidateAfterAmbiguousGuest() {},
   };
+  if (reviewAuthority !== null) controller.claimSnapshotReviewAuthority = () => reviewAuthority;
   const service = {
     async beginBaseImport() {
       if (holdStage === "base-import") { reached["base-import"].resolve(); await reached["base-import"].continuation; }
@@ -267,13 +303,15 @@ async function flushTurns() {
   for (let index = 0; index < 4; index += 1) await new Promise(resolve => setTimeout(resolve, 0));
 }
 
-function configured({ shellOptions = {}, controller = cleanController(), handles = {} } = {}) {
+function configured({ shellOptions = {}, controller = cleanController(), handles = {},
+  m10ReviewAuthorityFactory = null } = {}) {
   const workers = []; const shells = []; const events = [];
   const app = new CadrM13ProductionApp({
     workerFactory() { const worker = new WorkerDouble(events); workers.push(worker); return worker; },
     shellFactory({ worker }) { const shell = new ShellDouble(worker, { events, ...shellOptions }); shells.push(shell); return shell; },
     m10Controller: controller, detachIngress({ reason }) { events.push(`detach:${reason}`); },
     audioHandle: handles.audio ?? null, debuggerHandle: handles.debugger ?? null, storageHandle: handles.storage ?? null,
+    m10ReviewAuthorityFactory,
   });
   return { app, workers, shells, events, controller };
 }
@@ -710,6 +748,102 @@ async function testPendingAudioWorkerLossGenerationFence() {
   }
 }
 
+async function testExternalWorkerTerminationAuthority() {
+  const worker = new RealShellWorker();
+  const shell = new CadrM13Shell({ worker, workerOwnership: "external" });
+  const transaction = shell.openDebuggerHostTransaction();
+  const dispositions = [];
+  transaction.onInvalidating(() => {});
+  transaction.onDisposition(event => { dispositions.push(event.disposition); });
+  const receipt = shell.terminateExternalWorker("termination-test");
+  assert.equal(receipt.terminated, true);
+  assert.deepEqual(await receipt.disposition, { disposition: "WORKER_TERMINATED" });
+  assert.equal(worker.terminated, 1, "the shell itself invokes the exact external worker termination");
+  assert.deepEqual(dispositions, ["WORKER_TERMINATED"]);
+  assert.throws(() => shell.terminateExternalWorker("replay"), /already pending/,
+    "the exact termination boundary is single-use");
+
+  const throwingWorker = new RealShellWorker();
+  throwingWorker.terminate = () => { throw new Error("termination refused"); };
+  const throwingShell = new CadrM13Shell({ worker: throwingWorker, workerOwnership: "external" });
+  const throwingTransaction = throwingShell.openDebuggerHostTransaction();
+  const throwingDispositions = [];
+  throwingTransaction.onInvalidating(() => {});
+  throwingTransaction.onDisposition(event => { throwingDispositions.push(event.disposition); });
+  assert.throws(() => throwingShell.terminateExternalWorker("throwing"), /termination refused/);
+  assert.deepEqual(throwingDispositions, [], "a thrown termination publishes no terminal disposition");
+}
+
+async function testThrownTerminationDominatesTerminalCleanup() {
+  const events = [];
+  class ThrowingWorker extends WorkerDouble {
+    terminate() { this.terminated += 1; events.push("worker:terminate-throw"); throw new Error("termination refused"); }
+  }
+  const worker = new ThrowingWorker(events);
+  const app = new CadrM13ProductionApp({
+    workerFactory() { return worker; },
+    shellFactory({ worker: owned }) { return new ShellDouble(owned, { events }); },
+    m10Controller: cleanController(),
+  });
+  app.acceptReceipt(receipt); app.selectInputs(inputs());
+  assert.equal((await app.bootstrapToPaused()).phase, "PAUSED");
+  app.stop("throwing-termination");
+  assert.equal(worker.terminated, 1);
+  assert.equal(app.terminalCleanup.phase, "EXTERNAL_RECOVERY_REQUIRED");
+  assert.equal(app.terminalCleanup.retryable, false);
+  assert.match(app.terminalCleanup.failure.message, /termination refused/);
+  assert.equal((await app.retryTerminalCleanup()).phase, "EXTERNAL_RECOVERY_REQUIRED");
+}
+
+async function testProvenTerminationM10ReleaseRetry() {
+  let releases = 0, revokes = 0, disposals = 0, disposition = null;
+  const authority = Object.freeze({
+    async acquire() { return Object.freeze({ binding: Object.freeze({}), async release() {
+      releases += 1;
+      if (releases === 1) throw new Error("synthetic first durable unpin response loss");
+      return Object.freeze({ released: true });
+    } }); },
+    revoke() { revokes += 1; return Object.freeze({ revoked: true }); },
+  });
+  const stop = serializeCdrDbgStop1({ reason: 1, breakpointIndex: 0, generation: 1n,
+    boundaryOrdinal: 1n, clockSlot: 1n, microPcBefore: 0, rawLcBefore: 0,
+    microPcAfter: 0, rawLcAfter: 0, faultAfter: 0, deviceRequestAfter: 0,
+    inhibitedAfter: 0, runOrdinal: 1n, operationSlots: 1n,
+    profileSha256: Uint8Array.from(
+      "8c0ef85505485aacfd bf42d4efef416e7a4c0964fbc59037d234b4e499b9f1a0".replaceAll(" ", "").match(/../g),
+      value => Number.parseInt(value, 16)) }).buffer;
+  const transaction = {
+    async save() { throw new Error("synthetic save response loss"); },
+    async next() { throw new Error("unreachable"); },
+    async dispose() { disposals += 1; await disposition({ reason: "dispose", disposition: "UNKNOWN" }); },
+    async terminate(reason) { await disposition({ reason, disposition: "WORKER_TERMINATED" });
+      return Object.freeze({ disposition: "WORKER_TERMINATED" }); },
+    onInvalidating() { return () => {}; },
+    onDisposition(observer) { disposition = observer; return () => {}; },
+  };
+  const target = configured({ controller: cleanController(), m10ReviewAuthorityFactory: () => authority,
+    shellOptions: { transaction, replies: new Map([
+      ["debug-micro-step", async () => ({ status: 19, terminal: false, result: { stop } })],
+      ["machine-pause", async request => ({ type: "cadr-response", version: 8,
+        sessionId: request.sessionId, id: request.id, op: request.op,
+        status: 0, ok: true, terminal: false, lifecycle: "PAUSED" })],
+    ]) } });
+  target.app.acceptReceipt(receipt); target.app.selectInputs(inputs());
+  await target.app.bootstrapToPaused();
+  const p2 = await target.app.handoffDebugger(debuggerDeps());
+  assert.equal((await p2.request("debug-micro-step")).status, 19);
+  await assert.rejects(p2.prepareReview(), /synthetic save response loss|snapshot disposal is unknown/);
+  target.app.stop("release-response-loss");
+  await flushTurns();
+  assert.equal(target.app.terminalCleanup.phase, "M10_RELEASE_RETRY_REQUIRED");
+  assert.equal(target.app.terminalCleanup.retryable, true);
+  assert.equal(target.workers[0].terminated, 1); assert.equal(releases, 1); assert.equal(revokes, 0);
+  const recovered = await target.app.retryTerminalCleanup();
+  assert.equal(recovered.phase, "REVOKED");
+  assert.equal(target.workers[0].terminated, 1, "durable unpin retry cannot terminate twice");
+  assert.equal(releases, 2); assert.equal(revokes, 1); assert.equal(disposals, 1);
+}
+
 async function testRealShellPreDispatchGenerationFence() {
   for (const [seam, fault] of [["canonicalizer", "error"], ["hash", "messageerror"], ["compiler", "error"]]) {
     const target = realCompositionFixture({ preDispatch: seam });
@@ -797,6 +931,235 @@ async function testPartialConstructionCleanup() {
     "a shell returned after reentrant stop is detached without a second worker termination");
 }
 
+function debuggerDeps() {
+  return Object.freeze({ receipt: Object.freeze({ schema: CADR_M13_PRODUCTION_P2_DEBUGGER_SCHEMA,
+    profile: cadrM12ProductionDebuggerReceipt().profile, disposition: "source-only" }),
+  audio: Object.freeze({ async joinTail() { return { joined: true }; },
+    async pause() { return { status: 0, paused: true }; },
+    async reducePause() { return { committed: true, state: "PAUSED" }; } }) });
+}
+
+async function testDebuggerHandoffFencingAndFifo() {
+  const target = configured({ controller: reviewController() });
+  target.app.acceptReceipt(receipt); target.app.selectInputs(inputs());
+  await target.app.bootstrapToPaused();
+  const before = target.app.requestIdHighWater;
+  const handoff = target.app.handoffDebugger(debuggerDeps());
+  assert.throws(() => target.app.resume(), /fenced by debugger handoff/,
+    "handoff admission synchronously fences a later P1 resume before FIFO head");
+  await assert.rejects(target.app.pause(), /fenced by debugger handoff/);
+  const p2 = await handoff;
+  assert.equal(target.app.requestIdHighWater, before,
+    "the P1-to-P2 linearization itself consumes no public request ID");
+  assert.equal(target.shells[0].transactionOpens, 0,
+    "handoff does not allocate a snapshot before P2 prepares a review");
+  await assert.rejects(target.app.submitInput("keyboard-down", { code: "KeyQ" }), /fenced by debugger handoff/);
+  await p2.request("debug-breakpoint-clear", { slot: 0 });
+  assert.equal(target.shells[0].requests.at(-1).id, before + 1,
+    "P2 uses P1's exact existing request-ID allocator");
+  assert.equal(target.shells[0].requests.at(-1).op, "debug-breakpoint-clear");
+  assert.throws(() => new CadrM13ProductionP2DebuggerApp({}), /created by P1 handoffDebugger/,
+    "a raw shell/controller-shaped object cannot bypass the branded handoff");
+
+  let releasePause; const pauseGate = new Promise(resolve => { releasePause = resolve; });
+  let pauseCount = 0;
+  const delayed = configured({ controller: reviewController(), shellOptions: { replies: new Map([
+    ["machine-pause", async () => { pauseCount += 1; if (pauseCount === 2) await pauseGate; return { status: 0 }; }],
+  ]) } });
+  delayed.app.acceptReceipt(receipt); delayed.app.selectInputs(inputs());
+  await delayed.app.bootstrapToPaused();
+  const pendingPause = delayed.app.pause("pre-handoff-pause");
+  await eventually(() => delayed.shells[0].requests.at(-1)?.op === "machine-pause" && pauseCount === 2);
+  const pendingHandoff = delayed.app.handoffDebugger(debuggerDeps());
+  assert.throws(() => delayed.app.resume(), /fenced by debugger handoff/,
+    "a delayed earlier P1 request does not leave a later P1 admission window");
+  releasePause(); await pendingPause;
+  const delayedP2 = await pendingHandoff;
+  const highWater = delayed.app.requestIdHighWater;
+  await delayedP2.request("debug-stop-record");
+  assert.equal(delayed.shells[0].requests.at(-1).id, highWater + 1);
+  assert.deepEqual(delayed.shells[0].requests.slice(-2).map(request => request.op),
+    ["machine-pause", "debug-stop-record"],
+  "all already enqueued P1 work completes before P2 is admitted at the same FIFO head");
+
+  const failed = configured({ controller: Object.freeze({ status() { return { state: "CLEAN", open: true, readOnly: false }; },
+    claimSnapshotReviewAuthority() { throw new Error("reentrant authority failure"); } }) });
+  failed.app.acceptReceipt(receipt); failed.app.selectInputs(inputs()); await failed.app.bootstrapToPaused();
+  await assert.rejects(failed.app.handoffDebugger(debuggerDeps()), /reentrant authority failure/);
+  assert.equal((await failed.app.resume()).phase, "RUNNING",
+    "a failed P2 construction/authority claim restores P1 admission instead of stranding transfer");
+}
+
+/* P1 must retain a real controller's single claimed authority across a
+ * constructor-only failure: revoking it here would make retry impossible,
+ * because M10 deliberately does not mint a second authority.  The test uses a
+ * one-time hostile wrapper solely to make the otherwise prevalidated P2
+ * constructor fail after P1 has received the authentic authority. */
+async function testSingleClaimReviewAuthorityConstructionRetryAndTerminalCleanup() {
+  const hash = seed => Uint8Array.from({ length: 32 }, (_, index) => (seed + index) & 255);
+  const binding = { diskUuid: Uint8Array.from({ length: 16 }, (_, index) => index + 1),
+    baseSha256: CONTROLLER_BASE_SHA256, profileSha256: hash(3), artifactSetSha256: hash(7) };
+  const root = await parseCdrOvn1(await serializeCdrOvn1({ level: 2, prefix: 0n,
+    children: Array.from({ length: 256 }, () => new Uint8Array(32)) }));
+  const manifest = await parseCdrOvm1(await serializeCdrOvm1({ generation: 0n,
+    parentGeneration: 0n, entryCount: 0n, diskUuid: binding.diskUuid,
+    baseSha256: binding.baseSha256, profileSha256: binding.profileSha256,
+    artifactSetSha256: binding.artifactSetSha256, rootSha256: root.hash }));
+  const disk = { readOnly: false, sessionId: 1n, close() {},
+    async active() { return { manifest, head: { headSeq: 1n } }; } };
+  const controller = createCadrM10Controller({ binding,
+    backend: { async initializeDisk() { return disk; }, async reopenDisk() { return disk; } },
+    readBasePage: async () => new Uint8Array(1024),
+    readBaseIdentity: async () => CONTROLLER_BASE_SHA256, replaceWorker: async () => {} });
+  await controller.open({ initialize: true });
+  const actual = controller.claimSnapshotReviewAuthority();
+  let factoryCalls = 0, acquireReads = 0, revokeCalls = 0;
+  const oneTimeConstructorFault = Object.freeze(Object.defineProperties(Object.create(null), {
+    acquire: { enumerable: true, get() {
+      acquireReads += 1;
+      if (acquireReads === 2) throw new Error("synthetic post-claim P2 constructor failure");
+      return actual.acquire;
+    } },
+    revoke: { enumerable: true, get() { return reason => {
+      revokeCalls += 1; return actual.revoke.call(actual, reason);
+    }; } },
+  }));
+  const target = configured({ controller, m10ReviewAuthorityFactory: () => {
+    factoryCalls += 1; return oneTimeConstructorFault;
+  } });
+  target.app.acceptReceipt(receipt); target.app.selectInputs(inputs());
+  await target.app.bootstrapToPaused();
+  await assert.rejects(target.app.handoffDebugger(debuggerDeps()), /synthetic post-claim P2 constructor failure/);
+  assert.equal(factoryCalls, 1, "the real controller authority is claimed only once");
+  assert.throws(() => controller.claimSnapshotReviewAuthority(), /already been claimed/,
+    "the real M10 controller confirms that a second authority cannot be manufactured");
+  const p2 = await target.app.handoffDebugger(debuggerDeps());
+  assert.ok(p2 instanceof CadrM13ProductionP2DebuggerApp);
+  assert.equal(factoryCalls, 1,
+    "P1 retries P2 construction with its retained lease-free authority rather than attempting a second M10 claim");
+  target.app.stop("single-claim-terminal-cleanup");
+  await eventually(() => revokeCalls === 1);
+  assert.throws(() => actual.revoke("second-terminal-cleanup"), /cannot be revoked/,
+    "terminal P1/P2 cleanup revokes the active real-controller authority after the retry");
+  controller.close();
+}
+
+/* This composes the current M10-v5 branded recovery path with the M12 P2
+ * terminal path.  The first review acquire pins successfully, loses continuity
+ * after that pin, and also loses its first rollback unpin.  P2's prepare path
+ * disposes the empty worker transaction, but M10 correctly retains the opaque
+ * recovery record.  A P1 terminal loss must therefore retain the same branded
+ * authority through a failed recovery retry, then explicitly retry acquire,
+ * lease release, and revoke in that order. */
+async function testActualM10V5RecoveryThenP1TerminalRetry() {
+  const hash = seed => Uint8Array.from({ length: 32 }, (_, index) => (seed + index) & 255);
+  const binding = { diskUuid: Uint8Array.from({ length: 16 }, (_, index) => index + 1),
+    baseSha256: CONTROLLER_BASE_SHA256, profileSha256: hash(23), artifactSetSha256: hash(61) };
+  const root = await parseCdrOvn1(await serializeCdrOvn1({ level: 2, prefix: 0n,
+    children: Array.from({ length: 256 }, () => new Uint8Array(32)) }));
+  const manifest = await parseCdrOvm1(await serializeCdrOvm1({ generation: 0n,
+    parentGeneration: 0n, entryCount: 0n, diskUuid: binding.diskUuid,
+    baseSha256: binding.baseSha256, profileSha256: binding.profileSha256,
+    artifactSetSha256: binding.artifactSetSha256, rootSha256: root.hash }));
+  const order = []; const pins = new Map(); let pinSequence = 0; let unpinAttempts = 0;
+  let breakFirstPostPinContinuity = true; let continuityBroken = false;
+  const disk = { readOnly: false, sessionId: 1n, close() {},
+    async active() { return { manifest, head: { headSeq: continuityBroken ? 2n : 1n } }; },
+    async exportActiveClosure() { return { generation: manifest.generation, headSeq: 1n,
+      manifestSha256: manifest.hash.slice(), rootSha256: manifest.rootSha256.slice() }; },
+    async pinRoot(kind, rootSha256) {
+      assert.equal(kind, "snapshot"); assert.deepEqual(rootSha256, root.hash);
+      const id = `fake:snapshot:${++pinSequence}`; pins.set(id, rootSha256.slice()); order.push(`pin:${id}`);
+      if (breakFirstPostPinContinuity) {
+        breakFirstPostPinContinuity = false; continuityBroken = true;
+      }
+      return id;
+    },
+    async unpinRoot(id) {
+      unpinAttempts += 1; order.push(`unpin:${id}:${unpinAttempts}`);
+      if (unpinAttempts <= 2) throw new Error(`synthetic M10 rollback loss ${unpinAttempts}`);
+      assert.equal(pins.delete(id), true, "M10 retry used an unknown opaque review pin");
+      continuityBroken = false;
+    },
+  };
+  const controller = createCadrM10Controller({ binding,
+    backend: { async initializeDisk() { return disk; }, async reopenDisk() { return disk; } },
+    readBasePage: async () => new Uint8Array(1024),
+    readBaseIdentity: async () => CONTROLLER_BASE_SHA256, replaceWorker: async () => {} });
+  await controller.open({ initialize: true });
+  const actual = controller.claimSnapshotReviewAuthority();
+  const authority = Object.freeze({
+    async acquire() {
+      order.push("authority:acquire");
+      const lease = await actual.acquire.call(actual);
+      return Object.freeze({ binding: lease.binding, async release() {
+        order.push("authority:release"); return lease.release.call(lease);
+      } });
+    },
+    revoke(reason) { order.push("authority:revoke"); return actual.revoke.call(actual, reason); },
+  });
+  const stop = serializeCdrDbgStop1({ reason: 1, breakpointIndex: 0, generation: 1n,
+    boundaryOrdinal: 1n, clockSlot: 1n, microPcBefore: 0, rawLcBefore: 0,
+    microPcAfter: 0, rawLcAfter: 0, faultAfter: 0, deviceRequestAfter: 0,
+    inhibitedAfter: 0, runOrdinal: 1n, operationSlots: 1n,
+    profileSha256: Uint8Array.from(
+      "8c0ef85505485aacfd bf42d4efef416e7a4c0964fbc59037d234b4e499b9f1a0".replaceAll(" ", "").match(/../g),
+      value => Number.parseInt(value, 16)) }).buffer;
+  let transactionDisposals = 0;
+  let transactionDisposition = null;
+  const transaction = {
+    async save() { throw new Error("snapshot save must not start after M10 acquire failure"); },
+    async next() { throw new Error("snapshot stream must not start after M10 acquire failure"); },
+    async dispose(reason) {
+      transactionDisposals += 1; order.push(`worker-dispose:${reason}`);
+      await transactionDisposition({ reason, disposition: "ABSENT" });
+      return { disposition: "ABSENT" };
+    },
+    onInvalidating() { return () => {}; },
+    onDisposition(observer) { transactionDisposition = observer; return () => { transactionDisposition = null; }; },
+  };
+  const target = configured({ controller, m10ReviewAuthorityFactory: () => authority,
+    shellOptions: { transaction, replies: new Map([
+      ["debug-micro-step", async () => ({ status: 19, terminal: false, result: { stop } })],
+      ["machine-pause", async request => ({ type: "cadr-response", version: 8,
+        sessionId: request.sessionId, id: request.id, op: request.op,
+        status: 0, ok: true, terminal: false, lifecycle: "PAUSED" })],
+    ]) } });
+  target.app.acceptReceipt(receipt); target.app.selectInputs(inputs()); await target.app.bootstrapToPaused();
+  const p2 = await target.app.handoffDebugger(debuggerDeps());
+  assert.equal((await p2.request("debug-micro-step")).status, 19);
+  await assert.rejects(p2.prepareReview(), /acquisition failed and pin rollback failed/);
+  assert.equal(p2.state, "STOP_BOUND", "empty private transaction cleanup preserves the direct stop");
+  assert.equal(transactionDisposals, 1, "the failed prepare disposes its empty worker transaction exactly once");
+  assert.throws(() => actual.revoke("pre-terminal-revoke"), /cannot be revoked/,
+    "M10 v5 retains its branded RECOVERY_REQUIRED authority after rollback loss");
+
+  await withoutUnhandledRejection(async () => {
+    assert.equal(target.app.stop("m10-v5-terminal-loss").phase, "STOPPED");
+    await eventually(() => p2.terminalCleanup.phase === "AUTHORITY_RECOVERY_RETRY_REQUIRED");
+  }, "M10-v5 P1 terminal recovery failure");
+  assert.equal(target.app.terminalCleanup.retryable, true);
+  assert.ok(target.app.terminalCleanup.failure instanceof AggregateError,
+    "the terminal state retains the exact failed recovery aggregate instead of swallowing it");
+  assert.equal(pins.size, 1, "failed terminal recovery keeps the opaque original pin reachable");
+  assert.throws(() => actual.revoke("still-recovery-required"), /cannot be revoked/,
+    "a failed terminal recovery does not discard or forge a second M10 authority");
+
+  const recovered = await target.app.retryTerminalCleanup();
+  assert.equal(recovered.phase, "REVOKED"); assert.equal(p2.terminalCleanup.phase, "REVOKED");
+  assert.equal(pins.size, 0, "the explicit retry releases both the recovered and original opaque pins");
+  assert.equal(transactionDisposals, 1, "authority recovery cannot dispose the closed worker transaction again");
+  assert.deepEqual(order, [
+    "authority:acquire", "pin:fake:snapshot:1", "unpin:fake:snapshot:1:1", "worker-dispose:prepare-failed",
+    "authority:revoke", "authority:acquire", "unpin:fake:snapshot:1:2",
+    "authority:revoke", "authority:acquire", "unpin:fake:snapshot:1:3", "pin:fake:snapshot:2",
+    "authority:release", "unpin:fake:snapshot:2:4", "authority:revoke",
+  ], "P1 terminal loss retries only the branded M10 acquire/release/revoke route in order");
+  assert.throws(() => actual.revoke("after-terminal-retry"), /cannot be revoked/,
+    "successful terminal cleanup revokes the one real M10 authority exactly once");
+  controller.close();
+}
+
 async function testStaticClosure() {
   const entry = new URL("../cadr-web/browser/cadr-m13-production-app.mjs", import.meta.url);
   const source = await readFile(entry, "utf8");
@@ -820,6 +1183,8 @@ async function testStaticClosure() {
   for (const [url, moduleSource] of seen) assert.doesNotMatch(moduleSource, networkAuthority,
     `transitive P1 module ${new URL(url).pathname} must not contain dormant network/worker construction`);
   assert.match(source, /CadrM13Shell/); assert.match(source, /CadrM13ProductionApp/);
+  assert.doesNotMatch(source, /claimDebuggerRequestAuthority|submitAllocatedDebugger/,
+    "P2 must not regain a shell-level request allocator");
   assert.match(html, /type="module" src="\.\/cadr-m13-production-app\.mjs"/);
   assert.match(html, /disabled>Machine unavailable/);
   assert.doesNotMatch(html, /fetch\(|WebSocket|serviceWorker|selected runtime/i);
@@ -835,8 +1200,14 @@ await testMountPublicationAndResumeSingleFlight();
 await testRealShellNeutralizationRace();
 await testRealShellWorkerLossComposition();
 await testPendingAudioWorkerLossGenerationFence();
+await testExternalWorkerTerminationAuthority();
+await testThrownTerminationDominatesTerminalCleanup();
+await testProvenTerminationM10ReleaseRetry();
 await testRealShellPreDispatchGenerationFence();
 await testFencedInputCancellation();
 await testPartialConstructionCleanup();
+await testDebuggerHandoffFencingAndFifo();
+await testSingleClaimReviewAuthorityConstructionRetryAndTerminalCleanup();
+await testActualM10V5RecoveryThenP1TerminalRetry();
 await testStaticClosure();
 console.log("cadr M13 production-composition P1 reducer, lifecycle, and closure tests passed");

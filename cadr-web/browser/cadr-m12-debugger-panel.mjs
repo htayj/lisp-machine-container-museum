@@ -86,7 +86,8 @@ function element(documentObject, name, text = null) {
  * free-form UI text.  An unavailable feature remains disabled and announced. */
 export function mountCadrM12DebuggerPanel({ documentObject = globalThis.document,
   root, request, getProvenance = null, getDiagnosticFacts = null,
-  exportDiagnostic = null } = {}) {
+  exportDiagnostic = null, prepareReview = null, beginReviewExport = null,
+  completeReviewExport = null, discardReview = null } = {}) {
   assertion(documentObject?.createElement !== undefined && root !== null && root !== undefined,
     "document root is required");
   assertion(typeof request === "function", "request function is required");
@@ -147,6 +148,85 @@ export function mountCadrM12DebuggerPanel({ documentObject = globalThis.document
       assertion(reply?.status === 0, "trace filter rejected"); status.textContent = "Trace filter installed for subsequent debugger trace views.";
     } catch { status.textContent = "Trace filter was not accepted."; }
   });
+  const execution = element(documentObject, "fieldset");
+  execution.append(element(documentObject, "legend", "Breakpoints and stepping"));
+  const slotLabel = element(documentObject, "label", "Breakpoint slot");
+  const slot = element(documentObject, "input"); slot.type = "number"; slot.min = "0";
+  slot.max = "63"; slot.step = "1"; slot.value = "0"; slot.id = "cadr-m12-breakpoint-slot";
+  slotLabel.htmlFor = slot.id;
+  const kindLabel = element(documentObject, "label", "Breakpoint kind");
+  const kind = element(documentObject, "select"); kind.id = "cadr-m12-breakpoint-kind"; kindLabel.htmlFor = kind.id;
+  for (const [number, label] of [[1, "Micro-PC before"], [2, "Raw LC before"], [3, "Clock slot after"],
+    [4, "Fault after"], [5, "Device request after"]]) {
+    const option = element(documentObject, "option", label); option.value = String(number); kind.append(option);
+  }
+  const breakpointValueLabel = element(documentObject, "label", "Breakpoint value");
+  const breakpointValue = element(documentObject, "input"); breakpointValue.type = "text";
+  breakpointValue.value = "0"; breakpointValue.id = "cadr-m12-breakpoint-value";
+  breakpointValueLabel.htmlFor = breakpointValue.id;
+  const setBreakpoint = element(documentObject, "button", "Set breakpoint"); setBreakpoint.type = "button";
+  const clearBreakpoint = element(documentObject, "button", "Clear breakpoint"); clearBreakpoint.type = "button";
+  const microStep = element(documentObject, "button", "Micro-step"); microStep.type = "button";
+  const macroStep = element(documentObject, "button", "Macro-step"); macroStep.type = "button";
+  const resumeBoundary = element(documentObject, "button", "Resume one boundary"); resumeBoundary.type = "button";
+  const mutatingControls = [setBreakpoint, clearBreakpoint, microStep, macroStep, resumeBoundary, applyTrace];
+  const selectedSlot = () => Number(slot.value);
+  setBreakpoint.addEventListener("click", async () => {
+    try {
+      const valueText = breakpointValue.value.trim();
+      const value = BigInt(valueText === "" ? "0" : valueText);
+      const reply = await request("debug-breakpoint-set", { slot: selectedSlot(),
+        breakpoint: { kind: Number(kind.value), value } });
+      assertion(reply?.status === 0, "breakpoint rejected"); status.textContent = "Breakpoint installed.";
+    } catch { status.textContent = "Breakpoint was not accepted."; }
+  });
+  clearBreakpoint.addEventListener("click", async () => {
+    try { assertion((await request("debug-breakpoint-clear", { slot: selectedSlot() }))?.status === 0,
+      "clear rejected"); status.textContent = "Breakpoint cleared."; }
+    catch { status.textContent = "Breakpoint clear was not accepted."; }
+  });
+  const step = op => async () => {
+    try {
+      const reply = await request(op, {});
+      assertion([0, 19, 20].includes(reply?.status), "step rejected");
+      status.textContent = reply.status === 0 ? "Step completed at a paused boundary." :
+        (reply.status === 19 ? "Breakpoint stop is ready for review." : "Macro-step limit stop is ready for review.");
+    } catch { status.textContent = "Step was not accepted."; }
+  };
+  microStep.addEventListener("click", step("debug-micro-step"));
+  macroStep.addEventListener("click", step("debug-macro-step"));
+  resumeBoundary.addEventListener("click", async () => {
+    try { assertion((await request("debug-resume-one-boundary", {}))?.status === 0, "resume rejected");
+      status.textContent = "One-boundary breakpoint suppression armed."; }
+    catch { status.textContent = "Resume-one-boundary was not accepted."; }
+  });
+  execution.append(slotLabel, slot, kindLabel, kind, breakpointValueLabel, breakpointValue,
+    setBreakpoint, clearBreakpoint, microStep, macroStep, resumeBoundary);
+
+  const review = element(documentObject, "fieldset"); review.append(element(documentObject, "legend", "Review and export"));
+  const prepare = element(documentObject, "button", "Prepare paused review"); prepare.type = "button";
+  const exportReview = element(documentObject, "button", "Export reviewed snapshot and diagnostic"); exportReview.type = "button";
+  const discard = element(documentObject, "button", "Discard reviewed snapshot"); discard.type = "button";
+  exportReview.disabled = typeof beginReviewExport !== "function" || typeof completeReviewExport !== "function";
+  prepare.disabled = typeof prepareReview !== "function"; discard.disabled = typeof discardReview !== "function";
+  const freezeMutation = frozen => { for (const control of mutatingControls) control.disabled = frozen; };
+  prepare.addEventListener("click", async () => {
+    try { await prepareReview(); freezeMutation(true); status.textContent = "Review ready; mutating debugger controls are frozen."; }
+    catch { status.textContent = "Paused review could not be prepared."; }
+  });
+  exportReview.addEventListener("click", async () => {
+    try {
+      const token = await beginReviewExport();
+      await completeReviewExport(token); freezeMutation(false);
+      status.textContent = "Reviewed exports completed and private snapshot released."; }
+    catch { status.textContent = "Review export did not complete."; }
+  });
+  discard.addEventListener("click", async () => {
+    try { await discardReview(); freezeMutation(false);
+      status.textContent = "Reviewed snapshot discarded and private bytes released."; }
+    catch { status.textContent = "Review discard did not complete."; }
+  });
+  review.append(prepare, exportReview, discard);
   const provenance = element(documentObject, "section"); provenance.append(element(documentObject, "h3", "Provenance"));
   const provenanceView = element(documentObject, "output"); provenanceView.textContent = "No canonical provenance record is available.";
   provenance.append(provenanceView);
@@ -168,7 +248,7 @@ export function mountCadrM12DebuggerPanel({ documentObject = globalThis.document
     }
     catch { status.textContent = "Diagnostic export was not available."; }
   });
-  section.append(heading, notice, inspector, trace, provenance, diagnostic, status);
+  section.append(heading, notice, inspector, trace, execution, review, provenance, diagnostic, status);
   root.append(section);
-  return Object.freeze({ section, status, inspector, trace, diagnostic });
+  return Object.freeze({ section, status, inspector, trace, execution, review, diagnostic });
 }

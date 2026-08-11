@@ -3,7 +3,7 @@ type: Implementation Roadmap
 title: MIT CADR System 303 browser and WebAssembly implementation roadmap
 description: A milestone-complete plan for porting the pinned System 303 CADR emulator to a deterministic, locally persistent, browser-hosted WebAssembly machine.
 tags: [mit-cadr, lm-3, system-303, webassembly, browser, emulator, roadmap]
-timestamp: 2026-08-11T05:33:17-04:00
+timestamp: 2026-08-11T07:45:14-04:00
 ---
 
 # MIT CADR System 303 browser and WebAssembly implementation roadmap
@@ -38,7 +38,10 @@ claimed to be compatible with the selected System 303 profile.
 This roadmap does not claim a completed runnable release, unmodified historical
 program interoperability, a successful native or browser runtime observation, or an
 enabled production-host service. Those claims remain reserved for their separately
-named conformance and evidence gates.
+named conformance and evidence gates. In particular, the current source work does
+not establish selected-media execution, a
+historical console-debugger implementation, browser release compatibility, or an
+M14 publication artifact; those require their separately named evidence gates.
 
 ## Compatibility levels
 
@@ -1394,7 +1397,7 @@ historical `CC` console, whose full profile assumes a separate debuggee.
 Exit gate `C-M12`: each control stops at the documented boundary and resume produces
 the same continuation as a run with the equivalent preinstalled breakpoint.
 
-Implementation status, 2026-08-02: a narrow cumulative M12 ABI 1.10/protocol-v7 profile has a
+Implementation status, 2026-08-11: a narrow cumulative M12 ABI 1.10/protocol-v7 profile has a
 real one-slot core adapter, source-bounded QMLP/DMLP candidate-loop map, O0/O2 Wasm
 export checks, an installed closed v7 worker branch, and pointer-free `CDRM12C1`
 breakpoint-configuration save/restore through direct Wasm and the worker. Direct
@@ -1435,6 +1438,44 @@ while a v7 backend-protocol attempt to emit 21 is closed as status 2 without a r
 The native boundary vector also issues `UINT64_MAX-1` exactly once, reaches the
 unissued sentinel, and proves that the immediately following status-21 attempt leaves
 the final owner and its lease unchanged.
+
+An additive, source-only M12 P2 review coordinator now sits behind the ABI1.11/v8
+P1 application's awaited, one-way debugger handoff. The handoff synchronously fences
+new P1 admissions, drains P1's existing FIFO, and gives P2 closures over the same
+request-ID allocator rather than a shell or second allocator. It consumes only canonical status-19/20 stops,
+validates a complete `CDRM12S1` v2 stream (including the full `CDRAUDS1` queue
+grammar), and retains no public snapshot capability. Its exporter stages bounded
+copies and uses synchronous `accept` as the only publication point; reset, loss, and
+every delayed lower reply are fenced by a sticky epoch and cancellation/zeroization
+receipt. Each review uses a fresh private snapshot transaction. A private save marks
+worker snapshot ownership before its reply is parsed: a dropped, timed-out,
+malformed, or post-disposal reply therefore fail-stops the owned worker (or reports
+terminal loss to P1) and yields `WORKER_TERMINATED`, never `ABSENT`; a late reply
+cannot recreate the transaction. Cleanup orders invalidation, worker disposition,
+and then opaque M10 lease release, retaining only the lease when worker disposition
+is unknown and retrying only idempotent unpin after an ambiguous release
+acknowledgement. The source/synthetic regression suite covers this response-loss
+ordering and two fresh review cycles. Because M10 admits only one branded authority
+claim, a P2 constructor-only failure retains P1's lease-free claimed authority for
+one retry. The current source/synthetic M10-v5 + P2 regression additionally forces
+a post-pin continuity failure, two failed rollback unpins, and then a P1 terminal
+loss. It records `AUTHORITY_RECOVERY_RETRY_REQUIRED` with the exact aggregate
+failure, retains the one branded authority and opaque pin, and succeeds only after
+an explicit retry drives that same authority through recovery `acquire()`, lease
+`release()`, and synchronous `revoke()` in that order. This is a fail-closed
+terminal-cleanup foundation; it does not claim an M10 browser campaign, a live
+selected-media machine, browser-runtime composition, or historical debugger
+behavior. An ambiguous worker-snapshot disposition does not authorize M10 release:
+the external-Worker profile requires a single-use shell operation that itself invokes
+the exact captured Worker's synchronous `terminate()`, and upgrades `UNKNOWN` only
+after that call returns normally. Missing or throwing termination
+proof is the non-retryable `EXTERNAL_RECOVERY_REQUIRED` state and retains the pin;
+an accepted proof permits exactly one `WORKER_TERMINATED` disposition and unpin.
+The schema-3 IndexedDB adapter separately
+purges stale transient review refs on reopen while retaining clone/export refs. The compile-gated test profile reaches a genuine status-20 stop at
+1,048,576 slots in O0 and O2. These are current local source/synthetic test results,
+not selected-media, browser-runtime, or historical-debugger evidence. Full `C-M12`
+and `C-M13` therefore remain HOLD/open.
 
 ### M13 — Hardening and accessibility
 

@@ -51,7 +51,7 @@ class Handler(BaseHTTPRequestHandler):
 
 
 class CadrM12DebuggerBrowserTest(unittest.TestCase):
-    def test_keyboard_reachable_scalar_inspector_and_trace_filter(self) -> None:
+    def test_keyboard_reachable_lower_controls_and_p2_inventory(self) -> None:
         wasm = ROOT / "cadr-web/build/cadr-web-m12-O0.wasm"
         self.assertTrue(wasm.is_file(), "build the M12 O0 module before this browser probe")
         Handler.requests = []
@@ -90,6 +90,30 @@ class CadrM12DebuggerBrowserTest(unittest.TestCase):
                 page.keyboard.press("Enter")
                 expect(page.locator("#cadr-m12-debugger-status")).to_contain_text(
                     "Trace filter installed", timeout=15000)
+                # The P2 host-control inventory is present in the
+                # same keyboard order. This v7 generated fixture exercises
+                # the lower breakpoint controls only; production review is
+                # deliberately disabled without its additive receipt.
+                page.locator("button", has_text="Set breakpoint").focus()
+                page.keyboard.press("Enter")
+                expect(page.locator("#cadr-m12-debugger-status")).to_have_text(
+                    "Breakpoint installed.", timeout=15000)
+                page.locator("button", has_text="Micro-step").focus()
+                page.keyboard.press("Enter")
+                expect(page.locator("#cadr-m12-debugger-status")).to_contain_text(
+                    "stop is ready for review", timeout=15000)
+                page.locator("button", has_text="Resume one boundary").focus()
+                page.keyboard.press("Enter")
+                expect(page.locator("#cadr-m12-debugger-status")).to_have_text(
+                    "One-boundary breakpoint suppression armed.", timeout=15000)
+                page.locator("button", has_text="Clear breakpoint").focus()
+                page.keyboard.press("Enter")
+                expect(page.locator("#cadr-m12-debugger-status")).to_have_text(
+                    "Breakpoint cleared.", timeout=15000)
+                expect(page.locator("button", has_text="Prepare paused review")).to_be_disabled()
+                expect(page.locator(
+                    "button", has_text="Export reviewed snapshot and diagnostic")).to_be_disabled()
+                expect(page.locator("button", has_text="Discard reviewed snapshot")).to_be_disabled()
                 browser.close()
         finally:
             server.shutdown()

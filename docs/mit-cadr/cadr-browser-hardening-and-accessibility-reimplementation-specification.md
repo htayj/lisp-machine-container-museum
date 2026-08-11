@@ -2,7 +2,7 @@
 type: concept
 title: CADR-WEB-303 browser hardening and accessibility reimplementation specification
 description: A release-bounded M13 contract for hostile host inputs, resource ceilings, offline execution, worker failure, and accessible controls around an unmodified CADR framebuffer.
-timestamp: 2026-08-02T12:13:23-04:00
+timestamp: 2026-08-11T07:45:14-04:00
 ---
 
 # CADR-WEB-303 browser hardening and accessibility reimplementation specification
@@ -383,6 +383,31 @@ same synchronous cleanup path. `FAILED`, `IN_DOUBT`, and `RECOVERY_REQUIRED`
 then absorb every reducer event and every public app method without another ID,
 request, state object, resource action, or worker termination.
 
+Terminal P2 authority cleanup is a separate, observable continuation of that
+synchronous fence. P1 starts it without awaiting an untrusted worker/shell path
+and records either `REVOKED`, `WORKER_TERMINATION_PENDING`, non-retryable
+`EXTERNAL_RECOVERY_REQUIRED`, or a named retryable invalidation, M10 lease-release,
+recovery-acquire, recovery-release, or revocation state. The exact externally owned
+Worker is required to implement `terminate()`. One single-use shell operation fences
+the shell, invokes that exact captured Worker's synchronous `terminate()` itself,
+and may publish `WORKER_TERMINATED` only after the call returns normally. Callers
+cannot separately mint or confirm a proof. A throw or missing operation dominates
+the aggregate terminal result as `EXTERNAL_RECOVERY_REQUIRED`, retains the M10 lease
+and pin, and does not advertise a user retry. Only the same captured transaction may
+monotonically upgrade `UNKNOWN` to `WORKER_TERMINATED`; delayed replies and stale
+transactions cannot perform that upgrade. For an active
+The shell returns the termination proof synchronously and carries the later
+transaction-disposition flight separately. A rejection of that later flight cannot
+undo proven termination or mask P2's retryable M10-release state.
+authority, M10 `revoke()` is required to return its receipt synchronously. If the
+current M10-v5 authority rejects that call because a post-pin acquisition rollback
+left it `RECOVERY_REQUIRED`, P2 may call only the same branded `acquire()`, release
+the returned opaque lease, and retry `revoke()`. It retains the original failure
+object and the private authority/lease for `retryTerminalCleanup()`; it neither
+silently converts the rejected flight to success nor exposes a disk handle, pin ID,
+or replacement authority. This source/synthetic state machine is not a browser
+runtime, selected-media, durable-store, or release claim.
+
 The shell constructor's default `workerOwnership:"shell"` preserves standalone
 worker-loss behavior. P1 supplies `workerOwnership:"external"` together with a
 closed loss callback that reports the original `worker-error`,
@@ -675,16 +700,15 @@ advancing. The final result has only `done,ordinal`; close or terminal session l
 releases the pin. This is a structured v8 bridge over M10's canonical records, not
 a claim that the deferred `CDROVL1` archive format has been selected.
 
-The snapshot total is deliberately not the 16 MiB non-stream cap. The current raw
-Wasm snapshot maximum is `18,126,780` bytes. Its `CDRM5WK1` envelope adds 104 bytes,
-`CDRM10W1` adds 256 bytes, and the selected future M11 minor-3 addition adds one
-64-byte directory entry plus an AUDIO payload of `192 + 64*64 = 4,288` bytes.
-Therefore the exact M13 streamed-wrapper ceiling is
-`18,126,780 + 104 + 256 + 64 + 4,288 = 18,131,492` bytes. The retained
-17,078,204-byte artifact is a raw Wasm snapshot, not a wrapper; after the same
-4,712 bytes of envelopes, directory, and audio it occupies 17,082,916 bytes and is
-admissible. Closing M11 may use less but may not raise this ceiling without a new
-M13 profile.
+The snapshot total is deliberately not the 16 MiB non-stream cap. The generic M12
+raw `CDRM12S1` v2 ceiling is exactly `18,132,272` bytes: a 48-byte envelope, the
+18,126,780-byte frozen `CDRSNAP1`, 72-byte `CDRM9D1`, 4,284-byte maximum
+`CDRAUDS1`, and 1,088-byte `CDRM12C1`. This is the private P2 raw ceiling,
+not a widening of frozen P1. The public P1 v8 export/restore ceiling remains
+**18,131,492 bytes**. A distinct future P2 wrapper profile may add 360 bytes,
+for 18,132,632 bytes, only after its own schema and receipt are selected. This
+source contract does not select that wrapper, an M14 archive format, or a
+completed C-M13 release gate.
 
 `snapshot-export-open` serializes pause, a clean M10 reread receipt and export pin,
 the worker's bounded M5 snapshot save, a first streaming hash pass, and shell
@@ -1382,7 +1406,7 @@ separate artifact with separate UI, policy, tests, and manifest.
 | `M13-F14` | regression | Run every available lower conformance test through M12 under the M13 shell, including M11 renderer/Worklet gates when implemented | no lower-profile semantic regression; an unclosed lower gate keeps C-M13 open |
 | `M13-F15` | audio browser | Test first-user-gesture autoplay success/denial, pause/resume, eight-record high water, worklet partial/stale acknowledgements, `processorerror`, context/device loss, worker crash, and a fresh consumer epoch | no invented acknowledgement/silence or guest-time advance; deterministic M11 backpressure and stale-ack fencing hold |
 | `M13-F15b` | audio deadline/reducer | With a controllable monotonic clock and browser-task harness, test an ack immediately before and at `2000.000` ms; admit every pairwise tie and the four-way due-deadline/ack/pause/device-error tie within one open turn in every admission order; then place every equal-timestamp pair in separate browser tasks in both task orders; admit an event synchronously before watermark closure and reentrantly after closure; test equal deadlines, late old-epoch replies after pause/timeout/resume, and high water before expiry | within one closed turn sort is exactly timestamp then device-error, pause, deadline, ack, then ordinal; across tasks the first committed reducer turn wins and no later priority is retroactive; exactly one response follows commit; pre-boundary ack is accepted once, boundary ack loses to the promoted deadline, pause cancels rather than suspends, oldest equal deadline wins, post-watermark work moves to the next turn, late replies are fenced, and only a new user-activated epoch can replay the unacknowledged head |
-| `M13-P1-01` | source/synthetic composition | Exercise every reducer state and illegal transition plus every public method against each absorbing state; attack every common authority field and operation schema with extra fields, accessors, inherited prototypes, and reset/debugger/audio operation substitution; run real-shell neutral-ready and duplicate/reentrant restore races; inject `error` and `messageerror` while audio-event acceptance is pending in standalone and externally owned shells; delay the media-mount response; reply before and after release/layout generation changes; inject clean/recovery/ambiguous M10 states; throw, return incompatibility, and stop reentrantly during factories; delay `machine-start` across stop; assert exact cleanup order independently; and recursively inspect every transitive P1 module for direct network/worker construction | rejected input/recipe fields consume no ID or state transition; exactly one injected worker and shell, one monotonic public v8 ID series, mount is not published early, resume is single-flight, neutral readiness and input fence precede `PAUSED`, pending audio loss settles without an unhandled rejection and retains its original cause, intentional stale input is cancelled without failure, partial acquisition terminates its worker exactly once, every terminal state is absorbing, handles are fenced before disposal, and no stale generation re-arms input; this is not a browser or selected-media result |
+| `M13-P1-01` | source/synthetic composition | Exercise every reducer state and illegal transition plus every public method against each absorbing state; attack every common authority field and operation schema with extra fields, accessors, inherited prototypes, and reset/debugger/audio operation substitution; run real-shell neutral-ready and duplicate/reentrant restore races; inject `error` and `messageerror` while audio-event acceptance is pending in standalone and externally owned shells; delay the media-mount response; reply before and after release/layout generation changes; inject clean/recovery/ambiguous M10 states; compose the current M10-v5 post-pin continuity failure with two rollback-unpin failures, an empty P2 transaction cleanup, terminal loss, and an explicit retry; throw, return incompatibility, and stop reentrantly during factories; delay `machine-start` across stop; assert exact cleanup order independently; and recursively inspect every transitive P1 module for direct network/worker construction | rejected input/recipe fields consume no ID or state transition; exactly one injected worker and shell, one monotonic public v8 ID series, mount is not published early, resume is single-flight, neutral readiness and input fence precede `PAUSED`, pending audio loss settles without an unhandled rejection and retains its original cause, intentional stale input is cancelled without failure, partial acquisition terminates its worker exactly once, terminal M10 recovery is explicit and retryable through the same branded authority in acquire/release/revoke order, every terminal state is absorbing, handles are fenced before disposal, and no stale generation re-arms input; this is not a browser or selected-media result |
 
 Fuzzing uses a fixed seed corpus plus recorded crashing inputs. A passing fuzz
 duration is necessary evidence, not a proof that all inputs are safe. The local F03
@@ -1425,7 +1449,10 @@ or M16 translation.
 
 - M14 selects the final supported browser/version matrix. An M13 provisional report
   names only the engines it actually tested; that is not a final support selection.
-- The exact production durable-store adapter is not implemented.
+- The schema-3 IndexedDB durable-store adapter and restricted M10 review authority
+  are implemented and exercised in a separate real-Chromium campaign. The P1-to-P2
+  handoff is source- and worker-tested, but those pieces have not yet been composed
+  in the build-local M13 browser artifact; no M13 browser-runtime closure follows.
 - The M12 panel can build only a fixed-summary, schema-bounded `CDRBUG1` record
   from trusted canonical facts; it is not yet wired to the M13 artifact or a
   publication-specific privacy/redaction review.

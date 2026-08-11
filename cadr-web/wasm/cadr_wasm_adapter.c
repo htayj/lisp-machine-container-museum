@@ -108,6 +108,9 @@ static uint32_t cadr_wasm_restore_used;
 #endif
 
 static void cadr_wasm_meta_result(uint64_t first, uint64_t second);
+#if defined(CADR_M13_DEBUGGER_TEST_WASM)
+uint32_t cadr_wasm_m12_test_arm_macro_limit(void);
+#endif
 /* ABI1.2's nine-chunk CDRSNAP1 adds one directory entry and the D0 disk chunk. */
 #define CADR_WASM_CDRSNAP_MAX_BYTES UINT32_C(18126780)
 #if defined(CADR_M12_WASM)
@@ -298,6 +301,26 @@ uint32_t cadr_wasm_create(void)
     return cadr_wasm_ensure_machine();
 #endif
 }
+
+#if defined(CADR_M13_DEBUGGER_TEST_WASM)
+/* Public, compile-gated conformance profile only.  Place the synthetic core at
+ * System 303 QMLP so the real macro-step loop executes to its exact 1,048,576
+ * slot bound after the zero-filled synthetic control store leaves QMLP. */
+CADR_WASM_EXPORT("cadr_wasm_m12_test_arm_macro_limit")
+uint32_t cadr_wasm_m12_test_arm_macro_limit(void)
+{
+    if (cadr_wasm_machine == NULL || cadr_wasm_m12_adapter.initialized != 1U ||
+        cadr_wasm_m12_adapter.machine != cadr_wasm_machine) {
+        return CADR_STATUS_NOT_READY;
+    }
+    cadr_wasm_machine->state.cpu.p1_pc = UINT32_C(0164);
+    cadr_wasm_m12_adapter.debugger.current.micro_pc = UINT32_C(0164);
+    cadr_wasm_m12_adapter.debugger.current.raw_lc =
+        cadr_wasm_machine->state.cpu.location_counter;
+    return cadr_m12_machine_adapter_test_arm_macro_limit(
+        &cadr_wasm_m12_adapter);
+}
+#endif
 
 CADR_WASM_EXPORT("cadr_wasm_input_reserve")
 uint32_t cadr_wasm_input_reserve(uint32_t byte_count)

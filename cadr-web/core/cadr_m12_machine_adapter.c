@@ -221,14 +221,61 @@ static cadr_m12_status cadr_m12_machine_complete_slot(
 #define CADR_M12_SYSTEM_303_QMLP UINT32_C(0164)
 #define CADR_M12_SYSTEM_303_DMLP UINT32_C(0200)
 
+#if defined(CADR_M13_DEBUGGER_TEST_WASM)
+static cadr_m12_machine_adapter *cadr_m12_test_macro_limit_adapter;
+static uint32_t cadr_m12_test_macro_limit_phase;
+
+/* The conformance-only profile still executes the real debugger loop to its
+ * exact 1,048,576-slot limit, but each completed slot uses this bounded cheap
+ * seam instead of interpreting a zero-filled synthetic control store. */
+static cadr_m12_status cadr_m12_test_complete_macro_limit_slot(
+    void *context, const cadr_m12_boundary *before,
+    cadr_m12_slot_completion *completion)
+{
+    if (context != cadr_m12_test_macro_limit_adapter ||
+        cadr_m12_test_macro_limit_phase != 2U || before == NULL ||
+        completion == NULL) {
+        return CADR_M12_STATUS_INVALID_ARGUMENT;
+    }
+    (void)memset(completion, 0, sizeof(*completion));
+    completion->complete_slots = 1U;
+    completion->micro_pc_after = before->micro_pc;
+    completion->raw_lc_after = before->raw_lc;
+    completion->fault_after = before->fault;
+    completion->device_request_after = before->device_request;
+    return CADR_M12_STATUS_OK;
+}
+#endif
+
 static cadr_m12_dispatch_answer cadr_m12_machine_dispatch_system_303(
     void *context, uint32_t micro_pc)
 {
+#if defined(CADR_M13_DEBUGGER_TEST_WASM)
+    if (context == cadr_m12_test_macro_limit_adapter &&
+        cadr_m12_test_macro_limit_phase != 0U) {
+        if (cadr_m12_test_macro_limit_phase == 1U) {
+            cadr_m12_test_macro_limit_phase = 2U;
+            return CADR_M12_DISPATCH_YES;
+        }
+        return CADR_M12_DISPATCH_NO;
+    }
+#endif
     (void)context;
     return micro_pc == CADR_M12_SYSTEM_303_QMLP ||
         micro_pc == CADR_M12_SYSTEM_303_DMLP ? CADR_M12_DISPATCH_YES :
         CADR_M12_DISPATCH_NO;
 }
+
+#if defined(CADR_M13_DEBUGGER_TEST_WASM)
+cadr_m12_status cadr_m12_machine_adapter_test_arm_macro_limit(
+    cadr_m12_machine_adapter *adapter)
+{
+    if (!cadr_m12_adapter_valid(adapter)) return CADR_M12_STATUS_NOT_READY;
+    cadr_m12_test_macro_limit_adapter = adapter;
+    cadr_m12_test_macro_limit_phase = 1U;
+    return CADR_M12_STATUS_OK;
+}
+#endif
 
 static cadr_m12_status cadr_m12_machine_bind_owner(
     cadr_m12_machine_adapter *adapter)
@@ -387,6 +434,18 @@ cadr_m12_status cadr_m12_machine_adapter_micro_step(
 cadr_m12_status cadr_m12_machine_adapter_macro_step(
     cadr_m12_machine_adapter *adapter)
 {
+#if defined(CADR_M13_DEBUGGER_TEST_WASM)
+    if (cadr_m12_adapter_valid(adapter) &&
+        adapter == cadr_m12_test_macro_limit_adapter &&
+        cadr_m12_test_macro_limit_phase != 0U) {
+        const cadr_m12_status status = cadr_m12_macro_step(
+            &adapter->debugger, cadr_m12_test_complete_macro_limit_slot,
+            cadr_m12_machine_dispatch_system_303, adapter);
+        cadr_m12_test_macro_limit_adapter = NULL;
+        cadr_m12_test_macro_limit_phase = 0U;
+        return status;
+    }
+#endif
     return cadr_m12_adapter_valid(adapter) ?
         cadr_m12_macro_step(&adapter->debugger, cadr_m12_machine_complete_slot,
                             cadr_m12_machine_dispatch_system_303, adapter) :

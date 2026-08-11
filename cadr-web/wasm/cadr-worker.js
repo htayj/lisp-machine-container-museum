@@ -13,7 +13,7 @@ import { CadrM13AudioSource } from "./cadr-m13-audio-source.mjs";
 import { CadrM12ProtocolSubhandler, CADR_M12_STATUS_OK,
   CADR_M12_STATUS_DEBUG_STOP,
   CADR_M12_STATUS_LIMIT_REACHED,
-  CADR_M12_CONFIG_SNAPSHOT_BYTES } from "./cadr-m12-debugger.mjs";
+  CADR_M12_CONFIG_SNAPSHOT_BYTES, parseCdrDbgStop1 } from "./cadr-m12-debugger.mjs";
 import { parseCadrM7UnimplementedDiagnostic } from
   "./cadr-m7-devid-failure.mjs";
 import { copyRequestForStrictVersion } from "./cadr-worker-request-adapter.mjs";
@@ -153,6 +153,9 @@ let m11AudioProtocol = null;
 let m12DebuggerProtocol = null;
 let m13AudioSource = null;
 let m13SessionId = null;
+let m13DebuggerSnapshot = null;
+let m13DebuggerSnapshotId = 0n;
+let m13DebuggerSnapshotOffset = 0;
 
 function isM5ProtocolVersion(version) {
   return version === CADR_M5_PROTOCOL_VERSION ||
@@ -430,6 +433,9 @@ function discardWorkerState() {
   m8KeyboardProtocol = null; m9PointerProtocol = null;
   m11AudioProtocol = null; m12DebuggerProtocol = null;
   m13AudioSource = null; m13SessionId = null;
+  if (m13DebuggerSnapshot !== null) m13DebuggerSnapshot.fill(0);
+  m13DebuggerSnapshot = null;
+  m13DebuggerSnapshotOffset = 0;
 }
 
 function m9InputCoreState(e) {
@@ -1281,6 +1287,9 @@ async function handle(request) {
           invokeM13AudioWasm(instance.exports, operation) : invokeM11Wasm(instance.exports, operation),
         emit: event => send(event, [event.record]),
       });
+      m13DebuggerSnapshot = null;
+      m13DebuggerSnapshotId = 0n;
+      m13DebuggerSnapshotOffset = 0;
     }
     mediaBusy = false;
     mediaDirty = false;
@@ -1345,6 +1354,97 @@ async function handle(request) {
 
   const e = exportsOrStatus(id, op);
   if (e === null) return;
+  if (protocolVersion === CADR_M13_PRIVATE_PROTOCOL_VERSION &&
+      ["m13-debug-micro-step", "m13-debug-macro-step"].includes(op)) {
+    if (Object.keys(request).some(key => !["version", "id", "op"].includes(key))) {
+      response(id, op, CADR_STATUS_INVALID_ARGUMENT); return;
+    }
+    const lowerOp = op === "m13-debug-micro-step" ? "debug-micro-step" : "debug-macro-step";
+    const result = m12DebuggerProtocol.handle(Object.freeze({
+      version: CADR_M12_PROTOCOL_VERSION, id, op: lowerOp,
+    }));
+    if (result === null) { response(id, op, 25, { terminal: true }); return; }
+    if ([CADR_M12_STATUS_DEBUG_STOP, CADR_M12_STATUS_LIMIT_REACHED].includes(result.status)) {
+      try {
+        const stop = parseCdrDbgStop1(result.result?.stop);
+        const reason = result.status === CADR_M12_STATUS_DEBUG_STOP ? 1 : 2;
+        if (stop.reason !== reason) throw new TypeError("stop/status mismatch");
+        const immutable = stop.bytes.slice().buffer;
+        response(id, op, result.status, { result: Object.freeze({ stop: immutable }), terminal: false }, [immutable]);
+      } catch {
+        response(id, op, 25, { terminal: true });
+      }
+      return;
+    }
+    response(id, op, result.status, result.status === CADR_STATUS_OK ? { result: result.result, terminal: false } : { terminal: false });
+    return;
+  }
+  if (protocolVersion === CADR_M13_PRIVATE_PROTOCOL_VERSION &&
+      op === "m13-debug-test-arm-macro-limit") {
+    if (Object.keys(request).some(key => !["version", "id", "op"].includes(key)) ||
+        typeof e.cadr_wasm_m12_test_arm_macro_limit !== "function") {
+      response(id, op, CADR_STATUS_INVALID_ARGUMENT); return;
+    }
+    response(id, op, e.cadr_wasm_m12_test_arm_macro_limit() >>> 0); return;
+  }
+  if (protocolVersion === CADR_M13_PRIVATE_PROTOCOL_VERSION && op === "m13-debug-snapshot-save") {
+    if (Object.keys(request).some(key => !["version", "id", "op"].includes(key)) ||
+        workerLifecycle !== CADR_WORKER_PAUSED || !m9InputHostStateNeutral() ||
+        m13DebuggerSnapshot !== null || mediaBusy || mediaDirty ||
+        mediaSnapshotBlocked || pendingBoundaryDigest) {
+      response(id, op, CADR_STATUS_NOT_READY); return;
+    }
+    const status = e.cadr_wasm_snapshot_save() >>> 0;
+    const meta = status === CADR_STATUS_OK ? metadata(e) : null;
+    if (status !== CADR_STATUS_OK || meta === null || meta[0] === 0n || meta[0] > 18132272n) {
+      response(id, op, status === CADR_STATUS_OK ? CADR_STATUS_INVALID_ARGUMENT : status); return;
+    }
+    const pointer = e.cadr_wasm_snapshot_pointer() >>> 0;
+    const byteCount = Number(meta[0]);
+    if (pointer === 0 || pointer + byteCount > e.memory.buffer.byteLength) {
+      response(id, op, CADR_STATUS_NOT_READY); return;
+    }
+    const raw = new Uint8Array(e.memory.buffer, pointer, byteCount).slice();
+    if (!validInnerM12Snapshot(raw, controlBoundary)) {
+      response(id, op, 25, { terminal: true }); return;
+    }
+    const digest = await workerSnapshotSha256(raw);
+    if (digest === null || m13DebuggerSnapshotId === 0xffffffffffffffffn) {
+      response(id, op, CADR_STATUS_NOT_READY); return;
+    }
+    m13DebuggerSnapshot = raw;
+    m13DebuggerSnapshotId += 1n;
+    m13DebuggerSnapshotOffset = 0;
+    response(id, op, CADR_STATUS_OK, { snapshotId: m13DebuggerSnapshotId,
+      byteCount, snapshotSha256: [...digest].map(byte => byte.toString(16).padStart(2, "0")).join("") });
+    return;
+  }
+  if (protocolVersion === CADR_M13_PRIVATE_PROTOCOL_VERSION && op === "m13-debug-snapshot-next") {
+    if (Object.keys(request).some(key => !["version", "id", "op", "snapshotId", "offset", "maxBytes"].includes(key)) ||
+        typeof request.snapshotId !== "bigint" || request.snapshotId !== m13DebuggerSnapshotId ||
+        m13DebuggerSnapshot === null || workerLifecycle !== CADR_WORKER_PAUSED ||
+        !Number.isInteger(request.offset) || request.offset !== m13DebuggerSnapshotOffset ||
+        !Number.isInteger(request.maxBytes) || request.maxBytes < 1 || request.maxBytes > 1048576) {
+      response(id, op, CADR_STATUS_NOT_READY); return;
+    }
+    const nextOffset = Math.min(m13DebuggerSnapshot.byteLength, request.offset + request.maxBytes);
+    const chunk = m13DebuggerSnapshot.slice(request.offset, nextOffset);
+    const digest = await workerSnapshotSha256(chunk);
+    if (digest === null) { response(id, op, CADR_STATUS_NOT_READY); return; }
+    m13DebuggerSnapshotOffset = nextOffset;
+    const snapshot = chunk.buffer;
+    response(id, op, CADR_STATUS_OK, { snapshotId: m13DebuggerSnapshotId,
+      offset: request.offset, nextOffset, done: nextOffset === m13DebuggerSnapshot.byteLength,
+      chunkSha256: [...digest].map(byte => byte.toString(16).padStart(2, "0")).join(""),
+      snapshot }, [snapshot]); return;
+  }
+  if (protocolVersion === CADR_M13_PRIVATE_PROTOCOL_VERSION && op === "m13-debug-snapshot-release") {
+    if (Object.keys(request).some(key => !["version", "id", "op", "snapshotId"].includes(key)) ||
+        typeof request.snapshotId !== "bigint" || request.snapshotId !== m13DebuggerSnapshotId ||
+        m13DebuggerSnapshot === null) { response(id, op, CADR_STATUS_NOT_READY); return; }
+    m13DebuggerSnapshot.fill(0); m13DebuggerSnapshot = null;
+    response(id, op, CADR_STATUS_OK, { released: true }); return;
+  }
   if (protocolVersion === CADR_M13_PRIVATE_PROTOCOL_VERSION &&
       ["m13-audio-open", "m13-audio-resume", "m13-audio-pause", "m13-audio-ack",
         "m13-audio-device-lost"].includes(op)) {

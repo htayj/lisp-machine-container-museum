@@ -15,6 +15,21 @@ import {
   CADR_M13_STATUS,
   CadrM13Shell,
 } from "./cadr-m13-shell.mjs";
+import {
+  CadrM12ProductionDebugger, cadrM12ProductionDebuggerReceipt,
+} from "./cadr-m12-production-debugger.mjs";
+import { mountCadrM12DebuggerPanel } from "./cadr-m12-debugger-panel.mjs";
+
+/* Additive M12-P2 composition is exported from the production entrypoint but
+ * does not widen P1's frozen receipt or request-schema inventory. */
+export {
+  CADR_M12_PRODUCTION_DEBUGGER_PROFILE,
+  CADR_M12_PRODUCTION_DEBUGGER_RECEIPT_SCHEMA,
+  CADR_M12_PRODUCTION_DEBUGGER_STATES,
+  CadrM12ProductionDebugger,
+  cadrM12ProductionDebuggerReceipt,
+  validateCadrM12ProductionDebuggerReceipt,
+} from "./cadr-m12-production-debugger.mjs";
 
 export const CADR_M13_PRODUCTION_P1_RECEIPT_SCHEMA =
   "cadr-m13-production-p1-receipt-v1";
@@ -229,6 +244,166 @@ function safeSynchronous(handle, names) {
   }
 }
 
+/* The handoff object is a module-private, linear capability.  It is not a
+ * serializable receipt and no public constructor argument can manufacture it.
+ * P1 creates it only after its exact FIFO reaches a quiescent PAUSED head. */
+const P2_HANDOFFS = new WeakMap();
+const P2_HANDOFF_BRAND = new WeakSet();
+
+function debuggerFields(op, fields) {
+  const schemas = {
+    "machine-pause": [], "debug-inspect-read": ["arrayKind", "index"],
+    "debug-breakpoint-set": ["slot", "breakpoint"], "debug-breakpoint-clear": ["slot"],
+    "debug-resume-one-boundary": [], "debug-trace-filter": ["filter"],
+    "debug-micro-step": [], "debug-macro-step": [], "debug-stop-record": [],
+  };
+  const allowed = schemas[op];
+  if (allowed === undefined) throw new TypeError("P2 debugger operation is not in the exact handoff schema");
+  const record = exactRecord(fields, `${op} P2 fields`, [], allowed);
+  const output = Object.create(null);
+  for (const [key, value] of Object.entries(record)) output[key] = copyValue(value, `${op}.${key}`);
+  return Object.freeze(output);
+}
+
+function assertReviewAuthority(authority) {
+  if (authority === null || typeof authority !== "object" ||
+      typeof authority.acquire !== "function" || typeof authority.revoke !== "function") {
+    throw new TypeError("P2 needs a restricted M10 review authority");
+  }
+  return authority;
+}
+
+/* This is deliberately a small host-side state machine rather than a
+ * best-effort finally block.  M10's branded authority may be in
+ * RECOVERY_REQUIRED after a post-pin acquisition failure whose rollback also
+ * failed.  In that state revoke() must reject: only the same authority's next
+ * acquire() is permitted to compensate the opaque pin.  The recovery lease is
+ * retained privately until release succeeds, so every failed terminal action
+ * remains observable and retryable without exposing an M10 handle or pin ID. */
+export const CADR_M12_TERMINAL_CLEANUP_STATES = Object.freeze([
+  "IDLE", "INVALIDATING", "INVALIDATION_RETRY_REQUIRED",
+  "WORKER_TERMINATION_PENDING", "EXTERNAL_RECOVERY_REQUIRED",
+  "M10_RELEASE_RETRY_REQUIRED", "AUTHORITY_REVOKING",
+  "AUTHORITY_RECOVERING_ACQUIRE", "AUTHORITY_RECOVERING_RELEASE",
+  "AUTHORITY_RECOVERY_RETRY_REQUIRED", "AUTHORITY_RELEASE_RETRY_REQUIRED",
+  "AUTHORITY_REVOCATION_RETRY_REQUIRED", "REVOKED",
+]);
+
+class M12TerminalReviewAuthorityCleanup {
+  #authority; #phase = "IDLE"; #reason = null; #attempts = 0; #failure = null;
+  #lease = null; #recoveryLeaseReleased = false; #flight = null;
+
+  constructor(authority) { this.#authority = authority; }
+
+  get state() { return Object.freeze({ phase: this.#phase, reason: this.#reason,
+    attempts: this.#attempts, retryable: this.#phase.endsWith("RETRY_REQUIRED"),
+    failure: this.#failure }); }
+
+  run(reason) {
+    if (typeof reason !== "string" || reason.length === 0 || reason.length > 160) {
+      return Promise.reject(new TypeError("P2 terminal cleanup reason is invalid"));
+    }
+    if (this.#phase === "REVOKED") return Promise.resolve(this.state);
+    if (this.#flight !== null) return this.#flight;
+    this.#reason = reason; this.#attempts += 1; this.#failure = null;
+    const run = this.#run(reason);
+    this.#flight = run;
+    void run.then(() => {
+      if (this.#flight === run) this.#flight = null;
+    }, error => {
+      this.#recordFailure(error);
+      if (this.#flight === run) this.#flight = null;
+      /* The P1 observer records this rejected attempt in terminalCleanup;
+       * callers that deliberately retry receive the original rejection. */
+      return error;
+    });
+    return run;
+  }
+
+  async #run(reason) {
+    if (this.#lease !== null || this.#phase === "AUTHORITY_RELEASE_RETRY_REQUIRED") {
+      return this.#releaseThenRevoke(reason);
+    }
+    if (this.#phase === "AUTHORITY_REVOCATION_RETRY_REQUIRED") return this.#revoke(reason);
+
+    let directFailure;
+    try { return this.#revoke(reason); }
+    catch (error) { directFailure = error; }
+
+    try {
+      this.#phase = "AUTHORITY_RECOVERING_ACQUIRE";
+      const lease = await this.#authority.acquire();
+      if (lease === null || typeof lease !== "object" || typeof lease.release !== "function") {
+        throw new ProductionCompositionError("P2 M10 recovery acquire returned an invalid lease");
+      }
+      this.#lease = lease;
+      return await this.#releaseThenRevoke(reason);
+    } catch (error) {
+      if (error === directFailure) throw error;
+      throw new AggregateError([directFailure, error],
+        "P2 M10 terminal revocation requires explicit recovery retry");
+    }
+  }
+
+  #revoke(reason) {
+    this.#phase = "AUTHORITY_REVOKING";
+    const receipt = this.#authority.revoke(reason);
+    if (receipt !== null && typeof receipt === "object" && typeof receipt.then === "function") {
+      throw new ProductionCompositionError("P2 M10 authority revoke must return a synchronous receipt");
+    }
+    if (receipt?.revoked !== true) {
+      throw new ProductionCompositionError("P2 M10 authority revocation failed");
+    }
+    this.#phase = "REVOKED"; this.#failure = null;
+    return this.state;
+  }
+
+  async #releaseThenRevoke(reason) {
+    const lease = this.#lease;
+    if (lease === null) throw new ProductionCompositionError("P2 M10 recovery lease was lost");
+    this.#phase = "AUTHORITY_RECOVERING_RELEASE";
+    const receipt = await lease.release();
+    if (receipt?.released !== true) {
+      throw new ProductionCompositionError("P2 M10 recovery lease release failed");
+    }
+    this.#lease = null; this.#recoveryLeaseReleased = true;
+    return this.#revoke(reason);
+  }
+
+  #recordFailure(error) {
+    if (this.#lease !== null) this.#phase = "AUTHORITY_RELEASE_RETRY_REQUIRED";
+    else if (this.#recoveryLeaseReleased) this.#phase = "AUTHORITY_REVOCATION_RETRY_REQUIRED";
+    else this.#phase = "AUTHORITY_RECOVERY_RETRY_REQUIRED";
+    this.#failure = error;
+  }
+}
+
+function validateP2Dependencies(value) {
+  const deps = exactRecord(value, "P2 debugger dependencies", ["receipt", "audio"],
+    ["exportBundle", "digest"]);
+  const receipt = exactRecord(deps.receipt, "P2 debugger receipt", ["schema", "profile", "disposition"]);
+  if (receipt.schema !== CADR_M13_PRODUCTION_P2_DEBUGGER_SCHEMA ||
+      receipt.profile !== cadrM12ProductionDebuggerReceipt().profile || receipt.disposition !== "source-only") {
+    throw new TypeError("P2 debugger receipt mismatch");
+  }
+  const audio = exactRecord(deps.audio, "P2 audio dependency", ["joinTail", "pause", "reducePause"]);
+  if (![audio.joinTail, audio.pause, audio.reducePause].every(value => typeof value === "function")) {
+    throw new TypeError("P2 audio dependency is incomplete");
+  }
+  if (Object.hasOwn(deps, "exportBundle") && deps.exportBundle !== null && typeof deps.exportBundle !== "function") {
+    throw new TypeError("P2 exporter is invalid");
+  }
+  if (Object.hasOwn(deps, "digest") && deps.digest !== null && typeof deps.digest !== "function") {
+    throw new TypeError("P2 digest is invalid");
+  }
+  /* Capture only the three named audio callbacks.  This avoids passing a
+   * host-wide audio handle into P2 merely because it supplied these methods. */
+  return Object.freeze({ receipt: Object.freeze({ ...receipt }),
+    audio: Object.freeze({ joinTail: audio.joinTail, pause: audio.pause, reducePause: audio.reducePause }),
+    exportBundle: Object.hasOwn(deps, "exportBundle") ? deps.exportBundle : null,
+    digest: Object.hasOwn(deps, "digest") ? deps.digest : null });
+}
+
 /**
  * One production composition may exist per page authority.  A caller supplies
  * the dedicated-worker factory and the already configured M10/controller shell
@@ -239,10 +414,19 @@ export class CadrM13ProductionApp {
   #workerFactory; #shellFactory; #shellOptions; #m10Controller; #audioHandle; #debuggerHandle; #storageHandle;
   #worker = null; #shell = null; #receipt = null; #inputs = null; #state = frozenState("UNCONFIGURED");
   #nextId = 1; #tail = Promise.resolve(); #resumePromise = null; #stopped = false; #detachIngress; #workerTerminated = false;
+  #handoffRequested = false; #requestOwner = "P1"; #debuggerApp = null; #m10ReviewAuthorityFactory;
+  /* M10 intentionally permits only one branded authority claim per
+   * controller.  If P2 construction fails before ownership transfers, retain
+   * that still-active, lease-free authority for the next handoff attempt;
+   * revoking it would make a harmless constructor failure permanently consume
+   * the controller's only review route. */
+  #pendingM10ReviewAuthority = null;
+  #pendingTerminalAuthorityCleanup = null; #terminalCleanupFlight = null;
+  #workerTerminationPhase = "IDLE"; #workerTerminationFailure = null;
 
   constructor({ workerFactory, shellFactory = options => new CadrM13Shell(options), shellOptions = {},
     m10Controller, audioHandle = null, debuggerHandle = null, storageHandle = null,
-    detachIngress = null } = {}) {
+    detachIngress = null, m10ReviewAuthorityFactory = null } = {}) {
     if (typeof workerFactory !== "function" || typeof shellFactory !== "function") {
       throw new TypeError("P1 needs a worker and shell factory");
     }
@@ -255,15 +439,45 @@ export class CadrM13ProductionApp {
       throw new TypeError("P1 shell options must not replace worker, M10, ID, ownership, or loss-report authority");
     }
     if (detachIngress !== null && typeof detachIngress !== "function") throw new TypeError("P1 ingress fence must be a function");
+    if (m10ReviewAuthorityFactory !== null && typeof m10ReviewAuthorityFactory !== "function") {
+      throw new TypeError("P1 M10 review authority factory must be a function");
+    }
     this.#workerFactory = workerFactory; this.#shellFactory = shellFactory; this.#shellOptions = Object.freeze({ ...shellOptions });
     this.#m10Controller = m10Controller; this.#audioHandle = audioHandle; this.#debuggerHandle = debuggerHandle;
     this.#storageHandle = storageHandle; this.#detachIngress = detachIngress;
+    this.#m10ReviewAuthorityFactory = m10ReviewAuthorityFactory;
   }
 
   get state() { return this.#state; }
   get requestIdHighWater() { return this.#nextId - 1; }
   get workerCount() { return this.#worker === null ? 0 : 1; }
   get shellCount() { return this.#shell === null ? 0 : 1; }
+  get terminalCleanup() {
+    if (["WORKER_TERMINATION_PENDING", "EXTERNAL_RECOVERY_REQUIRED"].includes(this.#workerTerminationPhase)) {
+      return Object.freeze({ phase: this.#workerTerminationPhase, reason: "P1-owned-worker-terminal",
+        attempts: 1, retryable: false, failure: this.#workerTerminationFailure });
+    }
+    if (this.#debuggerApp !== null) return this.#debuggerApp.terminalCleanup;
+    if (this.#pendingTerminalAuthorityCleanup !== null) return this.#pendingTerminalAuthorityCleanup.state;
+    return Object.freeze({ phase: "IDLE", reason: null, attempts: 0, retryable: false, failure: null });
+  }
+
+  retryTerminalCleanup() {
+    if (!this.#stopped) return Promise.reject(new ProductionCompositionError(
+      "P1 terminal cleanup retry requires terminal loss"));
+    if (this.#workerTerminationPhase === "EXTERNAL_RECOVERY_REQUIRED") {
+      return Promise.resolve(this.terminalCleanup);
+    }
+    if (this.#debuggerApp !== null) {
+      return this.#observeTerminalCleanup(this.#debuggerApp.retryTerminalCleanup("P1-terminal-retry"));
+    }
+    if (this.#pendingTerminalAuthorityCleanup !== null) {
+      return this.#observeTerminalCleanup(this.#pendingTerminalAuthorityCleanup.run("P1-terminal-retry"), {
+        clearPendingOnSuccess: true,
+      });
+    }
+    return Promise.resolve(this.terminalCleanup);
+  }
 
   acceptReceipt(receipt) {
     if (this.#state.phase !== "UNCONFIGURED") return this.#fail("receipt-replay");
@@ -281,6 +495,7 @@ export class CadrM13ProductionApp {
   }
 
   async bootstrapToPaused() {
+    this.#assertP1RequestOwner("bootstrap");
     if (this.#state.phase !== "INPUTS_SELECTED") return this.#fail("bootstrap-without-inputs");
     this.#transition({ type: "BOOTSTRAP_STARTED" });
     const generation = this.#state.generation;
@@ -313,6 +528,7 @@ export class CadrM13ProductionApp {
   }
 
   resume() {
+    this.#assertP1RequestOwner("resume");
     if (this.#resumePromise !== null) return this.#resumePromise;
     if (this.#state.phase !== "PAUSED") return Promise.resolve(this.#fail("resume-outside-paused"));
     const generation = this.#state.generation;
@@ -337,6 +553,7 @@ export class CadrM13ProductionApp {
   }
 
   async pause(reason = "pause") {
+    this.#assertP1RequestOwner("pause");
     if (!["RUNNING", "PAUSED"].includes(this.#state.phase)) return this.#fail("pause-outside-running");
     const generation = this.#fenceInput(reason);
     return this.#enqueue(generation, async () => {
@@ -356,6 +573,7 @@ export class CadrM13ProductionApp {
   releaseInput() { return this.pause("release-input"); }
 
   async submitInput(op, fields = {}) {
+    this.#assertP1RequestOwner("input");
     if (!INPUT_OPERATIONS.has(op) || this.#state.phase !== "RUNNING" || !this.#state.inputEnabled) {
       throw new ProductionCompositionError("input is fenced");
     }
@@ -377,6 +595,64 @@ export class CadrM13ProductionApp {
     return this.#state;
   }
 
+  /* Admission is intentionally synchronous.  As soon as this method returns a
+   * promise, subsequent P1 request-producing entries are fenced, while work
+   * already linked into #tail is allowed to finish before the head checks run. */
+  handoffDebugger(deps) {
+    const checked = validateP2Dependencies(deps);
+    if (this.#handoffRequested || this.#requestOwner !== "P1") {
+      return Promise.reject(new ProductionCompositionError("P1 debugger handoff is unavailable"));
+    }
+    this.#handoffRequested = true;
+    const previous = this.#tail;
+    const run = previous.then(async () => {
+      let authority = null;
+      try {
+        if (this.#stopped || this.#state.phase !== "PAUSED" || this.#state.inputEnabled ||
+            this.#resumePromise !== null || !cleanM10(this.#m10Controller) ||
+            this.#shell === null || typeof this.#shell.submit !== "function" ||
+            typeof this.#shell.openDebuggerHostTransaction !== "function" ||
+            this.#shell.state === "FAILED") {
+          throw new ProductionCompositionError("P1 debugger handoff requires a neutral paused clean live head");
+        }
+        if (await this.#shell.awaitInputNeutralization() !== true || this.#stopped ||
+            this.#state.phase !== "PAUSED" || this.#state.inputEnabled || !cleanM10(this.#m10Controller)) {
+          throw new ProductionCompositionError("P1 debugger handoff lost its neutral paused head");
+        }
+        authority = this.#claimReviewAuthority();
+        const token = Object.freeze({}); const handoff = Object.freeze({});
+        const submitDebugger = (op, fields = {}) => this.#submitHandoffDebugger(token, op, fields);
+        const openSnapshotTransaction = () => {
+          if (this.#requestOwner !== token || this.#stopped) throw new ProductionCompositionError("P2 snapshot authority is fenced");
+          return this.#shell.openDebuggerHostTransaction();
+        };
+        P2_HANDOFFS.set(handoff, Object.freeze({ token, submitDebugger, openSnapshotTransaction,
+          m10Authority: authority, deps: checked }));
+        P2_HANDOFF_BRAND.add(handoff);
+        /* Construction is intentionally before the owner flip.  Should an
+         * injected constructor/dependency reject, the still-active authority
+         * is revoked and P1 retains its original request stream and ID. */
+        let debuggerApp;
+        try { debuggerApp = new CadrM13ProductionP2DebuggerApp(handoff); }
+        catch (error) {
+          /* The authority has no lease and remains P1-private.  It is reused
+           * by a retry rather than revoked, because M10 has a one-claim
+           * authority boundary.  #closeAuthorities revokes it if P1 instead
+           * terminates before that retry. */
+          throw error;
+        }
+        this.#pendingM10ReviewAuthority = null;
+        this.#requestOwner = token; this.#debuggerApp = debuggerApp;
+        return debuggerApp;
+      } catch (error) {
+        this.#handoffRequested = false;
+        throw error;
+      }
+    });
+    this.#tail = run.catch(() => {});
+    return run;
+  }
+
   #transition(event) {
     const prior = this.#state;
     this.#state = reduceCadrM13Production(prior, event);
@@ -385,12 +661,26 @@ export class CadrM13ProductionApp {
     }
     return this.#state;
   }
+  #assertP1RequestOwner(label) {
+    if (this.#handoffRequested || this.#requestOwner !== "P1") {
+      throw new ProductionCompositionError(`P1 ${label} authority is fenced by debugger handoff`);
+    }
+  }
+  #claimReviewAuthority() {
+    if (this.#pendingM10ReviewAuthority !== null) return this.#pendingM10ReviewAuthority;
+    const authority = this.#m10ReviewAuthorityFactory !== null ?
+      this.#m10ReviewAuthorityFactory() : this.#m10Controller?.claimSnapshotReviewAuthority?.();
+    this.#pendingM10ReviewAuthority = assertReviewAuthority(authority);
+    return this.#pendingM10ReviewAuthority;
+  }
   #current(generation) { return !this.#stopped && !FENCED_STATES.has(this.#state.phase) && this.#state.generation === generation; }
 
   #createShellOnce() {
     if (this.#worker !== null || this.#shell !== null) throw new ProductionCompositionError("worker/shell replacement is forbidden");
     const worker = this.#workerFactory(Object.freeze({ profile: P1_PROFILE }));
-    if (worker === null || typeof worker !== "object") throw new ProductionCompositionError("worker factory did not return one worker");
+    if (worker === null || typeof worker !== "object" || typeof worker.terminate !== "function") {
+      throw new ProductionCompositionError("worker factory did not return one terminable worker");
+    }
     this.#worker = worker;
     if (this.#stopped) { this.#disposeOwnedWorker(); throw cancelled("worker acquisition was stopped"); }
     const shell = this.#shellFactory(Object.freeze({ ...this.#shellOptions,
@@ -400,16 +690,49 @@ export class CadrM13ProductionApp {
     if (this.#stopped) { this.#disposeOwnedWorker(); throw cancelled("shell acquisition was stopped"); }
     if (shell === null || typeof shell.submit !== "function" || typeof shell.releaseInput !== "function" ||
         typeof shell.awaitInputNeutralization !== "function" || typeof shell.restoreInputIngress !== "function" ||
-        typeof shell.dispose !== "function") {
+        typeof shell.dispose !== "function" || typeof shell.terminateExternalWorker !== "function") {
+      try { shell?.dispose?.({ terminateWorker: false }); } catch { /* incompatible shell is untrusted */ }
+      this.#shell = null;
       throw new ProductionCompositionError("shell factory did not return CadrM13Shell-compatible boundary");
     }
   }
 
   #disposeOwnedWorker() {
-    try { this.#shell?.dispose?.({ terminateWorker: false }); } catch { /* direct worker disposer remains authoritative */ }
+    if (this.#workerTerminated) {
+      try { this.#shell?.dispose?.({ terminateWorker: false }); } catch { /* worker is already terminal */ }
+      return;
+    }
     if (!this.#workerTerminated && this.#worker !== null) {
+      this.#workerTerminationPhase = "WORKER_TERMINATION_PENDING";
+      if (this.#shell === null) {
+        try { this.#worker.terminate(); }
+        catch (error) {
+          this.#workerTerminationPhase = "EXTERNAL_RECOVERY_REQUIRED";
+          this.#workerTerminationFailure = error;
+          return;
+        }
+        this.#workerTerminated = true; this.#workerTerminationPhase = "CONFIRMED";
+        this.#workerTerminationFailure = null; return;
+      }
+      let confirmation;
+      try { confirmation = this.#shell.terminateExternalWorker("P1-owned-worker-terminal"); }
+      catch (error) {
+        this.#workerTerminationPhase = "EXTERNAL_RECOVERY_REQUIRED";
+        this.#workerTerminationFailure = error;
+        return;
+      }
+      if (confirmation?.terminated !== true || confirmation.disposition === undefined) {
+        this.#workerTerminationPhase = "EXTERNAL_RECOVERY_REQUIRED";
+        this.#workerTerminationFailure = new ProductionCompositionError(
+          "P1 shell could not prove owned worker termination");
+        return;
+      }
       this.#workerTerminated = true;
-      try { this.#worker.terminate?.(); } catch { /* terminal cleanup remains best effort */ }
+      this.#workerTerminationPhase = "CONFIRMED"; this.#workerTerminationFailure = null;
+      void Promise.resolve(confirmation.disposition).then(() => {
+        /* P2's disposition callback owns the resulting state.  If durable
+         * release failed, only explicit retryTerminalCleanup() may retry it. */
+      }, () => { /* P2 retains the exact retryable disposition/M10 failure. */ });
     }
   }
 
@@ -432,10 +755,40 @@ export class CadrM13ProductionApp {
     if (this.#stopped) return;
     this.#stopped = true;
     this.#fenceInput(reason);
+    /* A terminal stop cannot await a hostile worker/shell teardown, but it may
+     * not drop the one branded M10 recovery route.  Start the P2 state machine
+     * and retain its named result for an explicit retry after the synchronous
+     * ingress/handle/worker fence below has completed. */
+    if (this.#debuggerApp !== null) {
+      this.#observeTerminalCleanup(this.#debuggerApp.dispose(`P1-${reason}`));
+    }
+    if (this.#debuggerApp === null && this.#pendingM10ReviewAuthority !== null) {
+      this.#pendingTerminalAuthorityCleanup ??= new M12TerminalReviewAuthorityCleanup(
+        this.#pendingM10ReviewAuthority);
+      this.#observeTerminalCleanup(this.#pendingTerminalAuthorityCleanup.run(`P1-${reason}`), {
+        clearPendingOnSuccess: true,
+      });
+    }
     safeSynchronous(this.#audioHandle, ["pause", "fence", "closeForWorkerLoss"]);
     safeSynchronous(this.#debuggerHandle, ["pause", "fence", "dispose"]);
     safeSynchronous(this.#storageHandle, ["pause", "fence", "close"]);
     this.#disposeOwnedWorker();
+  }
+
+  #observeTerminalCleanup(flight, { clearPendingOnSuccess = false } = {}) {
+    this.#terminalCleanupFlight = flight;
+    void flight.then(() => {
+      if (this.#terminalCleanupFlight !== flight) return;
+      this.#terminalCleanupFlight = null;
+      if (clearPendingOnSuccess) this.#pendingM10ReviewAuthority = null;
+    }, error => {
+      /* This is not a best-effort catch: both P2 and the retained authority
+       * record a retryable terminalCleanup state before this observer consumes
+       * the rejection, and retryTerminalCleanup() returns the next real flight. */
+      if (this.#terminalCleanupFlight === flight) this.#terminalCleanupFlight = null;
+      return error;
+    });
+    return flight;
   }
 
   #fenceInput(reason) {
@@ -473,6 +826,28 @@ export class CadrM13ProductionApp {
     }
     return reply;
   }
+  #submitHandoffDebugger(token, op, fields) {
+    const safeFields = debuggerFields(op, fields);
+    if (this.#requestOwner !== token || this.#stopped || this.#shell === null) {
+      return Promise.reject(new ProductionCompositionError("P2 debugger request authority is fenced"));
+    }
+    const generation = this.#state.generation;
+    const previous = this.#tail;
+    const run = previous.then(async () => {
+      if (this.#requestOwner !== token || this.#stopped || !this.#current(generation) ||
+          this.#shell === null || this.#nextId > U32_MAX) {
+        throw new ProductionCompositionError("P2 debugger request authority is fenced");
+      }
+      const id = this.#nextId++;
+      const reply = await this.#shell.submit(Object.freeze({ ...safeFields,
+        type: "cadr-request", version: CADR_M13_PROTOCOL_VERSION,
+        sessionId: this.#shell.sessionId, id, op }));
+      if (!this.#current(generation)) throw cancelled("stale P2 debugger reply");
+      return reply;
+    });
+    this.#tail = run.catch(() => {});
+    return run;
+  }
 
   #failFrom(error, fallback) {
     if (error instanceof ProductionCompositionError && error.kind === "CANCELLED") return this.#state;
@@ -486,5 +861,143 @@ export class CadrM13ProductionApp {
     this.#state = reduceCadrM13Production(this.#state, { type: "FAIL", reason, kind });
     this.#closeAuthorities(`failure-${reason}`);
     return this.#state;
+  }
+}
+
+/* Additive P2 composition for an already-paused P1.  Its constructor accepts
+ * only the module-private linear handoff minted by P1; it never receives the
+ * shell, controller, worker, or an independently allocatable request ID. */
+export const CADR_M13_PRODUCTION_P2_DEBUGGER_SCHEMA =
+  "cadr-m13-production-p2-debugger-v1";
+export const CADR_M13_PRODUCTION_P2_DEBUGGER_OPERATIONS = Object.freeze([
+  "debug-inspect-read", "debug-breakpoint-set", "debug-breakpoint-clear",
+  "debug-resume-one-boundary", "debug-trace-filter", "debug-micro-step",
+  "debug-macro-step", "debug-stop-record",
+]);
+
+export class CadrM13ProductionP2DebuggerApp {
+  #submitDebugger; #debugger; #tail = Promise.resolve(); #terminal = false;
+  #terminalAuthorityCleanup; #terminalCleanupPhase = "IDLE"; #terminalCleanupReason = null;
+  #terminalCleanupFailure = null; #terminalCleanupAttempts = 0; #terminalCleanupFlight = null;
+  constructor(handoff) {
+    const record = P2_HANDOFFS.get(handoff);
+    if (!P2_HANDOFF_BRAND.has(handoff) || record === undefined) {
+      throw new TypeError("P2 debugger must be created by P1 handoffDebugger()");
+    }
+    P2_HANDOFF_BRAND.delete(handoff); P2_HANDOFFS.delete(handoff);
+    this.#submitDebugger = record.submitDebugger;
+    /* Do not read acquire/revoke here.  A constructor-only failure must leave
+     * P1's single claimed authority reusable for its next handoff attempt. */
+    this.#terminalAuthorityCleanup = new M12TerminalReviewAuthorityCleanup(record.m10Authority);
+    this.#debugger = new CadrM12ProductionDebugger({
+      request: (op, fields) => this.#submit(op, fields),
+      openSnapshotTransaction: record.openSnapshotTransaction,
+      receipt: cadrM12ProductionDebuggerReceipt(), audio: record.deps.audio,
+      m10Authority: record.m10Authority, exportBundle: record.deps.exportBundle,
+      digest: record.deps.digest,
+    });
+  }
+  get state() { return this.#debugger.state; }
+  get review() { return this.#debugger.review; }
+  get zeroizationReceipt() { return this.#debugger.zeroizationReceipt; }
+  get terminalCleanup() { return Object.freeze({ phase: this.#terminalCleanupPhase,
+    reason: this.#terminalCleanupReason, attempts: this.#terminalCleanupAttempts,
+    retryable: this.#terminalCleanupPhase.endsWith("RETRY_REQUIRED") &&
+      this.#terminalCleanupPhase !== "EXTERNAL_RECOVERY_REQUIRED",
+    failure: this.#terminalCleanupFailure,
+    authority: this.#terminalAuthorityCleanup.state }); }
+  request(op, fields = {}) { return this.#debugger.request(op, fields); }
+  prepareReview() { return this.#debugger.prepareReview(); }
+  beginReviewExport() { return this.#debugger.beginReviewExport(); }
+  completeReviewExport(token) { return this.#debugger.completeReviewExport(token); }
+  discardReview() { return this.#debugger.discardReview(); }
+  mountPanel({ documentObject = globalThis.document, root } = {}) {
+    return mountCadrM12DebuggerPanel({ documentObject, root,
+      request: (op, fields) => this.request(op, fields),
+      prepareReview: () => this.prepareReview(),
+      beginReviewExport: () => this.beginReviewExport(),
+      completeReviewExport: token => this.completeReviewExport(token),
+      discardReview: () => this.discardReview(),
+      getProvenance: () => this.review?.provenance,
+    });
+  }
+  invalidate(reason = "production-composition-invalidated") {
+    return this.dispose(reason);
+  }
+  dispose(reason = "production-composition-disposed") {
+    this.#terminal = true;
+    return this.#runTerminalCleanup(reason);
+  }
+  retryTerminalCleanup(reason = "production-composition-terminal-retry") {
+    if (!this.#terminal) return Promise.reject(new ProductionCompositionError(
+      "P2 terminal cleanup retry requires terminal invalidation"));
+    return this.#runTerminalCleanup(reason);
+  }
+  #runTerminalCleanup(reason) {
+    if (typeof reason !== "string" || reason.length === 0 || reason.length > 160) {
+      return Promise.reject(new TypeError("P2 terminal cleanup reason is invalid"));
+    }
+    if (this.#terminalCleanupPhase === "REVOKED") return Promise.resolve(this.terminalCleanup);
+    if (this.#terminalCleanupPhase === "EXTERNAL_RECOVERY_REQUIRED" &&
+        this.#debugger.cleanupDisposition === "UNKNOWN") {
+      return Promise.resolve(this.terminalCleanup);
+    }
+    if (this.#terminalCleanupFlight !== null) return this.#terminalCleanupFlight;
+    this.#terminalCleanupPhase = "INVALIDATING"; this.#terminalCleanupReason = reason;
+    this.#terminalCleanupFailure = null; this.#terminalCleanupAttempts += 1;
+    const run = this.#tail.then(async () => {
+      try {
+        const state = await this.#debugger.invalidate(reason);
+        if (state === "RELEASE_REQUIRED") {
+          this.#terminalCleanupPhase = this.#debugger.cleanupDisposition === "UNKNOWN" ?
+            "EXTERNAL_RECOVERY_REQUIRED" : "M10_RELEASE_RETRY_REQUIRED";
+          throw new ProductionCompositionError("P2 terminal cleanup retains an M10 lease for retry");
+        }
+        const authority = await this.#terminalAuthorityCleanup.run(reason);
+        if (authority.phase !== "REVOKED") {
+          throw new ProductionCompositionError("P2 terminal M10 authority did not reach REVOKED");
+        }
+        this.#terminalCleanupPhase = "REVOKED"; this.#terminalCleanupFailure = null;
+        return this.terminalCleanup;
+      } catch (error) {
+        if (this.#debugger.state === "RELEASE_REQUIRED") {
+          this.#terminalCleanupPhase = this.#debugger.cleanupDisposition === "UNKNOWN" ?
+            "EXTERNAL_RECOVERY_REQUIRED" : "M10_RELEASE_RETRY_REQUIRED";
+        } else if (this.#terminalAuthorityCleanup.state.phase !== "IDLE") {
+          this.#terminalCleanupPhase = this.#terminalAuthorityCleanup.state.phase;
+        } else {
+          this.#terminalCleanupPhase = "INVALIDATION_RETRY_REQUIRED";
+        }
+        this.#terminalCleanupFailure = error;
+        throw error;
+      }
+    });
+    this.#tail = run.catch(() => {});
+    this.#terminalCleanupFlight = run;
+    void run.then(() => {
+      if (this.#terminalCleanupFlight === run) this.#terminalCleanupFlight = null;
+    }, error => {
+      /* P1 observes this same flight and exposes retryTerminalCleanup(); this
+       * local consumer prevents an unhandled terminal rejection without hiding
+       * its named failure state. */
+      if (this.#terminalCleanupFlight === run) this.#terminalCleanupFlight = null;
+      return error;
+    });
+    return run;
+  }
+  #submit(op, fields) {
+    const run = this.#tail.then(async () => {
+      if (this.#terminal || !CADR_M13_PRODUCTION_P2_DEBUGGER_OPERATIONS.includes(op) && op !== "machine-pause") {
+        throw new ProductionCompositionError("P2 debugger operation is fenced");
+      }
+      const reply = await this.#submitDebugger(op, fields);
+      if (reply?.status === CADR_M13_STATUS.PROTOCOL_VIOLATION || reply?.status === CADR_M13_STATUS.WORKER_LOST || reply?.terminal === true) {
+        this.#terminal = true;
+      }
+      /* 19/20 are direct debugger outcomes, not application failure. */
+      if (![CADR_M13_STATUS.OK, 19, 20].includes(reply?.status)) throw new ProductionCompositionError(`${op} was rejected`);
+      return reply;
+    });
+    this.#tail = run.catch(() => {}); return run;
   }
 }
