@@ -8,8 +8,11 @@ function harness() {
   const consumer = { port, disconnected: false, async start() {}, disconnect() { this.disconnected = true; } };
   const core = { async open() { return { status: 0, generation: 1n, consumerEpoch: 2n,
     queuePackets: 1, queuedFrames: 1 }; }, async ack(value) { calls.push(["ack", value]); return { status: 0,
-    queuePackets: 0, queuedFrames: 0 }; }, async pause(value) { calls.push(["pause", value]); return { status: 0 }; },
-  async deviceLost(value) { calls.push(["loss", value]); return { status: 0 }; } };
+    queuePackets: 0, queuedFrames: 0 }; }, async pause(value) { calls.push(["pause", value]); return { status: 0,
+      queuePackets: 0, queuedFrames: 0 }; },
+  async deviceLost(value) { calls.push(["loss", value]); return { status: 0,
+    queuePackets: 0, queuedFrames: 0 }; },
+  terminalRelease(value) { calls.push(["terminal", value]); return true; } };
   const boundary = new CadrM13AudioBoundary({ core, audioFactory: { prepare: () => consumer },
     now: () => now, queueMicrotaskFn: callback => queueMicrotask(callback),
     setTimeoutFn(callback, milliseconds) { const timer = { callback, milliseconds, cleared: false }; timers.push(timer); return timer; },

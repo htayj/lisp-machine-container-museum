@@ -14,4 +14,20 @@ acknowledgements = queue.render(new Float32Array(1));
 assert.deepEqual(acknowledgements[0], { type: "cadr-audio-ack", version: 1,
   generation: 1n, consumerEpoch: 2n, sequence: 0n, frameOffset: 0 });
 queue.close(); assert.equal(queue.queuedRecords, 0); assert.equal(queue.enqueue(message(9)), false);
+
+let Processor = null; const posted = [];
+globalThis.AudioWorkletProcessor = class { constructor() { this.port = {
+  onmessage: null, postMessage(value) { posted.push(value); } }; } };
+globalThis.registerProcessor = (_name, implementation) => { Processor = implementation; };
+await import(`../cadr-web/browser/cadr-m13-audio-worklet.mjs?processor-test=${Date.now()}`);
+const processor = new Processor();
+processor.port.onmessage({ data: message(20) });
+assert.deepEqual(posted, [{ type: "cadr-audio-staged", version: 1,
+  generation: 1n, consumerEpoch: 2n, sequence: 20n, frameOffset: 0 }],
+"processor reports staging only after enqueue owns the record");
+processor.process([], [[new Float32Array(2)]]);
+assert.deepEqual(posted[1], { type: "cadr-audio-ack", version: 1,
+  generation: 1n, consumerEpoch: 2n, sequence: 20n, frameOffset: 0 },
+"render acknowledgement remains distinct from staging");
+delete globalThis.AudioWorkletProcessor; delete globalThis.registerProcessor;
 console.log("cadr M13 Worklet whole-record/backpressure/epoch tests passed");

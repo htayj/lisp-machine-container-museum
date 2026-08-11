@@ -74,6 +74,20 @@ export class CadrM13AudioReducer {
 
   close() {
     this.#closed = true;
+    this.#abortEpoch();
+  }
+
+  /* A browser candidate can fail after the private core has opened but before
+   * the port handler installs.  That failure is retryable, unlike terminal
+   * close, so release only this reducer epoch without granting any later
+   * callback authority over it. */
+  abortEpoch() {
+    if (this.#closed) return false;
+    this.#abortEpoch();
+    return true;
+  }
+
+  #abortEpoch() {
     this.#epoch = null;
     this.#records.clear();
     this.#items.length = 0;

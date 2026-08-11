@@ -97,7 +97,7 @@ M12_SYNTH_WASM_O2 := build/cadr-web-m12-synthetic-test-O2.wasm
 M13_AUDIO_WASM_O0 := build/cadr-web-m13-audio-O0.wasm
 M13_AUDIO_WASM_O2 := build/cadr-web-m13-audio-O2.wasm
 
-.PHONY: all test clean audit forbidden-symbols exported-symbols mutable-globals dependency-audit header-audit mutant-audit python-cross-parse m3-wasm m3-browser m3-differential m3-conformance m3-snapshot-cross-target m4-unit m4-browser m4-differential m4-media-compare m5-unit m6-release-validation m6-devid-wasm m6-diagnostic-receipt-unit m7-unit m7-native-source-pin m7-native-source-unit m8-m9-unit m8-m9-devid-unit m10-unit m11-unit m12-unit m13-audio-unit m13-p1-unit
+.PHONY: all test clean audit forbidden-symbols exported-symbols mutable-globals dependency-audit header-audit mutant-audit python-cross-parse m3-wasm m3-browser m3-differential m3-conformance m3-snapshot-cross-target m4-unit m4-browser m4-differential m4-media-compare m5-unit m6-release-validation m6-devid-wasm m6-diagnostic-receipt-unit m7-unit m7-native-source-pin m7-native-source-unit m8-m9-unit m8-m9-devid-unit m10-unit m11-unit m11-selected-playback m12-unit m13-audio-unit m13-p1-unit
 
 all: $(LIBRARY) $(HOST_BINARY) $(M2_HOST_BINARY) $(M3_HOST_BINARY) $(M3_SNAPSHOT_HOST_BINARY)
 
@@ -483,6 +483,7 @@ m13-audio-unit: build/test_cadr_m13_audio_transport $(M13_AUDIO_WASM_O0) $(M13_A
 	guix shell node -- node ../tests/test_cadr_m13_audio_source.mjs
 	guix shell node -- node ../tests/test_cadr_m13_audio_reducer.mjs
 	guix shell node -- node ../tests/test_cadr_m13_audio_failures.mjs
+	guix shell node -- node ../tests/test_cadr_m13_audio_boundary_terminal.mjs
 	guix shell node -- node ../tests/test_cadr_m13_audio_shell.mjs
 	guix shell node -- node ../tests/test_cadr_m13_audio_worker.mjs
 	guix shell node -- node ../tests/test_cadr_m13_accessibility_audio.mjs
@@ -503,6 +504,13 @@ m11-unit: build/test_cadr_m11_core_audio
 	./build/test_cadr_m11_core_audio
 	python3 ../tests/test_cadr_m11_fixed_table_oracle.py
 	python3 ../tests/test_cadr_native_source_witness.py
+
+# Real Chromium/AudioWorklet continuity over a forcibly rebuilt selected
+# ABI1.11 Wasm, seeded only with the independent synthetic CDRAUDS1 fixture.
+# A dirty pre-commit run must name its exact read-only base-to-tree patch with
+# CADR_M11_EVIDENCE_PATCH; a committed clean-tree run stages HEAD directly.
+m11-selected-playback:
+	python3 ../tests/test_cadr_m11_selected_playback.py
 
 # M8/M9's dedicated ABI profile maps CDRINP1 records directly to IOB state,
 # rather than smuggling host input through generic scheduler event kinds.

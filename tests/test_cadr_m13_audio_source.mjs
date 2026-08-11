@@ -32,8 +32,13 @@ assert.equal((await source.ack({ generation: 1n, consumerEpoch: 1n, sequence: 1n
 assert.equal((await source.ack(pcm)).status, 0);
 assert.deepEqual(calls.filter(value => value.op === "audio-ack").at(-1), { op: "audio-ack",
   generation: 1n, sequence: 1n, frameOffset: 0, frames: 2 }, "private source restores exact frame count");
-assert.equal((await source.pause({ consumerEpoch: 2n })).status, 0);
+assert.deepEqual(await source.pause({ consumerEpoch: 2n }),
+  { status: 0, queuePackets: 1, queuedFrames: 2 },
+  "pause returns the authoritative counts used by the public lifecycle boundary");
 assert.equal((await source.open()).consumerEpoch, 3n, "resume obtains a fresh core epoch");
+assert.deepEqual(await source.deviceLost({ consumerEpoch: 3n }),
+  { status: 0, queuePackets: 2, queuedFrames: 2 },
+  "device loss returns the same authoritative core snapshot");
 
 let sequence = 0n; const heldEvents = [];
 const held = new CadrM13AudioSource({ emit: event => heldEvents.push(event), invoke: async operation => {

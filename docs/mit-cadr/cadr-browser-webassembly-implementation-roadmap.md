@@ -3,7 +3,7 @@ type: Implementation Roadmap
 title: MIT CADR System 303 browser and WebAssembly implementation roadmap
 description: A milestone-complete plan for porting the pinned System 303 CADR emulator to a deterministic, locally persistent, browser-hosted WebAssembly machine.
 tags: [mit-cadr, lm-3, system-303, webassembly, browser, emulator, roadmap]
-timestamp: 2026-08-11T04:59:18-04:00
+timestamp: 2026-08-11T05:18:28-04:00
 ---
 
 # MIT CADR System 303 browser and WebAssembly implementation roadmap
@@ -1298,6 +1298,66 @@ ABI1.11 export and pumps at most 64 semantic packets per automatic turn, and
 synthetic shell lifecycle coverage. The real worker/empty-core seam is exercised,
 but no selected guest PCM was available in that test. It
 does not alter ABI1.10/v7 and is not runtime closure.
+
+A separate selected-Wasm Chromium campaign now adopts the independent synthetic
+multi-packet `CDRAUDS1` fixture into freshly built ABI1.11 O2 Wasm. It stages one
+512-frame selected-core packet in a suspended real AudioWorklet and requires the
+Worklet's distinct post-enqueue staging receipt before pausing with zero render
+acknowledgements. It proves the selected snapshot is unchanged, resumes under a fresh
+consumer epoch, and requires the same cursor and PCM hash to receive the sole render
+acknowledgement. A separate committed receipt resolves only after the core ack returns,
+the private source record is removed, and boundary counts update. The campaign forcibly
+builds in an exact signed-base-plus-sealed-patch stage and independently verifies its
+canonical source/tool/browser/network/cleanup report. Nonterminal activation,
+acknowledgement, pause, and ordinary loss operations use one lifecycle queue. Terminal
+close is instead immediate ownership revocation: it cancels the boundary's logical
+waits, disconnects prepared, starting, and live candidates, retires waiters, and fixes
+DEVICE_LOST without waiting for a browser start, private open, or private ack promise
+to settle. Its only core hook is synchronous, request-free `terminalRelease`: a
+worker-owner tombstone that MUST NOT invoke `open`, `ack`, `pause`, or ordinary
+`deviceLost`. It can therefore overlap an unsettled nonterminal request without
+concurrent non-reentrant-core mutation. A late open is observed only after open exits
+and is then tombstoned with its retired epoch; a late acknowledgement cannot publish
+counts or a receipt. A candidate which allocates after cancellation is disconnected
+again on either late resolve or reject. An invalid prepared candidate is disconnected
+when possible; a post-open reducer or port-handler installation failure rolls the epoch
+back and releases both candidate and core before retry. Pause/loss block reopen until
+their authoritative counts are adopted. Staged and committed receipt evidence retain
+only the most recent eight already-settled receipts of each kind; live duplicate and
+order checks remain with the posted-record map and reducer. Full receipt identity is
+exact-type and closed-key checked before it is keyed: the three identity counters are
+ranged primitive BigInts and frame offset is a safe u32 integer. The verifier selects
+Chromium externally and independently reconstructs the fixture's initial/final snapshot,
+PCM/cursor hashes, queue deltas, and delivery/staging/commit chain, with targeted mutant
+rejection. Digest admission rechecks consumer, epoch, generation, ordinal, and control
+watermark after hashing; activation failures disconnect their started candidate and
+have exact retry/terminal-close behavior. The verifier also requires exact activation
+booleans, AudioContext state/rate/disconnect records, status order, and browser-reported
+Wasm bytes/hash equal to the independently rebuilt and served artifact, with a mutant
+for each listed semantic field, replayed source fact, and consumed report wrapper; it
+does not claim exhaustive mutation of every report field. It does, separately, mutate
+every field of the terminal resolve/reject leaves and every never-settling branch. The verifier enumerates exactly 41 consumed wrapper paths. Every
+nested report object, including both staging wrappers, is exact-key validated and bound
+to the canonical delivery/receipt objects; missing and unknown-field mutants at every
+wrapper include attempted `physicalDeviceAudible: true` injection in the staged and
+resumed wrappers. This advances only the
+pause/resume no-loss portion of `C-M11-05-WORKLET`.
+Fresh observation on 2026-08-11 used Chromium 151.0.7922.108 through the externally
+selected launcher, while the running Playwright browser process was observed as its
+launcher-discovered payload executable. The report binds both file identities, the
+policy launch flags, and Playwright's sync-API module identity; sealed evidence retains
+the machine-local paths. The shared shipped factory immediately disconnects a deferred
+candidate on terminal worker loss and arms one bounded context-close deadline, so a
+never-settling module load or hook cannot retain the context. Start settlement cancels
+the deadline and idempotently preserves the single close; the boundary then makes its
+second candidate-disconnect pass, which reaches any real late-published node. Real
+Chromium probes cover deferred resolve and reject for late node publication, plus
+before-module, after-module, and after-node hooks left genuinely pending through the
+independent deadline close. They record one close call and a closed context,
+`DEVICE_LOST`, and exact empty page-error and unhandled-rejection arrays.
+The packet was not guest generated, and the campaign makes no physical-device,
+audibility, Votrax, System 46, SDL3, or historical-hardware identity claim. Full
+`C-M11` remains open.
 
 ### M12 — Debugger, trace, and preservation controls
 

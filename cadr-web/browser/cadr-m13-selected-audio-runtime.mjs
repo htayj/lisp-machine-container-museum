@@ -4,6 +4,7 @@
 import { CADR_M13_AUDIO_PROFILE, encodeCdrPcm1, sha256Hex } from
   "./cadr-m13-audio-record.mjs";
 import { CADR_M13_PROTOCOL_VERSION, CadrM13Shell } from "./cadr-m13-shell.mjs";
+import { BrowserAudioFactory } from "./cadr-m13-browser-audio-factory.mjs";
 
 const status = document.querySelector("#status");
 const realWorker = new Worker(new URL("../wasm/cadr-worker.js", import.meta.url), {
@@ -39,38 +40,6 @@ class TracedWorker {
   inject(value) {
     const event = { data: value };
     for (const listener of this.listeners.get("message") ?? []) listener(event);
-  }
-}
-
-class BrowserAudioFactory {
-  contexts = []; activation = [];
-  prepare() {
-    const Constructor = globalThis.AudioContext ?? globalThis.webkitAudioContext;
-    if (Constructor === undefined) throw new Error("AudioContext unavailable");
-    this.activation.push(globalThis.navigator.userActivation?.isActive === true);
-    const context = new Constructor();
-    const entry = { context, node: null, disconnected: false };
-    this.contexts.push(entry);
-    const port = { onmessage: null, postMessage(value, transfer) {
-      if (entry.node === null) throw new Error("AudioWorklet port used before start");
-      entry.node.port.postMessage(value, transfer ?? []);
-    } };
-    return {
-      port,
-      async start() {
-        await context.audioWorklet.addModule("./cadr-m13-audio-worklet.mjs");
-        entry.node = new AudioWorkletNode(context, "cadr-m13-audio", {
-          numberOfInputs: 0, numberOfOutputs: 1, outputChannelCount: [1],
-        });
-        entry.node.port.onmessage = event => port.onmessage?.(event);
-        entry.node.connect(context.destination); await context.resume();
-      },
-      disconnect() {
-        entry.disconnected = true;
-        if (entry.node !== null) { entry.node.port.onmessage = null; entry.node.disconnect(); }
-        void context.close();
-      },
-    };
   }
 }
 

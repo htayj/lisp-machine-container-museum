@@ -83,11 +83,21 @@ export class CadrM13AudioSource {
   }
   async pause({ consumerEpoch }) {
     if (!this.#open || consumerEpoch !== this.#epoch) return { status: STALE };
-    this.#open = false; this.#records.clear(); this.#sessionId = null; return { status: OK };
+    this.#open = false; this.#records.clear(); this.#sessionId = null;
+    return { status: OK, queuePackets: this.#queuePackets, queuedFrames: this.#queuedFrames };
   }
   async deviceLost({ consumerEpoch }) {
     if (!this.#open || consumerEpoch !== this.#epoch) return { status: STALE };
-    this.#open = false; this.#records.clear(); this.#sessionId = null; return { status: OK };
+    this.#open = false; this.#records.clear(); this.#sessionId = null;
+    return { status: OK, queuePackets: this.#queuePackets, queuedFrames: this.#queuedFrames };
+  }
+  /* The browser boundary invokes this synchronous revocation when a worker is
+   * terminally lost while another promise is unresolved. It mutates only this
+   * adapter's retained authority and never issues a second lower-core operation. */
+  terminalRelease({ consumerEpoch }) {
+    if (consumerEpoch !== null && consumerEpoch !== undefined && consumerEpoch !== this.#epoch) return false;
+    this.#open = false; this.#records.clear(); this.#sessionId = null;
+    return true;
   }
   get backpressured() { return this.#records.size >= 8; }
   get inFlightRecords() { return this.#records.size; }

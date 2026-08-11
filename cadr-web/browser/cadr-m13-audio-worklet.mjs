@@ -1,5 +1,7 @@
 /* ABI1.11 M13 Worklet queue.  It accepts exactly eight complete CDRPCM1-derived
- * records and acknowledges only after the final sample reaches an output block. */
+ * records, reports host-visible staging only after the private queue owns a
+ * copy, and acknowledges rendering only after the final sample reaches an
+ * output block. */
 export const CADR_M13_WORKLET_MAX_RECORDS = 8;
 
 const positiveU64 = value => typeof value === "bigint" && value > 0n && value <= 0xffff_ffff_ffff_ffffn;
@@ -52,10 +54,12 @@ if (typeof AudioWorkletProcessor !== "undefined" && typeof registerProcessor !==
     constructor() {
       super(); this.queue = new CadrM13PcmQueue();
       this.port.onmessage = event => {
-        /* The reply grammar is closed to whole-record acknowledgements.  An
-         * invalid post is a shell defect and cannot invent a second message
-         * type or acknowledge any sample. */
-        this.queue.enqueue(event.data);
+        const message = event.data;
+        if (this.queue.enqueue(message)) {
+          this.port.postMessage(Object.freeze({ type: "cadr-audio-staged", version: 1,
+            generation: message.generation, consumerEpoch: message.consumerEpoch,
+            sequence: message.sequence, frameOffset: message.frameOffset }));
+        }
       };
     }
     process(_inputs, outputs) {

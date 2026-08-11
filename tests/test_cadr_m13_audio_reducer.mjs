@@ -94,6 +94,14 @@ for (const order of [["device", "pause", "ack"], ["device", "ack", "pause"],
 {
   const h = harness();
   h.reducer.open(1n); h.reducer.post(h.record(1));
+  assert.equal(h.reducer.acknowledge(h.record(1)), true); h.flush();
+  assert.equal(h.reducer.pause(), true); h.flush();
+  assert.deepEqual(h.actions.map(action => action.kind), ["ack", "paused"],
+    "an older acknowledged turn is emitted before a later pause control");
+}
+{
+  const h = harness();
+  h.reducer.open(1n); h.reducer.post(h.record(1));
   assert.equal(h.reducer.pause(), true); h.flush();
   assert.equal(h.reducer.open(2n), true); h.reducer.post(h.record(2, 2n));
   assert.equal(h.reducer.acknowledge(h.record(1)), false, "old epoch is fenced before admission");

@@ -3,7 +3,7 @@ type: Reimplementation Specification
 title: CADR audio, beeper, and Votrax reimplementation specification
 description: A Phase 1, source-bounded contract for deterministic CADR beeper and Votrax event delivery, without a hardware, device, or historical-PCM-emulation claim.
 tags: [mit-cadr, audio, votrax, reimplementation, cadr-web, preservation]
-timestamp: 2026-08-02T15:30:00-04:00
+timestamp: 2026-08-11T04:58:30-04:00
 ---
 
 # CADR audio, beeper, and Votrax reimplementation specification
@@ -15,9 +15,10 @@ queue transport, and clean-room PCM rendering for the selected CADR-WEB System 3
 profile. The M11 build owns one model per machine, maps IOB address `0764110` to a
 post-slot beeper event, and exposes an isolated v7 worker subhandler in the narrow
 M12 Wasm profile. Its synthetic C, Node, O0/O2 Wasm-export, and Worklet-queue
-tests are supplemented by one source-bound System 303 `%BEEP` runtime observation.
-No audio-device, browser-integration, Votrax, or System 46 runtime equivalence is
-claimed.
+tests are supplemented by one source-bound System 303 `%BEEP` runtime observation
+and one selected-Wasm Chromium/AudioWorklet continuity observation seeded from the
+independent synthetic fixed-table snapshot. No physical audio-device, guest-generated
+browser PCM, Votrax, or System 46 runtime equivalence is claimed.
 
 ABI1.11 now adds a source-only M13 transport slice without changing ABI1.10 or
 the frozen public v7 operation tree. The core is the sole consumer-epoch issuer;
@@ -25,8 +26,9 @@ the new opt-in Wasm export returns `CDRM11O1`, and a private source adapter bind
 rendered frame counts to `CDRPCM1` identities so neither a page caller nor an
 AudioWorklet can choose the frame count used for acknowledgement. Synthetic O0,
 O2, mutation, stale-epoch, zero-frame UART, and eight-record backpressure tests
-pass. This is not a selected guest/browser playback observation, so `C-M11`
-remains open.
+pass. The selected-Wasm browser slice described below now proves one synthetic
+packet survives pause and is consumed exactly once after resume; it is not a
+guest-generated playback observation, so `C-M11` remains open.
 
 It claims:
 
@@ -162,6 +164,8 @@ The 2026-07-29 closure and SDL3 compile succeeded; it was not run. This is
 | `M11-L3` | `M11-L2` plus browser pause/worklet/oracle campaigns | Votrax or SC-01 acoustic identity |
 
 `M11-L0` through the isolated portions of `M11-L2` are implemented and tested.
+One source-bounded synthetic slice of `M11-L3` is also observed in real Chromium;
+the complete level remains reserved.
 This does not claim an exact historical source interface: the source’s Lisp stream
 API, devices, phoneme tables, load behavior, and preserved-runtime comparison remain
 outside this C semantic boundary.
@@ -614,11 +618,45 @@ IOB `BEEP` produces its M11 post-slot event; those two streams intentionally ret
 distinct sequence domains.
 
 The AudioWorklet accepts only bounded signed-16 PCM supplied by the Wasm bridge. It
-converts samples to Float32 output and reports an acknowledgement only after a whole
-posted packet has reached an output block. The main-thread bridge acknowledges the
+reports a distinct staging receipt only after its private queue owns the complete
+record, converts samples to Float32 output, and reports a render acknowledgement only
+after the whole posted packet has reached an output block. The main-thread bridge acknowledges the
 core only after that report. A generation clear removes queued stale PCM. Worklet
 clock time, device latency, underruns, and mute state are output observations, not
 guest-time or ordering evidence.
+
+Nonterminal activation, core acknowledgement, pause, and ordinary device-loss
+operations share one ordered asynchronous lifecycle tail. Queue admission is the
+linearization order. An acknowledgement admitted before a control therefore finishes
+first, publishes the core's authoritative queue counts, and resolves its
+`ack-committed` receipt; the later control then invokes the core and adopts the
+returned post-control counts before it settles. If pause or ordinary loss wins the
+reducer order, a later stale acknowledgement never reaches the core. Preparation and
+reopen are fenced while a nonterminal control is pending or executing.
+
+Terminal worker close is deliberately outside that tail. It immediately revokes
+boundary ownership, disconnects every currently reachable browser candidate, retires
+all receipt waiters stale, and fixes `DEVICE_LOST`; it does not wait for an unsettled
+candidate start, core open, or core acknowledgement. The only terminal core operation
+is synchronous request-free `terminalRelease`, an adapter tombstone used by the worker
+owner before terminating the worker. It MUST NOT issue `open`, `ack`, `pause`, or
+ordinary `deviceLost`, so it may run while one earlier nonterminal core request is
+unsettled without concurrent mutation of a non-reentrant core. A late open settlement
+is observed only after that open returns and may invoke the same tombstone with its
+retired epoch; a late acknowledgement cannot publish counts or a receipt. A candidate
+whose start allocates after terminal cancellation is disconnected again on either late
+resolve or reject. Thus nonterminal core requests never overlap; terminal revocation
+may overlap only as this no-request tombstone.
+
+Worker-event admission captures the consumer object, epoch, generation, event
+ordinal, and control-admission watermark before awaiting the record digest, and
+rechecks all five plus terminal state afterward. An old-epoch event whose digest
+crosses pause/resume, loss/resume, or close therefore returns `false` without posting
+to the fresh Worklet or reporting device loss against it. Activation similarly
+captures its control watermark: a successfully started candidate is disconnected on
+core-open rejection, exception, malformed success, or intervening close. Nonterminal
+open failures consume the prepared candidate but permit an explicit fresh prepare and
+retry; close denies retry. Tests bound the maximum live candidate count at one.
 
 No SC-01 or SC-01A behavior is enabled by this specification. An optional device
 profile is gated on all of: an exact public source commit, a separately licensed and
@@ -638,7 +676,7 @@ a later one.
 | `C-M11-02-CORE` | M11 core mapping for `0764110`, post-slot enqueue, and composed M8/M9/M11 v7 test with no M6/M7/M10 regression | Passes: the native composition test fixes `CDRINP1`-before-post-slot-`BEEP` order; a runtime comparison remains open |
 | `C-M11-03-SNAPSHOT` | Pointer-free `CDRAUDS1` round trip, malformed-sidecar rejection, fresh local authority, stale-cursor-after-adoption, and composed M12 rollback/publication tests | Passes. `CDRSNAP1` remains frozen; M12 carries the sidecar in `CDRM12S1`, while protocol-v7 generic restore remains blocked on M9 continuation. |
 | `C-M11-04-PCM` | Deterministic fixed-table signed-16 render fixtures with no host `libm` drift | Passes for `CDRM11FIX2`: an independent reference, native O0/O2, and freshly forced selected-M12 Wasm O0/O2 agree through fresh `CDRAUDS1` adoption; SDL3/device identity is not claimed |
-| `C-M11-05-WORKLET` | AudioWorklet queue generation clear, whole-packet acknowledgement, and bounded-backpressure test | Passes in Node queue tests; browser lifecycle campaign remains open |
+| `C-M11-05-WORKLET` | AudioWorklet queue generation clear, whole-packet acknowledgement, bounded backpressure, and selected-Wasm pause/resume continuity | Node queue tests pass. A fresh real Chromium 151 campaign proves one independently generated synthetic 512-frame selected-core packet is retained across pause, redelivered under a fresh consumer epoch, and acknowledged exactly once; guest-generated playback and physical-device output remain open. |
 | `C-M11-06-ORACLE` | Non-destructive, source-bound preserved-system or hardware comparison for each historical claim retained | The System 303 `%BEEP` path now has a source-bound runtime witness; Votrax and System 46 remain open |
 
 Focused Phase 1 test command:
@@ -648,6 +686,7 @@ make -C cadr-web m11-unit
 python3 scripts/cadr-m11-fixed-table-oracle.py --output build/cadr-oracle/cdrm11fix2.json
 python3 scripts/cadr-m11-native-audio-oracle.py prepare
 python3 scripts/cadr-m11-native-audio-oracle.py build
+make -C cadr-web m11-selected-playback
 ```
 
 The latter two commands create/compile a disposable ignored source closure only;
@@ -748,6 +787,40 @@ behavior, browser AudioWorklet equivalence, or full `C-M11`.
 | `M11-T18` | `C-M11-05-WORKLET` | The Worklet queue emits Float32 converted from supplied PCM, acknowledges only a fully rendered packet, bounds frames, and clears stale generations |
 | `M11-T19` | `C-M11-02-CORE` | The cumulative ABI 1.10 composed M12 profile accepts M8 `CDRINP1` before an M11 `BEEP` at the ready boundary, retains independent input/audio sequence domains, and exposes both surfaces through v7 without widening v6 |
 | `M11-T20` | `C-M11-04-PCM` | `CDRM11FIX2` requires a standalone Python event/witness/snapshot/fixed-sine32 reference, native O0/O2, and freshly rebuilt selected-M12 Wasm O0/O2 to agree on every exact semantic field. Its 1,025-frame 499-microsecond fixture derives wavelength and event offsets from `CDRAUD1`, retains the 200-frame partial acknowledgement, and proves that forcing the resumed event/cursor offsets to zero diverges. It rejects alternate canonical-state values, malformed JSON, duplicate keys, wrong long hashes, and direct resume that bypasses fresh `CDRAUDS1` adoption. |
+| `M11-T21` | `C-M11-05-WORKLET` | An isolated exact signed-base-plus-patch stage forcibly builds selected ABI1.11 O2 Wasm and adopts the independent 380-byte synthetic multi-packet `CDRAUDS1`. The first suspended real AudioWorklet returns an exact staging receipt after enqueue but zero render acknowledgements before pause; the selected core snapshot remains byte-identical. A fresh epoch stages the identical cursor and PCM, produces the sole render acknowledgement, and an explicit committed promise resolves only after the core ack returns, the source drops its retained record, and boundary counts become two packets and 513 frames. Deferred lifecycle tests prove exact ack-before-pause, pause-before-ack, ack-before-loss, pause/loss-before-reopen, and close-before-later-open order; digest-spanning pause/resume, loss/resume, and close fences; cleanup and exact retry behavior after thrown, rejected, or malformed core open; and a close fence around unresolved open. Earlier successful acknowledgements publish their receipt and counts, control results reconcile host counts to the core snapshot, stale acknowledgements never enter the core, close settles remaining waiters, and maximum core-operation and live-context counts are one. The report binds every selected source and served byte, build and externally selected browser executable, browser-reported Wasm bytes/hash, exact activation booleans, AudioContext states/sample rates/disconnect flags, status sequence, exact empty `pageErrors` and `unhandledRejections` arrays, a closed loopback request set, CDP network observations, cleanup, terminal resolve/reject observations, every never-settling hook stage, and explicit nonclaims. The independent verifier exact-key validates every consumed nested report object, including both staging wrappers and their delivery/receipt children, binds wrapper equality to the canonical delivery list, and rejects missing and unknown-field mutants at every wrapper, including `physicalDeviceAudible: true`. It separately reconstructs the initial/final snapshots, PCM and cursor hashes, queue deltas, and exact delivery/staging/commit identities; it rejects a targeted semantic mutant for every listed browser field and an individual shape and semantic mutant for every terminal field in every resolve/reject and never-settling branch. |
+
+The M11-T21 report verifier enumerates exactly 41 consumed wrapper paths. Its named
+physicalDeviceAudible mutation is injected in both staged and resumed wrappers, so
+neither receipt can acquire a physical-audibility claim by an unknown nested field.
+Terminal evidence is separately an exact decision matrix: immediate late allocation
+has resolve and reject leaves, while before-module, after-module, and after-node have
+their own still-pending never-settling leaves. The verifier removes and replaces each
+individual terminal field, then changes its value, so a branch cannot silently omit
+the close, second-disconnect, or terminal-state result.
+
+M11-T21 correction, 2026-08-11: terminal worker loss is not ordered behind a
+never-settling candidate start, core open, or core acknowledgement. It immediately
+revokes boundary ownership, releases every browser candidate that can be disconnected,
+settles live receipt waiters stale, and fixes terminal DEVICE_LOST. Its sole core hook
+is the synchronous request-free `terminalRelease` tombstone, which is permitted to
+overlap an unsettled nonterminal request precisely because it does not mutate or call
+the non-reentrant core. Late settlements are fenced; a late valid open is observed
+after open returns and only tombstones its retired private epoch. A late candidate
+allocation is disconnected on both resolve and reject. A malformed prepared candidate
+is disconnected when possible. A valid private open followed by a reducer or frozen
+port-handler installation failure aborts that reducer epoch and releases candidate and
+core before a retry. During indefinite successful playback, the boundary retains at
+most eight staged and eight committed already-settled receipt objects. Receipt identity
+is exact closed-key data before it is keyed: generation, epoch, and sequence are
+positive/ranged primitive `BigInt` values as applicable, and frame offset is a safe
+u32 integer. Eviction does not relax duplicate or ordering checks because those remain
+authoritatively bound to live posted records and reducer state. The v3 evidence report
+records and the independent verifier recomputes the exact base tree, untracked count,
+and worktree/index equality from the replayed stage; it also binds the externally
+selected Chromium launcher, the launcher-discovered and live-observed Chromium payload,
+the policy flags, and the Playwright sync-API module identity. These provenance fields
+identify a browser evidence run; they do not establish guest-generated PCM, physical
+audibility or output, Votrax, System 46, or full C-M11 closure.
 
 ## Runtime closure probes and known unknowns
 
@@ -757,6 +830,72 @@ behavior, browser AudioWorklet equivalence, or full `C-M11`.
 | `TODO-RUNTIME-M11-02` | Use an isolated serial observation fixture for System 303 Votrax and capture the stream calls, emitted bytes, and utterance boundary | Stream configuration, byte ordering, and the exact wire-level disposition of the source's `:TYO -1` call |
 | `TODO-RUNTIME-M11-03` | Repeat the isolated probe for one pinned System 46 artifact | Whether that loaded artifact exhibits the source-default 300/7E1 profile |
 | `TODO-RUNTIME-M11-04` | **Closed 2026-07-30:** execute the standalone fixed-sine32 reference against native O0/O2 and freshly rebuilt selected-M12 Wasm O0/O2, including partial-ack snapshot adoption into fresh instances | `C-M11-04-PCM` for the narrow synthetic clean-room profile only |
+| `TODO-RUNTIME-M11-05` | **Partial synthetic observation 2026-08-11:** selected ABI1.11 Wasm in Chromium stages one packet in a suspended real AudioWorklet, pauses before render acknowledgement, resumes with a fresh consumer, and commits the retained packet once. Retain this TODO for a guest-generated browser packet and supported physical output path. | Selected-Wasm/browser pause-resume continuity for the independent synthetic fixture only; guest generation, audibility, device identity, Votrax, and full `C-M11` remain open |
+
+### Selected-Wasm browser pause/resume observation
+
+Local runtime observation, 2026-08-11: Chromium `151.0.7922.108` loaded the freshly
+built 218,989-byte selected ABI1.11 O2 Wasm with SHA-256
+`0768c02a0be066cd71ded1882e00e0cdae64e4d1a7197bf89a23801190722c76`.
+The independent fixed-table oracle supplied its 380-byte
+`multi-packet-partial-ack-pause` `CDRAUDS1` snapshot, SHA-256
+`020f91f0d950016d7cd9a159644d8db0f83c0730377b1f457ceb7db98ccea30d`.
+No licensed artifact or private runtime entered this campaign.
+
+The campaign reconstructs an isolated tree from the verified signed base and the
+sealed proposed patch, requires the reproduced Git tree and index/worktree bytes to
+match, and forcibly rebuilds the selected Wasm there. Its canonical report inventories
+the transitive source closure, build tools, the 14,424-byte externally selected Chromium
+launcher (SHA-256
+`a21701bae5daa6d9256cec064cc90de6f135f6447abc4cc8c6769ca6d5224100`), the
+320,265,304-byte live-observed Chromium payload executable (SHA-256
+`5feed0a15033c4230d070cd042800d9aa44b94ada7dc98aec7c7a7b437c5391b`), exact
+network-policy flags, and Playwright 1.62.0 sync-API module identity, every served response,
+the exact loopback request multiset, CDP-observed HTTP traffic, and cleanup. A separate
+verifier repeats patch application, source hashing, the forced build, fixture generation,
+and semantic checks. It independently regenerates the initial and post-512-frame-ack
+`CDRAUDS1` bytes, PCM and 88-byte cursor hashes, head/next/count deltas, and the exact
+delivery-to-staging-to-commit binding. Its Chromium executable is a required external
+CLI selection rather than a pathname accepted from the report, and in-memory mutants
+of those semantic fields and browser identity must reject. This avoids treating a
+timestamp-reused Wasm or a report-authored identity string as authority.
+
+The selected playback and production runtime import one shipped browser-candidate
+factory. Terminal worker loss immediately fixes boundary `DEVICE_LOST` and performs
+its first candidate-disconnect pass even while start is deferred. For an in-flight
+start, disconnect records one close request and arms a bounded deadline that starts
+the one context close even if an AudioWorklet module load or hook never settles. The
+start `finally` cancels that deadline and idempotently rechecks the close; every close
+rejection is consumed. When the deferred start later settles, the boundary performs
+its second disconnect, which disconnects a node published after the first pass. Real
+Chromium observations cover both late resolve/reject and all three never-settling hook
+locations, record one close call and a closed context, and retain exact empty
+`pageErrors` and `unhandledRejections` arrays. The portable document names launcher
+and payload roles only; exact host paths remain sealed evidence rather than publication
+claims.
+
+The first user-activated AudioContext loaded the real Worklet but was deliberately
+suspended. The Worklet returned a staging receipt only after its queue owned generation
+1, sequence 0, offset 0, 512 frames,
+with PCM SHA-256
+`295b2a187b03b4cd96cbbf3f46e189f20e6b0453d4df67bd3b3f10a200ed88dd`.
+Pause disconnected that consumer with zero render acknowledgements: the before/pause
+snapshots were byte-identical, retaining three packets and 1,025 frames. Resume
+created a fresh consumer epoch, redelivered the same semantic cursor and PCM, and the
+running Worklet produced exactly one render acknowledgement. An explicit committed
+receipt resolved only after the selected core accepted that acknowledgement, the
+private source removed its retained record, and the boundary adopted the returned
+counts. The final selected-core state
+had head sequence 1, two packets, and 513 frames, with snapshot SHA-256
+`1fa5e9b62c5e7fc670046834f46bb470a529edcb4513bcdec743f23475c0ae74`.
+Canonical reports and their verifier outputs remain ignored under `build/cadr-m11/`;
+their exact hashes belong to the campaign handoff because embedding a patch-bound
+report hash in the patch itself would be self-referential.
+
+This proves browser consumption and selected-core cursor continuity for that synthetic
+packet. It does not show that a CADR guest generated the packet, that a person or
+physical device produced audible output, or that the browser waveform matches CADR
+hardware, SDL3, Votrax, or the preserved `%BEEP` session. Those remain HOLDs.
 
 The reviewed Listener screenshot above is appropriate only for the now-completed
 runtime invocation claim; the queue and waveform claims remain hash/record evidence.
@@ -775,4 +914,4 @@ recordings remain out of the tracked documentation.
 | System 46 comparison source | [commit `8e978d7`](https://github.com/mietek/mit-cadr-system-software/tree/8e978d7d1704096a63edd4386a3b8326a2e584af/src) | Public snapshot; source defaults are 300/7E1, loaded-artifact behavior remains untested |
 | Phase 1 model | [`cadr_audio_model.h`](../../cadr-web/core/cadr_audio_model.h), [`cadr_audio_model.c`](../../cadr-web/core/cadr_audio_model.c), and [synthetic test](../../cadr-web/tests/test_cadr_m11_audio_model.c) | New clean-room implementation; no private media, waveform, or ROM |
 
-Last verified: 2026-07-30.
+Last verified: 2026-08-11.
