@@ -7,6 +7,7 @@ import { dirname, resolve } from "node:path";
 import {
   CADR_M7_P4_HOST_FOUNDATION,
   closedM7P4HostEnvironmentForTest,
+  main,
   parseM7P4HostSupervisorArguments,
   rejectM7P4DangerousEnvironmentForTest,
   runM7P4HostCleanupScopeForTest,
@@ -67,13 +68,26 @@ async function identity(path) {
 }
 
 assert.deepEqual(CADR_M7_P4_HOST_FOUNDATION, {
-  schema: "cadr-m7-p4-host-supervisor-foundation-v1",
+  schema: "cadr-m7-p4-host-supervisor-foundation-v2",
   production_evidence: false,
-  phase_a_recomputation: "not-implemented",
-  launch: "refuse",
+  phase_a_recomputation: "synthetic-core-only",
+  launch: "refuse-until-live-unit-caps-cgroup-evidence",
 });
 assert.throws(() => parseM7P4HostSupervisorArguments(["--forged"]), /takes no caller arguments/);
 assert.deepEqual(parseM7P4HostSupervisorArguments([]), []);
+for (const argv of [[], ["--serve-inherited"], ["--synthetic-test-v1"]]) {
+  await assert.rejects(main(argv),
+    /Phase-A lacks live effective-unit, capability, and cgroup evidence/,
+    "direct main has no selector that can reach a synthetic or production seam");
+}
+for (const argv of [[], ["--serve-inherited"], ["--synthetic-test-v1"]]) {
+  const direct = spawnSync(process.execPath, [SUPERVISOR_SOURCE, ...argv], {
+    encoding: "utf8", env: { M7_P4_SYNTHETIC_SELECTOR: "forged", PATH: "/no/such/path" },
+  });
+  assert.notEqual(direct.status, 0);
+  assert.match(direct.stderr, /Phase-A lacks live effective-unit, capability, and cgroup evidence/,
+    "the direct executable refuses before argument, proc, receipt, or synthetic-seam handling");
+}
 assert.throws(() => rejectM7P4DangerousEnvironmentForTest({ NODE_OPTIONS: "--require=/tmp/x" }),
   /NODE_OPTIONS/, "ambient Node injection is rejected before root work");
 assert.equal(rejectM7P4DangerousEnvironmentForTest({ LANG: "hostile-but-not-inherited" }), true);
@@ -148,50 +162,10 @@ try {
   assert.equal(malformed.status, 64);
   assert.match(malformed.stderr, /usage is exactly/);
 
-  const runner = resolve(fixture, "signed-captured-runner.mjs");
-  await writeFile(runner, "export const foundation = 'synthetic';\n");
-  const configPath = resolve(fixture, "fixed-config.bin");
-  const [nodeIdentity, runnerIdentity, namespace] = await Promise.all([
-    identity(process.execPath), identity(runner), stat("/proc/self/ns/user", { bigint: true }),
-  ]);
-  await writeFile(configPath, writeConfig({ node: nodeIdentity, runner: runnerIdentity, namespace }));
-  const [configHandle, nodeHandle, runnerHandle] = await Promise.all([
-    open(configPath, "r"), open(process.execPath, "r"), open(runner, "r"),
-  ]);
-  try {
-    const userNamespaceRoot = spawnSync("/usr/bin/unshare",
-      ["--user", "--map-root-user", "--", compiledDropper, "--synthetic-test-v1"], {
-        encoding: "utf8", env: { PATH: "/usr/bin:/bin" },
-        stdio: ["ignore", "pipe", "pipe", configHandle.fd, nodeHandle.fd, runnerHandle.fd],
-      });
-    assert.equal(userNamespaceRoot.status, 125, userNamespaceRoot.stderr);
-    assert.match(userNamespaceRoot.stderr, /cannot clear supplementary groups/,
-      "a mapped user-namespace root cannot pass the group-clearing authority step");
-
-    /* Run the verifier bytes compiled into the native dropper against the
-     * current child process, not an invented status string.  This negative
-     * exercise proves the first Node realm reads /proc and refuses before it
-     * imports fd 5 when uid/gid/groups/capability/no_new_privs state is not the
-     * dropped-child profile.  A positive host-root launch requires Phase A and
-     * is deliberately not claimed by this foundation. */
-    const verifierStrings = execFileSync("strings", [compiledDropper], { encoding: "utf8" })
-      .split("\n");
-    const verifierCommon = verifierStrings.find(line => line.startsWith(
-      "const f=require('node:fs'),s=f.readFileSync('/proc/self/status'"));
-    const verifierSynthetic = verifierStrings.find(line => line.includes(
-      "if(!f.statSync('/proc/self/ns/user').isFile())"));
-    assert.notEqual(verifierCommon, undefined); assert.notEqual(verifierSynthetic, undefined);
-    const actualChildRejection = spawnSync(process.execPath,
-      ["--no-addons", "--disable-proto=throw", "--eval", `${verifierCommon}${
-        verifierSynthetic.slice(verifierSynthetic.indexOf("if(!f.statSync"))}`], {
-        encoding: "utf8", env: closedM7P4HostEnvironmentForTest(),
-        stdio: ["ignore", "pipe", "pipe", "ignore", "ignore", runnerHandle.fd],
-      });
-    assert.equal(actualChildRejection.status, 125,
-      "the compiled child verifier rejects this actual, non-dropped /proc state");
-  } finally {
-    await Promise.all([configHandle.close(), nodeHandle.close(), runnerHandle.close()]);
-  }
+  const obsoleteSynthetic = spawnSync(compiledDropper, ["--synthetic-test-v1"],
+    { encoding: "utf8" });
+  assert.equal(obsoleteSynthetic.status, 64,
+    "the v2 production dropper has no synthetic or caller-selected ABI");
 
   /* Exercise the exact native close routine with a deliberately leaked fd.
    * The harness links the production translation unit with static removed only
@@ -203,14 +177,14 @@ try {
     "#include <errno.h>", "#include <fcntl.h>", "#include <stdio.h>",
     "#include <unistd.h>", "void close_non_allowlisted_fds(void);",
     "int main(void) { int source = open(\"/dev/null\", O_RDONLY); int fd; if (source < 0) return 2;",
-    "  fd = fcntl(source, F_DUPFD, 16); close(source); if (fd < 16) return 2;",
+    "  fd = fcntl(source, F_DUPFD, 18); close(source); if (fd < 18) return 2;",
     "  close_non_allowlisted_fds(); return fcntl(fd, F_GETFD) == -1 && errno == EBADF ? 0 : 1; }",
   ].join("\n"));
   execFileSync("cc", ["-std=c11", "-O2", "-Dstatic=", "-Dmain=cadr_m7_dropper_main",
     "-c", DROPPER_SOURCE, "-o", dropperObject]);
   execFileSync("cc", ["-std=c11", "-O2", closeHarness, dropperObject, "-o", closeBinary]);
   assert.equal(spawnSync(closeBinary).status, 0,
-    "a descriptor above the fixed 0,1,2,4,5 allowlist is closed before exec");
+    "a descriptor above the fixed fd17 allowlist is closed before exec");
 } finally {
   await rm(fixture, { recursive: true, force: true });
 }
@@ -218,12 +192,14 @@ try {
 const [dropperSource, supervisorSource] = await Promise.all([
   readFile(DROPPER_SOURCE, "utf8"), readFile(SUPERVISOR_SOURCE, "utf8"),
 ]);
-assert.match(dropperSource, /production_evidence/,
-  "the native foundation is permanently labelled non-production in source policy");
+assert.match(dropperSource, /M7HDPV2/);
+assert.doesNotMatch(dropperSource, /getpwnam|getgrnam|service_name/);
+assert.match(dropperSource, /account_policy_sha256/);
+assert.match(dropperSource, /SO_PEERCRED/);
 assert.match(dropperSource, /verify_proc_state/);
 assert.match(dropperSource, /CapInh.*CapPrm.*CapEff.*CapBnd.*CapAmb/s);
 assert.match(dropperSource, /PR_SET_NO_NEW_PRIVS/);
 assert.match(dropperSource, /SYS_execveat/);
-assert.match(supervisorSource, /independent fd4 Phase-A recomputation is not implemented/);
+assert.match(supervisorSource, /Phase-A lacks live effective-unit, capability, and cgroup evidence/);
 
 console.log("M7 P4 immutable host-root foundation synthetic tests passed");

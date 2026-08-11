@@ -2,10 +2,12 @@
 /* Generate commit B's receipt from an already signed, clean commit-A checkout. */
 import { execFileSync, spawnSync } from "node:child_process";
 import { createHash, randomUUID } from "node:crypto";
-import { closeSync, fstatSync, mkdtempSync, openSync, readFileSync, rmSync } from "node:fs";
+import { closeSync, constants as FS, fstatSync, mkdtempSync, openSync, readFileSync,
+  realpathSync, rmSync, statSync } from "node:fs";
 import { link, mkdir, open, readFile, unlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
+import { Worker } from "node:worker_threads";
 import { deriveM7P4SignedArchiveBound, M7_P4_MAX_ARCHIVE_BYTES,
   M7_P4_MAX_SOURCE_BLOB_BYTES,
   validateM7P4SignedArchive } from "./cadr-m7-p4-authority-root.mjs";
@@ -17,6 +19,15 @@ const CHANNEL = "230aa373f315f247852ee07dff34146e9b480aec";
 const RECEIPT = "scripts/cadr-m7-p4-guix-launcher-receipt.json";
 const BUILDER = "scripts/build-cadr-m7-p4-launcher.scm";
 const ENTRYPOINT = "scripts/cadr-m7-p4-authority-root.mjs";
+const HOST_ARTIFACTS = Object.freeze({
+  authority: "bin/cadr-m7-p4-authority.mjs",
+  supervisor: "bin/cadr-m7-p4-host-supervisor.mjs",
+  service_entry: "bin/cadr-m7-p4-service-entry",
+  descriptor_runner: "bin/cadr-m7-p4-descriptor-runner.mjs",
+  dropper: "bin/cadr-m7-p4-host-dropper",
+  systemd_unit: "lib/systemd/system/cadr-m7-p4.service",
+  sysusers: "lib/sysusers.d/cadr-m7-p4.conf",
+});
 const GIT_SHA256 = "93473c28694fd72bd889364107cd2770514de59780885a6a4aafca4d602e30ad";
 const GUIX_SHA256 = "e64f344b31d0c3289ad849abbb1545624cf112094b1107f8c0e4ea49e4aa62ce";
 const GPGV_SHA256 = "cecf4c8938ac0cb45fb06ab2116b1efc4ec60f29b33de06c11e29c0468968f1e";
@@ -276,8 +287,82 @@ if (!nodeDrv.includes(`(\"out\",\"${nodeOutput}\",\"\",\"\")`)) {
 const requisites = guix(["gc", "--requisites", builtOutput])
   .split("\n").filter(Boolean).sort();
 if (!requisites.includes(nodeOutput)) fail("launcher output closure omits exact Node output");
+const descriptorPath = `${builtOutput}/bin/cadr-m7-p4-descriptor-runner.mjs`;
+const descriptorFd = openSync(descriptorPath, FS.O_RDONLY | FS.O_NOFOLLOW);
+try {
+  const descriptorProbe = spawnSync(nodePath, ["/proc/self/fd/5", "--inherited-v2"], {
+    timeout: 5000,
+    env: { HOME: "/var/empty", LANG: "C", LC_ALL: "C", PATH: "/var/empty", TZ: "UTC" },
+    stdio: ["ignore", "pipe", "pipe", "ignore", "ignore", descriptorFd,
+      ...Array(11).fill("ignore"), "pipe"] });
+  const result = descriptorProbe.output?.[17];
+  if (descriptorProbe.error !== undefined || descriptorProbe.status === 0 ||
+      !Buffer.isBuffer(result) || result.byteLength < 56 ||
+      result.subarray(0, 8).toString("ascii") !== "M7HDRS2\0" ||
+      result.readUInt32LE(12) !== 1 ||
+      result.readBigUInt64LE(16) !== BigInt(result.byteLength - 56) ||
+      !createHash("sha256").update(result.subarray(56)).digest().equals(result.subarray(24, 56))) {
+    fail("installed fd5 descriptor wrapper or its explicit runtime import closure did not load once");
+  }
+} finally { closeSync(descriptorFd); }
+const workerPath = `${builtOutput}/share/genera-emu/cadr-web/wasm/cadr-worker.js`;
+const worker = new Worker(workerPath, { type: "module" });
+let workerReadyTimer; let workerDeadlineTimer;
+try {
+  await new Promise((accept, reject) => {
+    let online = false;
+    worker.once("error", reject);
+    worker.once("exit", code => {
+      if (code !== 0 || !online) reject(new Error(`installed worker exited during startup: ${code}`));
+    });
+    worker.once("online", () => {
+      online = true;
+      workerReadyTimer = setTimeout(accept, 250);
+    });
+    workerDeadlineTimer = setTimeout(
+      () => reject(new Error("installed worker startup timed out")), 5000);
+  });
+} catch {
+  fail("realized worker or its exact transitive import closure did not start");
+} finally {
+  clearTimeout(workerReadyTimer); clearTimeout(workerDeadlineTimer);
+  await worker.terminate();
+}
+const hostArtifacts = {};
+for (const [name, relative] of Object.entries(HOST_ARTIFACTS)) {
+  const path = `${builtOutput}/${relative}`;
+  const bytes = await readFile(path); const info = statSync(path);
+  const expectedMode = ["systemd_unit", "sysusers"].includes(name) ? 0o444 : 0o555;
+  if (!info.isFile() || (info.mode & 0o7777) !== expectedMode) {
+    fail(`realized host artifact ${name} has an invalid mode`);
+  }
+  hostArtifacts[name] = Object.freeze({ path, bytes: bytes.byteLength,
+    sha256: sha256(bytes), mode: expectedMode });
+}
+const expectedUnit = `[Unit]\nDescription=CADR M7 P4 descriptor authority\nAfter=local-fs.target\n\n[Service]\nType=exec\nUser=0\nGroup=0\nSetLoginEnvironment=no\nExecStart=${builtOutput}/bin/cadr-m7-p4-service-entry\nEnvironment=HOME=/var/empty\nEnvironment=LANG=C\nEnvironment=LC_ALL=C\nEnvironment=TZ=UTC\nEnvironment=PATH=/var/empty\nUnsetEnvironment=BASH_ENV ENV INVOCATION_ID JOURNAL_STREAM LD_AUDIT LD_LIBRARY_PATH LD_PRELOAD LOGNAME MEMORY_PRESSURE_WATCH MEMORY_PRESSURE_WRITE NODE_OPTIONS NODE_PATH NODE_REPL_EXTERNAL_MODULE NOTIFY_SOCKET RUNTIME_DIRECTORY SHELL SYSTEMD_EXEC_PID USER WATCHDOG_PID WATCHDOG_USEC\nStandardInput=null\nStandardOutput=null\nStandardError=null\nFileDescriptorStoreMax=0\nUMask=0077\nRestart=no\nKillMode=control-group\nSendSIGKILL=yes\nTimeoutStopSec=15s\nRuntimeDirectory=cadr-m7-p4\nRuntimeDirectoryMode=0700\n\n[Install]\nWantedBy=multi-user.target\n`;
+if (!(await readFile(hostArtifacts.systemd_unit.path)).equals(Buffer.from(expectedUnit))) {
+  fail("realized systemd unit differs from the closed no-argument service policy");
+}
+const expectedSysusers = "g cadr-m7-p4 612\nu! cadr-m7-p4 611:612 \"CADR M7 P4 execution\" /var/empty /usr/bin/nologin\n";
+if (!(await readFile(hostArtifacts.sysusers.path)).equals(Buffer.from(expectedSysusers))) {
+  fail("realized sysusers declaration differs from the fixed account policy");
+}
+const nologinPath = "/usr/bin/nologin";
+const nologinFd = openSync(nologinPath, FS.O_RDONLY | FS.O_NOFOLLOW);
+let nologinInfo; let nologinBytes;
+try {
+  const before = fstatSync(nologinFd); nologinBytes = readFileSync(nologinFd);
+  const after = fstatSync(nologinFd); const livePath = statSync(nologinPath);
+  nologinInfo = after;
+  if (realpathSync(`/proc/self/fd/${nologinFd}`) !== nologinPath || !before.isFile() ||
+      before.dev !== after.dev || before.ino !== after.ino || before.size !== after.size ||
+      livePath.dev !== after.dev || livePath.ino !== after.ino || after.uid !== 0 ||
+      after.gid !== 0 || (after.mode & 0o022) !== 0) {
+    fail("site nologin changed or is not the exact root-owned Arch provisioning authority");
+  }
+} finally { closeSync(nologinFd); }
 const receipt = {
-  schema: "cadr-m7-guix-launcher-authority-v1", source_commit: commit,
+  schema: "cadr-m7-guix-launcher-authority-v2", source_commit: commit,
   source_tree: tree, source_closure_sha256: closure.digest("hex"),
   program_inventory_sha256: sha256(Buffer.from(canonical(inventory))),
   builder_sha256: sha256(files.find(file => file.path === BUILDER).bytes),
@@ -286,6 +371,20 @@ const receipt = {
   node_derivation: nodeDerivation, node_output: nodeOutput,
   node_sha256: sha256(await readFile(nodePath)), entrypoint_path: launcherPath,
   entrypoint_sha256: sha256(launcherBytes), guix_channel_commit: CHANNEL,
+  host_phase_a: Object.freeze({ schema: "cadr-m7-p4-host-launch-receipt-v2",
+    production_evidence: false,
+    account: Object.freeze({ name: "cadr-m7-p4", uid: 611, gid: 612,
+      password_lock: "!", home: "/var/empty",
+      shell: "/usr/bin/nologin", supplementary_groups: Object.freeze([]) }),
+    environment: Object.freeze({ HOME: "/var/empty", LANG: "C", LC_ALL: "C",
+      PATH: "/var/empty", TZ: "UTC" }),
+    descriptor_authority: "supervisor-recomputes-and-passes-only-fixed-fds",
+    site_nologin: Object.freeze({ path: nologinPath, bytes: nologinBytes.byteLength,
+      sha256: sha256(nologinBytes), mode: nologinInfo.mode & 0o7777,
+      uid: nologinInfo.uid, gid: nologinInfo.gid, dev: nologinInfo.dev, ino: nologinInfo.ino }),
+    cleanup: Object.freeze({ manager: "systemd", kill_mode: "control-group",
+      send_sigkill: true, timeout_stop_sec: 15 }),
+    artifacts: Object.freeze(hostArtifacts) }),
 };
 await publishReceipt(outputFile, canonical(receipt));
 process.stdout.write(`${canonical(receipt)}\n`);

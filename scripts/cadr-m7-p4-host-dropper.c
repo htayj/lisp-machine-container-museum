@@ -5,30 +5,31 @@
  * independently recomputed Phase-A authority may invoke it with exactly one
  * literal argument and these inherited descriptors:
  *
- *   fd 3  fixed M7HDPV1 binary configuration, opened by the supervisor
- *   fd 4  exact Guix Node executable, identity and SHA-256 in fd 3
- *   fd 5  signed-captured unprivileged JavaScript runner, likewise pinned
+ *   fd 3  connected root-owned AF_UNIX authority RPC
+ *   fd 4  exact Guix Node executable
+ *   fd 5  signed-captured descriptor-only JavaScript entry
+ *   fd 6  exact 952-byte M7HDPV2 configuration, consumed before the drop
+ *   fd 7..16 exact read-only execution inputs
+ *   fd 17 write-only terminal result pipe
  *
  * It never resolves a caller pathname, reads caller environment, searches
- * PATH, or accepts caller-selected uid, gid, executable, or runner.  The
- * synthetic mode is deliberately incompatible with production evidence; it
- * exists only to exercise the authority-reducing transition without claiming
- * that the not-yet-implemented Phase-A recomputation has occurred.
+ * PATH, or accepts caller-selected uid, gid, executable, or runner.  It has no
+ * synthetic production-shaped mode; positive launch evidence requires the
+ * separately provisioned service identity and the complete Phase-A authority.
  */
 #define _GNU_SOURCE
-#include <dirent.h>
 #include <errno.h>
 #include <fcntl.h>
 #include <grp.h>
 #include <inttypes.h>
 #include <linux/capability.h>
-#include <linux/limits.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <sys/prctl.h>
 #include <sys/resource.h>
+#include <sys/socket.h>
 #include <sys/sysmacros.h>
 #include <sys/stat.h>
 #include <sys/syscall.h>
@@ -38,40 +39,66 @@
 #if !defined(__linux__)
 #error cadr-m7-p4-host-dropper requires Linux
 #endif
+#if !defined(__BYTE_ORDER__) || __BYTE_ORDER__ != __ORDER_LITTLE_ENDIAN__
+#error M7HDPV2 packed integers require a little-endian target
+#endif
 
 enum {
-  CONFIG_FD = 3,
+  AUTHORITY_FD = 3,
   NODE_FD = 4,
   RUNNER_FD = 5,
-  CONFIG_VERSION = 1,
-  CONFIG_FLAG_SYNTHETIC = 1,
-  CONFIG_FLAG_ALLOW_NONINITIAL_USERNS = 2,
+  CONFIG_FD = 6,
+  RESULT_FD = 17,
+  CONFIG_VERSION = 2,
+  CONFIG_BYTES = 952,
+  CONFIG_FILE_COUNT = 12,
   EXIT_USAGE = 64,
   EXIT_CONFIGURATION = 65,
   EXIT_AUTHORITY = 125,
   EXIT_EXEC = 126,
 };
 
+enum m7_file_role {
+  ROLE_NODE = 1, ROLE_RUNNER = 2, ROLE_WASM = 3, ROLE_MODULE_IDENTITY = 4,
+  ROLE_MANIFEST = 5, ROLE_NATIVE = 6, ROLE_M6_RELEASE = 7,
+  ROLE_ARTIFACT_1 = 8, ROLE_ARTIFACT_2 = 9, ROLE_ARTIFACT_4 = 10,
+  ROLE_ARTIFACT_5 = 11, ROLE_ARTIFACT_3 = 12,
+};
+
+struct __attribute__((packed)) m7_file_identity {
+  uint32_t fd;
+  uint32_t role;
+  uint64_t dev;
+  uint64_t ino;
+  uint64_t bytes;
+  unsigned char sha256[32];
+};
+
 struct __attribute__((packed)) m7_host_dropper_config {
-  unsigned char magic[8];             /* M7HDPV1 followed by NUL */
+  unsigned char magic[8];             /* exact bytes M7HDPV2 followed by NUL */
   uint32_t version;
   uint32_t flags;
+  uint32_t byte_length;
+  uint32_t file_count;
+  /* This static binary performs no NSS lookup.  Future Phase A must resolve
+   * the literal cadr-m7-p4 names, collision-check the explicit site IDs, and
+   * authenticate account_policy_sha256 before constructing fd6. */
   uint64_t target_uid;
   uint64_t target_gid;
-  uint64_t node_dev;
-  uint64_t node_ino;
-  uint64_t runner_dev;
-  uint64_t runner_ino;
   uint64_t userns_dev;
   uint64_t userns_ino;
-  unsigned char node_sha256[32];
-  unsigned char runner_sha256[32];
-  /* Retained signed-capture metadata.  This native program does not verify a
-   * signature: the future Phase-A root must authenticate this field before it
-   * creates fd 3.  The dropper's independent claim is only the fd-5 identity
-   * and SHA-256 binding below.  production_evidence:false until then. */
+  uint64_t authority_dev;
+  uint64_t authority_ino;
+  uint64_t result_dev;
+  uint64_t result_ino;
+  unsigned char account_policy_sha256[32];
   unsigned char signed_capture_metadata_sha256[32];
+  unsigned char ready_sha256[32];
+  struct m7_file_identity files[CONFIG_FILE_COUNT];
 };
+
+_Static_assert(sizeof(struct m7_file_identity) == 64, "M7 file identity ABI");
+_Static_assert(sizeof(struct m7_host_dropper_config) == CONFIG_BYTES, "M7HDPV2 ABI");
 
 struct sha256_state {
   uint32_t h[8];
@@ -81,10 +108,18 @@ struct sha256_state {
 };
 
 static const unsigned char config_magic[8] = {
-  'M', '7', 'H', 'D', 'P', 'V', '1', 0
+  'M', '7', 'H', 'D', 'P', 'V', '2'
+};
+static const uint32_t expected_fds[CONFIG_FILE_COUNT] = {
+  4, 5, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16
+};
+static const uint32_t expected_roles[CONFIG_FILE_COUNT] = {
+  ROLE_NODE, ROLE_RUNNER, ROLE_WASM, ROLE_MODULE_IDENTITY, ROLE_MANIFEST,
+  ROLE_NATIVE, ROLE_M6_RELEASE, ROLE_ARTIFACT_1, ROLE_ARTIFACT_2,
+  ROLE_ARTIFACT_4, ROLE_ARTIFACT_5, ROLE_ARTIFACT_3
 };
 
-static void
+_Noreturn static void
 die(int status, const char *message)
 {
   (void)dprintf(STDERR_FILENO, "cadr-m7-p4-host-dropper: %s\n", message);
@@ -227,38 +262,60 @@ all_zero(const unsigned char *bytes, size_t count)
 }
 
 static void
-read_configuration(struct m7_host_dropper_config *config, int synthetic)
+read_configuration(struct m7_host_dropper_config *config)
 {
+  struct stat info;
   unsigned char trailing;
+  size_t index, other;
+  int flags = fcntl(CONFIG_FD, F_GETFL);
+  if (fstat(CONFIG_FD, &info) != 0 || !S_ISREG(info.st_mode) ||
+      info.st_size != CONFIG_BYTES || flags < 0 || (flags & O_ACCMODE) != O_RDONLY) {
+    die(EXIT_CONFIGURATION, "fd6 is not the exact read-only M7HDPV2 record");
+  }
   int result = read_full(CONFIG_FD, config, sizeof(*config));
   if (result != 1 || read(CONFIG_FD, &trailing, 1) != 0 ||
       memcmp(config->magic, config_magic, sizeof(config_magic)) != 0 ||
-      config->version != CONFIG_VERSION ||
-      (config->flags & ~(CONFIG_FLAG_SYNTHETIC | CONFIG_FLAG_ALLOW_NONINITIAL_USERNS)) != 0 ||
-      ((config->flags & CONFIG_FLAG_ALLOW_NONINITIAL_USERNS) != 0 &&
-       (config->flags & CONFIG_FLAG_SYNTHETIC) == 0) ||
-      ((config->flags & CONFIG_FLAG_SYNTHETIC) != 0) != synthetic ||
+      config->version != CONFIG_VERSION || config->flags != 0 ||
+      config->byte_length != CONFIG_BYTES || config->file_count != CONFIG_FILE_COUNT ||
       config->target_uid > UINT32_MAX || config->target_gid > UINT32_MAX ||
-      (!synthetic && (config->target_uid == 0 || config->target_gid == 0)) ||
-      all_zero(config->node_sha256, sizeof(config->node_sha256)) ||
-      all_zero(config->runner_sha256, sizeof(config->runner_sha256)) ||
+      config->target_uid != 611 || config->target_gid != 612 ||
+      all_zero(config->account_policy_sha256, sizeof(config->account_policy_sha256)) ||
       all_zero(config->signed_capture_metadata_sha256,
-               sizeof(config->signed_capture_metadata_sha256))) {
+               sizeof(config->signed_capture_metadata_sha256)) ||
+      all_zero(config->ready_sha256, sizeof(config->ready_sha256))) {
     die(EXIT_CONFIGURATION, "fixed inherited configuration is malformed or non-production-safe");
   }
+  for (index = 0; index < CONFIG_FILE_COUNT; index++) {
+    const struct m7_file_identity *file = &config->files[index];
+    if (file->fd != expected_fds[index] || file->role != expected_roles[index] ||
+        file->bytes == 0 || all_zero(file->sha256, sizeof(file->sha256))) {
+      die(EXIT_CONFIGURATION, "fixed inherited file table is malformed");
+    }
+    for (other = 0; other < index; other++) {
+      if (file->dev == config->files[other].dev &&
+          file->ino == config->files[other].ino) {
+        die(EXIT_CONFIGURATION, "inherited file descriptors alias one authority object");
+      }
+    }
+  }
+  if (close(CONFIG_FD) != 0) die(EXIT_CONFIGURATION, "cannot close consumed fd6 configuration");
 }
 
 static void
-verify_hashed_regular_fd(int fd, uint64_t expected_dev, uint64_t expected_ino,
-                         const unsigned char expected_sha256[32], const char *label)
+verify_hashed_regular_fd(const struct m7_file_identity *expected, const char *label)
 {
   struct stat before, after;
   struct sha256_state hash;
   unsigned char buffer[32768];
   unsigned char actual[32];
   ssize_t count;
-  if (fstat(fd, &before) != 0 || !S_ISREG(before.st_mode) ||
-      (uint64_t)before.st_dev != expected_dev || (uint64_t)before.st_ino != expected_ino ||
+  int fd = (int)expected->fd;
+  int descriptor_flags = fcntl(fd, F_GETFL);
+  if (fstat(fd, &before) != 0 || !S_ISREG(before.st_mode) || descriptor_flags < 0 ||
+      (descriptor_flags & O_ACCMODE) != O_RDONLY ||
+      (uint64_t)before.st_dev != expected->dev || (uint64_t)before.st_ino != expected->ino ||
+      before.st_size < 1 || (uint64_t)before.st_size != expected->bytes ||
+      ((fd == NODE_FD || fd == RUNNER_FD) && (before.st_mode & 0222) != 0) ||
       lseek(fd, 0, SEEK_SET) < 0) {
     die(EXIT_CONFIGURATION, label);
   }
@@ -278,8 +335,48 @@ verify_hashed_regular_fd(int fd, uint64_t expected_dev, uint64_t expected_ino,
       before.st_mtim.tv_nsec != after.st_mtim.tv_nsec ||
       before.st_ctim.tv_sec != after.st_ctim.tv_sec ||
       before.st_ctim.tv_nsec != after.st_ctim.tv_nsec ||
-      memcmp(actual, expected_sha256, sizeof(actual)) != 0 || lseek(fd, 0, SEEK_SET) < 0) {
+      memcmp(actual, expected->sha256, sizeof(actual)) != 0 || lseek(fd, 0, SEEK_SET) < 0) {
     die(EXIT_CONFIGURATION, label);
+  }
+}
+
+static void
+verify_authority_socket(const struct m7_host_dropper_config *config)
+{
+  struct stat info;
+  struct sockaddr_storage peer_address;
+  struct ucred peer_credentials;
+  socklen_t address_bytes = sizeof(peer_address), credential_bytes = sizeof(peer_credentials);
+  int type = 0, accepting = 0;
+  int flags = fcntl(AUTHORITY_FD, F_GETFL);
+  socklen_t int_bytes = sizeof(type);
+  if (fstat(AUTHORITY_FD, &info) != 0 || !S_ISSOCK(info.st_mode) || flags < 0 ||
+      (flags & O_ACCMODE) != O_RDWR ||
+      (uint64_t)info.st_dev != config->authority_dev ||
+      (uint64_t)info.st_ino != config->authority_ino ||
+      getsockopt(AUTHORITY_FD, SOL_SOCKET, SO_TYPE, &type, &int_bytes) != 0 ||
+      int_bytes != sizeof(type) || type != SOCK_STREAM ||
+      getsockopt(AUTHORITY_FD, SOL_SOCKET, SO_ACCEPTCONN, &accepting, &int_bytes) != 0 ||
+      accepting != 0 || getpeername(AUTHORITY_FD, (struct sockaddr *)&peer_address,
+                                    &address_bytes) != 0 ||
+      address_bytes < sizeof(sa_family_t) || peer_address.ss_family != AF_UNIX ||
+      getsockopt(AUTHORITY_FD, SOL_SOCKET, SO_PEERCRED, &peer_credentials,
+                 &credential_bytes) != 0 || credential_bytes != sizeof(peer_credentials) ||
+      peer_credentials.pid <= 0 || peer_credentials.uid != 0 || peer_credentials.gid != 0) {
+    die(EXIT_CONFIGURATION, "fd3 is not the connected root-owned AF_UNIX stream authority");
+  }
+}
+
+static void
+verify_result_pipe(const struct m7_host_dropper_config *config)
+{
+  struct stat info;
+  int flags = fcntl(RESULT_FD, F_GETFL);
+  if (fstat(RESULT_FD, &info) != 0 || !S_ISFIFO(info.st_mode) || flags < 0 ||
+      (flags & O_ACCMODE) != O_WRONLY ||
+      (uint64_t)info.st_dev != config->result_dev ||
+      (uint64_t)info.st_ino != config->result_ino) {
+    die(EXIT_CONFIGURATION, "fd17 is not the fixed write-only result pipe");
   }
 }
 
@@ -406,15 +503,14 @@ verify_proc_state(const struct m7_host_dropper_config *config)
       stat("/proc/1/ns/user", &initial_namespace) != 0 ||
       (uint64_t)self_namespace.st_dev != config->userns_dev ||
       (uint64_t)self_namespace.st_ino != config->userns_ino ||
-      ((config->flags & CONFIG_FLAG_ALLOW_NONINITIAL_USERNS) == 0 &&
-       (self_namespace.st_dev != initial_namespace.st_dev ||
-        self_namespace.st_ino != initial_namespace.st_ino))) {
+      self_namespace.st_dev != initial_namespace.st_dev ||
+      self_namespace.st_ino != initial_namespace.st_ino) {
     die(EXIT_AUTHORITY, "dropped child user namespace differs from policy");
   }
 }
 
 static void
-verify_standard_descriptors(int synthetic)
+verify_standard_descriptors(const struct m7_host_dropper_config *config)
 {
   struct stat input, output, error;
   int output_size, error_size;
@@ -425,11 +521,13 @@ verify_standard_descriptors(int synthetic)
   if (fstat(STDOUT_FILENO, &output) != 0 || fstat(STDERR_FILENO, &error) != 0) {
     die(EXIT_CONFIGURATION, "fd 1 or fd 2 is not a bounded supervisor-owned pipe");
   }
-  /* Node's test child-process plumbing is a socket pair, not a pipe.  It is
-   * accepted only by this permanently non-production synthetic mode. */
-  if (synthetic && S_ISSOCK(output.st_mode) && S_ISSOCK(error.st_mode)) return;
   if (!S_ISFIFO(output.st_mode) || !S_ISFIFO(error.st_mode) || output.st_uid != 0 ||
       error.st_uid != 0 || (output.st_mode & 0077) != 0 || (error.st_mode & 0077) != 0 ||
+      (output.st_dev == error.st_dev && output.st_ino == error.st_ino) ||
+      ((uint64_t)output.st_dev == config->result_dev &&
+       (uint64_t)output.st_ino == config->result_ino) ||
+      ((uint64_t)error.st_dev == config->result_dev &&
+       (uint64_t)error.st_ino == config->result_ino) ||
       (output_size = fcntl(STDOUT_FILENO, F_GETPIPE_SZ)) < 1 ||
       (error_size = fcntl(STDERR_FILENO, F_GETPIPE_SZ)) < 1 || output_size > 1048576 ||
       error_size > 1048576) {
@@ -442,14 +540,13 @@ close_non_allowlisted_fds(void)
 {
   struct rlimit limit;
   unsigned long fd;
-  (void)close(CONFIG_FD);
 #ifdef SYS_close_range
-  if (syscall(SYS_close_range, (unsigned int)(RUNNER_FD + 1), ~0U, 0) == 0) return;
+  if (syscall(SYS_close_range, (unsigned int)(RESULT_FD + 1), ~0U, 0) == 0) return;
   if (errno != ENOSYS) die(EXIT_AUTHORITY, "cannot close non-allowlisted descriptors");
 #endif
   if (getrlimit(RLIMIT_NOFILE, &limit) != 0 || limit.rlim_cur == RLIM_INFINITY ||
       limit.rlim_cur > 1048576UL) die(EXIT_AUTHORITY, "descriptor bound is unavailable");
-  for (fd = (unsigned long)RUNNER_FD + 1; fd < limit.rlim_cur; fd++) (void)close((int)fd);
+  for (fd = (unsigned long)RESULT_FD + 1; fd < limit.rlim_cur; fd++) (void)close((int)fd);
 }
 
 static void
@@ -461,57 +558,34 @@ set_close_on_exec(int fd, int enabled)
   }
 }
 
-/* This is deliberately argv data compiled into the immutable dropper, not a
- * caller-controlled --eval string.  It proves that the first unprivileged
- * Node realm checks the credentials, groups, capability vectors,
- * no_new_privs, namespace, and closed environment again before importing the
- * exact runner descriptor. */
-static const char child_verifier_common[] =
-  "const f=require('node:fs'),s=f.readFileSync('/proc/self/status','utf8'),"
-  "l=n=>{const m=s.match(new RegExp('^'+n+':\\\\s*(.*)$','m'));return m&&m[1].trim()},"
-  "z=n=>/^[0]+$/.test(l(n)||''),q=n=>{const v=l(n)||'';return /^([0-9]+) \\1 \\1 \\1$/.test(v)},"
-  "e=Object.keys(process.env).sort().join('\\n');"
-  "if(!q('Uid')||!q('Gid')||l('Groups')!==''||!z('CapInh')||!z('CapPrm')||"
-  "!z('CapEff')||!z('CapBnd')||!z('CapAmb')||l('NoNewPrivs')!=='1'||"
-  "e!=='HOME\\nLANG\\nLC_ALL\\nPATH\\nTZ')process.exit(125);";
-static const char child_verifier_initial[] =
-  "if(l('Uid').startsWith('0 ')||l('Gid').startsWith('0 '))process.exit(125);"
-  "if(f.statSync('/proc/self/ns/user').ino!==f.statSync('/proc/1/ns/user').ino)process.exit(125);"
-  "import('file:///proc/self/fd/5').catch(()=>process.exit(126));";
-static const char child_verifier_synthetic[] =
-  "if(!f.statSync('/proc/self/ns/user').isFile())process.exit(125);"
-  "import('file:///proc/self/fd/5').catch(()=>process.exit(126));";
-
 int
 main(int argc, char **argv)
 {
   struct m7_host_dropper_config config;
-  int synthetic;
+  size_t index;
   uid_t actual_uid, effective_uid, saved_uid;
   gid_t actual_gid, effective_gid, saved_gid;
-  char child_program[sizeof(child_verifier_common) + sizeof(child_verifier_initial) + 1];
   char *node_argv[] = {
     (char *)"cadr-m7-p4-host-node", (char *)"--no-addons",
-    (char *)"--disable-proto=throw", (char *)"--eval", child_program, NULL
+    (char *)"--disable-proto=throw", (char *)"/proc/self/fd/5",
+    (char *)"--inherited-v2", NULL
   };
   char *closed_environment[] = {
     (char *)"HOME=/var/empty", (char *)"LANG=C", (char *)"LC_ALL=C",
     (char *)"TZ=UTC", (char *)"PATH=/var/empty", NULL
   };
 
-  if (argc != 2 || (strcmp(argv[1], "--inherited-v1") != 0 &&
-                    strcmp(argv[1], "--synthetic-test-v1") != 0)) {
-    die(EXIT_USAGE, "usage is exactly --inherited-v1 or --synthetic-test-v1");
+  if (argc != 2 || strcmp(argv[1], "--inherited-v2") != 0) {
+    die(EXIT_USAGE, "usage is exactly --inherited-v2");
   }
-  synthetic = strcmp(argv[1], "--synthetic-test-v1") == 0;
-  (void)snprintf(child_program, sizeof(child_program), "%s%s", child_verifier_common,
-                 synthetic ? child_verifier_synthetic : child_verifier_initial);
-  read_configuration(&config, synthetic);
-  verify_hashed_regular_fd(NODE_FD, config.node_dev, config.node_ino,
-                           config.node_sha256, "inherited Node descriptor differs from capture");
-  verify_hashed_regular_fd(RUNNER_FD, config.runner_dev, config.runner_ino,
-                           config.runner_sha256, "inherited runner descriptor differs from capture");
-  verify_standard_descriptors(synthetic);
+  read_configuration(&config);
+  verify_authority_socket(&config);
+  verify_result_pipe(&config);
+  for (index = 0; index < CONFIG_FILE_COUNT; index++) {
+    verify_hashed_regular_fd(&config.files[index],
+      "inherited read-only file descriptor differs from M7HDPV2");
+  }
+  verify_standard_descriptors(&config);
 
   if (setgroups(0, NULL) != 0) die(EXIT_AUTHORITY, "cannot clear supplementary groups");
   /* Bounding capabilities must be removed while CAP_SETPCAP is still
@@ -539,7 +613,11 @@ main(int argc, char **argv)
   verify_proc_state(&config);
   close_non_allowlisted_fds();
   set_close_on_exec(NODE_FD, 1);
-  set_close_on_exec(RUNNER_FD, 0);
+  for (index = 0; index < CONFIG_FILE_COUNT; index++) {
+    if (config.files[index].fd != NODE_FD) set_close_on_exec((int)config.files[index].fd, 0);
+  }
+  set_close_on_exec(AUTHORITY_FD, 0);
+  set_close_on_exec(RESULT_FD, 0);
   (void)syscall(SYS_execveat, NODE_FD, "", node_argv, closed_environment, AT_EMPTY_PATH);
   die(EXIT_EXEC, "cannot execute exact inherited Guix Node descriptor");
 }

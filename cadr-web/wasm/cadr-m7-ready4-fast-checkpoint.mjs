@@ -63,12 +63,14 @@ export const CADR_M7_READY4_FAST_WORKER_TRANSITIVE_MODULES = Object.freeze([
   "cadr-web/wasm/cadr-m8-keyboard.mjs",
   "cadr-web/wasm/cadr-m8-m9-campaign.mjs",
   "cadr-web/wasm/cadr-m8-m9-deactivation.mjs",
+  "cadr-web/wasm/cadr-m8-m9-restore.mjs",
   "cadr-web/wasm/cadr-m8-m9-transaction.mjs",
   "cadr-web/wasm/cadr-m9-pointer.mjs",
   "cadr-web/wasm/cadr-m11-audio.mjs",
   "cadr-web/wasm/cadr-m12-debugger.mjs",
   "cadr-web/wasm/cadr-m13-audio-source.mjs",
   "cadr-web/wasm/cadr-worker.js",
+  "cadr-web/wasm/cadr-worker-request-adapter.mjs",
 ]);
 export const CADR_M7_READY4_FAST_REQUIRED_AUTHORITIES = Object.freeze([
   "cadr-web/Makefile",
@@ -294,9 +296,9 @@ function buildToolchain(value) {
     "M7 Guix daemon socket identity");
   exactKeys(value.guix.store, ["dev", "gid", "ino", "mode", "uid"],
     "M7 Guix store identity");
-  required(value.guix.daemon_socket.dev === 36 && value.guix.daemon_socket.ino === 4806452 &&
+  required(value.guix.daemon_socket.dev === 37 && value.guix.daemon_socket.ino === 5528344 &&
     value.guix.daemon_socket.uid === 944 && value.guix.daemon_socket.gid === 954 &&
-    value.guix.daemon_socket.mode === 438 && value.guix.store.dev === 36 &&
+    value.guix.daemon_socket.mode === 438 && value.guix.store.dev === 37 &&
     value.guix.store.ino === 389021 && value.guix.store.uid === 944 &&
     value.guix.store.gid === 954 && value.guix.store.mode === 1021,
   "M7 Guix daemon/store authority differs from the pinned host capability");

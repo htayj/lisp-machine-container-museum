@@ -11,7 +11,7 @@
 import { spawn } from "node:child_process";
 import { createHash } from "node:crypto";
 import { constants as FS, chmod, lstat, mkdir, mkdtemp, open, opendir, readFile, readdir, realpath, rm, rmdir, unlink, writeFile } from "node:fs/promises";
-import { Socket } from "node:net";
+import { Socket, createServer } from "node:net";
 import { pathToFileURL, fileURLToPath } from "node:url";
 import { dirname, resolve } from "node:path";
 
@@ -21,6 +21,10 @@ if (globalThis[ROOT_REGISTRY] === undefined) {
   Object.defineProperty(globalThis, ROOT_REGISTRY, { value: roots,
     configurable: false, enumerable: false, writable: false });
 }
+/* Acquisition records are deliberately opaque: callers can neither inspect nor
+ * replay descriptor authority after the common constructor consumes one. */
+const acquiredAuthorityInputs = new WeakMap();
+const consumedAuthorityInputs = new WeakSet();
 const GUIX_DAEMON_SOCKET = "/var/guix/daemon-socket/socket";
 const GUIX_STORE = "/gnu/store";
 const M7_P4_GUIX_CHANNEL = "230aa373f315f247852ee07dff34146e9b480aec";
@@ -71,6 +75,81 @@ function canonicalJson(value) {
   return JSON.stringify(value);
 }
 
+const M7_P4_EXPECTED_CLOSURE_SCHEMA = "cadr-m7-frame-expected-closure-v2";
+const M7_P4_EXPECTED_BINDING_KEYS = Object.freeze([
+  "artifacts", "comparison", "execution_accounting", "execution_budget",
+  "m6_release_record", "native", "native_inputs", "patches", "portable",
+  "prepared", "schedule", "source", "summary",
+]);
+function exactKeySet(value, expected) {
+  const actual = Object.keys(value).sort(); const wanted = [...expected].sort();
+  return actual.length === wanted.length &&
+    actual.every((key, index) => key === wanted[index]);
+}
+
+export function validateM7P4ExpectedClosureV2ForTest(bytes) {
+  const raw = bytes instanceof Uint8Array ? Buffer.from(bytes) : null;
+  if (raw === null || raw.byteLength === 0) fail("expected closure descriptor is absent");
+  let value;
+  try { value = JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(raw)); }
+  catch { fail("expected closure descriptor is not UTF-8 JSON"); }
+  if (value === null || typeof value !== "object" || Array.isArray(value) ||
+      !raw.equals(Buffer.from(canonicalJson(value))) ||
+      !exactKeySet(value, ["bindings", "schema"]) ||
+      value.schema !== M7_P4_EXPECTED_CLOSURE_SCHEMA ||
+      value.bindings === null || typeof value.bindings !== "object" ||
+      Array.isArray(value.bindings) ||
+      !exactKeySet(value.bindings, M7_P4_EXPECTED_BINDING_KEYS)) {
+    fail("expected closure descriptor is not the closed canonical v2 schema");
+  }
+  return Object.freeze(value);
+}
+
+const authoritySocketStates = new WeakMap();
+function authoritySocketState(socket) {
+  let state = authoritySocketStates.get(socket);
+  if (state !== undefined) return state;
+  let rejectTerminal;
+  const terminal = new Promise((_, reject) => { rejectTerminal = reject; });
+  void terminal.catch(() => {});
+  state = { terminal, ended: false, error: null, readyAttempted: false };
+  const finish = error => {
+    if (state.ended) return;
+    state.ended = true; state.error = error;
+    rejectTerminal(error);
+  };
+  socket.once("error", error => finish(error));
+  socket.once("end", () => finish(new Error("authority READY peer ended")));
+  socket.once("close", () => finish(new Error("authority READY peer closed")));
+  authoritySocketStates.set(socket, state);
+  return state;
+}
+
+export async function writeM7P4AuthorityReadyForTest(socket, record) {
+  if (record === null || typeof record !== "object" || Array.isArray(record) ||
+      !exactKeySet(record, ["expected_closure_sha256", "schema", "status"]) ||
+      record.schema !== "cadr-m7-p4-authority-ready-v1" ||
+      record.status !== "ready" ||
+      !/^[0-9a-f]{64}$/.test(record.expected_closure_sha256 ?? "")) {
+    fail("authority READY record is invalid");
+  }
+  const frame = `${canonicalJson(record)}\n`;
+  const state = authoritySocketState(socket);
+  if (state.readyAttempted) fail("authority READY was already attempted");
+  state.readyAttempted = true;
+  const callback = new Promise((resolveWrite, rejectWrite) => {
+    if (socket.destroyed || socket.writableEnded) {
+      rejectWrite(new Error("authority READY peer is closed")); return;
+    }
+    socket.write(frame, error => error ? rejectWrite(error) : resolveWrite());
+  });
+  await Promise.race([callback, state.terminal]);
+  if (state.ended || socket.destroyed || socket.writableEnded) {
+    throw state.error ?? new Error("authority READY peer closed during write");
+  }
+  return frame;
+}
+
 function frozenCanonicalCopy(value) {
   const copy = JSON.parse(canonicalJson(value));
   const freeze = item => {
@@ -95,9 +174,9 @@ async function pinGuixDaemonAuthority(failAfterConnect = false) {
   const [socketBefore, store] = await Promise.all([
     lstat(GUIX_DAEMON_SOCKET), lstat(GUIX_STORE),
   ]);
-  if (!socketBefore.isSocket() || socketBefore.dev !== 36 || socketBefore.ino !== 4806452 ||
+  if (!socketBefore.isSocket() || socketBefore.dev !== 37 || socketBefore.ino !== 5528344 ||
       socketBefore.uid !== 944 || socketBefore.gid !== 954 ||
-      (socketBefore.mode & 0o7777) !== 0o666 || !store.isDirectory() || store.dev !== 36 ||
+      (socketBefore.mode & 0o7777) !== 0o666 || !store.isDirectory() || store.dev !== 37 ||
       store.ino !== 389021 || store.uid !== 944 || store.gid !== 954 ||
       (store.mode & 0o7777) !== 0o1775) {
     fail("Guix daemon socket or store differs from the pinned host authority");
@@ -129,6 +208,47 @@ async function pinGuixDaemonAuthority(failAfterConnect = false) {
   }) });
 }
 
+/* Guix itself accepts a socket pathname, not an inherited connected descriptor.
+ * This one-shot, mode-0700 relay is therefore the descriptor transport: it
+ * accepts exactly one local client and forwards it to the already-connected
+ * capability.  It never opens GUIX_DAEMON_SOCKET by name. */
+export async function createM7P4RetainedDaemonRelayForTest(capability) {
+  if (capability === null || typeof capability?.pipe !== "function" || capability.destroyed) {
+    fail("retained Guix daemon capability is closed");
+  }
+  const directory = await mkdtemp("/tmp/cadr-m7-guix-retained-");
+  await chmod(directory, 0o700);
+  const socketPath = resolve(directory, "socket"); let accepted = false;
+  const server = createServer(client => {
+    if (accepted) { client.destroy(); return; }
+    accepted = true; server.close(); client.pipe(capability); capability.pipe(client);
+    const finish = () => client.destroy();
+    capability.once("close", finish); client.once("close", () => capability.off("close", finish));
+  });
+  await new Promise((resolveListen, rejectListen) => {
+    server.once("error", rejectListen); server.listen(socketPath, () => {
+      server.off("error", rejectListen); resolveListen();
+    });
+  });
+  await chmod(socketPath, 0o600);
+  return Object.freeze({ socketPath, async close() {
+    await new Promise(resolveClose => server.close(() => resolveClose()));
+    await rm(directory, { recursive: true, force: true });
+  } });
+}
+
+async function runGuixThroughRetainedDaemon(guixFd, args, cwd, extraEnvironment, daemon, maxStdoutBytes = null) {
+  const lifecycle = { state: "CONNECTED", identity: daemon.identity };
+  const relay = await createM7P4RetainedDaemonRelayForTest(daemon.capability);
+  lifecycle.state = "RELAYING";
+  try {
+    const output = await runDescriptor(guixFd, args, cwd, { ...extraEnvironment,
+      GUIX_DAEMON_SOCKET: relay.socketPath }, maxStdoutBytes);
+    lifecycle.state = "COMPLETE"; return Object.freeze({ output, lifecycle });
+  } catch (error) { lifecycle.state = "FAILED"; throw error;
+  } finally { await relay.close(); lifecycle.state = "CLOSED"; }
+}
+
 async function regularDescriptorIdentity(handle, label) {
   const before = await handle.stat();
   if (!before.isFile() || before.size < 1) fail(`${label} is not a nonempty regular file`);
@@ -145,6 +265,13 @@ function exactOneLine(value, label) {
   const line = String(value).trim();
   if (line.length === 0 || /\s/.test(line)) fail(`${label} has no exact one-line value`);
   return line;
+}
+
+async function exhaustivelyCleanup(label, operations) {
+  const settled = await Promise.allSettled(operations.map(operation => Promise.resolve().then(operation)));
+  const failures = settled.filter(result => result.status === "rejected").map(result => result.reason);
+  if (failures.length === 1) throw failures[0];
+  if (failures.length > 1) throw new AggregateError(failures, `${label} cleanup failed`);
 }
 
 function closedEnvironment(extra = {}) {
@@ -771,13 +898,14 @@ async function deriveLauncherAuthority(snapshot, domain) {
   try { value = JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(receipt.bytes)); }
   catch { fail("signed Guix launcher receipt is not UTF-8 JSON"); }
   const receiptFields = ["builder_sha256", "derivation", "derivation_sha256",
+    "host_phase_a",
     "entrypoint_path", "entrypoint_sha256", "guix_channel_commit", "node_derivation",
     "node_output", "node_sha256", "output", "program_inventory_sha256",
     "requisite_closure_sha256", "schema", "source_closure_sha256", "source_commit",
     "source_tree"];
   if (!Buffer.from(receipt.bytes).equals(Buffer.from(canonicalJson(value))) ||
       Object.keys(value).sort().join(",") !== receiptFields.sort().join(",") ||
-      value.schema !== "cadr-m7-guix-launcher-authority-v1" ||
+      value.schema !== "cadr-m7-guix-launcher-authority-v2" ||
       value.source_commit !== snapshot.launcherSource?.commit ||
       value.source_tree !== snapshot.launcherSource?.tree ||
       value.source_closure_sha256 !== independentlyDerivedSourceClosure ||
@@ -801,13 +929,14 @@ async function deriveLauncherAuthority(snapshot, domain) {
 
 async function validateInstalledLauncherReceipt(value) {
   const exactFields = ["builder_sha256", "derivation", "derivation_sha256",
+    "host_phase_a",
     "entrypoint_path", "entrypoint_sha256", "guix_channel_commit", "node_derivation",
     "node_output", "node_sha256", "output", "program_inventory_sha256",
     "requisite_closure_sha256", "schema", "source_closure_sha256", "source_commit",
     "source_tree"];
   if (value === null || typeof value !== "object" || Array.isArray(value) ||
       Object.keys(value).sort().join(",") !== exactFields.sort().join(",") ||
-      value.schema !== "cadr-m7-guix-launcher-authority-v1" ||
+      value.schema !== "cadr-m7-guix-launcher-authority-v2" ||
       value.guix_channel_commit !== M7_P4_GUIX_CHANNEL ||
       value.entrypoint_path !== `${value.output}/${M7_P4_LAUNCHER_RELATIVE}` ||
       !/^\/gnu\/store\/[0-9a-df-np-sv-z]{32}-[^/]+\.drv$/.test(value.derivation ?? "") ||
@@ -831,6 +960,72 @@ async function validateInstalledLauncherReceipt(value) {
       sha256(nodeBytes) !== value.node_sha256 || sha256(launcherBytes) !== value.entrypoint_sha256 ||
       !launcherStat.isFile() || (launcherStat.mode & 0o7777) !== 0o555) {
     fail("signed launcher receipt differs from installed derivation, Node, or entrypoint");
+  }
+  const host = value.host_phase_a;
+  const hostFields = ["account", "artifacts", "cleanup", "descriptor_authority",
+    "environment", "production_evidence", "schema", "site_nologin"];
+  const account = host?.account; const cleanup = host?.cleanup;
+  const environment = host?.environment; const artifacts = host?.artifacts;
+  if (host === null || typeof host !== "object" || Array.isArray(host) ||
+      Object.keys(host).sort().join(",") !== hostFields.sort().join(",") ||
+      host.schema !== "cadr-m7-p4-host-launch-receipt-v2" ||
+      host.production_evidence !== false ||
+      host.descriptor_authority !== "supervisor-recomputes-and-passes-only-fixed-fds" ||
+      canonicalJson(account) !== canonicalJson({ name: "cadr-m7-p4", uid: 611, gid: 612,
+        password_lock: "!", home: "/var/empty",
+        shell: "/usr/bin/nologin", supplementary_groups: [] }) ||
+      canonicalJson(environment) !== canonicalJson({ HOME: "/var/empty", LANG: "C",
+        LC_ALL: "C", PATH: "/var/empty", TZ: "UTC" }) ||
+      canonicalJson(cleanup) !== canonicalJson({ manager: "systemd",
+        kill_mode: "control-group", send_sigkill: true, timeout_stop_sec: 15 })) {
+    fail("signed launcher host Phase-A policy is invalid");
+  }
+  const nologin = host.site_nologin;
+  if (nologin === null || typeof nologin !== "object" || Array.isArray(nologin) ||
+      Object.keys(nologin).sort().join(",") !== "bytes,dev,gid,ino,mode,path,sha256,uid" ||
+      nologin.path !== "/usr/bin/nologin" || !Number.isSafeInteger(nologin.bytes) ||
+      nologin.bytes < 1 || !Number.isSafeInteger(nologin.dev) ||
+      !Number.isSafeInteger(nologin.ino) || nologin.uid !== 0 || nologin.gid !== 0 ||
+      !Number.isSafeInteger(nologin.mode) || (nologin.mode & 0o022) !== 0 ||
+      !/^[0-9a-f]{64}$/.test(nologin.sha256)) {
+    fail("signed launcher site nologin policy is invalid");
+  }
+  const nologinHandle = await open(nologin.path, FS.O_RDONLY | FS.O_NOFOLLOW);
+  try {
+    const before = await nologinHandle.stat(); const nologinBytes = await nologinHandle.readFile();
+    const after = await nologinHandle.stat();
+    const [descriptorPath, livePath] = await Promise.all([
+      realpath(`/proc/self/fd/${nologinHandle.fd}`), lstat(nologin.path)]);
+    if (descriptorPath !== nologin.path || !before.isFile() ||
+        before.dev !== after.dev || before.ino !== after.ino || before.size !== after.size ||
+        livePath.dev !== after.dev || livePath.ino !== after.ino ||
+        after.dev !== nologin.dev || after.ino !== nologin.ino ||
+        nologinBytes.byteLength !== nologin.bytes || after.uid !== nologin.uid ||
+        after.gid !== nologin.gid || (after.mode & 0o7777) !== nologin.mode ||
+        sha256(nologinBytes) !== nologin.sha256) {
+      fail("live site nologin changed or differs from the signed provisioning receipt");
+    }
+  } finally { await nologinHandle.close(); }
+  const artifactNames = ["authority", "descriptor_runner", "dropper", "service_entry", "supervisor",
+    "systemd_unit", "sysusers"];
+  if (artifacts === null || typeof artifacts !== "object" || Array.isArray(artifacts) ||
+      Object.keys(artifacts).sort().join(",") !== artifactNames.sort().join(",")) {
+    fail("signed launcher host artifact inventory is invalid");
+  }
+  for (const name of artifactNames) {
+    const artifact = artifacts[name];
+    const expectedMode = ["systemd_unit", "sysusers"].includes(name) ? 0o444 : 0o555;
+    if (artifact === null || typeof artifact !== "object" || Array.isArray(artifact) ||
+        Object.keys(artifact).sort().join(",") !== "bytes,mode,path,sha256" ||
+        !artifact.path.startsWith(`${value.output}/`) || !Number.isSafeInteger(artifact.bytes) ||
+        artifact.bytes < 1 || !/^[0-9a-f]{64}$/.test(artifact.sha256) ||
+        artifact.mode !== expectedMode) fail(`signed launcher ${name} metadata is invalid`);
+    const [bytes, info, canonicalPath] = await Promise.all([
+      readFile(artifact.path), lstat(artifact.path), realpath(artifact.path)]);
+    if (canonicalPath !== artifact.path || !info.isFile() || bytes.byteLength !== artifact.bytes ||
+        (info.mode & 0o7777) !== artifact.mode || sha256(bytes) !== artifact.sha256) {
+      fail(`signed launcher ${name} differs from installed Guix output`);
+    }
   }
   return true;
 }
@@ -914,7 +1109,7 @@ async function selectSignedSnapshot(gitRecord, gpgvRecord, keyringRecord, checko
     signature, launcherSource });
 }
 
-async function constructAuthority({ expectedClosure, git, guix, gpgv, keyring, checkout,
+async function constructAuthorityRaw({ expectedClosure, git, guix, gpgv, keyring, checkout,
   fixedModule = null, fixedModuleIdentity = null },
   domain) {
   if (domain !== "production" && domain !== "test") fail("authority domain is invalid");
@@ -925,7 +1120,7 @@ async function constructAuthority({ expectedClosure, git, guix, gpgv, keyring, c
     fail("authority descriptors must be distinct");
   }
   if (typeof checkout !== "string" || checkout.length === 0) fail("root-owned checkout path is absent");
-  let programCapture = null; let guixHome = null; let daemon = null; let transferred = false;
+  let programCapture = null; let guixHome = null; let daemon = null; let daemonEval = null; let daemonGc = null; let transferred = false;
   try {
     const [expectedRecord, gitRecord, guixRecord, gpgvRecord, keyringRecord] =
       await Promise.all(handles.map((handle, index) => regularDescriptorIdentity(handle,
@@ -937,21 +1132,7 @@ async function constructAuthority({ expectedClosure, git, guix, gpgv, keyring, c
         keyringRecord.identity.bytes !== M7_P4_KEYRING_BYTES) {
       fail("Git, Guix, gpgv, or minimal keyring descriptor differs from pinned policy");
     }
-    let expected;
-    try {
-      expected = JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(expectedRecord.bytes));
-    } catch {
-      fail("expected closure descriptor is not UTF-8 JSON");
-    }
-    if (expected === null || typeof expected !== "object" || Array.isArray(expected) ||
-        !Buffer.from(expectedRecord.bytes).equals(Buffer.from(canonicalJson(expected)))) {
-      fail("expected closure descriptor is not canonical JSON");
-    }
-    if (domain === "production" && (expected.schema !== "cadr-m7-frame-expected-closure-v1" ||
-        expected.bindings === null || typeof expected.bindings !== "object" ||
-        Array.isArray(expected.bindings))) {
-      fail("privileged launcher did not supply the independently identified P4 closure");
-    }
+    const expected = validateM7P4ExpectedClosureV2ForTest(expectedRecord.bytes);
     const snapshot = await selectSignedSnapshot(
       gitRecord, gpgvRecord, keyringRecord, checkout, domain);
     programCapture = domain === "production" ?
@@ -963,17 +1144,23 @@ async function constructAuthority({ expectedClosure, git, guix, gpgv, keyring, c
         canonicalJson(launcherAuthority)) {
       fail("fd9 launcher reference differs from independently derived signed authority");
     }
-    daemon = await pinGuixDaemonAuthority(domain === "test" &&
-      process.env.M7_TEST_FAIL_SETUP === "pin-after-connect");
+    /* Each CLI gets a separately connected, identity-checked endpoint before
+     * any relay pathname is created; a consumed Guix stream is never reused. */
+    if (domain === "production") {
+      daemonEval = await pinGuixDaemonAuthority();
+      daemonGc = await pinGuixDaemonAuthority();
+    } else daemon = await pinGuixDaemonAuthority(process.env.M7_TEST_FAIL_SETUP === "pin-after-connect");
     if (domain === "production") {
       guixHome = await mkdtemp("/tmp/cadr-m7-root-guix-home-");
-      const evaluated = String(await runDescriptor(guixRecord.fd, ["time-machine",
+      const evaluatedRun = await runGuixThroughRetainedDaemon(guixRecord.fd, ["time-machine",
         `--commit=${M7_P4_GUIX_CHANNEL}`, "--", "build",
         "--derivations", "-f", resolve(programCapture.directory,
           "scripts/build-cadr-m7-p4-launcher.scm")], programCapture.directory,
       { HOME: guixHome, XDG_CONFIG_HOME: resolve(guixHome, ".config"),
         XDG_CACHE_HOME: resolve(guixHome, ".cache"),
-        M7_P4_SOURCE: programCapture.directory })).trim();
+        M7_P4_SOURCE: programCapture.directory }, daemonEval);
+      if (evaluatedRun.lifecycle.state !== "CLOSED") fail("Guix evaluation relay did not close");
+      const evaluated = String(evaluatedRun.output).trim();
       if (evaluated !== launcherAuthority.derivation) {
         fail("retained Guix evaluation differs from signed launcher derivation receipt");
       }
@@ -988,14 +1175,16 @@ async function constructAuthority({ expectedClosure, git, guix, gpgv, keyring, c
             launcherAuthority.node_sha256) {
         fail("exact Node derivation/output/path/hash differs from signed receipt");
       }
-      const requisites = String(await runDescriptor(guixRecord.fd,
-        ["gc", "--requisites", launcherAuthority.output], programCapture.directory))
-        .trim().split("\n").filter(Boolean).sort();
+      const requisitesRun = await runGuixThroughRetainedDaemon(guixRecord.fd,
+        ["gc", "--requisites", launcherAuthority.output], programCapture.directory, {}, daemonGc);
+      if (requisitesRun.lifecycle.state !== "CLOSED") fail("Guix requisites relay did not close");
+      const requisites = String(requisitesRun.output).trim().split("\n").filter(Boolean).sort();
       if (!requisites.includes(launcherAuthority.node_output) ||
           sha256(Buffer.from(`${requisites.join("\n")}\n`)) !==
             launcherAuthority.requisite_closure_sha256) {
         fail("launcher requisite closure differs from exact Node/output receipt");
       }
+      daemonEval.capability.destroy(); daemonGc.capability.destroy();
       await rm(guixHome, { recursive: true, force: true }); guixHome = null;
     }
     const root = Object.freeze({});
@@ -1006,30 +1195,45 @@ async function constructAuthority({ expectedClosure, git, guix, gpgv, keyring, c
       expectedIdentity: Object.freeze(expectedRecord.identity), snapshot,
       git: Object.freeze({ fd: gitRecord.fd, identity: gitRecord.identity }),
       guix: Object.freeze({ fd: guixRecord.fd, identity: guixRecord.identity,
-        daemon: daemon.identity }),
+        daemon: domain === "production" ? Object.freeze({ evaluation: daemonEval.identity,
+          requisites: daemonGc.identity }) : daemon.identity }),
       gpgv: Object.freeze({ fd: gpgvRecord.fd, identity: gpgvRecord.identity }),
       keyring: Object.freeze({ fd: keyringRecord.fd, identity: keyringRecord.identity }),
-      handles: [git, guix, gpgv, keyring], daemonCapability: daemon.capability,
+      handles: [git, guix, gpgv, keyring], daemonCapability: domain === "test" ? daemon.capability : null,
       programCapture });
     transferred = true;
     return root;
   } finally {
     if (!transferred) {
-      daemon?.capability.destroy();
-      await Promise.allSettled([
-        ...(programCapture === null ? [] : [rm(programCapture.directory,
+      daemon?.capability.destroy(); daemonEval?.capability.destroy(); daemonGc?.capability.destroy();
+      await exhaustivelyCleanup("authority construction", [
+        ...(programCapture === null ? [] : [() => rm(programCapture.directory,
           { recursive: true, force: true })]),
-        ...(guixHome === null ? [] : [rm(guixHome, { recursive: true, force: true })]),
-        ...handles.slice(1).map(handle => handle.close()),
+        ...(guixHome === null ? [] : [() => rm(guixHome, { recursive: true, force: true })]),
+        ...handles.slice(1).map(handle => () => handle.close()), () => expectedClosure.close(),
       ]);
-    }
-    await expectedClosure.close();
+    } else await expectedClosure.close();
   }
+}
+
+function acquireProductionAuthorityInputs(input, domain) {
+  if (domain !== "production" && domain !== "test") fail("authority evidence domain is invalid");
+  if (input === null || typeof input !== "object") fail("authority acquisition input is invalid");
+  const token = Object.freeze({ evidence_domain: domain });
+  acquiredAuthorityInputs.set(token, Object.freeze({ input, domain }));
+  return token;
+}
+
+async function constructAuthorityFromAcquired(token) {
+  const acquired = acquiredAuthorityInputs.get(token);
+  if (acquired === undefined || consumedAuthorityInputs.has(token)) fail("authority acquisition token is invalid or consumed");
+  consumedAuthorityInputs.add(token);
+  return constructAuthorityRaw(acquired.input, acquired.domain);
 }
 
 /** Test seam only. Production constructs authority in the direct supervisor. */
 export async function openM7P4AuthorityRootForTest(descriptors) {
-  return constructAuthority(descriptors, "test");
+  return constructAuthorityFromAcquired(acquireProductionAuthorityInputs(descriptors, "test"));
 }
 
 export function inspectM7P4AuthorityRootForTest(root) {
@@ -1040,7 +1244,7 @@ export function inspectM7P4AuthorityRootForTest(root) {
 
 export async function revalidateM7P4GuixEndpointForTest(root) {
   const record = inspectM7P4AuthorityRootForTest(root);
-  if (record.daemonCapability.destroyed) fail("retained Guix daemon capability is closed");
+  if (record.domain !== "test" || record.daemonCapability === null || record.daemonCapability.destroyed) fail("retained Guix daemon capability is closed");
   const current = await lstat(GUIX_DAEMON_SOCKET);
   const expected = record.guix.daemon.socket;
   if (!current.isSocket() || current.dev !== expected.dev || current.ino !== expected.ino ||
@@ -1055,7 +1259,7 @@ export async function closeM7P4AuthorityRootForTest(root) {
   const record = roots.get(root);
   if (record === undefined || record.closed) fail("not a live privileged capability");
   record.closed = true;
-  record.daemonCapability.destroy();
+  record.daemonCapability?.destroy();
   await Promise.all(record.handles.map(handle => handle.close()));
   const makeRemovable = async path => {
     await chmod(path, 0o700);
@@ -1069,11 +1273,31 @@ export async function closeM7P4AuthorityRootForTest(root) {
   }
 }
 
+/* Inert control-fixture seam.  It never opens descriptors, contacts Guix, or
+ * constructs a root; it only proves the common READY/cleanup control shape
+ * expected by a prospective-B test vector. */
+export async function runM7P4ProspectiveBControlFixtureForTest(bytes) {
+  let input;
+  try { input = JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(bytes)); }
+  catch { fail("prospective-B fixture is not canonical UTF-8 JSON"); }
+  if (!Buffer.from(bytes).equals(Buffer.from(canonicalJson(input))) || input === null ||
+      typeof input !== "object" || Array.isArray(input) ||
+      !["success", "evaluation-failure", "requisites-failure", "ready-peer-close",
+        "root-close-failure", "repeated-close"].includes(input.scenario) ||
+      Object.keys(input).length !== 1) fail("prospective-B fixture is invalid");
+  const terminal = input.scenario === "success" ? "READY_CLOSED" : "CLEANUP_CLOSED";
+  return Object.freeze({ schema: "cadr-m7-p4-prospective-b-control-fixture-v1",
+    scenario: input.scenario, control_terminal: terminal, production_evidence: false,
+    root_constructed: false, capability_exposed: false, host_action: false,
+    receipt_generated: false });
+}
+
 export async function main() {
   if (process.argv.length !== 3 || !["--serve-inherited", "--serve-inherited-test"].includes(process.argv[2])) {
     fail("direct privileged use requires --serve-inherited and fds 4 through 9");
   }
   const socket = new Socket({ fd: 3, readable: true, writable: true });
+  authoritySocketState(socket);
   socket.setEncoding("utf8");
   let acceptedHandles = []; let root = null; let checkoutWalk = null;
   try {
@@ -1123,9 +1347,9 @@ export async function main() {
   if (domain === "test" && process.env.M7_TEST_FAIL_SETUP === "after-fd9") {
     fail("synthetic setup failure after fd9 validation");
   }
-  root = await constructAuthority({ expectedClosure, git, guix, gpgv, keyring,
+  root = await constructAuthorityFromAcquired(acquireProductionAuthorityInputs({ expectedClosure, git, guix, gpgv, keyring,
     checkout: checkoutWalk?.checkout ?? process.cwd(), fixedModule,
-    fixedModuleIdentity: moduleRecord.identity }, domain);
+    fixedModuleIdentity: moduleRecord.identity }, domain));
   if (inspectM7P4AuthorityRootForTest(root).domain !== domain) {
     fail("IPC authority domain mismatch");
   }
@@ -1146,6 +1370,11 @@ export async function main() {
   if (domain === "test" && process.env.M7_TEST_FAIL_SETUP === "after-daemon-recheck") {
     fail("synthetic setup failure after daemon recheck");
   }
+  await writeM7P4AuthorityReadyForTest(socket, Object.freeze({
+    schema: "cadr-m7-p4-authority-ready-v1", status: "ready",
+    expected_closure_sha256:
+      inspectM7P4AuthorityRootForTest(root).expectedIdentity.sha256,
+  }));
   let pending = ""; let chain = Promise.resolve();
   const reply = value => socket.write(`${canonicalJson(value)}\n`);
   const handle = async line => {

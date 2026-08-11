@@ -25,6 +25,8 @@ import {
   validateM7Ready4FastModuleIdentity,
 } from "../cadr-web/wasm/cadr-m7-ready4-fast-checkpoint.mjs";
 import { parseCdrM7N1 } from "../cadr-web/wasm/cadr-m7-frame-checkpoint.mjs";
+import { CADR_M7_EFFECTIVE_PAGE_IDENTITY_MAX_HOST_TRANSACTIONS } from
+  "../cadr-web/wasm/cadr-m7-effective-page-identity.mjs";
 import { p4Bindings, validateP4Manifest } from "./run-cadr-m7-frame-conformance.mjs";
 import {
   inspectM7P4AuthorityRootForTest,
@@ -430,8 +432,8 @@ function buildToolchain(value) {
       !Number.isSafeInteger(value.guix.descriptor_bytes) ||
       value.guix.descriptor_bytes < 1) fail("M7 Guix channel or descriptor differs");
   digest(value.guix.descriptor_sha256, "M7 Guix descriptor hash");
-  const exactGuixAuthority = { daemon_socket: { dev: 36, ino: 4806452,
-    uid: 944, gid: 954, mode: 0o666 }, store: { dev: 36, ino: 389021,
+  const exactGuixAuthority = { daemon_socket: { dev: 37, ino: 5528344,
+    uid: 944, gid: 954, mode: 0o666 }, store: { dev: 37, ino: 389021,
     uid: 944, gid: 954, mode: 0o1775 } };
   if (canonicalJson(value.guix.daemon_socket) !== canonicalJson(exactGuixAuthority.daemon_socket) ||
       canonicalJson(value.guix.store) !== canonicalJson(exactGuixAuthority.store)) {
@@ -986,6 +988,32 @@ function copyAndCompileModuleAfterAwait(moduleBytes, identity) {
   return moduleExports(copy);
 }
 
+async function hashProductionArtifact(artifact) {
+  if (artifact === null || typeof artifact !== "object" ||
+      typeof artifact.byteCount !== "bigint" || artifact.byteCount < 1n ||
+      typeof artifact.readRange !== "function") {
+    fail("production artifact hashing received an invalid source");
+  }
+  const hash = createHash("sha256");
+  for (let offset = 0n; offset < artifact.byteCount; offset += 1_048_576n) {
+    const length = artifact.byteCount - offset < 1_048_576n ?
+      artifact.byteCount - offset : 1_048_576n;
+    const bytes = await artifact.readRange(offset, length);
+    if (!(bytes instanceof IntrinsicUint8Array) || BigInt(bytes.byteLength) !== length) {
+      fail("production artifact hashing received a short range");
+    }
+    hash.update(bytes);
+  }
+  return new IntrinsicUint8Array(hash.digest());
+}
+
+export function addM7P4ProductionRunPolicyForTest(input) {
+  return Object.freeze({ ...input,
+    maxHostTransactions: CADR_M7_EFFECTIVE_PAGE_IDENTITY_MAX_HOST_TRANSACTIONS,
+    hashArtifact: hashProductionArtifact,
+  });
+}
+
 async function executeM7P4FastDifferentialInternal(config, {
   validateNative = validateM7P4NativeAuthority,
   run = runM7Ready4FastCheckpointedBoot,
@@ -1034,7 +1062,9 @@ async function executeM7P4FastDifferentialInternal(config, {
     const instantiated = await supervisor.instantiate(lease, { module, request, identity });
     const checked = validateInstantiation(instantiated, module, request, identity, sessionId);
     transcript = checked.transcript;
-    result = await run({ ...input, client: checked.client, nativeCapture: native.nativeFrame });
+    const runConfig = { ...input, client: checked.client, nativeCapture: native.nativeFrame };
+    result = await run(testAuthority ? runConfig :
+      addM7P4ProductionRunPolicyForTest(runConfig));
   } catch (error) {
     primaryError = error;
   }

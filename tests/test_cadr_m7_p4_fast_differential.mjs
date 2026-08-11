@@ -1,9 +1,10 @@
 import assert from "node:assert/strict";
 import { execFileSync, spawn, spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
+import { EventEmitter } from "node:events";
 import { chmod, mkdir, mkdtemp, open, readFile, readdir, readlink, rm, stat, symlink, unlink, writeFile } from "node:fs/promises";
 import { createConnection, createServer } from "node:net";
-import { resolve } from "node:path";
+import { dirname, relative, resolve } from "node:path";
 import { tmpdir } from "node:os";
 import {
   CADR_M6_DEVID_PROFILE,
@@ -46,6 +47,7 @@ import {
   validateM7P4FastPreparedIdentity,
 } from "../scripts/run-cadr-m7-p4-fast-differential.mjs";
 import { captureM7P4SignedArchiveForTest, closeM7P4AuthorityRootForTest,
+  createM7P4RetainedDaemonRelayForTest,
   deriveM7P4SignedArchiveBound, M7_P4_MAX_ARCHIVE_BYTES, M7_P4_MAX_SOURCE_BLOB_BYTES,
   M7_P4_MAX_SOURCE_BYTES, isM7P4UstarHeaderPathRepresentableForTest,
   inspectM7P4AuthorityRootForTest,
@@ -54,6 +56,7 @@ import { captureM7P4SignedArchiveForTest, closeM7P4AuthorityRootForTest,
   validateM7P4ImmediateLauncherParentForTest,
   validateM7P4InitialUserNamespaceForTest,
   validateM7P4InstalledLauncherReceiptForTest,
+  validateM7P4ExpectedClosureV2ForTest, writeM7P4AuthorityReadyForTest,
   validateM7P4ProductionRepositoryConfigForTest } from
   "../scripts/cadr-m7-p4-authority-root.mjs";
 import { canonicalJson } from "../scripts/run-cadr-m6-devid-o2-canary.mjs";
@@ -64,6 +67,25 @@ const C_PREFIX_SPANS = 937;
 const AUTHORITY_FD_CLEANUP_TIMEOUT_MS = 2000;
 const H = value => new Uint8Array(32).fill(value);
 const digest = bytes => new Uint8Array(createHash("sha256").update(bytes).digest());
+
+async function exactStaticWorkerClosure(entry) {
+  const seen = new Set();
+  const visit = async path => {
+    if (seen.has(path)) return;
+    seen.add(path);
+    const source = await readFile(resolve(ROOT, path), "utf8");
+    const imports = /(?:^|\n)\s*(?:import|export)\s+(?:[\s\S]*?\s+from\s+)?["'](\.[^"']+)["']\s*;/g;
+    for (let match; (match = imports.exec(source)) !== null;) {
+      await visit(relative(ROOT, resolve(dirname(resolve(ROOT, path)), match[1])));
+    }
+  };
+  await visit(entry);
+  return [...seen].sort();
+}
+
+assert.deepEqual(M7_P4_FAST_WORKER_TRANSITIVE_MODULES.slice().sort(),
+  await exactStaticWorkerClosure("cadr-web/wasm/cadr-worker.js"),
+  "the audited worker allowlist is exactly the mechanically discovered static import closure");
 
 async function boundedAuthorityCleanup(promise, label) {
   let timeout = null;
@@ -522,8 +544,8 @@ const toolchain = Object.freeze({
   build_environment: Object.freeze({ HOME: "/var/empty", LANG: "C", LC_ALL: "C", TZ: "UTC" }),
   guix: Object.freeze({ channel_commit: "230aa373f315f247852ee07dff34146e9b480aec",
     descriptor_bytes: 1, descriptor_sha256: "2".repeat(64),
-    daemon_socket: Object.freeze({ dev: 36, ino: 4806452, uid: 944, gid: 954, mode: 438 }),
-    store: Object.freeze({ dev: 36, ino: 389021, uid: 944, gid: 954, mode: 1021 }) }),
+    daemon_socket: Object.freeze({ dev: 37, ino: 5528344, uid: 944, gid: 954, mode: 438 }),
+    store: Object.freeze({ dev: 37, ino: 389021, uid: 944, gid: 954, mode: 1021 }) }),
   toolchain: Object.freeze({
     clang: Object.freeze({ derivation: "/gnu/store/rfrk3x0n4x8br7jgknfanvy3rpn2vmgs-clang-toolchain-21.1.5.drv",
       output: "/gnu/store/k240495dfcfwkmlpqjf3dl8zxl9h9r82-clang-toolchain-21.1.5",
@@ -1147,7 +1169,43 @@ execFileSync("git", ["config", "core.fsmonitor", fsmonitorHelper], {
 });
 const expectedClosurePath = resolve(authorityDirectory, "expected-closure.json");
 const keyringPath = resolve(authorityDirectory, "trusted-keyring.gpg");
-await writeFile(expectedClosurePath, canonicalJson({ token: "closed-p4" }));
+const expectedBindings = Object.fromEntries([
+  "artifacts", "comparison", "execution_accounting", "execution_budget",
+  "m6_release_record", "native", "native_inputs", "patches", "portable",
+  "prepared", "schedule", "source", "summary",
+].map(key => [key, key === "native" ? nativeManifest.native : {}]));
+const expectedClosureV2 = { schema: "cadr-m7-frame-expected-closure-v2",
+  bindings: expectedBindings };
+await writeFile(expectedClosurePath, canonicalJson(expectedClosureV2));
+assert.deepEqual(validateM7P4ExpectedClosureV2ForTest(
+  Buffer.from(canonicalJson(expectedClosureV2))), expectedClosureV2);
+for (const invalid of [
+  { schema: "cadr-m7-frame-expected-closure-v1", bindings: expectedBindings },
+  { schema: "cadr-m7-frame-expected-closure-v2", bindings: {} },
+]) assert.throws(() => validateM7P4ExpectedClosureV2ForTest(
+  Buffer.from(canonicalJson(invalid))), /closed canonical v2/);
+assert.throws(() => validateM7P4ExpectedClosureV2ForTest(
+  Buffer.from(`${canonicalJson(expectedClosureV2)}\n`)), /closed canonical v2/);
+assert.throws(() => validateM7P4ExpectedClosureV2ForTest(
+  Buffer.from(JSON.stringify(expectedClosureV2))), /closed canonical v2/);
+
+{
+  const writes = []; const socket = new EventEmitter();
+  socket.destroyed = false; socket.writableEnded = false;
+  socket.write = (frame, callback) => { writes.push(frame); callback(); };
+  const ready = { schema: "cadr-m7-p4-authority-ready-v1", status: "ready",
+    expected_closure_sha256: "01".repeat(32) };
+  assert.equal(await writeM7P4AuthorityReadyForTest(socket, ready),
+    `${canonicalJson(ready)}\n`);
+  assert.deepEqual(writes, [`${canonicalJson(ready)}\n`]);
+  await assert.rejects(writeM7P4AuthorityReadyForTest(socket, ready), /already attempted/);
+  const closed = new EventEmitter(); closed.destroyed = true; closed.writableEnded = false;
+  await assert.rejects(writeM7P4AuthorityReadyForTest(closed, ready), /peer is closed/);
+  const partial = new EventEmitter(); partial.destroyed = false;
+  partial.writableEnded = false;
+  partial.write = (_frame, callback) => callback(new Error("partial write"));
+  await assert.rejects(writeM7P4AuthorityReadyForTest(partial, ready), /partial write/);
+}
 await writeFile(keyringPath, execFileSync("gpg", ["--export",
   "3EA36B492D7E76450D2C59267B55A97A62F6D6C0"]));
 const expectedClosureHandle = await open(expectedClosurePath);
@@ -1198,11 +1256,14 @@ await writeFile(fixedModulePath, canonicalJson({
   accepted.destroy();
   await boundedAuthorityCleanup(acceptedClosed, "the parent copy of the inherited fd3 peer");
   let response = ""; const responseLines = []; let responseWake = null;
+  let readyFrameCount = 0;
   client.setEncoding("utf8"); client.on("data", chunk => {
     response += chunk;
     for (;;) {
       const newline = response.indexOf("\n"); if (newline < 0) break;
-      responseLines.push(JSON.parse(response.slice(0, newline)));
+      const record = JSON.parse(response.slice(0, newline));
+      if (record?.schema === "cadr-m7-p4-authority-ready-v1") readyFrameCount += 1;
+      responseLines.push(record);
       response = response.slice(newline + 1); responseWake?.(); responseWake = null;
     }
   });
@@ -1216,6 +1277,11 @@ await writeFile(fixedModulePath, canonicalJson({
   const changedWasm = wasm.slice(); changedWasm[0] ^= 1;
   client.write(`${canonicalJson({ op: "revalidate", identity: moduleIdentity,
     module_b64: Buffer.from(changedWasm).toString("base64") })}\n`);
+  const expectedReady = { expected_closure_sha256: createHash("sha256")
+    .update(canonicalJson(expectedClosureV2)).digest("hex"),
+    schema: "cadr-m7-p4-authority-ready-v1", status: "ready" };
+  assert.deepEqual(await nextResponse(), expectedReady,
+    "the exact READY record for fd4 is the first inherited-server frame");
   assert.equal((await nextResponse()).ok, false,
     "caller module bytes cannot differ from the fixed fd9 authority");
   client.write(`${canonicalJson({ op: "revalidate", identity: moduleIdentity,
@@ -1245,6 +1311,8 @@ await writeFile(fixedModulePath, canonicalJson({
   await unlink(socketPath).catch(() => {});
   assert.equal(code, 0, "the positive inherited-fd test-domain server exits after close/EOF");
   assert.deepEqual(closed, { closed: true, ok: true });
+  assert.equal(readyFrameCount, 1, "the inherited server emits exactly one READY record");
+  assert.equal(response, "", "every inherited-server frame ends in exactly one LF");
 }
 for (const phase of ["after-fds", "after-fd9", "forged-launcher", "pin-after-connect",
   "after-root", "after-daemon-recheck"]) {
@@ -1268,10 +1336,13 @@ for (const phase of ["after-fds", "after-fd9", "forged-launcher", "pin-after-con
     "/usr/bin/gpgv", keyringPath, fixedModulePath].map(path => open(path, "r")));
   const child = spawn(process.execPath,
     [resolve(ROOT, "scripts/cadr-m7-p4-authority-root.mjs"), "--serve-inherited-test"], {
-      cwd: authorityCheckout, env: { ...process.env, M7_TEST_FAIL_SETUP: phase },
+      cwd: authorityCheckout,
+      env: { ...process.env, TMPDIR: authorityDirectory, M7_TEST_FAIL_SETUP: phase },
       stdio: ["ignore", "pipe", "pipe", accepted._handle.fd, ...handles.map(handle => handle.fd)],
     });
   accepted.destroy();
+  const failureChunks = [];
+  client.on("data", chunk => failureChunks.push(Buffer.from(chunk)));
   await new Promise((resolveEnd, rejectEnd) => {
     client.once("end", resolveEnd); client.once("error", rejectEnd);
   });
@@ -1290,8 +1361,11 @@ for (const phase of ["after-fds", "after-fd9", "forged-launcher", "pin-after-con
   await new Promise(resolveClose => server.close(resolveClose));
   await unlink(socketPath).catch(() => {});
   assert.notEqual(code, 0, `${phase} must exit failed after terminal fd3 EOF`);
+  assert.equal(Buffer.concat(failureChunks).byteLength, 0,
+    `${phase} must emit zero READY or response bytes before failing`);
 }
-assert.equal((await readdir(tmpdir())).some(name => name.startsWith("cadr-m7-root-program-")),
+assert.equal((await readdir(authorityDirectory)).some(name =>
+  name.startsWith("cadr-m7-root-program-")),
   false, "post-connect daemon failure removes the real constructAuthority program capture");
 const signedSnapshotTree = inspectM7P4AuthorityRootForTest(trustedAuthorityRoot).snapshot.tree;
 const signedArchiveHash = digest(
@@ -1307,8 +1381,11 @@ assert.equal(inspectM7P4AuthorityRootForTest(trustedAuthorityRoot).snapshot.tree
   "a replace ref created after snapshot cannot alter the retained signed archive or inventory");
 execFileSync("git", ["replace", "-d", "HEAD"], { cwd: authorityCheckout, stdio: "ignore" });
 const validateSyntheticManifest = (manifest, expected) => {
-  assert.equal(manifest.expected_closure_token, expected.token);
-  assert.deepEqual(expected, { token: "closed-p4" });
+  assert.equal(manifest.expected_closure_token, "closed-p4");
+  assert.equal(expected.schema, "cadr-m7-frame-expected-closure-v2");
+  assert.deepEqual(Object.keys(expected.bindings).sort(), Object.keys(expectedBindings).sort());
+  assert.deepEqual(manifest.native, expected.bindings.native,
+    "synthetic native binding equals the independently fixed closure-v2 map");
   return manifest;
 };
 const mutableNativeBindingEcho = { closed: true, nested: { marker: "bound" } };
@@ -1325,8 +1402,8 @@ mutableNativeBindingEcho.nested.marker = "mutated";
 assert.equal(canonicalJson(boundNative.receipt.bindings),
   canonicalJson({ closed: true, nested: { marker: "bound" } }),
 "post-validation mutation of a native binding echo cannot alter the sealed receipt");
-assert.equal(selectM7P4FrozenExpectedClosure(trustedAuthorityRoot).expected.token,
-  "closed-p4", "the real selector reads the separate trusted-input boundary");
+assert.deepEqual(selectM7P4FrozenExpectedClosure(trustedAuthorityRoot).expected,
+  expectedClosureV2, "the real selector reads the separate trusted closure-v2 boundary");
 assert.throws(() => selectM7P4FrozenExpectedClosure({
   expected_closure_bytes: new TextEncoder().encode(canonicalJson({ token: "forged-p4" })),
 }), /privileged capability/,
@@ -1343,9 +1420,9 @@ assert.throws(() => validateM7P4NativeAuthority({
     index === manifestBytes.byteLength - 2 ? byte ^ 1 : byte),
 }, trustedAuthorityRoot, validateSyntheticManifest, () => ({})), /manifest bytes differ/,
 "manifest substitution is rejected by its independent identity");
-const forgedNativeManifest = {
-  ...nativeManifest, expected_closure_token: "forged-p4",
-};
+const forgedNativeManifest = { ...nativeManifest,
+  native: { ...nativeManifest.native,
+    capture: { ...nativeManifest.native.capture, tv_mode: 5 } } };
 const forgedManifestBytes = new TextEncoder().encode(canonicalJson(forgedNativeManifest));
 const forgedNativeAuthority = Object.freeze({
   ...nativeAuthority,
@@ -1356,7 +1433,7 @@ const forgedNativeAuthority = Object.freeze({
   }),
 });
 assert.throws(() => validateM7P4NativeAuthority(forgedNativeAuthority,
-  trustedAuthorityRoot, validateSyntheticManifest, () => ({})), /strict|Expected values|closed-p4/,
+  trustedAuthorityRoot, validateSyntheticManifest, () => ({})), /native binding|deepStrictEqual/,
 "a coordinated manifest/expected-closure substitution is rejected through the real frozen selector");
 assert.throws(() => validateM7P4NativeAuthority({
   ...forgedNativeAuthority, expected_closure: { token: "forged-p4" },
@@ -1779,6 +1856,34 @@ for (const required of [
     `opaque authority root retains trusted-head selection control: ${required}`);
 }
 
+{
+  const relayDirectory = await mkdtemp(resolve(tmpdir(), "m7-retained-relay-"));
+  const originalPath = resolve(relayDirectory, "daemon.sock");
+  const original = createServer(socket => socket.on("data", bytes => socket.write(Buffer.concat([
+    Buffer.from("retained:"), bytes]))));
+  await new Promise((resolveListen, rejectListen) => { original.once("error", rejectListen);
+    original.listen(originalPath, () => { original.off("error", rejectListen); resolveListen(); }); });
+  const retained = createConnection(originalPath);
+  await new Promise((resolveConnect, rejectConnect) => { retained.once("connect", resolveConnect);
+    retained.once("error", rejectConnect); });
+  const relay = await createM7P4RetainedDaemonRelayForTest(retained);
+  /* Unlink the authority pathname without closing its listener or the retained
+   * connection: a replacement pathname must not affect either one. */
+  await unlink(originalPath);
+  const replacement = createServer(socket => socket.on("data", bytes => socket.write(Buffer.concat([
+    Buffer.from("replacement:"), bytes]))));
+  await new Promise((resolveListen, rejectListen) => { replacement.once("error", rejectListen);
+    replacement.listen(originalPath, () => { replacement.off("error", rejectListen); resolveListen(); }); });
+  const client = createConnection(relay.socketPath); const reply = await new Promise((resolveReply, rejectReply) => {
+    client.once("error", rejectReply); client.once("data", resolveReply); client.once("connect", () => client.write("probe"));
+  });
+  assert.equal(reply.toString("utf8"), "retained:probe",
+    "replacement of the daemon pathname cannot redirect a retained relay command");
+  client.destroy(); retained.destroy(); await relay.close();
+  await new Promise(resolveClose => original.close(resolveClose));
+  await new Promise(resolveClose => replacement.close(resolveClose)); await rm(relayDirectory, { recursive: true, force: true });
+}
+
 inspectM7P4AuthorityRootForTest(trustedAuthorityRoot).daemonCapability.destroy();
 await assert.rejects(revalidateM7P4GuixEndpointForTest(trustedAuthorityRoot),
   /retained Guix daemon capability is closed/,
@@ -1832,6 +1937,33 @@ await rm(authorityDirectory, { recursive: true, force: true });
       await readFile(resolve(ROOT, "scripts/cadr-m7-p4-host-supervisor.mjs")));
     await writeFile(resolve(scripts, "cadr-m7-p4-host-dropper.c"),
       await readFile(resolve(ROOT, "scripts/cadr-m7-p4-host-dropper.c")));
+    await writeFile(resolve(scripts, "cadr-m7-p4-service-entry.c"),
+      await readFile(resolve(ROOT, "scripts/cadr-m7-p4-service-entry.c")));
+    await writeFile(resolve(scripts, "cadr-m7-p4-descriptor-runner.mjs"),
+      await readFile(resolve(ROOT, "scripts/cadr-m7-p4-descriptor-runner.mjs")));
+    for (const name of ["run-cadr-m7-frame-conformance.mjs",
+      "run-cadr-m7-p4-fast-differential.mjs"]) {
+      await writeFile(resolve(scripts, name), await readFile(resolve(ROOT, "scripts", name)));
+    }
+    const wasmScripts = resolve(fixture, "cadr-web/wasm");
+    await mkdir(wasmScripts, { recursive: true });
+    for (const name of ["cadr-display-renderer.mjs", "cadr-m4-block-service.mjs",
+      "cadr-m4-media.mjs", "cadr-m6-headless-boot.mjs", "cadr-m7-devid-failure.mjs",
+      "cadr-m7-effective-page-identity.mjs", "cadr-m7-frame-checkpoint.mjs",
+      "cadr-m7-ready4-fast-checkpoint.mjs", "cadr-m5-batch.mjs",
+      "cadr-m8-keyboard.mjs", "cadr-m8-m9-campaign.mjs",
+      "cadr-m8-m9-deactivation.mjs", "cadr-m8-m9-restore.mjs",
+      "cadr-m8-m9-transaction.mjs",
+      "cadr-m9-pointer.mjs", "cadr-m11-audio.mjs", "cadr-m12-debugger.mjs",
+      "cadr-m13-audio-source.mjs", "cadr-worker.js",
+      "cadr-worker-request-adapter.mjs"]) {
+      await writeFile(resolve(wasmScripts, name),
+        await readFile(resolve(ROOT, "cadr-web/wasm", name)));
+    }
+    const browserScripts = resolve(fixture, "cadr-web/browser");
+    await mkdir(browserScripts, { recursive: true });
+    await writeFile(resolve(browserScripts, "cadr-m13-audio-record.mjs"),
+      await readFile(resolve(ROOT, "cadr-web/browser/cadr-m13-audio-record.mjs")));
     const executableFixture = resolve(scripts, "signed-executable-mode-fixture.mjs");
     await writeFile(executableFixture, "#!/usr/bin/env node\nprocess.exit(0);\n");
     await chmod(executableFixture, 0o755);
@@ -1895,6 +2027,34 @@ await rm(authorityDirectory, { recursive: true, force: true });
     assert.match(generated.output, /^\/gnu\/store\//);
     assert.match(generated.node_derivation, /^\/gnu\/store\/.+\.drv$/);
     assert.match(generated.node_output, /^\/gnu\/store\//);
+    assert.equal(generated.schema, "cadr-m7-guix-launcher-authority-v2");
+    assert.equal(generated.host_phase_a.production_evidence, false);
+    assert.deepEqual(generated.host_phase_a.account,
+      { name: "cadr-m7-p4", uid: 611, gid: 612, password_lock: "!",
+        home: "/var/empty", shell: "/usr/bin/nologin", supplementary_groups: [] });
+    assert.equal(generated.host_phase_a.artifacts.systemd_unit.mode, 0o444);
+    assert.equal(generated.host_phase_a.artifacts.sysusers.mode, 0o444);
+    assert.equal(generated.host_phase_a.artifacts.descriptor_runner.mode, 0o555);
+    const installedDescriptorSource =
+      `${generated.output}/share/genera-emu/scripts/cadr-m7-p4-descriptor-runner.mjs`;
+    const identityProbe = `import { readFileSync } from "node:fs";` +
+      `import { validateM7P4DescriptorIdentityStatusForTest as validate } from ` +
+      `${JSON.stringify(`file://${installedDescriptorSource}`)};` +
+      `validate(readFileSync("/proc/self/status", "ascii"));`;
+    const runIdentityProbe = (uid, gid) => spawnSync("/usr/bin/unshare",
+      ["--user", `--map-user=${uid}`, `--map-group=${gid}`,
+        generated.node_output + "/bin/node", "--input-type=module", "--eval", identityProbe],
+      { encoding: "utf8", env: { HOME: "/var/empty", LANG: "C", LC_ALL: "C",
+        PATH: "/var/empty", TZ: "UTC" } });
+    assert.equal(runIdentityProbe(611, 612).status, 0,
+      "the installed runner accepts exact real/effective/saved/fs 611:612");
+    for (const [uid, gid, label] of [[1001, 612, "wrong uid"], [612, 611, "swapped"],
+      [4294967294, 4294967294, "maximum kernel ids"]]) {
+      const identityResult = runIdentityProbe(uid, gid);
+      assert.notEqual(identityResult.status, 0,
+        `the installed runner rejects ${label} across the live four-field identity status`);
+      assert.match(identityResult.stderr, /literal M7 P4 service identity/);
+    }
     assert.equal(generated.derivation, originalDerivation,
       "signed checkout and mode-preserving private reconstruction evaluate to the exact same derivation");
     assert.equal(generated.source_commit,
