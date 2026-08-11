@@ -3,7 +3,7 @@ type: Technical Note
 title: CADR-WEB reproducible museum release evidence scaffolding
 description: The deterministic logical manifest, closed static inventory, direct-input provenance, browser matrix, rights, guide, and bounded receipt-admission scaffold prepared for M14 without claiming CW4.
 tags: [mit-cadr, cadr-web, release, offline, provenance, conformance]
-timestamp: 2026-08-02T16:46:00-04:00
+timestamp: 2026-08-11T13:10:00-04:00
 ---
 
 # CADR-WEB reproducible museum release evidence scaffolding
@@ -69,6 +69,10 @@ browser row at `not-evaluated` and the release claim at `none`.
 | `cadr-m14-evidence-policy.json` | Canonical v1 future-case registry, stable M6–M14 blocker IDs, case-to-definition-of-done mapping, and a deliberately empty production authority set |
 | `cadr-m14-gates.json` | v3 CW0–CW4 ledger bound to the exact evidence-policy SHA-256; every gate remains `not-evaluated` |
 | `build-cadr-m14-release.mjs` | Copier, generators, logical manifest/source map, componentwise-confined closed-inventory verifier, and archive verifier |
+| `cadr-m14-static-reproduction-comparison.mjs` | Captures two M14 logical-manifest/source-map pairs through retained `O_NOFOLLOW` descriptors, validates the manifest by the existing exact evidence-candidate derivation, verifies caller-supplied independent policy/comparator/evidence-engine pins, and emits an unadmitted canonical comparison report |
+| `cadr-m14-publication.mjs` | One-shot module-private capability for the canonical comparison **report**, never an archive; it descriptor-walks repository/build/output ancestors without following symlinks, retains the output directory, creates a private temp/ready report, and returns only closed receipts |
+| `cadr-m14-link-helper.c` | Tiny tracked C helper compiled statically into the ignored build tree; after independent verification its bytes are copied to a sealed anonymous `O_TMPFILE` image (mode `0500`, `nlink == 0`) and executed only through that read/exec descriptor, with no interpreter, loader, helper pathname, or post-mint helper mutation in the execution closure |
+| `publish-cadr-m14-release.mjs` | Authority-less CLI: compares two constrained local package candidates under independent pins and then refuses, because the current production policy registers no publication authority |
 | `cadr-m14-evidence.mjs` | Pure candidate derivation, confined receipt/result/cleanup capture, compiled adapter admission boundary, and deterministic aggregation; its production registry is empty |
 | `run-cadr-m14-compatibility.mjs` | Bounded collector for exact-schema, untrusted private adapter attestations; it cannot advance a browser row |
 
@@ -120,6 +124,14 @@ recursively frozen and carries a module-private in-process identity. Aggregation
 accepts only those exact objects returned by the same process's admission boundary;
 a serialized, copied, or hand-constructed record cannot advance a gate.
 
+The publication capability is also deliberately absent from the production authority
+surface. Its normal constructor rejects because the current policy's production
+authority registry is empty; the CLI does not take a token from an argument,
+environment variable, or file. Synthetic tests use a separate in-process branded
+test authority, which cannot serialize and is not a policy authority. Therefore a
+successful local test link is not a release publication, rights decision, evidence
+admission, browser result, or route to change `releaseClaim: none`.
+
 ## Failure and recovery boundary
 
 The verifier walks the complete package and rejects missing, additional,
@@ -150,6 +162,86 @@ claim. The generator never replaces an existing output or archive. It does not
 recover by fetching a missing resource, following a symlink, accepting extra
 attestation data, or changing a gate; remediation is to construct a new isolated
 output from corrected, policy-conforming inputs.
+
+The comparison accepts exactly two direct M14 package directories.  It opens each
+logical manifest and its manifest-bound source map with `O_NOFOLLOW`, retains the
+handles, requires
+`nlink == 1`, checks pairwise device/inode distinction, rereads the descriptor and
+pathname before and after bytes are read, and closes partial captures.  It also
+rereads the policy, comparator, and evidence-engine sources and requires the
+caller's independent SHA-256 pins.  The comparator and evidence engine also
+export their own evaluation-time source identities; every caller pin must agree
+with that identity and with the retained current descriptor bytes. The same exact `validateM14EvidencePolicy` and
+`deriveM14EvidenceCandidate` path used by receipt admission validates the full
+canonical logical-manifest schema, direct-input closure, artifact set, and toolchain
+before any comparison field is produced. Its fixed-shape report records a non-axis
+retained evidence-candidate descriptor plus manifest, source, closure, artifact-set,
+and toolchain-set identities. It has five independently computed match axes; the
+descriptor is deliberately not presented as a duplicate “complete candidate” axis. It says
+only `exact-static-candidate-match` or `static-difference-observed`, with
+`releaseClaim: none` and every production/CW4 status `not-evaluated`.  The ordinary
+report is process-branded for capability minting; serialized or hand-constructed
+copies are not an evidence receipt, an admitted record, or final-reproduction proof.
+The two package inputs are themselves reached only by retained directory walks from
+the repository root through `build` and `cadr-m14`; both captured and freshly walked
+ancestor identities must agree before and after input reads. A lexical package path
+therefore cannot inherit authority from a replaced or symlinked build ancestor.
+Any retained-input close failure rejects the comparison after it attempts every
+remaining close; it cannot return a branded report with silently leaked descriptor
+state.
+
+The production constructor is deliberately unmintable while the production
+registry is empty. Synthetic conformance tests use the exact same state machine
+only under the fixed `build/cadr-m14/test-published` root; no API accepts an
+authority token or caller-selected output root, and the test boundary cannot
+create or name `build/cadr-m14/published`. If a future reviewed authority issues
+a production capability, it must bind the exact canonical report SHA-256 and byte
+count and supply an independently pinned static link-helper SHA-256, not either
+source archive. The output
+sequence is private `temp` write and file sync, `temp -> ready`, retained-descriptor
+`link(ready, final)`, final descriptor/hash verification, `unlink(ready)`, then
+directory sync.  The final link is the linearization point.  A successful receipt
+has `published-durable`; it identifies the final leaf by device/inode/hash/length
+and records `retryPolicy: never-automatic`.  The report-only entrypoint is named
+`publishCadrM14ComparisonReport`; no public API named for archive publication exists.
+The capability reaches `published` only by a retained `O_NOFOLLOW` directory walk
+from the repository root through `build` and `cadr-m14`; every component is checked
+again by device/inode before final link. A symlink or replacement in that ancestry
+does not confer output authority.
+For the static link helper, minting requires a one-link mode-`0755` original and its
+independent SHA-256 pin. It then creates an anonymous output-directory `O_TMPFILE`,
+writes and syncs those verified bytes, changes it to `0500`, reopens the same inode
+read-only through `/proc/self/fd`, verifies inode/hash/mode/zero-link count, and
+closes the writable descriptor. Only the anonymous read/exec descriptor is spawned;
+rechecking or changing the original helper later has no effect.
+
+Once final link has occurred, the final report is retained on every outcome. The
+capability may remove only its private ready name.  A failed ready cleanup yields
+`published-cleanup-unconfirmed`; a failed final/directory durability acknowledgement
+yields `published-durability-indeterminate`; an unverified or replaced final yields
+`published-identity-indeterminate`.  Before-link loss yields `not-published`.
+In particular, a failed or lost descriptor-link helper completion is not treated as
+evidence that `link(2)` did not occur: the capability probes the retained output
+directory for the exact ready inode and report hash.  An exact leaf is published
+with cleanup unconfirmed and is never linked or cleaned again automatically; an
+absent leaf is `not-published`; any other leaf is identity-indeterminate.
+Receipts carry explicit `published`, cleanup, directory-sync, and cleanup-sync
+booleans; cleanup-directory sync can be confirmed even when final-directory
+durability remains indeterminate. A retained final descriptor is rechecked against
+a fresh descriptor-relative final pathname after ready cleanup and directory sync,
+so replacement at any post-verification seam is identity-indeterminate rather than
+durable. No branch retries, overwrites, or calls an indeterminate result a public
+release, distribution authorization, evidence admission, browser result, or CW4.
+This in-process boundary makes no crash-recovery claim: no process-kill oracle has
+established recovery across an interrupted temp, ready, final-link, or directory-sync
+operation.
+
+Closing retained helper or directory descriptors is a separate terminal
+boundary. If it fails after a report has been published, the publication promise
+rejects with the exact closed receipt attached as `error.receipt`, leaves the
+capability in explicit `CLOSE_FAILED`, and requires the caller to invoke
+`closeCadrM14PublicationCapability` again. It never resolves an apparently clean
+publication while retaining an unreported cleanup failure.
 
 Admission is all-or-nothing. A wrong candidate, source, artifact, toolchain,
 policy, profile, authority, verifier outcome, result hash, cleanup hash, schema,
@@ -187,6 +279,7 @@ packaging cannot change a gate.
 node scripts/build-cadr-m14-release.mjs --output build/cadr-m14/release
 node tests/test_cadr_m14_release.mjs
 node tests/test_cadr_m14_evidence.mjs
+node tests/test_cadr_m14_publication.mjs
 node scripts/run-cadr-m14-compatibility.mjs
 ```
 
@@ -209,6 +302,31 @@ authority forgery and non-independence; result mutation; duplicate/conflicting a
 noncanonical receipts; getters, private-path text, traversal, symlink capture, and
 deterministic ordering. It also proves that an all-pass synthetic aggregation cannot
 claim a release.
+
+The publication test creates two disposable deterministic candidates from isolated
+current-source commits (because the normal builder correctly refuses a dirty worktree), exercises the
+retained-descriptor comparison and independent policy, comparator, evidence-engine,
+and static-link-helper pins, then uses only the fixed-root synthetic test capability to publish the
+canonical comparison report. It covers copied/accessor capabilities and receipts,
+method/accessor replacement after module import, symlink/hard-link/FIFO/socket/
+directory input rejection, input replacement after descriptor capture, malformed
+canonical-manifest rejection through shared evidence derivation, partial capture
+cleanup, unsafe and preexisting names, output-parent and build-ancestor replacement, attacker
+insertion before the final link, and lifecycle inode/link-count observations.
+It injects every normal persistence boundary from temporary creation through write,
+file sync, close, rename, ready/final open and verification, link completion, ready
+unlink, and directory sync. It separately covers private-temp sync loss,
+ready-cleanup loss, final replacement, post-link directory-sync loss,
+lost descriptor-link completion after a real `link(2)`, publish/publish joining,
+publish/close rejection, direct close failure, and post-publication close failure
+with an attached receipt and explicit retry. It
+proves that every post-link outcome retains the final report, including silent final
+pathname replacement at each post-verification seam, and that no archive is placed
+in either output root. It proves that synthetic publication cannot create the
+production output root. It does not claim crash recovery because this scaffold has
+not run a process-kill persistence experiment. The real CLI has no test authority,
+accepts no token from argv/environment/file, and therefore cannot create a report
+link under the current empty production registry.
 
 ## Known unknowns and next oracle
 

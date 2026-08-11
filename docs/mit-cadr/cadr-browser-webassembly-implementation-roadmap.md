@@ -3,7 +3,7 @@ type: Implementation Roadmap
 title: MIT CADR System 303 browser and WebAssembly implementation roadmap
 description: A milestone-complete plan for porting the pinned System 303 CADR emulator to a deterministic, locally persistent, browser-hosted WebAssembly machine.
 tags: [mit-cadr, lm-3, system-303, webassembly, browser, emulator, roadmap]
-timestamp: 2026-08-11T09:25:05-04:00
+timestamp: 2026-08-11T13:10:00-04:00
 ---
 
 # MIT CADR System 303 browser and WebAssembly implementation roadmap
@@ -1586,6 +1586,30 @@ zero-receipt aggregation remains entirely `not-evaluated` with release claim `no
 Runtime no-network behavior is still `not-evaluated`. The scaffold omits the final
 Wasm/worklet and leaves CW0–CW4 and all browser rows `not-evaluated`; it is not a
 CW4 claim.
+
+The next M14 seam is now a source-tested but production-unmintable **static
+comparison-report** capability. It captures two direct M14 logical-manifest/source-map
+pairs through retained `O_NOFOLLOW`, one-link descriptors; rechecks descriptor,
+pathname, parent, and caller-supplied independent policy/comparator/evidence-engine
+hashes against both retained bytes and evaluation-time module identities; and produces
+only an unadmitted canonical report. The report's retained pair descriptor is not a
+duplicate match axis. The production constructor cannot mint while its registry is
+empty. Synthetic tests can bind report bytes only to the fixed sibling
+`test-published` root, never the production root, create a private temp and ready
+file under the retained publication directory, independently pin the retained static
+Linux link helper's bytes, and use a
+retained descriptor-relative Linux link for the sole final
+linearization point. It verifies the held and freshly reopened final identities,
+removes only ready, then syncs the directory and verifies those identities again.
+A post-link failure retains final and gives a closed durable, cleanup,
+durability, or identity-indeterminate receipt with no retry/overwrite. It never
+publishes either archive. A lost helper completion probes the retained directory:
+only an exact final report is published, with cleanup left unconfirmed; an absent or
+wrong leaf is respectively not-published or identity-indeterminate. The actual
+policy registry remains empty, and the CLI
+therefore refuses to mint a capability or create a link. This is neither public
+publication nor a distribution-rights decision, and cannot advance `releaseClaim:
+none`, any CW gate, browser evidence, or final-reproduction status.
 
 ### M15 — Optional isolated Chaos networking
 

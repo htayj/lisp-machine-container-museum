@@ -14,7 +14,14 @@ import { basename, dirname, isAbsolute, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 
-const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
+/* The evaluator records the bytes of this module at its own top level.  A
+ * later pathname replacement cannot be blessed merely by changing a caller's
+ * requested pin: consumers require their retained descriptor bytes, the
+ * caller pin, and this evaluation-time identity to agree. */
+const MODULE_PATH = fileURLToPath(import.meta.url);
+export const CADR_M14_EVIDENCE_ENGINE_EVALUATION_SHA256 = createHash("sha256")
+  .update(await readFile(MODULE_PATH)).digest("hex");
+const ROOT = resolve(dirname(MODULE_PATH), "..");
 const PRIVATE_ROOT = resolve(ROOT, "build/cadr-m14");
 const TRUSTED_GIT = "/usr/bin/git";
 const exec = promisify(execFile);

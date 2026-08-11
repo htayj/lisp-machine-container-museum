@@ -98,8 +98,9 @@ M13_AUDIO_WASM_O0 := build/cadr-web-m13-audio-O0.wasm
 M13_AUDIO_WASM_O2 := build/cadr-web-m13-audio-O2.wasm
 M13_DEBUGGER_TEST_WASM_O0 := build/cadr-web-m13-debugger-test-O0.wasm
 M13_DEBUGGER_TEST_WASM_O2 := build/cadr-web-m13-debugger-test-O2.wasm
+M14_LINK_HELPER := ../build/cadr-m14/cadr-m14-link-helper
 
-.PHONY: all test clean audit forbidden-symbols exported-symbols mutable-globals dependency-audit header-audit mutant-audit python-cross-parse m3-wasm m3-browser m3-differential m3-conformance m3-snapshot-cross-target m4-unit m4-browser m4-differential m4-media-compare m5-unit m6-release-validation m6-devid-wasm m6-diagnostic-receipt-unit m7-unit m7-native-source-pin m7-native-source-unit m8-m9-unit m8-m9-devid-unit m10-unit m11-unit m11-selected-playback m12-unit m13-audio-unit m13-p1-unit
+.PHONY: all test clean audit forbidden-symbols exported-symbols mutable-globals dependency-audit header-audit mutant-audit python-cross-parse m3-wasm m3-browser m3-differential m3-conformance m3-snapshot-cross-target m4-unit m4-browser m4-differential m4-media-compare m5-unit m6-release-validation m6-devid-wasm m6-diagnostic-receipt-unit m7-unit m7-native-source-pin m7-native-source-unit m8-m9-unit m8-m9-devid-unit m10-unit m11-unit m11-selected-playback m12-unit m13-audio-unit m13-p1-unit m14-unit
 
 all: $(LIBRARY) $(HOST_BINARY) $(M2_HOST_BINARY) $(M3_HOST_BINARY) $(M3_SNAPSHOT_HOST_BINARY)
 
@@ -508,6 +509,18 @@ m13-audio-unit: build/test_cadr_m13_audio_transport $(M13_AUDIO_WASM_O0) $(M13_A
 # intentionally does not turn the E27 test storage adapter into production.
 m13-p1-unit:
 	guix shell node -- node ../tests/test_cadr_m13_production_app.mjs
+
+# M14 publication remains scaffold-only: these checks exercise the retained
+# descriptor comparison/report boundary but cannot mint production authority.
+m14-unit: $(M14_LINK_HELPER)
+	guix shell node -- node ../tests/test_cadr_m14_release.mjs
+	guix shell node -- node ../tests/test_cadr_m14_evidence.mjs
+	guix shell node -- node ../tests/test_cadr_m14_publication.mjs
+
+$(M14_LINK_HELPER): ../scripts/cadr-m14-link-helper.c
+	mkdir -p ../build/cadr-m14
+	$(CC) -static -O2 -std=c11 -D_GNU_SOURCE -Wall -Wextra -Werror -o $@ $<
+	chmod 0755 $@
 
 build/test_cadr_m13_audio_transport: tests/test_cadr_m13_audio_transport.c core/cadr_audio_model.c core/cadr_audio_model.h core/cadr_m13_audio_transport.c core/cadr_m13_audio_transport.h | build
 	$(CC) $(CPPFLAGS) $(CFLAGS) -o $@ tests/test_cadr_m13_audio_transport.c core/cadr_audio_model.c core/cadr_m13_audio_transport.c
